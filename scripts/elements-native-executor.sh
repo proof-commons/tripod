@@ -57,6 +57,9 @@
 #                                           credential
 #   ELEMENTS_NATIVE_EXECUTOR_PYTHON         python interpreter (default
 #                                           python3)
+#   ELEMENTS_NATIVE_EXECUTOR_FEE_POLICY     historical-zero (default) or
+#                                           node-defaults; the latter omits
+#                                           both fee-floor overrides
 #   ELEMENTS_NATIVE_EXECUTOR_LAUNCH_PREFIX  word-split command placed in
 #                                           front of the interpreter, for
 #                                           hosts where the node binaries
@@ -96,6 +99,13 @@ set -- --elementsd "$ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD" \
        --framework "$ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK" \
        --network-id "$ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID" \
        "$@"
+
+if [ -n "${ELEMENTS_NATIVE_EXECUTOR_FEE_POLICY:-}" ]; then
+  set -- --fee-policy "$ELEMENTS_NATIVE_EXECUTOR_FEE_POLICY" "$@"
+fi
+if [ "${ELEMENTS_NATIVE_EXECUTOR_MATURITY_OBSERVATION:-}" = 1 ]; then
+  set -- --maturity-observation "$@"
+fi
 
 # ADR-018 provenance. Each is an operator declaration of what was meant to
 # run; none is derived from a working tree, and none stands in for the

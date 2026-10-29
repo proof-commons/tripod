@@ -967,6 +967,14 @@ test(
 
 live_native_maturity_mutant_capture_test = find_program('scripts/test-live-native-maturity-mutant-capture.sh')
 
+test(
+  'live-native-maturity-sponsored-capture-contract',
+  find_program('scripts/test-live-native-maturity-sponsored-capture.sh'),
+  args: [meson.project_source_root()],
+  suite: 'integration',
+  timeout: 300,
+)
+
 # Budget: 2:10, tolerance 3:00. Both profiles use a synthetic Git suite and
 # mock Cargo; no Rust toolchain, target binary, node, or network.
 test(

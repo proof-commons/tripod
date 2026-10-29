@@ -28,6 +28,7 @@ use transaction::live_request::{RequestedForm, SponsorChangeRequest};
 use transaction::operator_right::{BranchContext, OperatorRightRegistry, RightRefusal};
 use transaction::operator_signing::{OPERATOR_SIGHASH_TYPE_BYTE, OperatorSigningResponse};
 use transaction::state_abi::derive_maturity_announcement_abi;
+#[cfg(test)]
 use transaction::state_construct::construct_maturity_announcement;
 use transaction::state_finalize::{FinalizedMaturityAnnouncement, finalize_maturity_announcement};
 use transaction::state_request::MaturityAnnouncementRequest;
@@ -124,6 +125,24 @@ pub enum MaturityNativePlanRefusal {
         /// The zero-based position of the differing or surplus request.
         position: usize,
     },
+    /// The sponsored policy detail was absent, ambiguous or contradicted its provenance.
+    SponsoredPolicy,
+    /// The observation did not settle a target verdict or its requested route.
+    SponsoredUndecided,
+    /// A signing response did not bind the exact request and input.
+    SponsoredSignature,
+    /// The paid fee did not meet the measured-size rule.
+    SponsoredFee,
+    /// A sponsored positive did not use relay and ordinary block selection.
+    SponsoredRoute,
+    /// A submitted subject did not reach its declared boundary.
+    SponsoredBoundary,
+    /// The bounded semantic selection did not produce the required least nonce.
+    SponsoredNonceSelection,
+    /// Constructor or semantic projection refused the submitted bytes.
+    SponsoredProjection(Box<crate::maturity_continuity::MaturityContinuityRefusal>),
+    /// Public recovery refused the same submitted bytes.
+    SponsoredRecovery(Box<crate::maturity_recovery::MaturityRecoveryRefusal>),
 }
 
 type Refusal = MaturityNativePlanRefusal;
@@ -172,6 +191,10 @@ pub enum MaturityAcceptanceRoute {
     RelayWitnessRestructure,
     /// Add a block-layer submission subject through a protocol revision.
     BlockLayerSubmissionSubject,
+    /// Relay accepted and ordinary mining selected the transaction.
+    RelayAndTemplate,
+    /// Relay refused; explicit block inclusion accepted the same bytes.
+    DirectBlockAfterRelayRefusal,
 }
 
 /// A checked accepted submission and mined readback retained by the planner.
@@ -763,6 +786,21 @@ fn link_for(
     ),
     Refusal,
 > {
+    link_for_metadata(identity, asset, selection, None)
+}
+
+fn link_for_metadata(
+    identity: &CandidateDeploymentIdentity,
+    asset: AssetId,
+    selection: MaturityWitnessSelection,
+    metadata: Option<realization::StateMetadata>,
+) -> Result<
+    (
+        CandidateLinkedMaturityBundle,
+        tapscript::StateWitnessSchedule,
+    ),
+    Refusal,
+> {
     let target = closure_target().map_err(closure)?;
     let sources =
         maturity_sources(MaturityDeployment::PublishedSignerHeld, selection).map_err(closure)?;
@@ -794,12 +832,13 @@ fn link_for(
     .map_err(link_refusal)?;
     let singleton = StateSingletonAsset::new(*asset.internal());
     let declaration = singleton_declaration()?;
-    let metadata = seed
-        .instances()
-        .first()
-        .expect("the linker retains its predecessor constructor")
-        .metadata()
-        .semantic;
+    let metadata = metadata.unwrap_or_else(|| {
+        seed.instances()
+            .first()
+            .expect("the linker retains its predecessor constructor")
+            .metadata()
+            .semantic
+    });
     let linked = link_state_candidate(
         &target,
         &StateLinkSources::new(
@@ -825,6 +864,18 @@ fn build_announcement(
     branch: BranchContext,
     amount: u64,
     lead: MaturityLead,
+) -> Result<FinalizedMaturityAnnouncement, Refusal> {
+    build_with_sponsor(bundle, asset, outpoint, branch, amount, lead, None)
+}
+
+fn build_with_sponsor(
+    bundle: &CandidateLinkedMaturityBundle,
+    asset: AssetId,
+    outpoint: Outpoint,
+    branch: BranchContext,
+    amount: u64,
+    lead: MaturityLead,
+    sponsor: Option<&transaction::state_construct::MaturitySponsorContext<'_>>,
 ) -> Result<FinalizedMaturityAnnouncement, Refusal> {
     let target = closure_target().map_err(closure)?;
     let predecessor = bundle
@@ -859,17 +910,38 @@ fn build_announcement(
     let announced = lead.announced((earliest, latest));
     let request = MaturityAnnouncementRequest::new(
         announced,
-        RequestedForm::Sponsorless,
-        SponsorChangeRequest::NotRequested,
+        if sponsor.is_some() {
+            RequestedForm::Sponsored
+        } else {
+            RequestedForm::Sponsorless
+        },
+        if sponsor.is_some_and(|context| context.capability.offer().change().is_some()) {
+            SponsorChangeRequest::Requested
+        } else {
+            SponsorChangeRequest::NotRequested
+        },
     )
     .map_err(transaction)?;
-    let construction =
-        construct_maturity_announcement(&target, &abi, &view, &request, &OracleStateCurve)
-            .map_err(transaction)?;
+    let construction = transaction::state_construct::construct_maturity_announcement_with_sponsor(
+        &target,
+        &abi,
+        &view,
+        &request,
+        &OracleStateCurve,
+        sponsor,
+    )
+    .map_err(transaction)?;
     Ok(finalize_maturity_announcement(construction))
 }
 
 fn sign_announcement(finalized: &FinalizedMaturityAnnouncement) -> Result<Vec<u8>, Refusal> {
+    sign_with_sponsor(finalized, None)
+}
+
+fn sign_with_sponsor(
+    finalized: &FinalizedMaturityAnnouncement,
+    sponsor: Option<&dyn transaction::sponsor::SponsorCapability>,
+) -> Result<Vec<u8>, Refusal> {
     let target = closure_target().map_err(closure)?;
     let state =
         OperatorSigningStarted::open(finalized, &target, &OracleLiveCurve::new(target.clone()))
@@ -897,7 +969,7 @@ fn sign_announcement(finalized: &FinalizedMaturityAnnouncement) -> Result<Vec<u8
         .authorize(&mut registry, right, [answer], &OperatorVerifier)
         .map_err(|failure| transaction(failure.refusal))?;
     let ready = authorized
-        .bind_for_submission(&target)
+        .bind_for_submission_with_sponsor(&target, sponsor)
         .map_err(transaction)?;
     Ok(ready.bytes().to_vec())
 }
@@ -916,13 +988,1513 @@ fn check_coin(
     outpoint_of(&coin.outpoint).ok_or(Refusal::FundedOutpointInvalid)
 }
 
+/// Funded default-policy observations, with replay independent of capture provenance.
+pub mod sponsored {
+    use super::{
+        AssetField, AssetId, BranchContext, CandidateDeploymentIdentity,
+        CandidateLinkedMaturityBundle, Cycle, FinalizedMaturityAnnouncement, FundedOutput,
+        MaturityAcceptanceRoute, MaturityLead, MaturityWitnessSelection, NATIVE_PROTOCOL_SCHEMA,
+        NativeOperationResponse, OPERATOR_HANDLE, ObservedOutcomeLayer, OperationCaseId,
+        OperationStep, OperationSubject, OracleLiveCurve, Outpoint, PlanRefused, Refusal,
+        TargetFundingSubject, TargetOperationPlanner, TargetSubmissionSubject, TargetTransaction,
+        TransactionRefusal, Txid, ValueField, asset_of, build_announcement, build_with_sponsor,
+        check_coin, closure, closure_target, decode_hex, link_for, link_for_metadata, outpoint_of,
+        predecessor_program, sha256, sign_announcement, sign_with_sponsor, singleton_declaration,
+        transaction,
+    };
+    use std::collections::VecDeque;
+    use target_elements_conformance::protocol::{
+        TargetSponsorFundingSubject, TargetSponsorSigningSubject, WireSighashProfile,
+    };
+    use transaction::bytes::{InputWitness, TargetInput, TargetOutput};
+    use transaction::sponsor::{
+        SponsorCapability, SponsorOffer, SponsorSignature, SponsorSigningRequest,
+    };
+    use transaction::view::{PublicConstructionView, PublicOutputView};
+
+    /// The positive families, followed by the separately reauthorized allocation.
+    pub const CASES: [&str; 13] = [
+        "minimum-valid-lead",
+        "maximum-valid-lead",
+        "representative-interior-lead",
+        "smallest-current-cycle",
+        "current-cycle-near-checked-upper-domain",
+        "nontrivial-unaffected-fields",
+        "representation-nonce-zero",
+        "representation-nonce-nonzero",
+        "accepted-target-transaction-with-semantic-constructor-root-and-recovery-projections-all-matching",
+        "sponsored-without-change",
+        "sponsored-with-change-where-supported",
+        "reauthorized-fee-change",
+        "zero-valued-sponsor-member-under-exact-role-structure",
+    ];
+    /// Exact distinct submitted negatives; allocation also supplies the fee signing wait.
+    pub const NEGATIVES: [&str; 5] = [
+        "missing-sponsor-authorization",
+        "sponsor-change-at-state-output-0",
+        "fee-change-substitution",
+        "balanced-state-corruption-compensated-by-sponsor-change",
+        "sponsor-input-added-after-signing",
+    ];
+    const RESERVE: u64 = 1_000_000;
+    pub(crate) const NEGATIVE_REASONS: [&str; 5] = [
+        "mandatory-script-verify-flag-failed (Witness program hash mismatch)",
+        "mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)",
+        "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
+        "bad-txns-in-ne-out",
+        "mandatory-script-verify-flag-failed (Invalid Schnorr signature)",
+    ];
+
+    pub(crate) fn check_reason(
+        response: &NativeOperationResponse,
+        expected: &str,
+        refused: bool,
+    ) -> Result<(), Refusal> {
+        let value: serde_json::Value = serde_json::from_str(
+            response
+                .observed_detail
+                .as_deref()
+                .ok_or(Refusal::SponsoredBoundary)?,
+        )
+        .map_err(|_| Refusal::SponsoredBoundary)?;
+        let (relay, verdict) = if value["route"] == "setup" {
+            (
+                &value["detail"]["relay_detail"],
+                &value["detail"]["outcome"]["verdict_reason"],
+            )
+        } else {
+            (&value["relay_detail"], &value["detail"]["verdict_reason"])
+        };
+        if relay != expected || (refused && verdict != expected) {
+            return Err(Refusal::SponsoredBoundary);
+        }
+        Ok(())
+    }
+
+    // RIPEMD-160 over the fixed 32-byte SHA-256 digest; one padded block.
+    pub(crate) fn hash160(bytes: &[u8]) -> Vec<u8> {
+        const LEFT: [usize; 80] = [
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 7, 4, 13, 1, 10, 6, 15, 3, 12, 0,
+            9, 5, 2, 14, 11, 8, 3, 10, 14, 4, 9, 15, 8, 1, 2, 7, 0, 6, 13, 11, 5, 12, 1, 9, 11, 10,
+            0, 8, 12, 4, 13, 3, 7, 15, 14, 5, 6, 2, 4, 0, 5, 9, 7, 12, 2, 10, 14, 1, 3, 8, 11, 6,
+            15, 13,
+        ];
+        const RIGHT: [usize; 80] = [
+            5, 14, 7, 0, 9, 2, 11, 4, 13, 6, 15, 8, 1, 10, 3, 12, 6, 11, 3, 7, 0, 13, 5, 10, 14,
+            15, 8, 12, 4, 9, 1, 2, 15, 5, 1, 3, 7, 14, 6, 9, 11, 8, 12, 2, 10, 0, 4, 13, 8, 6, 4,
+            1, 3, 11, 15, 0, 5, 12, 2, 13, 9, 7, 10, 14, 12, 15, 10, 4, 1, 5, 8, 7, 6, 2, 13, 14,
+            0, 3, 9, 11,
+        ];
+        const SL: [u32; 80] = [
+            11, 14, 15, 12, 5, 8, 7, 9, 11, 13, 14, 15, 6, 7, 9, 8, 7, 6, 8, 13, 11, 9, 7, 15, 7,
+            12, 15, 9, 11, 7, 13, 12, 11, 13, 6, 7, 14, 9, 13, 15, 14, 8, 13, 6, 5, 12, 7, 5, 11,
+            12, 14, 15, 14, 15, 9, 8, 9, 14, 5, 6, 8, 6, 5, 12, 9, 15, 5, 11, 6, 8, 13, 12, 5, 12,
+            13, 14, 11, 8, 5, 6,
+        ];
+        const SR: [u32; 80] = [
+            8, 9, 9, 11, 13, 15, 15, 5, 7, 7, 8, 11, 14, 14, 12, 6, 9, 13, 15, 7, 12, 8, 9, 11, 7,
+            7, 12, 7, 6, 15, 13, 11, 9, 7, 15, 11, 8, 6, 6, 14, 12, 13, 5, 14, 13, 13, 7, 5, 15, 5,
+            8, 11, 14, 14, 6, 14, 6, 9, 12, 9, 12, 5, 15, 8, 8, 5, 12, 9, 12, 5, 14, 6, 8, 13, 6,
+            5, 15, 13, 11, 11,
+        ];
+        const KL: [u32; 5] = [0, 0x5a82_7999, 0x6ed9_eba1, 0x8f1b_bcdc, 0xa953_fd4e];
+        const KR: [u32; 5] = [0x50a2_8be6, 0x5c4d_d124, 0x6d70_3ef3, 0x7a6d_76e9, 0];
+        let mut words = [0_u32; 16];
+        for (word, chunk) in words.iter_mut().zip(sha256(bytes).as_chunks::<4>().0) {
+            *word = u32::from_le_bytes(*chunk);
+        }
+        words[8] = 0x80;
+        words[14] = 256;
+        let initial = [
+            0x6745_2301_u32,
+            0xefcd_ab89,
+            0x98ba_dcfe,
+            0x1032_5476,
+            0xc3d2_e1f0,
+        ];
+        let mut left = initial;
+        let mut right = initial;
+        let mix = |round, x, y, z| match round {
+            0 => x ^ y ^ z,
+            1 => (x & y) | (!x & z),
+            2 => (x | !y) ^ z,
+            3 => (x & z) | (y & !z),
+            _ => x ^ (y | !z),
+        };
+        for (i, (&li, &ri)) in LEFT.iter().zip(&RIGHT).enumerate() {
+            for (state, index, shift, round, constant) in [
+                (&mut left, li, SL[i], i / 16, KL[i / 16]),
+                (&mut right, ri, SR[i], 4 - i / 16, KR[i / 16]),
+            ] {
+                let [first, second, third, fourth, fifth] = *state;
+                let sum = first
+                    .wrapping_add(mix(round, second, third, fourth))
+                    .wrapping_add(words[index])
+                    .wrapping_add(constant)
+                    .rotate_left(shift)
+                    .wrapping_add(fifth);
+                *state = [fifth, sum, second, third.rotate_left(10), fourth];
+            }
+        }
+        [
+            initial[1].wrapping_add(left[2]).wrapping_add(right[3]),
+            initial[2].wrapping_add(left[3]).wrapping_add(right[4]),
+            initial[3].wrapping_add(left[4]).wrapping_add(right[0]),
+            initial[4].wrapping_add(left[0]).wrapping_add(right[1]),
+            initial[0].wrapping_add(left[1]).wrapping_add(right[2]),
+        ]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect()
+    }
+
+    /// Policy detail in the existing response field; no protocol member is added.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct Policy(pub serde_json::Value);
+
+    fn keys(value: &serde_json::Value, expected: &[&str]) -> bool {
+        value.as_object().is_some_and(|object| {
+            object.len() == expected.len() && expected.iter().all(|key| object.contains_key(*key))
+        })
+    }
+
+    fn amount(value: &serde_json::Value) -> Result<u64, Refusal> {
+        let text = value.as_str().ok_or(Refusal::SponsoredPolicy)?;
+        let (whole, fraction) = text.split_once('.').ok_or(Refusal::SponsoredPolicy)?;
+        if fraction.len() != 8
+            || !whole
+                .bytes()
+                .chain(fraction.bytes())
+                .all(|byte| byte.is_ascii_digit())
+        {
+            return Err(Refusal::SponsoredPolicy);
+        }
+        whole
+            .parse::<u64>()
+            .ok()
+            .and_then(|whole| whole.checked_mul(100_000_000))
+            .and_then(|whole| {
+                fraction
+                    .parse::<u64>()
+                    .ok()
+                    .and_then(|fraction| whole.checked_add(fraction))
+            })
+            .filter(|amount| *amount > 0)
+            .ok_or(Refusal::SponsoredPolicy)
+    }
+
+    impl Policy {
+        /// Validate the two different provenance claims and the retained startup arguments.
+        /// # Errors
+        /// Returns `SponsoredPolicy` for a missing, surplus or contradictory field.
+        pub fn parse(value: serde_json::Value) -> Result<Self, Refusal> {
+            if !keys(
+                &value,
+                &[
+                    "relay",
+                    "mempool",
+                    "block",
+                    "unit",
+                    "block_identifier",
+                    "relay_provenance",
+                    "block_provenance",
+                    "start_arguments",
+                ],
+            ) || value["unit"] != "BTC/kvB"
+                || value["block"] != "0.00000100"
+                || value["block_identifier"] != "DEFAULT_BLOCK_MIN_TX_FEE"
+                || value["relay_provenance"] != "reported by the node"
+                || value["block_provenance"] != "declared by the pinned source, no override"
+            {
+                return Err(Refusal::SponsoredPolicy);
+            }
+            for key in ["relay", "mempool", "block"] {
+                amount(&value[key])?;
+            }
+            let args = value["start_arguments"]
+                .as_array()
+                .ok_or(Refusal::SponsoredPolicy)?;
+            if args.is_empty()
+                || args.iter().any(|arg| {
+                    arg.as_str().is_none_or(|arg| {
+                        arg.starts_with("-minrelaytxfee") || arg.starts_with("-blockmintxfee")
+                    })
+                })
+                || !args.iter().any(|arg| arg == "-daemon=0")
+            {
+                return Err(Refusal::SponsoredPolicy);
+            }
+            Ok(Self(value))
+        }
+
+        /// Twice the larger effective floor over measured virtual size, rounded upward.
+        /// # Errors
+        /// Returns `SponsoredFee` on arithmetic overflow or an absent measurement.
+        pub fn fee(&self, weight: u64) -> Result<u64, Refusal> {
+            let rate = ["relay", "mempool", "block"]
+                .into_iter()
+                .map(|key| amount(&self.0[key]))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .max()
+                .ok_or(Refusal::SponsoredFee)?;
+            if weight == 0 {
+                return Err(Refusal::SponsoredFee);
+            }
+            weight
+                .checked_add(3)
+                .map(|n| n / 4)
+                .and_then(|n| n.checked_mul(rate))
+                .and_then(|n| n.checked_mul(2))
+                .and_then(|n| n.checked_add(999))
+                .map(|n| n / 1000)
+                .filter(|fee| *fee > 1 && *fee < RESERVE)
+                .ok_or(Refusal::SponsoredFee)
+        }
+    }
+
+    /// Decode an observation detail without conflating its relay and block outcomes.
+    /// # Errors
+    /// Returns `SponsoredPolicy` or `SponsoredRoute` for inconsistent evidence.
+    pub fn detail(
+        response: &NativeOperationResponse,
+    ) -> Result<(Policy, Option<MaturityAcceptanceRoute>), Refusal> {
+        if response.observed_layer == ObservedOutcomeLayer::ExecutorInfrastructureFailure {
+            return Err(Refusal::SponsoredUndecided);
+        }
+        let value: serde_json::Value = serde_json::from_str(
+            response
+                .observed_detail
+                .as_deref()
+                .ok_or(Refusal::SponsoredPolicy)?,
+        )
+        .map_err(|_| Refusal::SponsoredPolicy)?;
+        if !keys(
+            &value,
+            &[
+                "schema",
+                "policy",
+                "route",
+                "relay_allowed",
+                "relay_detail",
+                "detail",
+            ],
+        ) || value["schema"] != 1
+        {
+            return Err(Refusal::SponsoredPolicy);
+        }
+        let policy = Policy::parse(value["policy"].clone())?;
+        if value["route"] == "undecided" {
+            return Err(Refusal::SponsoredUndecided);
+        }
+        if matches!(
+            value["route"].as_str(),
+            Some("relay-and-template" | "direct-block")
+        ) {
+            let facts = &value["detail"];
+            let readback = response
+                .mined_readback
+                .as_ref()
+                .ok_or(Refusal::SponsoredRoute)?;
+            if facts["txid"] != readback.transaction_id
+                || facts["included_block"] != readback.block_hash
+                || facts["inclusion_in_produced"].as_bool()
+                    != Some(facts["produced_block"] == facts["included_block"])
+                || !facts["load_five_minutes"].is_number()
+                || !facts["mempool_size"].is_u64()
+                || facts["mempool_minimum"] != policy.0["mempool"]
+            {
+                return Err(Refusal::SponsoredRoute);
+            }
+            if value["route"] == "relay-and-template" {
+                let template = &facts["template"];
+                if facts["inclusion_in_produced"] != true
+                    || template["member"] != true
+                    || !template["weight"].is_u64()
+                    || !template["txids"]
+                        .as_array()
+                        .is_some_and(|ids| ids.contains(&facts["txid"]))
+                    || !(template["source"] == "assembly-read"
+                        || (template["source"] == "unavailable-isolated-production"
+                            && facts["inclusion_in_produced"] == true
+                            && ["-listen=0", "-dnsseed=0", "-connect=0"].iter().all(|arg| {
+                                policy.0["start_arguments"]
+                                    .as_array()
+                                    .is_some_and(|args| args.iter().any(|value| value == arg))
+                            })))
+                {
+                    return Err(Refusal::SponsoredRoute);
+                }
+            } else if facts["inclusion_in_produced"] != true {
+                return Err(Refusal::SponsoredRoute);
+            }
+        }
+        let route = match value["route"].as_str() {
+            Some("setup") if value["relay_allowed"].is_null() => None,
+            Some("refused")
+                if response.observed_layer != ObservedOutcomeLayer::Accepted
+                    && value["relay_allowed"] == false
+                    && value["relay_detail"].is_string() =>
+            {
+                None
+            }
+            Some("relay-and-template")
+                if response.observed_layer == ObservedOutcomeLayer::Accepted
+                    && value["relay_allowed"] == true
+                    && value["relay_detail"].is_null() =>
+            {
+                Some(MaturityAcceptanceRoute::RelayAndTemplate)
+            }
+            Some("direct-block")
+                if response.observed_layer == ObservedOutcomeLayer::Accepted
+                    && value["relay_allowed"] == false
+                    && value["relay_detail"].is_string() =>
+            {
+                Some(MaturityAcceptanceRoute::DirectBlockAfterRelayRefusal)
+            }
+            _ => return Err(Refusal::SponsoredRoute),
+        };
+        Ok((policy, route))
+    }
+
+    #[cfg_attr(test, derive(Clone))]
+    struct Sponsor {
+        coin: FundedOutput,
+        fee: u64,
+        change: bool,
+        answer: Option<SponsorSignature>,
+    }
+    impl SponsorCapability for Sponsor {
+        fn offer(&self) -> SponsorOffer {
+            SponsorOffer::new(
+                [outpoint_of(&self.coin.outpoint).expect("validated coin")],
+                self.fee,
+                self.change
+                    .then_some(ValueField::Explicit(self.coin.amount_satoshis - self.fee)),
+            )
+            .expect("one distinct coin")
+        }
+        fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
+            let program = decode_hex(&self.coin.script)?;
+            Some((0, program.get(2..)?.to_vec()))
+        }
+        fn sign(&self, request: &SponsorSigningRequest) -> Option<SponsorSignature> {
+            self.answer
+                .clone()
+                .filter(|answer| answer.bound_to() == request.transaction() && request.input() == 1)
+        }
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Action {
+        Issue,
+        Predecessor,
+        TemplateCoin,
+        TemplateSign,
+        Measure,
+        FinalCoin,
+        FinalSign,
+        MutantSign(usize, usize),
+        MutantSubmit(usize),
+        Control,
+        Zero,
+        ZeroSubmit,
+    }
+
+    /// A row still undecided after its bounded fresh attempt.
+    #[cfg_attr(test, derive(Clone))]
+    #[derive(Debug, PartialEq, Eq)]
+    pub struct WaitingRow {
+        /// The operation identifying the unresolved row.
+        pub row: String,
+        /// The retained undecided observation, without a target verdict.
+        pub reason: String,
+    }
+
+    /// One serialized schedule; controls consume their coins after their negative subjects.
+    #[cfg_attr(test, derive(Clone))]
+    pub struct Planner {
+        identity: CandidateDeploymentIdentity,
+        branch: BranchContext,
+        case: usize,
+        queue: VecDeque<(OperationStep, Action)>,
+        pending: Option<(OperationStep, Action)>,
+        exchanges: Vec<(OperationStep, NativeOperationResponse)>,
+        bundle: Option<CandidateLinkedMaturityBundle>,
+        asset: Option<String>,
+        predecessor: Option<Outpoint>,
+        finalized: Option<FinalizedMaturityAnnouncement>,
+        template: Option<FundedOutput>,
+        sponsor: Option<Sponsor>,
+        signed: Vec<u8>,
+        mutant: Option<TargetTransaction>,
+        policy: Option<Policy>,
+        fee: u64,
+        measured: u64,
+        refusal: Option<Refusal>,
+        retry: Option<Action>,
+        retried: Vec<(usize, Action)>,
+        waiting: Vec<WaitingRow>,
+        run_start: usize,
+        credited: Vec<usize>,
+        skipped_negatives: Vec<usize>,
+    }
+
+    impl Planner {
+        /// Start the fixed ceremony under the stated deployment and branch.
+        /// # Errors
+        /// Preserves public linking and construction refusals.
+        /// # Panics
+        /// Panics only if the fixed architecture omits its singleton, which its published census cannot arrange.
+        pub fn new(
+            identity: CandidateDeploymentIdentity,
+            branch: BranchContext,
+        ) -> Result<Self, Refusal> {
+            let mut plan = Self {
+                identity,
+                branch,
+                case: 0,
+                queue: VecDeque::new(),
+                pending: None,
+                exchanges: Vec::new(),
+                bundle: None,
+                asset: None,
+                predecessor: None,
+                finalized: None,
+                template: None,
+                sponsor: None,
+                signed: Vec::new(),
+                mutant: None,
+                policy: None,
+                fee: 0,
+                measured: 0,
+                refusal: None,
+                retry: None,
+                retried: Vec::new(),
+                waiting: Vec::new(),
+                run_start: 0,
+                credited: Vec::new(),
+                skipped_negatives: Vec::new(),
+            };
+            plan.issue()?;
+            Ok(plan)
+        }
+
+        /// The exact settled exchanges, including a failed terminal attempt.
+        #[must_use]
+        pub fn exchanges(&self) -> &[(OperationStep, NativeOperationResponse)] {
+            &self.exchanges
+        }
+        /// Rows still undecided after their one fresh attempt, with the retained reason.
+        #[must_use]
+        pub fn waiting(&self) -> &[WaitingRow] {
+            &self.waiting
+        }
+        /// Waiting rows and retained reasons for capture and report binding.
+        #[must_use]
+        pub fn waiting_json(&self) -> Vec<serde_json::Value> {
+            self.waiting
+                .iter()
+                .map(|entry| serde_json::json!({"row":entry.row, "reason":entry.reason}))
+                .collect()
+        }
+        /// Submitted observations paired with an accepted control from their own run.
+        #[must_use]
+        pub fn credited(&self) -> Vec<&(OperationStep, NativeOperationResponse)> {
+            self.credited
+                .iter()
+                .map(|index| &self.exchanges[*index])
+                .collect()
+        }
+        /// Exact per-operation observations, including per-probe policy and concurrent state.
+        #[must_use]
+        pub fn probes(&self) -> Vec<&str> {
+            self.exchanges
+                .iter()
+                .filter_map(|(_, response)| response.observed_detail.as_deref())
+                .collect()
+        }
+        /// The first refusal, retained without reinterpretation.
+        #[must_use]
+        pub const fn refusal(&self) -> Option<&Refusal> {
+            self.refusal.as_ref()
+        }
+        /// The policy read from the ceremony's responses.
+        #[must_use]
+        pub const fn policy(&self) -> Option<&Policy> {
+            self.policy.as_ref()
+        }
+        /// All operations, fundings, signings and submissions; credited acceptances and negatives.
+        #[must_use]
+        pub fn census(&self) -> [usize; 6] {
+            let mut counts = [self.exchanges.len(), 0, 0, 0, 0, 0];
+            for (index, (step, response)) in self.exchanges.iter().enumerate() {
+                match step.subject() {
+                    OperationSubject::Funding(_) | OperationSubject::SponsorFunding(_) => {
+                        counts[1] += 1;
+                    }
+                    OperationSubject::SponsorSigning(_) => counts[2] += 1,
+                    OperationSubject::Submission(_) => {
+                        counts[3] += 1;
+                        if !self.credited.contains(&index) {
+                            continue;
+                        }
+                        if response.observed_layer == ObservedOutcomeLayer::Accepted {
+                            counts[4] += 1;
+                        } else if matches!(
+                            response.observed_layer,
+                            ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+                                | ObservedOutcomeLayer::RelayPolicyRejection
+                                | ObservedOutcomeLayer::ScriptPathRejection
+                                | ObservedOutcomeLayer::KeyPathRejection
+                        ) {
+                            counts[5] += 1;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            counts
+        }
+        /// Require complete, policy-bound observations without promoting Safety standings.
+        /// # Errors
+        /// Preserves the first refusal or reports an incomplete schedule.
+        pub fn complete(&self) -> Result<(), Refusal> {
+            if let Some(refusal) = &self.refusal {
+                return Err(refusal.clone());
+            }
+            if self.case != CASES.len() || self.pending.is_some() || !self.queue.is_empty() {
+                return Err(Refusal::IncompleteTranscript);
+            }
+            Ok(())
+        }
+        fn push(&mut self, label: &str, subject: OperationSubject, action: Action) {
+            let name = format!(
+                "{}:{label}:{}",
+                CASES
+                    .get(self.case)
+                    .unwrap_or(&"zero-valued-sponsor-member-under-exact-role-structure"),
+                self.exchanges.len() + self.queue.len()
+            );
+            self.queue
+                .push_back((OperationStep::new(&name, subject), action));
+        }
+        fn issue(&mut self) -> Result<(), Refusal> {
+            self.run_start = self.exchanges.len();
+            let (bundle, _) = link_for(
+                &self.identity,
+                AssetId::from_internal([0x11; 32]),
+                MaturityWitnessSelection::Retained(
+                    tapscript::StateWitnessSchedule::VariableMetadata,
+                ),
+            )?;
+            self.push(
+                "issue",
+                OperationSubject::Funding(Box::new(TargetFundingSubject {
+                    issue_asset: true,
+                    asset: None,
+                    output_program: predecessor_program(&bundle),
+                    outputs: 1,
+                    amount_per_output: singleton_declaration()?.fixed_amount().get(),
+                })),
+                Action::Issue,
+            );
+            Ok(())
+        }
+        const fn lead(&self) -> MaturityLead {
+            match self.case {
+                0 => MaturityLead::Minimum,
+                1 | 4 => MaturityLead::Maximum,
+                _ => MaturityLead::Interior,
+            }
+        }
+        fn build(&self) -> Result<FinalizedMaturityAnnouncement, Refusal> {
+            let bundle = self.bundle.as_ref().ok_or(Refusal::IncompleteTranscript)?;
+            let asset = asset_of(self.asset.as_deref().ok_or(Refusal::IncompleteTranscript)?)
+                .ok_or(Refusal::FundingMismatch)?;
+            let coin = self.predecessor.ok_or(Refusal::IncompleteTranscript)?;
+            let amount = singleton_declaration()?.fixed_amount().get();
+            if let Some(sponsor) = &self.sponsor {
+                let view = PublicConstructionView::new([public_coin(&sponsor.coin)?])
+                    .map_err(transaction)?;
+                let context = transaction::state_construct::MaturitySponsorContext {
+                    reserve_asset: asset_of(&sponsor.coin.asset).ok_or(Refusal::FundingMismatch)?,
+                    view: &view,
+                    capability: sponsor,
+                };
+                build_with_sponsor(
+                    bundle,
+                    asset,
+                    coin,
+                    self.branch,
+                    amount,
+                    self.lead(),
+                    Some(&context),
+                )
+            } else {
+                build_announcement(bundle, asset, coin, self.branch, amount, self.lead())
+            }
+        }
+        fn fund_sponsor(&mut self, amount: u64, action: Action) {
+            self.push(
+                "fund-sponsor",
+                OperationSubject::SponsorFunding(Box::new(TargetSponsorFundingSubject {
+                    sponsor_outputs: 1,
+                    amount_per_sponsor_output: amount,
+                })),
+                action,
+            );
+        }
+        fn sign(&mut self, raw: Vec<u8>, coin: &FundedOutput, index: u16, action: Action) {
+            self.push(
+                "sign-sponsor",
+                OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                    finalized_transaction: raw,
+                    sponsor_input_index: index,
+                    sponsor_outpoint: coin.outpoint.clone(),
+                    sighash_profile: WireSighashProfile::AllInputsAllOutputs,
+                })),
+                action,
+            );
+        }
+        fn submit(&mut self, label: &str, bytes: Vec<u8>, action: Action) {
+            self.push(
+                label,
+                OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                    transaction_bytes: bytes,
+                })),
+                action,
+            );
+        }
+        fn select_bundle(&self, asset: AssetId) -> Result<CandidateLinkedMaturityBundle, Refusal> {
+            let selection = MaturityWitnessSelection::Retained(
+                tapscript::StateWitnessSchedule::VariableMetadata,
+            );
+            let (seed, _) = link_for(&self.identity, asset, selection)?;
+            let mut metadata = seed.instances()[0].metadata().semantic;
+            if self.case == 3 {
+                metadata.cycle = Cycle::ZERO;
+            }
+            if self.case == 4 {
+                metadata.cycle =
+                    Cycle::new(u64::MAX - seed.deployment().lead_bounds().bounds().maximum().get());
+            }
+            if self.case == 5 {
+                metadata.omega = realization::ProtocolAmount::new(91)
+                    .map_err(|e| Refusal::Realization(Box::new(e)))?;
+                metadata.y_l = realization::ProtocolAmount::new(17)
+                    .map_err(|e| Refusal::Realization(Box::new(e)))?;
+                metadata.y_t = realization::ProtocolAmount::new(13)
+                    .map_err(|e| Refusal::Realization(Box::new(e)))?;
+                metadata.q = realization::ProtocolAmount::new(7)
+                    .map_err(|e| Refusal::Realization(Box::new(e)))?;
+            }
+            for attempt in 0..256_u64 {
+                let (bundle, _) =
+                    link_for_metadata(&self.identity, asset, selection, Some(metadata))?;
+                if !matches!(self.case, 6 | 7) {
+                    return Ok(bundle);
+                }
+                let trial = build_announcement(
+                    &bundle,
+                    asset,
+                    Outpoint::new(Txid::from_internal([1; 32]), 0).map_err(transaction)?,
+                    self.branch,
+                    singleton_declaration()?.fixed_amount().get(),
+                    self.lead(),
+                )?;
+                let nonce = trial.construction().successor_constructor().nonce().get();
+                if (nonce == 0) == (self.case == 6) {
+                    return Ok(bundle);
+                }
+                metadata.omega = realization::ProtocolAmount::new(1000 + attempt)
+                    .map_err(|e| Refusal::Realization(Box::new(e)))?;
+            }
+            Err(Refusal::SponsoredNonceSelection)
+        }
+        #[expect(
+            clippy::too_many_lines,
+            reason = "Each arm settles one explicitly scheduled operation and records its next obligation."
+        )]
+        fn settle(
+            &mut self,
+            step: &OperationStep,
+            action: Action,
+            response: &NativeOperationResponse,
+        ) -> Result<(), Refusal> {
+            let (policy, route) = match detail(response) {
+                Err(Refusal::SponsoredUndecided) => return self.reprobe(step, action, response),
+                other => other?,
+            };
+            self.policy = Some(policy);
+            match action {
+                Action::Issue => {
+                    let OperationSubject::Funding(subject) = step.subject() else {
+                        return Err(Refusal::UnexpectedResponse);
+                    };
+                    let asset = response
+                        .issued_asset
+                        .as_deref()
+                        .ok_or(Refusal::IssuedAssetMissingOrInvalid)?;
+                    let coin = only_coin(response)?;
+                    check_coin(subject, coin, asset)?;
+                    self.bundle =
+                        Some(self.select_bundle(asset_of(asset).ok_or(Refusal::FundingMismatch)?)?);
+                    self.asset = Some(asset.to_owned());
+                    self.sponsor = None;
+                    self.push(
+                        "predecessor",
+                        OperationSubject::Funding(Box::new(TargetFundingSubject {
+                            issue_asset: false,
+                            asset: self.asset.clone(),
+                            output_program: predecessor_program(
+                                self.bundle.as_ref().ok_or(Refusal::IncompleteTranscript)?,
+                            ),
+                            outputs: 1,
+                            amount_per_output: singleton_declaration()?.fixed_amount().get(),
+                        })),
+                        Action::Predecessor,
+                    );
+                }
+                Action::Predecessor => {
+                    let OperationSubject::Funding(subject) = step.subject() else {
+                        return Err(Refusal::UnexpectedResponse);
+                    };
+                    self.predecessor = Some(check_coin(
+                        subject,
+                        only_coin(response)?,
+                        self.asset.as_deref().ok_or(Refusal::FundingMismatch)?,
+                    )?);
+                    if self.case < 9 {
+                        self.finalized = Some(self.build()?);
+                        self.signed = sign_announcement(
+                            self.finalized
+                                .as_ref()
+                                .ok_or(Refusal::IncompleteTranscript)?,
+                        )?;
+                        self.submit("control", self.signed.clone(), Action::Control);
+                    } else {
+                        self.fund_sponsor(RESERVE, Action::TemplateCoin);
+                    }
+                }
+                Action::TemplateCoin | Action::FinalCoin => {
+                    let coin = only_coin(response)?.clone();
+                    let OperationSubject::SponsorFunding(subject) = step.subject() else {
+                        return Err(Refusal::UnexpectedResponse);
+                    };
+                    if coin.amount_satoshis != subject.amount_per_sponsor_output
+                        || decode_hex(&coin.script)
+                            .is_none_or(|p| p.len() != 22 || p[..2] != [0, 20])
+                    {
+                        return Err(Refusal::FundingMismatch);
+                    }
+                    public_coin(&coin)?;
+                    let template = matches!(action, Action::TemplateCoin);
+                    if template {
+                        self.template = Some(coin.clone());
+                    }
+                    let fee = if template {
+                        if self.case == 9 { RESERVE } else { RESERVE / 2 }
+                    } else {
+                        self.fee
+                    };
+                    self.sponsor = Some(Sponsor {
+                        coin: coin.clone(),
+                        fee,
+                        change: self.case != 9,
+                        answer: None,
+                    });
+                    let finalized = self.build()?;
+                    let raw = finalized.protected_bytes().to_vec();
+                    self.finalized = Some(finalized);
+                    self.sign(
+                        raw,
+                        &coin,
+                        1,
+                        if template {
+                            Action::TemplateSign
+                        } else {
+                            Action::FinalSign
+                        },
+                    );
+                }
+                Action::TemplateSign | Action::FinalSign => {
+                    let signature = self.checked_signature(step, response)?;
+                    let sponsor = self.sponsor.as_mut().ok_or(Refusal::IncompleteTranscript)?;
+                    sponsor.answer = Some(signature);
+                    self.signed = sign_with_sponsor(
+                        self.finalized
+                            .as_ref()
+                            .ok_or(Refusal::IncompleteTranscript)?,
+                        Some(sponsor),
+                    )?;
+                    if matches!(action, Action::TemplateSign) {
+                        let coin = sponsor.coin.clone();
+                        self.sign(self.signed.clone(), &coin, 1, Action::Measure);
+                    } else if let Some(target) = self.retry.take() {
+                        if self.case == 10 {
+                            self.next_mutant(0)?;
+                        } else {
+                            match target {
+                                Action::Zero | Action::ZeroSubmit => {
+                                    self.fund_sponsor(0, Action::Zero);
+                                }
+                                _ => self.submit("control", self.signed.clone(), Action::Control),
+                            }
+                        }
+                    } else if self.case == 12 {
+                        self.fund_sponsor(0, Action::Zero);
+                    } else if self.case == 10 {
+                        self.next_mutant(0)?;
+                    } else {
+                        self.submit("control", self.signed.clone(), Action::Control);
+                    }
+                }
+                Action::Measure => {
+                    self.checked_signature(step, response)?;
+                    self.measured = response
+                        .resources
+                        .transaction_weight
+                        .ok_or(Refusal::SponsoredFee)?;
+                    // Eight extra witness weight units cover the maximal DER-size difference.
+                    self.fee = self
+                        .policy
+                        .as_ref()
+                        .ok_or(Refusal::SponsoredPolicy)?
+                        .fee(self.measured.checked_add(8).ok_or(Refusal::SponsoredFee)?)?;
+                    if self.case == 11 {
+                        self.fee += 1;
+                    }
+                    self.fund_sponsor(
+                        if self.case == 9 { self.fee } else { RESERVE },
+                        Action::FinalCoin,
+                    );
+                }
+                Action::MutantSign(which, index) => {
+                    let signature = self.checked_signature(step, response)?;
+                    let candidate = self.mutant.as_ref().ok_or(Refusal::IncompleteTranscript)?;
+                    let mut witnesses = candidate.witnesses().to_vec();
+                    witnesses[index] = InputWitness::new(signature.stack().to_vec());
+                    let candidate = replace(
+                        candidate,
+                        candidate.inputs().to_vec(),
+                        candidate.outputs().to_vec(),
+                        witnesses,
+                    )?;
+                    self.mutant = Some(candidate.clone());
+                    if index + 1 < candidate.inputs().len() {
+                        let coin = self.template.clone().ok_or(Refusal::IncompleteTranscript)?;
+                        self.sign(candidate.encode(), &coin, 2, Action::MutantSign(which, 2));
+                    } else if which == NEGATIVES.len() {
+                        self.submit("zero-member", candidate.encode(), Action::ZeroSubmit);
+                    } else {
+                        self.submit(
+                            NEGATIVES[which],
+                            candidate.encode(),
+                            Action::MutantSubmit(which),
+                        );
+                    }
+                }
+                Action::MutantSubmit(which) => {
+                    let expected = if which == 3 {
+                        ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+                    } else {
+                        ObservedOutcomeLayer::ScriptPathRejection
+                    };
+                    if response.observed_layer != expected {
+                        return Err(Refusal::SponsoredBoundary);
+                    }
+                    check_reason(response, NEGATIVE_REASONS[which], true)?;
+                    self.next_mutant(which + 1)?;
+                }
+                Action::Control => {
+                    if response.observed_layer != ObservedOutcomeLayer::Accepted {
+                        return Err(Refusal::SponsoredBoundary);
+                    }
+                    if self.case >= 9 && route != Some(MaturityAcceptanceRoute::RelayAndTemplate) {
+                        return Err(Refusal::SponsoredRoute);
+                    }
+                    if self.case < 9
+                        && route != Some(MaturityAcceptanceRoute::DirectBlockAfterRelayRefusal)
+                    {
+                        return Err(Refusal::SponsoredRoute);
+                    }
+                    if self.case < 9 {
+                        check_reason(response, "min relay fee not met", false)?;
+                    }
+                    check_readback(&self.signed, response)?;
+                    if self.case < 9 {
+                        self.project()?;
+                    }
+                    if self.case >= 9 {
+                        let weight = response
+                            .resources
+                            .transaction_weight
+                            .ok_or(Refusal::SponsoredFee)?;
+                        if self.fee
+                            < self
+                                .policy
+                                .as_ref()
+                                .ok_or(Refusal::SponsoredPolicy)?
+                                .fee(weight)?
+                        {
+                            return Err(Refusal::SponsoredFee);
+                        }
+                    }
+                    self.credited
+                        .extend((self.run_start..self.exchanges.len()).filter(|index| {
+                            matches!(
+                                self.exchanges[*index].0.subject(),
+                                OperationSubject::Submission(_)
+                            )
+                        }));
+                    self.case += 1;
+                    self.retry = None;
+                    if self.case < CASES.len() {
+                        self.issue()?;
+                    }
+                }
+                Action::Zero => {
+                    if !matches!(
+                        response.observed_layer,
+                        ObservedOutcomeLayer::Accepted
+                            | ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+                            | ObservedOutcomeLayer::RelayPolicyRejection
+                    ) {
+                        return Err(Refusal::SponsoredBoundary);
+                    }
+                    if response.observed_layer != ObservedOutcomeLayer::Accepted {
+                        check_reason(response, "bad-txns-in-ne-out", true)?;
+                    }
+                    if response.observed_layer == ObservedOutcomeLayer::Accepted {
+                        self.zero_member(only_coin(response)?.clone())?;
+                    } else {
+                        self.case = CASES.len();
+                    }
+                }
+                Action::ZeroSubmit => match response.observed_layer {
+                    ObservedOutcomeLayer::Accepted => {
+                        self.case = CASES.len();
+                        check_readback(
+                            &self
+                                .mutant
+                                .as_ref()
+                                .ok_or(Refusal::IncompleteTranscript)?
+                                .encode(),
+                            response,
+                        )?;
+                        self.credited.push(self.exchanges.len() - 1);
+                    }
+                    ObservedOutcomeLayer::ScriptPathRejection
+                    | ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+                    | ObservedOutcomeLayer::RelayPolicyRejection => {
+                        self.case = CASES.len();
+                        self.credited.push(self.exchanges.len() - 1);
+                    }
+                    _ => return Err(Refusal::SponsoredBoundary),
+                },
+            }
+            Ok(())
+        }
+        fn reprobe(
+            &mut self,
+            step: &OperationStep,
+            action: Action,
+            response: &NativeOperationResponse,
+        ) -> Result<(), Refusal> {
+            let target = self.retry.unwrap_or(match action {
+                Action::MutantSubmit(_) | Action::Control | Action::Zero | Action::ZeroSubmit => {
+                    action
+                }
+                Action::MutantSign(which, _) => Action::MutantSubmit(which),
+                _ => Action::Control,
+            });
+            self.queue.clear();
+            if self.retried.contains(&(self.case, target)) {
+                self.waiting.push(WaitingRow {
+                    row: step.case().step.clone(),
+                    reason: response.observed_detail.clone().unwrap_or_default(),
+                });
+                self.retry = None;
+                if let Action::MutantSubmit(which) = target {
+                    self.skipped_negatives.push(which);
+                    self.retry = Some(Action::Control);
+                    return self.issue();
+                }
+                self.case += 1;
+            } else {
+                self.retried.push((self.case, target));
+                self.retry = Some(target);
+            }
+            if self.case < CASES.len() {
+                self.issue()?;
+            }
+            Ok(())
+        }
+        fn checked_signature(
+            &self,
+            step: &OperationStep,
+            response: &NativeOperationResponse,
+        ) -> Result<SponsorSignature, Refusal> {
+            let OperationSubject::SponsorSigning(subject) = step.subject() else {
+                return Err(Refusal::UnexpectedResponse);
+            };
+            let coin = self
+                .sponsor
+                .as_ref()
+                .map(|sponsor| &sponsor.coin)
+                .into_iter()
+                .chain(self.template.as_ref())
+                .find(|coin| coin.outpoint == subject.sponsor_outpoint)
+                .ok_or(Refusal::SponsoredSignature)?;
+            checked_signature(step, response, coin)
+        }
+        fn next_mutant(&mut self, which: usize) -> Result<(), Refusal> {
+            if self.skipped_negatives.contains(&which) {
+                return self.next_mutant(which + 1);
+            }
+            if which == NEGATIVES.len() {
+                self.submit("control", self.signed.clone(), Action::Control);
+                return Ok(());
+            }
+            let original = TargetTransaction::decode(&self.signed).map_err(transaction)?;
+            let mut inputs = original.inputs().to_vec();
+            let mut outputs = original.outputs().to_vec();
+            let mut witnesses = original.witnesses().to_vec();
+            match which {
+                0 => witnesses[1] = InputWitness::new(Vec::new()),
+                1 => outputs.swap(0, 1),
+                2 => {
+                    outputs[1] = move_value(&outputs[1], -1)?;
+                    outputs[2] = move_value(&outputs[2], 1)?;
+                }
+                3 => {
+                    outputs[0] = move_value(&outputs[0], 1)?;
+                    outputs[1] = move_value(&outputs[1], -1)?;
+                }
+                4 => {
+                    let coin = self
+                        .template
+                        .as_ref()
+                        .ok_or(Refusal::IncompleteTranscript)?;
+                    inputs.push(TargetInput::new(
+                        outpoint_of(&coin.outpoint).ok_or(Refusal::FundingMismatch)?,
+                        u32::MAX,
+                    ));
+                    witnesses.push(InputWitness::new(Vec::new()));
+                    outputs[1] = move_value(
+                        &outputs[1],
+                        i64::try_from(coin.amount_satoshis)
+                            .map_err(|_| Refusal::FundingMismatch)?,
+                    )?;
+                }
+                _ => return Err(Refusal::UnexpectedResponse),
+            }
+            let mut candidate = replace(&original, inputs, outputs, witnesses)?;
+            if matches!(which, 1 | 3) {
+                candidate = resign(
+                    &candidate,
+                    self.finalized
+                        .as_ref()
+                        .ok_or(Refusal::IncompleteTranscript)?,
+                    None,
+                )?;
+            }
+            self.mutant = Some(candidate.clone());
+            if which == 0 {
+                self.submit(
+                    NEGATIVES[which],
+                    candidate.encode(),
+                    Action::MutantSubmit(which),
+                );
+            } else {
+                let coin = self
+                    .sponsor
+                    .as_ref()
+                    .ok_or(Refusal::IncompleteTranscript)?
+                    .coin
+                    .clone();
+                self.sign(candidate.encode(), &coin, 1, Action::MutantSign(which, 1));
+            }
+            Ok(())
+        }
+        fn zero_member(&mut self, coin: FundedOutput) -> Result<(), Refusal> {
+            if coin.amount_satoshis != 0 {
+                return Err(Refusal::FundingMismatch);
+            }
+            let original = TargetTransaction::decode(&self.signed).map_err(transaction)?;
+            let mut inputs = original.inputs().to_vec();
+            inputs.push(TargetInput::new(
+                outpoint_of(&coin.outpoint).ok_or(Refusal::FundingMismatch)?,
+                u32::MAX,
+            ));
+            let mut witnesses = original.witnesses().to_vec();
+            witnesses.push(InputWitness::new(Vec::new()));
+            let candidate = replace(&original, inputs, original.outputs().to_vec(), witnesses)?;
+            let candidate = resign(
+                &candidate,
+                self.finalized
+                    .as_ref()
+                    .ok_or(Refusal::IncompleteTranscript)?,
+                Some(&coin),
+            )?;
+            self.template = Some(coin);
+            self.mutant = Some(candidate.clone());
+            let sponsor = self
+                .sponsor
+                .as_ref()
+                .ok_or(Refusal::IncompleteTranscript)?
+                .coin
+                .clone();
+            self.sign(
+                candidate.encode(),
+                &sponsor,
+                1,
+                Action::MutantSign(NEGATIVES.len(), 1),
+            );
+            Ok(())
+        }
+        fn project(&self) -> Result<(), Refusal> {
+            use crate::maturity_continuity::{
+                MaturityByteSource, MaturityFundedPredecessor, MaturityProjectionInput,
+                project_maturity_continuity,
+            };
+            use crate::maturity_history::StateRootEdge;
+            use crate::maturity_recovery::{PublicAnnouncementHandoff, PublicAnnouncementLocator};
+            let bundle = self.bundle.as_ref().ok_or(Refusal::IncompleteTranscript)?;
+            let funded = MaturityFundedPredecessor {
+                outpoint: self.predecessor.ok_or(Refusal::IncompleteTranscript)?,
+                asset: asset_of(self.asset.as_deref().ok_or(Refusal::IncompleteTranscript)?)
+                    .ok_or(Refusal::FundingMismatch)?,
+                amount: singleton_declaration()?.fixed_amount().get(),
+                program: predecessor_program(bundle),
+            };
+            let continuity = project_maturity_continuity(MaturityProjectionInput {
+                source: MaturityByteSource::NodeFreeSubmitReady,
+                submitted_bytes: &self.signed,
+                funded: &funded,
+                branch: self.branch,
+                bundle,
+                identity: &self.identity,
+            })
+            .map_err(|e| Refusal::SponsoredProjection(Box::new(e)))?;
+            let edge = StateRootEdge::from_continuity(&continuity);
+            let recovered = StateRootEdge::from_public_handoff(PublicAnnouncementHandoff::new(
+                PublicAnnouncementLocator::new(
+                    MaturityByteSource::NodeFreeSubmitReady,
+                    edge.successor().txid(),
+                ),
+                self.signed.clone(),
+                0,
+                bundle.record().schedule(),
+                bundle.deployment().lead_bounds().bounds(),
+                bundle.static_subtree().clone(),
+                bundle.policy().internal_key(),
+                bundle.contract(),
+            ))
+            .map_err(|e| Refusal::SponsoredRecovery(Box::new(e)))?;
+            if recovered != edge {
+                return Err(Refusal::SponsoredBoundary);
+            }
+            Ok(())
+        }
+        fn advance(
+            &mut self,
+            previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+        ) -> Result<Option<OperationStep>, Refusal> {
+            match (self.pending.take(), previous) {
+                (Some((step, action)), Some((case, response)))
+                    if step.case() == case && &response.case == case =>
+                {
+                    if response.schema != NATIVE_PROTOCOL_SCHEMA {
+                        return Err(Refusal::ResponseSchema {
+                            offered: response.schema,
+                        });
+                    }
+                    response.validate_shape().map_err(Refusal::ResponseShape)?;
+                    self.exchanges.push((step.clone(), response.clone()));
+                    self.settle(&step, action, response)?;
+                }
+                (None, None) if self.exchanges.is_empty() => {}
+                _ => return Err(Refusal::UnexpectedResponse),
+            }
+            self.pending = self.queue.pop_front();
+            Ok(self.pending.as_ref().map(|(step, _)| step.clone()))
+        }
+    }
+    impl TargetOperationPlanner for Planner {
+        fn next_step(
+            &mut self,
+            previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+        ) -> Result<Option<OperationStep>, PlanRefused> {
+            if self.refusal.is_some() {
+                return Err(PlanRefused);
+            }
+            self.advance(previous).map_err(|refusal| {
+                self.refusal = Some(refusal);
+                PlanRefused
+            })
+        }
+    }
+
+    fn only_coin(response: &NativeOperationResponse) -> Result<&FundedOutput, Refusal> {
+        if response.observed_layer != ObservedOutcomeLayer::Accepted {
+            return Err(Refusal::FundingNotAccepted {
+                observed: response.observed_layer,
+            });
+        }
+        let [coin] = response.funded_outputs.as_slice() else {
+            return Err(Refusal::FundingCardinality {
+                supplied: response.funded_outputs.len(),
+            });
+        };
+        Ok(coin)
+    }
+    fn public_coin(coin: &FundedOutput) -> Result<PublicOutputView, Refusal> {
+        Ok(PublicOutputView::new(
+            outpoint_of(&coin.outpoint).ok_or(Refusal::FundingMismatch)?,
+            AssetField::Explicit(asset_of(&coin.asset).ok_or(Refusal::FundingMismatch)?),
+            ValueField::Explicit(coin.amount_satoshis),
+            decode_hex(&coin.script).ok_or(Refusal::FundingMismatch)?,
+        ))
+    }
+    pub(crate) fn checked_signature(
+        step: &OperationStep,
+        response: &NativeOperationResponse,
+        coin: &FundedOutput,
+    ) -> Result<SponsorSignature, Refusal> {
+        let OperationSubject::SponsorSigning(subject) = step.subject() else {
+            return Err(Refusal::UnexpectedResponse);
+        };
+        if response.observed_layer != ObservedOutcomeLayer::Accepted
+            || response.signature_bound_to.as_deref()
+                != Some(subject.finalized_transaction.as_slice())
+            || response.sponsor_witness.len() != 2
+            || response.sponsor_witness.iter().any(Vec::is_empty)
+        {
+            return Err(Refusal::SponsoredSignature);
+        }
+        let hash_type = match subject.sighash_profile {
+            WireSighashProfile::AllInputsAllOutputs => 1,
+            _ => return Err(Refusal::SponsoredSignature),
+        };
+        let mut program = vec![0, 20];
+        program.extend(hash160(&response.sponsor_witness[1]));
+        if decode_hex(&coin.script).as_ref() != Some(&program)
+            || response.sponsor_witness[0].last() != Some(&hash_type)
+        {
+            return Err(Refusal::SponsoredSignature);
+        }
+        Ok(SponsorSignature::new(
+            subject.finalized_transaction.clone(),
+            response.sponsor_witness.clone(),
+        ))
+    }
+    fn replace(
+        original: &TargetTransaction,
+        inputs: Vec<TargetInput>,
+        outputs: Vec<TargetOutput>,
+        witnesses: Vec<InputWitness>,
+    ) -> Result<TargetTransaction, Refusal> {
+        TargetTransaction::new(
+            original.version(),
+            inputs,
+            outputs,
+            original.lock_time(),
+            witnesses,
+        )
+        .map_err(transaction)
+    }
+    fn move_value(output: &TargetOutput, delta: i64) -> Result<TargetOutput, Refusal> {
+        let ValueField::Explicit(amount) = output.value() else {
+            return Err(Refusal::FundingMismatch);
+        };
+        let amount = amount
+            .checked_add_signed(delta)
+            .ok_or(Refusal::FundingMismatch)?;
+        Ok(TargetOutput::new(
+            output.asset(),
+            ValueField::Explicit(amount),
+            output.nonce(),
+            output.program().to_vec(),
+        ))
+    }
+    fn resign(
+        candidate: &TargetTransaction,
+        finalized: &FinalizedMaturityAnnouncement,
+        extra: Option<&FundedOutput>,
+    ) -> Result<TargetTransaction, Refusal> {
+        let target = closure_target().map_err(closure)?;
+        let binding = finalized
+            .construction()
+            .validated_view()
+            .view()
+            .accepted_linked_bundle()
+            .deployment()
+            .operator();
+        let mut genesis = *binding.deployment().genesis_id();
+        genesis.reverse();
+        let leaf = finalized.executing_leaf(&target);
+        let mut spent = finalized.spent_outputs();
+        if let Some(coin) = extra {
+            spent.push(
+                transaction::script_path_signing::SpentOutputCensusEntry::new(
+                    AssetField::Explicit(asset_of(&coin.asset).ok_or(Refusal::FundingMismatch)?),
+                    ValueField::Explicit(coin.amount_satoshis),
+                    decode_hex(&coin.script).ok_or(Refusal::FundingMismatch)?,
+                ),
+            );
+        }
+        let request = transaction::operator_signing::OperatorSigningRequest::freeze(
+            &target,
+            binding,
+            candidate.clone(),
+            spent,
+            transaction::script_path_signing::LiveDeployment::new(genesis),
+            transaction::operator_signing::OperatorSigningInput::new(
+                0,
+                *leaf.tapleaf_hash(),
+                leaf.leaf_version(),
+                leaf.leaf_script().to_vec(),
+                leaf.control_block().to_vec(),
+            ),
+            &OracleLiveCurve::new(target.clone()),
+        )
+        .map_err(|refusal| {
+            transaction(
+                TransactionRefusal::MaturityAnnouncementSigningRequestRefused {
+                    refusal: Box::new(refusal),
+                },
+            )
+        })?;
+        let signature = OPERATOR_HANDLE
+            .material()
+            .map_err(Refusal::Signing)?
+            .sign(request.message().with_vector_grown(), &[0; 32])
+            .map_err(Refusal::Signing)?;
+        let mut witnesses = candidate.witnesses().to_vec();
+        let mut stack = witnesses[0].stack().to_vec();
+        stack[6] = signature.to_vec();
+        witnesses[0] = InputWitness::new(stack);
+        replace(
+            candidate,
+            candidate.inputs().to_vec(),
+            candidate.outputs().to_vec(),
+            witnesses,
+        )
+    }
+    /// Bind accepted identity, witness identity and exact mined bytes to a submission.
+    /// # Errors
+    /// Returns `SubmissionReadbackMismatch` for any identity or byte disagreement.
+    pub fn check_readback(bytes: &[u8], response: &NativeOperationResponse) -> Result<(), Refusal> {
+        let candidate = TargetTransaction::decode(bytes).map_err(transaction)?;
+        let txid = Txid::from_internal(sha256(&sha256(&candidate.encode_without_witness())))
+            .to_target_display();
+        let wtxid = Txid::from_internal(sha256(&sha256(bytes))).to_target_display();
+        let readback = response
+            .mined_readback
+            .as_ref()
+            .ok_or(Refusal::SubmissionReadbackMismatch)?;
+        if response.accepted_txid.as_deref() != Some(txid.as_str())
+            || readback.transaction_id != txid
+            || readback.witness_transaction_id != wtxid
+            || readback.raw_transaction != bytes
+            || readback.block_height == 0
+            || decode_hex(&readback.block_hash).is_none_or(|hash| hash.len() != 32)
+        {
+            return Err(Refusal::SubmissionReadbackMismatch);
+        }
+        Ok(())
+    }
+    /// Replay every request before deriving the schedule's census and bindings.
+    /// # Errors
+    /// Returns the first exact-request, policy, signing, boundary or readback refusal.
+    /// # Panics
+    /// Panics only if the fixed architecture omits its singleton, which its census cannot arrange.
+    pub fn replay(
+        identity: CandidateDeploymentIdentity,
+        branch: BranchContext,
+        exchanges: &[(OperationStep, NativeOperationResponse)],
+    ) -> Result<Planner, Refusal> {
+        replay_from(Planner::new(identity, branch)?, exchanges, |_| {})
+    }
+
+    fn replay_from(
+        mut planner: Planner,
+        exchanges: &[(OperationStep, NativeOperationResponse)],
+        mut checkpoint: impl FnMut(&Planner),
+    ) -> Result<Planner, Refusal> {
+        let start = planner.exchanges.len();
+        let mut next = if start == 0 {
+            planner.advance(None)?
+        } else {
+            planner.pending.as_ref().map(|(step, _)| step.clone())
+        };
+        for (position, (step, response)) in exchanges.iter().enumerate().skip(start) {
+            if next.as_ref() != Some(step) {
+                return Err(Refusal::TranscriptStepMismatch { position });
+            }
+            next = planner.advance(Some((step.case(), response)))?;
+            checkpoint(&planner);
+        }
+        planner.complete()?;
+        Ok(planner)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replay_through_checkpoints(
+        identity: CandidateDeploymentIdentity,
+        branch: BranchContext,
+        exchanges: &[(OperationStep, NativeOperationResponse)],
+    ) -> Result<Planner, Refusal> {
+        let seed = cached_prefix(
+            &REPLAY_CHECKPOINTS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            &identity,
+            branch,
+            exchanges,
+        );
+        let planner = seed.map_or_else(|| Planner::new(identity, branch), Ok)?;
+        replay_from(planner, exchanges, |planner| {
+            let checkpoint = planner.clone();
+            REPLAY_CHECKPOINTS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(checkpoint);
+        })
+    }
+
+    #[cfg(test)]
+    static REPLAY_CHECKPOINTS: std::sync::Mutex<Vec<Planner>> = std::sync::Mutex::new(Vec::new());
+
+    #[cfg(test)]
+    fn cached_prefix(
+        cache: &[Planner],
+        identity: &CandidateDeploymentIdentity,
+        branch: BranchContext,
+        exchanges: &[(OperationStep, NativeOperationResponse)],
+    ) -> Option<Planner> {
+        cache
+            .iter()
+            .filter(|seed| {
+                &seed.identity == identity
+                    && seed.branch == branch
+                    && exchanges.starts_with(&seed.exchanges)
+            })
+            .max_by_key(|seed| seed.exchanges.len())
+            .cloned()
+    }
+}
+
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::maturity_closure::{MaturityDeploymentParameters, maturity_sources_with};
     use crate::maturity_negative_half::{MaturityNegativeHalfGap, STILL_REQUIRED};
     use crate::maturity_safety::MaturitySafetySection;
     use std::fmt::Write as _;
+    use std::io::Write as _;
     use std::sync::OnceLock;
     use target_elements_conformance::protocol::WireOutpoint;
     use target_elements_conformance::protocol::{MinedFundingReadback, NativeResourceObservation};
@@ -990,6 +2562,342 @@ mod tests {
             signature_bound_to: None,
             resources: NativeResourceObservation::default(),
         }
+    }
+
+    fn sponsored_policy() -> serde_json::Value {
+        serde_json::json!({"relay":"0.00000100", "mempool":"0.00000100", "block":"0.00000100", "unit":"BTC/kvB",
+            "block_identifier":"DEFAULT_BLOCK_MIN_TX_FEE", "relay_provenance":"reported by the node",
+            "block_provenance":"declared by the pinned source, no override", "start_arguments":["elementsd", "-daemon=0"]})
+    }
+
+    fn sponsored_script() -> sponsored::Planner {
+        let seed =
+            crate::maturity_corpus::maturity_variable_run_of_record().expect("historical bindings");
+        sponsored_script_for(seed.evidence().identity().clone(), seed.evidence().branch())
+    }
+
+    pub fn sponsored_script_for(
+        identity: CandidateDeploymentIdentity,
+        branch: BranchContext,
+    ) -> sponsored::Planner {
+        sponsored_script_with_zero(identity, branch, false)
+    }
+
+    fn sponsored_script_with_zero(
+        identity: CandidateDeploymentIdentity,
+        branch: BranchContext,
+        accept_zero: bool,
+    ) -> sponsored::Planner {
+        sponsored_script_with_retries(identity, branch, accept_zero, false)
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The synthetic schedule supplies each operation response and bounded undecided scenarios."
+    )]
+    pub fn sponsored_script_with_retries(
+        identity: CandidateDeploymentIdentity,
+        branch: BranchContext,
+        accept_zero: bool,
+        retries: bool,
+    ) -> sponsored::Planner {
+        type Key = (CandidateDeploymentIdentity, BranchContext, bool, bool);
+        static CACHE: std::sync::Mutex<Vec<(Key, sponsored::Planner)>> =
+            std::sync::Mutex::new(Vec::new());
+        let key = (identity.clone(), branch, accept_zero, retries);
+        let cached = CACHE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .iter()
+            .find(|(stored, _)| stored == &key)
+            .map(|(_, plan)| plan.clone());
+        if let Some(plan) = cached {
+            return plan;
+        }
+        let mut plan = sponsored::Planner::new(identity, branch).expect("sponsored plan");
+        let mut next = plan.next_step(None).expect("start");
+        let mut serial = 0_u64;
+        let mut attempts = std::collections::HashMap::new();
+        while let Some(step) = next {
+            serial += 1;
+            assert!(serial < 250);
+            let mut response = blank(&step);
+            let mut route = "setup";
+            let mut relay = serde_json::Value::Null;
+            let mut reason = serde_json::Value::Null;
+            match step.subject() {
+                OperationSubject::Funding(subject) => {
+                    response = funding_response(&step);
+                    response.funded_outputs[0].outpoint.txid = format!("{serial:064x}");
+                    if let Some(asset) = &subject.asset {
+                        response.funded_outputs[0].asset = asset.clone();
+                    }
+                }
+                OperationSubject::SponsorFunding(subject) => {
+                    if subject.amount_per_sponsor_output == 0 && !accept_zero {
+                        response.observed_layer =
+                            ObservedOutcomeLayer::ConsensusRejectionBeforeScript;
+                        reason = serde_json::json!("bad-txns-in-ne-out");
+                    } else {
+                        response.funded_outputs.push(FundedOutput {
+                            outpoint: WireOutpoint {
+                                txid: format!("{serial:064x}"),
+                                vout: 0,
+                            },
+                            asset: "77".repeat(32),
+                            amount_satoshis: subject.amount_per_sponsor_output,
+                            script: format!("0014{}", hex(&sponsored::hash160(&[2; 33]))),
+                        });
+                    }
+                }
+                OperationSubject::SponsorSigning(subject) => {
+                    response.sponsor_witness = vec![vec![0x30, 1, 1], vec![2; 33]];
+                    response.signature_bound_to = Some(subject.finalized_transaction.clone());
+                    response.resources.transaction_weight = Some(40_000);
+                }
+                OperationSubject::Submission(_) => {
+                    let control = step.case().step.contains(":control:")
+                        || step.case().step.contains(":zero-member:");
+                    let layer = if control {
+                        ObservedOutcomeLayer::Accepted
+                    } else if step.case().step.contains("balanced-state-corruption") {
+                        ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+                    } else {
+                        ObservedOutcomeLayer::ScriptPathRejection
+                    };
+                    response = submission_response(&step, layer);
+                    response.resources.transaction_weight = Some(39_992);
+                    let template = step.case().step.starts_with("sponsored-")
+                        || step.case().step.starts_with("reauthorized-");
+                    relay = serde_json::json!(control && template);
+                    if relay == false {
+                        reason = serde_json::json!(
+                            sponsored::NEGATIVES
+                                .iter()
+                                .position(|name| step.case().step.contains(name))
+                                .map_or("min relay fee not met", |index| {
+                                    sponsored::NEGATIVE_REASONS[index]
+                                })
+                        );
+                    }
+                    route = if !control {
+                        "refused"
+                    } else if template {
+                        "relay-and-template"
+                    } else {
+                        "direct-block"
+                    };
+                }
+                _ => panic!("unexpected subject"),
+            }
+            let facts = if route == "setup" && !reason.is_null() {
+                let reason = reason.take();
+                serde_json::json!({"relay_detail":reason, "outcome":{"verdict_reason":reason}})
+            } else if route == "refused" {
+                serde_json::json!({"verdict_reason":reason})
+            } else {
+                response
+                    .mined_readback
+                    .as_ref()
+                    .map_or(serde_json::Value::Null, |readback| {
+                        serde_json::json!({"txid":readback.transaction_id, "load_five_minutes":1000,
+                    "mempool_size":999, "mempool_minimum":"0.00000100",
+                    "produced_block":readback.block_hash, "included_block":readback.block_hash,
+                    "inclusion_in_produced":true, "template":{"source":"assembly-read",
+                    "weight":4_000_000, "member":true, "txids":[readback.transaction_id]}})
+                    })
+            };
+            response.observed_detail = Some(
+                serde_json::json!({"schema":1, "policy":sponsored_policy(), "route":route,
+                "relay_allowed":relay, "relay_detail":reason, "detail":facts})
+                .to_string(),
+            );
+            if retries && step.case().step.contains(sponsored::NEGATIVES[2]) {
+                let attempt = attempts.entry("negative-retry".to_owned()).or_insert(0);
+                if *attempt == 0 {
+                    response = blank(&step);
+                    response.observed_layer = ObservedOutcomeLayer::ExecutorInfrastructureFailure;
+                    response.observed_detail = Some(serde_json::json!({"outcome":"undecided", "reason":"call-budget-expired", "wall_seconds":240}).to_string());
+                }
+                *attempt += 1;
+            }
+            if retries && step.case().step.contains(":control:") {
+                let row = step.case().step.split(':').next().expect("row");
+                let attempt = attempts.entry(row.to_owned()).or_insert(0);
+                let index = sponsored::CASES
+                    .iter()
+                    .position(|name| *name == row)
+                    .expect("case");
+                let kind = [0, 1, 2, 9, 10, 11]
+                    .iter()
+                    .position(|case| *case == index)
+                    .unwrap_or(6);
+                if kind < 6 && *attempt < if kind == 5 { 2 } else { 1 } {
+                    response = blank(&step);
+                    response.observed_layer = ObservedOutcomeLayer::ExecutorInfrastructureFailure;
+                    response.observed_detail = Some(serde_json::json!({"outcome":"undecided", "wall_seconds":240,
+                        "reason":(["call-budget-expired", "included-before-template", "included-before-direct-block", "included-during-direct-block", "undecided-by-displacement", "included-outside-direct-block"][kind])}).to_string());
+                }
+                *attempt += 1;
+            }
+            next = plan
+                .next_step(Some((step.case(), &response)))
+                .unwrap_or_else(|_| panic!("{}: {:?}", step.case().step, plan.refusal()));
+        }
+        plan.complete().expect("complete");
+        let entry = (key, plan.clone());
+        CACHE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(entry);
+        plan
+    }
+
+    #[test]
+    fn sponsored_schedule_replays_requests_routes_and_readbacks() {
+        let started = std::time::Instant::now();
+        assert_eq!(
+            hex(&sponsored::hash160(b"")),
+            "b472a266d0bd89c13706a4132ccfb16f7c3b9fcb"
+        );
+        let plan = sponsored_script();
+        let (step, response) = plan
+            .exchanges()
+            .iter()
+            .find(|(step, _)| matches!(step.subject(), OperationSubject::SponsorSigning(_)))
+            .expect("signing");
+        let OperationSubject::SponsorSigning(subject) = step.subject() else {
+            unreachable!()
+        };
+        let coin = plan
+            .exchanges()
+            .iter()
+            .flat_map(|(_, response)| &response.funded_outputs)
+            .find(|coin| coin.outpoint == subject.sponsor_outpoint)
+            .expect("funded coin");
+        for item in [0, 1] {
+            let mut changed = response.clone();
+            let byte = changed.sponsor_witness[item].last_mut().expect("witness");
+            *byte ^= 1;
+            assert_eq!(
+                sponsored::checked_signature(step, &changed, coin).err(),
+                Some(Refusal::SponsoredSignature)
+            );
+        }
+        let mut cases = std::collections::HashSet::new();
+        for (step, _) in plan.exchanges() {
+            assert!(
+                cases.insert(step.case().clone()),
+                "unique operation identity"
+            );
+        }
+        let seed =
+            crate::maturity_corpus::maturity_variable_run_of_record().expect("historical bindings");
+        let replay = sponsored::replay_through_checkpoints(
+            seed.evidence().identity().clone(),
+            seed.evidence().branch(),
+            plan.exchanges(),
+        )
+        .expect("replay");
+        assert_eq!(replay.census(), plan.census());
+        assert_eq!(plan.census()[3..], [17, 12, 5]);
+        let zero = sponsored_script_with_zero(
+            seed.evidence().identity().clone(),
+            seed.evidence().branch(),
+            true,
+        );
+        assert_eq!(zero.census()[3..], [18, 13, 5]);
+        writeln!(
+            std::io::stderr().lock(),
+            "\nRUN-REPORT sponsored_schedule_replays_requests_routes_and_readbacks wall={:.3}s",
+            started.elapsed().as_secs_f64()
+        )
+        .expect("timing output");
+    }
+
+    #[test]
+    fn sponsored_replay_refuses_changed_policy_route_and_readback() {
+        let started = std::time::Instant::now();
+        let plan = sponsored_script();
+        for mutation in 0..5 {
+            let seed = crate::maturity_corpus::maturity_variable_run_of_record()
+                .expect("historical bindings");
+            let mut exchanges = plan.exchanges().to_vec();
+            let (_, response) = exchanges
+                .iter_mut()
+                .find(|(step, _)| {
+                    step.case()
+                        .step
+                        .starts_with("sponsored-without-change:control:")
+                })
+                .expect("control");
+            let mut detail: serde_json::Value =
+                serde_json::from_str(response.observed_detail.as_deref().expect("detail"))
+                    .expect("JSON");
+            let expected = match mutation {
+                0 => {
+                    detail["policy"]["block_provenance"] =
+                        serde_json::json!("reported by the node");
+                    Refusal::SponsoredPolicy
+                }
+                1 => {
+                    detail["route"] = serde_json::json!("direct-block");
+                    detail["relay_allowed"] = serde_json::json!(false);
+                    detail["relay_detail"] = serde_json::json!("refused");
+                    Refusal::SponsoredRoute
+                }
+                2 => {
+                    response
+                        .mined_readback
+                        .as_mut()
+                        .expect("readback")
+                        .raw_transaction[0] ^= 1;
+                    Refusal::SubmissionReadbackMismatch
+                }
+                3 => {
+                    detail["detail"]["inclusion_in_produced"] = serde_json::json!(false);
+                    detail["detail"]["produced_block"] = serde_json::json!("foreign");
+                    Refusal::SponsoredRoute
+                }
+                _ => {
+                    detail["detail"]["template"]["member"] = serde_json::json!(false);
+                    Refusal::SponsoredRoute
+                }
+            };
+            response.observed_detail = Some(detail.to_string());
+            assert_eq!(
+                sponsored::replay_through_checkpoints(
+                    seed.evidence().identity().clone(),
+                    seed.evidence().branch(),
+                    &exchanges
+                )
+                .err(),
+                Some(expected)
+            );
+        }
+        writeln!(
+            std::io::stderr().lock(),
+            "\nRUN-REPORT sponsored_replay_refuses_changed_policy_route_and_readback wall={:.3}s",
+            started.elapsed().as_secs_f64()
+        )
+        .expect("timing output");
+    }
+
+    #[test]
+    fn sponsored_fee_uses_measured_size_and_the_larger_floor() {
+        let mut value = sponsored_policy();
+        value["mempool"] = serde_json::json!("0.00002000");
+        let policy = sponsored::Policy::parse(value.clone()).expect("policy");
+        assert_eq!(policy.fee(4001), Ok(4004));
+        assert_eq!(policy.fee(0), Err(Refusal::SponsoredFee));
+        value["start_arguments"]
+            .as_array_mut()
+            .expect("args")
+            .push(serde_json::json!("-blockmintxfee=0"));
+        assert_eq!(
+            sponsored::Policy::parse(value),
+            Err(Refusal::SponsoredPolicy)
+        );
     }
 
     fn funding_response(step: &OperationStep) -> NativeOperationResponse {

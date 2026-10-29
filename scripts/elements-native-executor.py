@@ -1280,6 +1280,45 @@ class AdapterError(Exception):
         self.client_detail = client_detail
 
 
+RPC_CALL_BUDGET_SECONDS = 120
+SINGLE_BUDGET_METHODS = frozenset({
+    "getnewaddress",
+    "generateblock", "generatetodescriptor", "sendrawtransaction", "sendtoaddress",
+    "createwallet", "loadwallet", "setmocktime", "lockunspent", "stop",
+    "rawissueasset", "createrawtransaction", "rawblindrawtransaction",
+    "blindrawtransaction", "signrawtransactionwithwallet", "scantxoutset",
+})
+
+
+class UndecidedCall(AdapterError):
+    """An unanswered probe has no target verdict."""
+
+    def __init__(self, method, wall, reason="call-budget-expired"):
+        self.observation = {"outcome": "undecided", "method": method,
+                            "wall_seconds": wall, "reason": reason}
+        super().__init__(json.dumps(self.observation))
+
+
+def confirmed_block_after_timeout(node, raw, error, txid=None):
+    """Retain found inclusion as undecided, without attributing production."""
+    try:
+        if txid is None:
+            txid = node.call("decoderawtransaction", raw)["txid"]
+        located = node.call("getrawtransaction", txid, json.dumps(True))
+        block_hash = located.get("blockhash")
+        if located.get("txid") == txid and isinstance(block_hash, str):
+            block = node.call("getblock", block_hash)
+            if txid in block.get("tx", []):
+                error.observation.update(block_hash=block_hash, inclusion_in_produced=False)
+                error.note = json.dumps(error.observation)
+                error.args = (error.note,)
+    except UndecidedCall:
+        raise
+    except AdapterError:
+        pass
+    raise error
+
+
 class DiagnosticOutcome(Enum):
     """Every outcome the typed diagnostic stream admits."""
 
@@ -2145,11 +2184,13 @@ class DisposableNode:
         enable_wallet: bool = False,
         datadir=None,
         retain: bool = False,
+        fee_policy: str = "historical-zero",
     ) -> None:
         self.elementsd = elementsd
         self.elements_cli = elements_cli
         self.chain = chain
         self.boot_timeout = boot_timeout
+        self.fee_policy = fee_policy
         # Off unless a lane needs it, so the primitive and compound lanes
         # boot exactly the node they have always booted. It is enabled only
         # for the conservation lane, which needs a wallet for one reason:
@@ -2175,6 +2216,7 @@ class DisposableNode:
         self.rpc_port = free_loopback_port()
         self.process = None
         self.node_log = None
+        self.call_observations = []
 
     def start(self) -> None:
         """Boots the node and waits for its RPC interface."""
@@ -2188,6 +2230,8 @@ class DisposableNode:
             "-listen=0",
             "-discover=0",
             "-dnsseed=0",
+            "-connect=0",
+            "-txindex=1",
             "-rpcbind=127.0.0.1",
             "-rpcallowip=127.0.0.1",
             "-rpcport=%d" % self.rpc_port,
@@ -2196,12 +2240,12 @@ class DisposableNode:
             # does not run, so the lane could not boot with the upstream
             # default (´[PLAN-obs:upstream:regtest-pegin-validation]´).
             "-validatepegin=0",
-            "-minrelaytxfee=0",
-            "-blockmintxfee=0",
             "-initialfreecoins=2100000000000000",
             "-anyonecanspendaremine=1",
             "-printtoconsole=1",
         ]
+        arguments.extend(fee_policy_arguments(self.fee_policy))
+        self.start_arguments = arguments.copy()
         self.process = subprocess.Popen(
             arguments,
             stdin=subprocess.DEVNULL,
@@ -2217,12 +2261,14 @@ class DisposableNode:
             try:
                 self.call("getblockchaininfo")
                 return
+            except UndecidedCall:
+                raise
             except AdapterError:
                 if time.monotonic() >= deadline:
                     raise FatalAdapterError("the node did not answer RPC before the boot timeout")
                 time.sleep(0.2)
 
-    def call(self, method: str, *arguments: str, wallet=None):
+    def call(self, method: str, *arguments: str, wallet=None, amount_strings=False):
         """Issues one JSON-RPC call through `elements-cli`.
 
         `wallet` routes the call at a named wallet. It is the wallet's
@@ -2241,9 +2287,20 @@ class DisposableNode:
         command.append(method)
         command.extend(arguments)
         try:
-            completed = subprocess.run(
-                command, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False
-            )
+            budgets = (1,) if method in SINGLE_BUDGET_METHODS else (1, 2)
+            for multiplier in budgets:
+                started = time.monotonic()
+                try:
+                    completed = subprocess.run(
+                        command, stdin=subprocess.DEVNULL, capture_output=True,
+                        text=True, check=False, timeout=RPC_CALL_BUDGET_SECONDS * multiplier,
+                    )
+                    break
+                except subprocess.TimeoutExpired:
+                    undecided = UndecidedCall(method, time.monotonic() - started)
+                    self.call_observations.append(undecided.observation)
+                    if multiplier == budgets[-1]:
+                        raise undecided
         except OSError as error:
             raise AdapterError("could not run the node client: %s" % error.strerror)
         if completed.returncode != 0:
@@ -2284,7 +2341,7 @@ class DisposableNode:
         if text == "":
             return None
         try:
-            return json.loads(text)
+            return json.loads(text, parse_float=str) if amount_strings else json.loads(text)
         except json.JSONDecodeError:
             return text
 
@@ -2293,6 +2350,8 @@ class DisposableNode:
         if self.process is not None and self.process.poll() is None:
             try:
                 self.call("stop")
+            except UndecidedCall as error:
+                log(error.note)
             except AdapterError:
                 pass
             try:
@@ -2918,6 +2977,8 @@ class CaseExecutor:
         """
         try:
             decoded = self.node.call("decoderawtransaction", raw)
+        except UndecidedCall:
+            raise
         except AdapterError:
             return None
         if not isinstance(decoded, dict):
@@ -3211,6 +3272,8 @@ class CaseExecutor:
         """
         try:
             self.node.call("generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw]))
+        except UndecidedCall as error:
+            confirmed_block_after_timeout(self.node, raw, error)
         except AdapterError as error:
             message = script_error_in(error.client_detail, CONSENSUS_SCRIPT_PREFIX)
             if message is not None:
@@ -3640,11 +3703,15 @@ class OperationExecutor:
         node = executor.node
         try:
             node.call("createwallet", self.wallet_name)
+        except UndecidedCall:
+            raise
         except AdapterError:
             # Already present on a chain directory a previous process
             # built. Loading it is the same wallet either way.
             try:
                 node.call("loadwallet", self.wallet_name)
+            except UndecidedCall:
+                raise
             except AdapterError:
                 pass
 
@@ -3708,9 +3775,11 @@ class OperationExecutor:
         """
         raw = transaction.serialize().hex()
         try:
-            self.executor.node.call(
+            mined = self.executor.node.call(
                 "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
             )
+        except UndecidedCall:
+            raise
         except AdapterError:
             record = quarantined(
                 "the %s transaction this adapter built, refused" % (note or "unnamed"),
@@ -3724,6 +3793,8 @@ class OperationExecutor:
             # block error names only the check that reported it.
             try:
                 answer = self.executor.node.call("testmempoolaccept", json.dumps([raw]))
+            except UndecidedCall:
+                raise
             except AdapterError:
                 pass
             else:
@@ -3734,7 +3805,10 @@ class OperationExecutor:
                 )
                 log("the mempool's reason is elements-output record %d" % reason)
             raise
-        return transaction.rehash()
+        txid = transaction.rehash()
+        if getattr(self.executor, "maturity_observation", False):
+            self.read_back_confirmed(mined, txid)
+        return txid
 
     def created(self, txid: str, index: int) -> dict:
         """One funded output, read back from the node rather than echoed.
@@ -4058,6 +4132,8 @@ class OperationExecutor:
         raw = transaction.serialize().hex()
         try:
             answer = node.call("generateblock", MINING_DESCRIPTOR, json.dumps([raw]))
+        except UndecidedCall as error:
+            answer = confirmed_block_after_timeout(node, raw, error, transaction.rehash())
         except AdapterError as error:
             log("the target refused the %s transaction: %s" % (note, error))
             raise
@@ -4091,11 +4167,18 @@ class OperationExecutor:
         be checking its own value against itself; what it needs is the
         target's own copy, and only the target has one.
         """
+        started = time.monotonic()
         node = self.executor.node
         block_hash = mined["hash"] if isinstance(mined, dict) else mined
         block = node.call("getblock", block_hash)
         if txid not in block.get("tx", []):
-            raise AdapterError("the block the node made does not hold the submitted transaction")
+            located = node.call("getrawtransaction", txid, json.dumps(True))
+            block_hash = located.get("blockhash")
+            if not isinstance(block_hash, str):
+                raise UndecidedCall("getrawtransaction", time.monotonic() - started, "confirmation-not-established")
+            block = node.call("getblock", block_hash)
+            if txid not in block.get("tx", []):
+                raise UndecidedCall("getblock", time.monotonic() - started, "membership-not-established")
         reported = node.call("getrawtransaction", txid, json.dumps(True), block_hash)
         return {
             "transaction_id": reported["txid"],
@@ -4324,7 +4407,21 @@ class OperationExecutor:
         transaction.vout.append(executor.output(remainder, executor.anyone_can_spend))
         transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
 
-        txid = self.mine(transaction, "sponsor funding")
+        if amount == 0 and getattr(executor, "maturity_observation", False):
+            raw = transaction.serialize()
+            observed = self.submit_maturity({"transaction_bytes": raw})
+            detail = json.loads(observed["observed_detail"])
+            if detail["route"] == "undecided":
+                return dict(observed, issued_asset=None, funded_outputs=[])
+            detail["detail"] = {"funding_transaction": raw.hex(), "outcome": detail["detail"],
+                                "relay_allowed": detail["relay_allowed"], "relay_detail": detail["relay_detail"]}
+            detail.update(route="setup", relay_allowed=None, relay_detail=None)
+            if observed["observed_layer"] != "accepted":
+                return {"issued_asset": None, "funded_outputs": [], "accepted_txid": None,
+                        "observed_layer": observed["observed_layer"], "observed_detail": json.dumps(detail)}
+            txid = observed["accepted_txid"]
+        else:
+            txid = self.mine(transaction, "sponsor funding")
         executor.change = {"txid": txid, "vout": outputs, "amount": remainder}
 
         created = []
@@ -4346,7 +4443,10 @@ class OperationExecutor:
                 "asset": entry["asset"],
             }
             created.append(entry)
-        return {"issued_asset": None, "funded_outputs": created, "accepted_txid": None}
+        answer = {"issued_asset": None, "funded_outputs": created, "accepted_txid": None}
+        if amount == 0 and getattr(executor, "maturity_observation", False):
+            answer["observed_detail"] = json.dumps(detail)
+        return answer
 
     def fund_confidential_sponsor(self, subject: dict) -> dict:
         """Creates sponsor coins whose VALUES are committed and whose
@@ -4640,6 +4740,8 @@ class OperationExecutor:
         spent programs -- an observation about the bytes submitted, never
         an expectation the caller supplied.
         """
+        if getattr(self.executor, "maturity_observation", False):
+            return self.submit_maturity(subject)
         raw = subject["transaction_bytes"].hex()
         answer = self.executor.node.call("testmempoolaccept", json.dumps([raw]))
         if not isinstance(answer, list) or len(answer) != 1:
@@ -4654,6 +4756,8 @@ class OperationExecutor:
                 mined = self.executor.node.call(
                     "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
                 )
+            except UndecidedCall as error:
+                confirmed_block_after_timeout(self.executor.node, raw, error, result.get("txid"))
             except AdapterError as error:
                 return self.refused_at_consensus(error, raw=raw)
             txid = result.get("txid")
@@ -4687,6 +4791,8 @@ class OperationExecutor:
             self.executor.node.call(
                 "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
             )
+        except UndecidedCall as error:
+            confirmed_block_after_timeout(self.executor.node, raw, error, result.get("txid"))
         except AdapterError as error:
             return self.refused_at_consensus(error, mempool_reason=reason, raw=raw)
         return {
@@ -4695,6 +4801,202 @@ class OperationExecutor:
             "accepted_txid": None,
             "transaction_weight": self.executor.weight_of(raw),
         }
+
+    def maturity_policy(self, info=None) -> dict:
+        """Retain reported relay floors and the separately declared block default."""
+        node = self.executor.node
+        if node.fee_policy != "node-defaults":
+            raise AdapterError("maturity observation requires node-defaults")
+        if info is None:
+            info = node.call("getmempoolinfo", amount_strings=True)
+        arguments = node.start_arguments
+        if any(arg.startswith(("-minrelaytxfee=", "-blockmintxfee=")) for arg in arguments):
+            raise AdapterError("default policy has a fee override")
+        for key in ("minrelaytxfee", "mempoolminfee"):
+            value = info.get(key)
+            if not isinstance(value, str) or re.fullmatch(r"[0-9]+\.[0-9]{8}", value) is None:
+                raise AdapterError("fee readout is not an exact amount string")
+        return {
+            "relay": info["minrelaytxfee"], "mempool": info["mempoolminfee"],
+            "block": "0.00000100", "unit": "BTC/kvB",
+            "block_identifier": "DEFAULT_BLOCK_MIN_TX_FEE",
+            "relay_provenance": "reported by the node",
+            "block_provenance": "declared by the pinned source, no override",
+            "start_arguments": arguments,
+        }
+
+    def submit_maturity(self, subject: dict) -> dict:
+        """Separate relay, ordinary selection and explicit block inclusion."""
+        started = time.monotonic()
+        node = self.executor.node
+        call_start = len(node.call_observations)
+        raw = subject["transaction_bytes"].hex()
+        state = node.call("getmempoolinfo", amount_strings=True)
+        policy = self.maturity_policy(state)
+        decoded = node.call("decoderawtransaction", raw)
+        txid = decoded["txid"]
+        facts = {"txid": txid, "load_five_minutes": os.getloadavg()[1],
+                 "mempool_size": state["size"], "mempool_minimum": state["mempoolminfee"],
+                 "template": None, "produced_block": None, "included_block": None,
+                 "inclusion_in_produced": None, "calls": node.call_observations[call_start:]}
+        result = node.call("testmempoolaccept", json.dumps([raw]))[0]
+        if result.get("txid") != txid:
+            raise UndecidedCall("testmempoolaccept", time.monotonic() - started, "subject-identity-not-established")
+        if result.get("allowed") is not True and result.get("allowed") is not False:
+            raise UndecidedCall("testmempoolaccept", time.monotonic() - started, "verdict-not-established")
+        detail = {"schema": 1, "policy": policy, "route": "refused",
+                  "relay_allowed": result.get("allowed") is True,
+                  "relay_detail": result.get("reject-reason"), "detail": facts}
+        weight = self.executor.weight_of(raw)
+        def waiting(reason, readback=None):
+            detail["route"] = "undecided"
+            facts.update(outcome="undecided", reason=reason, readback=readback,
+                         calls=node.call_observations[call_start:], transaction_weight=weight)
+            if readback is not None:
+                facts.update(included_block=readback["block_hash"], inclusion_in_produced=False)
+            return {"observed_layer": "executor_infrastructure_failure",
+                    "observed_detail": json.dumps(detail), "accepted_txid": None,
+                    "transaction_weight": None}
+        def expired_mutation(error):
+            try:
+                confirmed_block_after_timeout(node, raw, error, txid)
+            except UndecidedCall as unresolved:
+                found = unresolved.observation.get("block_hash")
+                if found is not None:
+                    try:
+                        readback = self.read_back_confirmed(found, txid)
+                    except UndecidedCall as lookup_error:
+                        return waiting(lookup_error.observation)
+                    return waiting(unresolved.observation, readback)
+                return waiting(unresolved.observation)
+        if result.get("allowed") is True:
+            try:
+                sent = node.call("sendrawtransaction", raw)
+            except UndecidedCall as error:
+                return expired_mutation(error)
+            if sent != txid:
+                return waiting("submitted-identity-mismatch")
+            try:
+                node.call("getmempoolentry", txid)
+                facts["mempool_entry"] = txid
+            except UndecidedCall as error:
+                return waiting(error.observation)
+            except AdapterError:
+                facts["mempool_entry"] = None
+            try:
+                proposal = self.executor.messages.CBlock()
+                block_hex = node.call("getnewblockhex")
+                proposal.deserialize(io.BytesIO(bytes.fromhex(block_hex)))
+                members = []
+                for transaction in proposal.vtx:
+                    transaction.rehash()
+                    members.append(transaction.hash)
+                facts["template"] = {"txids": members, "weight": proposal.get_weight(),
+                                     "member": txid in members, "source": "assembly-read", "hex": block_hex}
+            except UndecidedCall as error:
+                return waiting(error.observation)
+            except AdapterError as error:
+                if "-32601" not in error.client_detail:
+                    return waiting("template-read-unanswered")
+                if not all(arg in node.start_arguments for arg in ("-listen=0", "-dnsseed=0", "-connect=0")):
+                    return waiting("template-unavailable-without-isolation")
+                facts["template"] = {"source": "unavailable-isolated-production",
+                                     "weight": None, "member": None, "txids": []}
+            if facts["template"]["member"] is False:
+                try:
+                    located = node.call("getrawtransaction", txid, json.dumps(True))
+                    if isinstance(located.get("blockhash"), str):
+                        readback = self.read_back_confirmed(located["blockhash"], txid)
+                        facts["included_block"] = readback["block_hash"]
+                        facts["inclusion_in_produced"] = False
+                        return waiting("included-before-template", readback)
+                except UndecidedCall as error:
+                    return waiting(error.observation)
+                except AdapterError:
+                    pass
+                return waiting("undecided-by-displacement")
+            try:
+                mined = node.call("generatetodescriptor", "1", MINING_DESCRIPTOR)[0]
+            except UndecidedCall as error:
+                return expired_mutation(error)
+            readback = self.read_back_confirmed(mined, txid)
+            if readback["block_hash"] != mined:
+                return waiting("included-outside-template-production", readback)
+            if facts["template"]["source"] == "unavailable-isolated-production":
+                block = node.call("getblock", mined)
+                facts["template"].update(weight=block["weight"], txids=block["tx"],
+                                         member=txid in block["tx"])
+                if txid not in block["tx"]:
+                    return waiting("isolated-production-membership-not-established", readback)
+            detail["route"] = "relay-and-template"
+        else:
+            reason = result.get("reject-reason")
+            if not isinstance(reason, str):
+                raise AdapterError("relay refusal has no reason")
+            try:
+                block_hex = node.call("getnewblockhex")
+                proposal = self.executor.messages.CBlock()
+                proposal.deserialize(io.BytesIO(bytes.fromhex(block_hex)))
+                members = [transaction.rehash() for transaction in proposal.vtx]
+                facts["template"] = {"source": "assembly-read", "weight": proposal.get_weight(),
+                                     "member": txid in members, "txids": members, "hex": block_hex}
+            except UndecidedCall as error:
+                return waiting(error.observation)
+            except AdapterError:
+                return waiting("template-state-unanswered")
+            for prefix in (POLICY_SCRIPT_PREFIX, CONSENSUS_SCRIPT_PREFIX):
+                if script_error_in(reason, prefix) is not None:
+                    layer = ("key_path_rejection" if observed_key_path_spend(node, raw)
+                             else "script_path_rejection")
+                    facts.update(verdict_reason=reason, calls=node.call_observations[call_start:])
+                    return {"observed_layer": layer, "observed_detail": json.dumps(detail),
+                            "accepted_txid": None, "transaction_weight": weight}
+            try:
+                located = node.call("getrawtransaction", txid, json.dumps(True))
+                if isinstance(located.get("blockhash"), str):
+                    readback = self.read_back_confirmed(located["blockhash"], txid)
+                    return waiting("included-before-direct-block", readback)
+            except UndecidedCall as error:
+                return waiting(error.observation)
+            except AdapterError:
+                pass
+            try:
+                mined = node.call("generateblock", MINING_DESCRIPTOR, json.dumps([raw]))
+            except UndecidedCall as error:
+                return expired_mutation(error)
+            except AdapterError as error:
+                try:
+                    located = node.call("getrawtransaction", txid, json.dumps(True))
+                    if isinstance(located.get("blockhash"), str):
+                        return waiting("included-during-direct-block",
+                                       self.read_back_confirmed(located["blockhash"], txid))
+                except UndecidedCall as lookup_error:
+                    return waiting(lookup_error.observation)
+                except AdapterError:
+                    pass
+                matched = re.search(r"TestBlockValidity failed: ([a-zA-Z0-9_-]+)", error.client_detail)
+                if matched is None:
+                    return waiting(getattr(error, "observation", "block-call-without-validation-verdict"))
+                block_reason = matched.group(1)
+                script_failure = script_error_in(error.client_detail, CONSENSUS_SCRIPT_PREFIX)
+                consensus_reason = reason if reason.startswith("bad-txns-") else (
+                    None if script_failure is not None else block_reason)
+                refused = self.refused_at_consensus(
+                    error, mempool_reason=consensus_reason, raw=raw)
+                facts.update(verdict_reason=consensus_reason or block_reason,
+                             calls=node.call_observations[call_start:])
+                refused["observed_detail"] = json.dumps(detail)
+                return refused
+            readback = self.read_back_confirmed(mined, txid)
+            if readback["block_hash"] != mined["hash"]:
+                return waiting("included-outside-direct-block", readback)
+            detail["route"] = "direct-block"
+        facts.update(produced_block=mined["hash"] if isinstance(mined, dict) else mined,
+                     included_block=readback["block_hash"], calls=node.call_observations[call_start:])
+        facts["inclusion_in_produced"] = facts["produced_block"] == facts["included_block"]
+        return {"observed_layer": "accepted", "observed_detail": json.dumps(detail),
+                "accepted_txid": txid, "mined_readback": readback,
+                "transaction_weight": weight}
 
     def refused_at_consensus(self, error, mempool_reason=None, raw=None) -> dict:
         """Classifies a block-validation refusal.
@@ -4828,6 +5130,8 @@ class ConservationExecutor:
             return
         try:
             self.node.call("createwallet", self.WALLET)
+        except UndecidedCall:
+            raise
         except AdapterError as error:
             if "already exists" not in error.note:
                 raise
@@ -4894,6 +5198,8 @@ class ConservationExecutor:
                 "sendtoaddress", destination, satoshis_to_amount(amount),
                 wallet=self.WALLET,
             )
+        except UndecidedCall as error:
+            self.wallet_send_after_timeout(destination, error)
         except AdapterError as error:
             raise ConstructionError(
                 "the wallet paid no coin of %d: %s" % (amount, error.note)
@@ -4926,6 +5232,35 @@ class ConservationExecutor:
                 )
                 return entry
         raise AdapterError("the wallet did not report the coin this adapter just created")
+
+    def wallet_send_after_timeout(self, destination, error):
+        """Retain wallet effects for the fresh destination without spending again."""
+        try:
+            plain = self.plain_form(destination)
+            entries = self.node.call("listtransactions", "*", "1000", "0", "true", wallet=self.WALLET)
+            found = []
+            for entry in entries:
+                if entry.get("address") not in (destination, plain):
+                    continue
+                txid = entry.get("txid")
+                if not isinstance(txid, str):
+                    continue
+                transaction = self.node.call("gettransaction", txid, wallet=self.WALLET)
+                observation = {"txid": txid, "inclusion_in_produced": False}
+                block_hash = transaction.get("blockhash")
+                if isinstance(block_hash, str):
+                    block = self.node.call("getblock", block_hash)
+                    if txid in block.get("tx", []):
+                        observation["block_hash"] = block_hash
+                found.append(observation)
+            error.observation["wallet_lookup"] = found
+            error.note = json.dumps(error.observation)
+            error.args = (error.note,)
+        except UndecidedCall:
+            raise
+        except AdapterError:
+            pass
+        raise error
 
     def plain_form(self, address: str) -> str:
         """The unconfidential form of an address, as the node states it."""
@@ -4960,6 +5295,8 @@ class ConservationExecutor:
             try:
                 coins.append(self.create_coin(declared["value"]["amount"], confidential))
             except ConstructionError:
+                raise
+            except UndecidedCall:
                 raise
             except AdapterError as error:
                 raise ConstructionError(
@@ -5014,6 +5351,8 @@ class ConservationExecutor:
                 json.dumps(spend_inputs),
                 json.dumps(declared_outputs),
             )
+        except UndecidedCall:
+            raise
         except AdapterError as error:
             raise ConstructionError("the node built no raw transaction: %s" % error.note)
 
@@ -5040,6 +5379,8 @@ class ConservationExecutor:
                     json.dumps([coin["asset"] for coin in coins]),
                     json.dumps([coin.get("assetblinder", "00" * 32) for coin in coins]),
                 )
+            except UndecidedCall:
+                raise
             except AdapterError as error:
                 raise ConstructionError(
                     "the node blinded no transaction for this row: %s" % error.note
@@ -5049,6 +5390,8 @@ class ConservationExecutor:
             signed = self.node.call(
                 "signrawtransactionwithwallet", raw, wallet=self.WALLET
             )
+        except UndecidedCall:
+            raise
         except AdapterError as error:
             raise ConstructionError("the wallet signed no transaction: %s" % error.note)
         raw = signed.get("hex")
@@ -5103,6 +5446,8 @@ class ConservationExecutor:
             self.node.call(
                 "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
             )
+        except UndecidedCall as error:
+            confirmed_block_after_timeout(self.node, raw, error)
         except AdapterError as error:
             log("the accepted transaction was not confirmable: %s" % error.note)
             return []
@@ -5280,6 +5625,8 @@ class ConservationExecutor:
             self.node.call(
                 "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
             )
+        except UndecidedCall as error:
+            confirmed_block_after_timeout(self.node, raw, error, result.get("txid"))
         except AdapterError as error:
             return "consensus_rejection_before_script", relay_reason
         return "relay_policy_rejection", relay_reason
@@ -5295,6 +5642,8 @@ class ConservationExecutor:
         assets = []
         try:
             decoded = self.node.call("decoderawtransaction", raw)
+        except UndecidedCall:
+            raise
         except AdapterError:
             return values, assets
         for out in decoded.get("vout", []):
@@ -5498,6 +5847,8 @@ class NormalizationExecutor:
                 json.dumps(spend_inputs),
                 json.dumps(declared),
             )
+        except UndecidedCall:
+            raise
         except AdapterError as error:
             raise ConstructionError(
                 "the node built no raw transaction for this row: %s" % error.note
@@ -5522,6 +5873,8 @@ class NormalizationExecutor:
                 json.dumps([c["asset"] for c in coins]),
                 json.dumps([c.get("assetblinder", "00" * 32) for c in coins]),
             )
+        except UndecidedCall:
+            raise
         except AdapterError as error:
             raise ConstructionError(
                 "the node blinded no transaction for this row: %s" % error.note
@@ -5533,6 +5886,8 @@ class NormalizationExecutor:
             signed = self.node.call(
                 "signrawtransactionwithwallet", raw, wallet=self.conservation.WALLET
             )
+        except UndecidedCall:
+            raise
         except AdapterError as error:
             raise ConstructionError("the wallet signed no transaction: %s" % error.note)
         if signed.get("complete") is not True:
@@ -5702,6 +6057,8 @@ class NormalizationExecutor:
         """
         try:
             decoded = self.node.call("decoderawtransaction", raw)
+        except UndecidedCall:
+            raise
         except AdapterError as error:
             raise AdapterError(
                 "the node did not decode the transaction this row built: %s"
@@ -5864,6 +6221,8 @@ class LifecycleExecutor:
             # candidate rather than a defect of the row.
             try:
                 superseded = self.supersede(txid, index, claimed["explicit_amount"])
+            except UndecidedCall:
+                raise
             except (ConstructionError, AdapterError) as error:
                 supersede_failure = error.note
         return {
@@ -6007,11 +6366,14 @@ class LifecycleExecutor:
                 "the owner's wallet produced a complete signature the target "
                 "refuses: %s" % relay[0].get("reject-reason")
             )
-        self.node.call(
-            "generateblock",
-            "raw(%s)" % ANYONE_CAN_SPEND_HEX,
-            json.dumps([signed["hex"]]),
-        )
+        try:
+            self.node.call(
+                "generateblock",
+                "raw(%s)" % ANYONE_CAN_SPEND_HEX,
+                json.dumps([signed["hex"]]),
+            )
+        except UndecidedCall as error:
+            confirmed_block_after_timeout(self.node, signed["hex"], error)
         successor = self.conservation.deserialize(signed["hex"]).rehash()
         if self.node.call("gettxout", txid, str(index)) is not None:
             raise ConstructionError(
@@ -6101,6 +6463,8 @@ class LifecycleExecutor:
             chain_raw = self.node.call(
                 "getrawtransaction", handoff["txid"], "false", handoff["block_hash"]
             )
+        except UndecidedCall:
+            raise
         except AdapterError as error:
             record("evidence_located", handoff["txid"], None)
             return {
@@ -6338,6 +6702,8 @@ def observed_key_path_spend(node, raw: str) -> bool:
     """
     try:
         decoded = node.call("decoderawtransaction", raw)
+    except UndecidedCall:
+        raise
     except AdapterError:
         return False
     if not isinstance(decoded, dict):
@@ -6369,6 +6735,8 @@ def observed_key_path_spend(node, raw: str) -> bool:
             return False
         try:
             spent = node.call("gettxout", txid, str(index))
+        except UndecidedCall:
+            raise
         except AdapterError:
             return False
         if not isinstance(spent, dict):
@@ -6681,6 +7049,7 @@ def serve(arguments) -> int:
         arguments.elementsd, arguments.elements_cli, arguments.chain,
         arguments.boot_timeout_seconds, arguments.enable_wallet,
         arguments.datadir,
+        fee_policy=arguments.fee_policy,
     )
     closing = {"done": False}
 
@@ -6699,6 +7068,9 @@ def serve(arguments) -> int:
         started = time.monotonic()
         node.start()
         executor = CaseExecutor(node, messages, script, key_module)
+        executor.maturity_observation = arguments.maturity_observation
+        if arguments.maturity_observation:
+            quarantined("node start arguments", json.dumps(node.start_arguments))
         executor.prime()
         if arguments.enable_wallet:
             executor.conservation = ConservationExecutor(executor, arguments.wallet_name)
@@ -6930,6 +7302,42 @@ def require_execution_request_fields(request: dict, allowed: tuple) -> None:
             ) from None
 
 
+def undecided_response(kind):
+    """Serialize only the typed undecided outcome at a response boundary."""
+    def decorate(function):
+        def answer(executor, request, *args):
+            try:
+                return function(executor, request, *args)
+            except UndecidedCall as error:
+                log(error.note)
+                case = args[0] if args else request["case"]
+                if kind == "operation":
+                    write_operation_failure(case, error.note)
+                    return
+                response = {"schema": NATIVE_PROTOCOL_SCHEMA, "case": case}
+                if kind == "primitive":
+                    response.update(verdict="infrastructure_error", observed_failure=None,
+                                    final_stack=None, final_altstack=None, resources=resources_for(None, None))
+                elif kind == "lifecycle":
+                    response.update(outcome="executor_infrastructure_failure", detail=error.note,
+                                    handoff=None, authorization_profile=None, observed_witness_sizes=[],
+                                    observed_outputs=[], checks=[], spend=None, superseded_by=None,
+                                    supersede_failure=None)
+                else:
+                    response.update(observed_layer="executor_infrastructure_failure",
+                                    observed_detail=error.note, transaction_bytes=None)
+                    if kind == "conservation":
+                        response.update(observed_value_commitments=[], observed_asset_commitments=[],
+                                        observed_openings=[])
+                    else:
+                        response.update(claimed_outputs=[], observed_outputs=[],
+                                        authorization_profile=None, observed_witness_sizes=[])
+                write_message(response)
+        return answer
+    return decorate
+
+
+@undecided_response("primitive")
 def answer_case(executor: CaseExecutor, request: dict) -> None:
     """Answers exactly one execution request, primitive or compound.
 
@@ -7017,6 +7425,8 @@ def answer_case(executor: CaseExecutor, request: dict) -> None:
         started = time.monotonic()
         body = executor.execute(fixture, construction)
         log("case answered in %.2fs" % (time.monotonic() - started))
+    except UndecidedCall:
+        raise
     except AdapterError as error:
         log("infrastructure error: %s" % error.note)
         body = {"verdict": "infrastructure_error", "observed_failure": None}
@@ -7068,6 +7478,7 @@ def validate_conservation_body(body: dict) -> None:
         raise FatalAdapterError("the conservation producer put observations on a non-verdict")
 
 
+@undecided_response("conservation")
 def answer_conservation_row(executor: CaseExecutor, request: dict, case: dict) -> None:
     """Answers exactly one Guide-11 section 8.4 conservation row.
 
@@ -7107,6 +7518,8 @@ def answer_conservation_row(executor: CaseExecutor, request: dict, case: dict) -
             "observed_asset_commitments": [],
             "observed_openings": [],
         }
+    except UndecidedCall:
+        raise
     except AdapterError as error:
         log("executor infrastructure failure: %s" % error.note)
         body = {
@@ -7132,6 +7545,7 @@ def answer_conservation_row(executor: CaseExecutor, request: dict, case: dict) -
     write_message(response)
 
 
+@undecided_response("normalization")
 def answer_normalization_row(executor: CaseExecutor, request: dict, case: dict) -> None:
     """Answers exactly one Guide-11 section 10.4 normalization row.
 
@@ -7173,6 +7587,8 @@ def answer_normalization_row(executor: CaseExecutor, request: dict, case: dict) 
             "observed_witness_sizes": [],
             "transaction_bytes": None,
         }
+    except UndecidedCall:
+        raise
     except AdapterError as error:
         log("executor infrastructure failure: %s" % error.note)
         body = {
@@ -7245,6 +7661,7 @@ def parse_handoff(raw: object) -> dict:
     return handoff
 
 
+@undecided_response("lifecycle")
 def answer_lifecycle_step(executor: CaseExecutor, request: dict, case: dict) -> None:
     """Answers exactly one Guide-11 section 13 lifecycle step.
 
@@ -7287,6 +7704,8 @@ def answer_lifecycle_step(executor: CaseExecutor, request: dict, case: dict) -> 
         log("fixture construction failure: %s" % error.note)
         body = {}
         outcome = "fixture_construction_failure"
+    except UndecidedCall:
+        raise
     except AdapterError as error:
         log("executor infrastructure failure: %s" % error.note)
         body = {"detail": error.note}
@@ -7573,6 +7992,7 @@ def sign_script_path(executor: CaseExecutor, subject: dict) -> dict:
             "signature_bound_to": list(raw)}
 
 
+@undecided_response("operation")
 def answer_script_path_step(executor: CaseExecutor, request: dict, case: dict) -> None:
     """Answers a signing step independently of wallet-backed operations."""
     try:
@@ -7587,6 +8007,8 @@ def answer_script_path_step(executor: CaseExecutor, request: dict, case: dict) -
             write_operation_failure(case, "operation_step_unsupported: sign_script_path")
             return
         body = sign_script_path(executor, subject)
+    except UndecidedCall:
+        raise
     except AdapterError as error:
         log("executor infrastructure failure: %s" % error.note)
         write_operation_failure(case, error.note)
@@ -7721,6 +8143,7 @@ def parse_operation_subject(raw: object, kind: str) -> dict:
     }
 
 
+@undecided_response("operation")
 def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> None:
     """Answers exactly one Guide-12 section 16.2 operation step.
 
@@ -7757,6 +8180,7 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
         raise FatalAdapterError("the harness sent an operation step of an unknown kind")
     subject = parse_operation_subject(request.get("subject"), kind)
 
+    call_start = len(executor.node.call_observations)
     operations = executor.operations
     if operations is None:
         # Normally unreachable: without a wallet this adapter advertises
@@ -7800,6 +8224,16 @@ def answer_operation_step(executor: CaseExecutor, request: dict, case: dict) -> 
             body = operations.submit(subject)
             body.setdefault("issued_asset", None)
             body.setdefault("funded_outputs", [])
+        if getattr(executor, "maturity_observation", False) and kind != "submit":
+            body.setdefault("observed_detail", json.dumps({
+                "schema": 1, "policy": operations.maturity_policy(), "route": "setup",
+                "relay_allowed": None, "relay_detail": None,
+                "detail": {"calls": executor.node.call_observations[call_start:]},
+            }))
+            if kind == "sign_sponsor":
+                body["transaction_weight"] = executor.weight_of(subject["finalized_transaction"].hex())
+    except UndecidedCall:
+        raise
     except AdapterError as error:
         # The adapter could not perform the step. That is not a statement
         # about the transaction and must not be recorded as one.
@@ -7912,6 +8346,15 @@ def write_operation_failure(case: dict, note: str) -> None:
     )
 
 
+def fee_policy_arguments(policy: str) -> list:
+    """Select historical overrides or leave both fee settings to the node."""
+    if policy == "historical-zero":
+        return ["-minrelaytxfee=0", "-blockmintxfee=0"]
+    if policy == "node-defaults":
+        return []
+    raise AdapterError("unknown fee policy")
+
+
 def parse_arguments(argv):
     """Reads this adapter's own explicit, credential-free configuration."""
     parser = argparse.ArgumentParser(
@@ -7943,6 +8386,12 @@ def parse_arguments(argv):
     )
     parser.add_argument("--elementsd", required=True, help="path to the elementsd binary")
     parser.add_argument("--elements-cli", required=True, help="path to the elements-cli binary")
+    parser.add_argument(
+        "--fee-policy", choices=("historical-zero", "node-defaults"),
+        default="historical-zero", help="fee policy used by the disposable node",
+    )
+    parser.add_argument("--maturity-observation", action="store_true",
+                        help="retain policy and separate maturity submission routes")
     parser.add_argument(
         "--zk-library",
         default=None,

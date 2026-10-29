@@ -163,6 +163,10 @@ fn native_identity() -> CandidateDeploymentIdentity {
 
 #[test]
 #[ignore = "requires the revision-8 native adapter and capture environment"]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Both profiles share the same capture guard and ignored invocation."
+)]
 fn the_maturity_announcement_runs_against_a_real_target() {
     let executor = required_environment("TRIPOD_LIVE_EXECUTOR");
     let directory = required_environment("TRIPOD_LIVE_REPORT_DIR");
@@ -177,6 +181,68 @@ fn the_maturity_announcement_runs_against_a_real_target() {
     let mut guard = common::CaptureGuard::for_test(common::CeremonyId::Report, destination);
     let deployment = native_identity();
     let context = branch();
+    if common::environment("TRIPOD_MATURITY_CAPTURE_PROFILE").as_deref() == Some("sponsored") {
+        let mut planner =
+            vectors::maturity_native::sponsored::Planner::new(deployment.clone(), context)
+                .expect("sponsored planner");
+        let mut capture = NativeOperationCapture::default();
+        let outcome = execute(
+            Path::new(&executor),
+            Path::new(&directory),
+            &deployment,
+            ExecutorTrust::ReviewedNonMock,
+            &mut planner,
+            &mut capture,
+        );
+        let mut payload = String::from("maturity-sponsored-evidence-schema 1\n");
+        common::write_bytes_field(&mut payload, "deployment-id", deployment.network_id());
+        common::write_bytes_field(&mut payload, "genesis-id", deployment.genesis_id());
+        common::write_bytes_field(&mut payload, "branch-identifier", context.identifier());
+        writeln!(payload, "branch-checkpoint {}", context.checkpoint()).expect("String write");
+        if let Some(policy) = planner.policy() {
+            common::write_bytes_field(
+                &mut payload,
+                "sponsored-policy",
+                &serde_json::to_vec(&policy.0).expect("policy"),
+            );
+        }
+        writeln!(
+            payload,
+            "sponsored-census {}",
+            planner.census().map(|n| n.to_string()).join(" ")
+        )
+        .expect("String write");
+        common::write_bytes_field(
+            &mut payload,
+            "sponsored-probes",
+            &serde_json::to_vec(&planner.probes()).expect("probes"),
+        );
+        common::write_bytes_field(
+            &mut payload,
+            "sponsored-waiting",
+            &serde_json::to_vec(&planner.waiting_json()).expect("waiting"),
+        );
+        for (step, response) in planner.exchanges() {
+            common::write_bytes_field(
+                &mut payload,
+                "exchange",
+                &serde_json::to_vec(&(step.case(), step.subject(), response)).expect("exchange"),
+            );
+        }
+        if let Some(refusal) = planner.refusal() {
+            common::write_bytes_field(&mut payload, "refusal", format!("{refusal:?}").as_bytes());
+        }
+        let facts =
+            common::CeremonyCaptureFacts::from_capture(common::CeremonyId::Report, &capture);
+        common::write_capture_before_gates(&mut guard, &capture, &facts, &payload);
+        outcome.expect("native operations completed");
+        planner.complete().expect("complete observation schedule");
+        let replay =
+            vectors::maturity_native::sponsored::replay(deployment, context, planner.exchanges())
+                .expect("exact replay");
+        assert_eq!(replay.census(), planner.census());
+        return;
+    }
     let mut planner = MaturityAnnouncementPlanner::new(
         deployment.clone(),
         context,

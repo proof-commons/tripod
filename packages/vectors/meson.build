@@ -134,6 +134,10 @@ vectors_fixture_files = files(
   'fixtures/maturity-successor-mutant-run-of-record/f933b376.report.capture.timing',
   'fixtures/maturity-successor-mutant-run-of-record/MANIFEST.sha256',
   'fixtures/maturity-successor-mutant-run-of-record/RUN-REPORT',
+  'fixtures/maturity-sponsored-run-of-record/17280cedd2.report.capture',
+  'fixtures/maturity-sponsored-run-of-record/17280cedd2.report.capture.timing',
+  'fixtures/maturity-sponsored-run-of-record/MANIFEST.sha256',
+  'fixtures/maturity-sponsored-run-of-record/RUN-REPORT',
 ) + files(
   'fixtures/native-operator-run-of-record/353e698f.report.capture',
   'fixtures/native-operator-run-of-record/353e698f.report.capture.timing',

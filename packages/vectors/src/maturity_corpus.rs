@@ -63,6 +63,14 @@ pub const MATURITY_SUCCESSOR_MUTANT_RUN_ADDRESS: &str =
     "206c8e1262af5c1ea8ef541e9753961df15101884cc6ee451957019cdccca1a7";
 
 const CEREMONY_SHA256: &str = "d48e105b85708cd8edadbe423ed020c48fdbe1c0225f67724ff6f68449d25515";
+/// SHA-256 of the sponsored archive's two-entry manifest.
+pub const MATURITY_SPONSORED_MANIFEST_SHA256: &str =
+    "eac4f606524058264eb1920c274aeecfae7f2ebcce7e1c089789f2177d090a14";
+/// SHA-256 of the sponsored report binding policy and per-subject observations.
+pub const MATURITY_SPONSORED_RUN_ADDRESS: &str =
+    "c78d141a6f236a7bd9006b6bbba77cff0055c7caf7eb672bb3341be112c0a962";
+const MATURITY_SPONSORED_CEREMONY_SHA256: &str =
+    "5299269816ae154ef0cd5b84edc23002953a4daa447294a4ebff6a3d3e0d6e94";
 const PREDECESSOR_MUTANT_CEREMONY_SHA256: &str =
     "730a0670d76a59e4640726ef54f0d40853987c35792a4329401abd485d42f319";
 const SUCCESSOR_MUTANT_CEREMONY_SHA256: &str =
@@ -227,6 +235,10 @@ pub enum MaturityFrameworkRevision {
 pub enum MaturityPremiseProvenance {
     /// The node arguments passed by the native executor.
     ExecutorArguments,
+    /// A decimal amount returned by the running node.
+    ReportedByNode,
+    /// The pinned source constant, with no startup override.
+    PinnedSourceNoOverride,
     /// A caller's deployment declaration, which archive admission cannot check.
     DeploymentDeclaration,
 }
@@ -237,6 +249,8 @@ impl MaturityPremiseProvenance {
     pub const fn name(self) -> &'static str {
         match self {
             Self::ExecutorArguments => "executor-arguments",
+            Self::ReportedByNode => "reported by the node",
+            Self::PinnedSourceNoOverride => "declared by the pinned source, no override",
             Self::DeploymentDeclaration => "deployment-declaration",
         }
     }
@@ -271,14 +285,15 @@ impl<T> MaturityDeclaredPremise<T> {
 
 /// Fee floors disclosed for the node that ran an admitted archive.
 ///
-/// The immutable RUN-REPORT grammar carries no fee line, so archive admission
-/// cannot verify these values. They are declared from the executor's node
-/// arguments and remain a premise rather than a checked binding.
+/// Historical reports carry no fee line and retain executor-argument premises.
+/// The sponsored report binds a reported relay floor and a separately declared
+/// block default; admission checks both values and their distinct provenances.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MaturityDisclosedFeeFloors {
     min_relay_tx_fee: &'static str,
     block_min_tx_fee: &'static str,
     provenance: MaturityPremiseProvenance,
+    block_provenance: MaturityPremiseProvenance,
 }
 
 impl MaturityDisclosedFeeFloors {
@@ -289,7 +304,28 @@ impl MaturityDisclosedFeeFloors {
             min_relay_tx_fee,
             block_min_tx_fee,
             provenance: MaturityPremiseProvenance::ExecutorArguments,
+            block_provenance: MaturityPremiseProvenance::ExecutorArguments,
         }
+    }
+
+    /// Retains distinct sources for the default-policy observation.
+    #[must_use]
+    pub const fn node_defaults(
+        min_relay_tx_fee: &'static str,
+        block_min_tx_fee: &'static str,
+    ) -> Self {
+        Self {
+            min_relay_tx_fee,
+            block_min_tx_fee,
+            provenance: MaturityPremiseProvenance::ReportedByNode,
+            block_provenance: MaturityPremiseProvenance::PinnedSourceNoOverride,
+        }
+    }
+
+    /// Source of the block assembly floor.
+    #[must_use]
+    pub const fn block_provenance(&self) -> MaturityPremiseProvenance {
+        self.block_provenance
     }
 
     /// The declared minimum relay transaction fee argument.
@@ -492,6 +528,42 @@ const VARIABLE_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins::new(
     0,
     MATURITY_DISCLOSED_FEE_FLOORS,
 );
+
+/// The sponsored archive's four immutable files and independent pins.
+const SPONSORED_FILES: [MaturityArchiveFile<'static>; 4] = [
+    MaturityArchiveFile::new(
+        "17280cedd2.report.capture",
+        include_bytes!("../fixtures/maturity-sponsored-run-of-record/17280cedd2.report.capture"),
+    ),
+    MaturityArchiveFile::new(
+        "17280cedd2.report.capture.timing",
+        include_bytes!(
+            "../fixtures/maturity-sponsored-run-of-record/17280cedd2.report.capture.timing"
+        ),
+    ),
+    MaturityArchiveFile::new(
+        "MANIFEST.sha256",
+        include_bytes!("../fixtures/maturity-sponsored-run-of-record/MANIFEST.sha256"),
+    ),
+    MaturityArchiveFile::new(
+        "RUN-REPORT",
+        include_bytes!("../fixtures/maturity-sponsored-run-of-record/RUN-REPORT"),
+    ),
+];
+const SPONSORED_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins {
+    names: [
+        "17280cedd2.report.capture",
+        "17280cedd2.report.capture.timing",
+        "MANIFEST.sha256",
+        "RUN-REPORT",
+    ],
+    sizes: [2_975_354, 49, 191, 204_336],
+    manifest_sha256: MATURITY_SPONSORED_MANIFEST_SHA256,
+    run_address: MATURITY_SPONSORED_RUN_ADDRESS,
+    ceremony_sha256: MATURITY_SPONSORED_CEREMONY_SHA256,
+    fee_floors: MaturityDisclosedFeeFloors::node_defaults("0.00000100", "0.00000100"),
+    ..VARIABLE_PINS
+};
 
 /// The ordinary archive pins and constructor table for one mutant run.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -991,6 +1063,18 @@ impl<'a> Cursor<'a> {
         Ok(bytes)
     }
 
+    fn waiting(&mut self) -> ImportResult<Vec<u8>> {
+        if self
+            .lines
+            .get(self.index)
+            .is_some_and(|line| line.starts_with("sponsored-waiting "))
+        {
+            self.bytes("sponsored-waiting")
+        } else {
+            Ok(b"[]".to_vec())
+        }
+    }
+
     fn text(&mut self, field: &str) -> ImportResult<String> {
         String::from_utf8(self.bytes(field)?).map_err(|_| self.refusal())
     }
@@ -1435,6 +1519,7 @@ fn json_bytes(text: &str) -> Option<Vec<u8>> {
 enum SubjectKind {
     Funding,
     Submission,
+    Sponsored,
 }
 
 impl From<usize> for SubjectKind {
@@ -1448,7 +1533,20 @@ impl From<usize> for SubjectKind {
 }
 
 fn parse_subject(text: &str, kind: impl Into<SubjectKind>) -> Option<OperationSubject> {
-    if kind.into() == SubjectKind::Submission {
+    let kind = kind.into();
+    if kind == SubjectKind::Sponsored {
+        let subject: OperationSubject = serde_json::from_str(text).ok()?;
+        return (serde_json::to_string(&subject).ok()?.as_str() == text
+            && matches!(
+                subject,
+                OperationSubject::Funding(_)
+                    | OperationSubject::SponsorFunding(_)
+                    | OperationSubject::SponsorSigning(_)
+                    | OperationSubject::Submission(_)
+            ))
+        .then_some(subject);
+    }
+    if kind == SubjectKind::Submission {
         let array = text
             .strip_prefix("{\"transaction_bytes\":")?
             .strip_suffix('}')?;
@@ -1534,7 +1632,7 @@ fn recorded_layer(text: &str) -> Option<ObservedOutcomeLayer> {
 fn parse_operation_block(
     cursor: &mut Cursor<'_>,
     index: usize,
-    name: &'static str,
+    name: &str,
     kind: SubjectKind,
 ) -> ImportResult<RecordedOperation> {
     cursor.exact(&format!("operation {index} begin"))?;
@@ -1551,7 +1649,9 @@ fn parse_operation_block(
     binding(
         "request-bytes",
         match &subject {
-            OperationSubject::Funding(_) => request_bytes.is_empty(),
+            OperationSubject::Funding(_)
+            | OperationSubject::SponsorFunding(_)
+            | OperationSubject::SponsorSigning(_) => request_bytes.is_empty(),
             OperationSubject::Submission(submission) => {
                 !request_bytes.is_empty() && request_bytes == submission.transaction_bytes
             }
@@ -2264,6 +2364,222 @@ pub fn admit_maturity_corpus<'a>(
     validate_inputs(files, pins)
 }
 
+/// Replay-derived sponsored observations; no Safety standing is changed.
+pub struct ValidatedSponsoredMaturityCorpus {
+    /// Checked four-file report identity.
+    pub report: MaturityReportFacts,
+    /// Exact request replay and its derived census.
+    pub evidence: crate::maturity_native::sponsored::Planner,
+    /// Floors with their distinct provenance markers.
+    pub fee_floors: MaturityDisclosedFeeFloors,
+}
+
+/// Admits a sponsored capture through its own file pins and exact request replay.
+///
+/// # Errors
+/// Returns the first byte, grammar, policy, census, route or readback disagreement.
+///
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton, which its census cannot arrange.
+pub fn admit_sponsored_maturity_corpus(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<ValidatedSponsoredMaturityCorpus> {
+    admit_sponsored_with_replay(files, pins, crate::maturity_native::sponsored::replay)
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "The admission follows the four-file binding order before replaying the schedule."
+)]
+fn admit_sponsored_with_replay(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: &MaturityCorpusPins<'_>,
+    replay: impl FnOnce(
+        CandidateDeploymentIdentity,
+        BranchContext,
+        &[(OperationStep, NativeOperationResponse)],
+    ) -> Result<
+        crate::maturity_native::sponsored::Planner,
+        crate::maturity_native::MaturityNativePlanRefusal,
+    >,
+) -> ImportResult<ValidatedSponsoredMaturityCorpus> {
+    use crate::maturity_native::sponsored::Policy;
+    validate_census(files, pins)?;
+    validate_manifest(files, pins.manifest_sha256())?;
+    let original_report =
+        std::str::from_utf8(files[3].bytes).map_err(|_| Refusal::RunReportGrammar)?;
+    Cursor::new("sponsored report", files[3].bytes)?;
+    let mut report_lines = original_report.lines().peekable();
+    let mut normalized = String::new();
+    let mut extra = String::new();
+    for line in report_lines.by_ref() {
+        if line == "capture-profile sponsored" {
+            extra.push_str(line);
+            extra.push('\n');
+            break;
+        }
+        normalized.push_str(line);
+        normalized.push('\n');
+    }
+    for _ in 0..3 {
+        extra.push_str(report_lines.next().ok_or(Refusal::RunReportGrammar)?);
+        extra.push('\n');
+    }
+    if report_lines
+        .peek()
+        .is_some_and(|line| line.starts_with("sponsored-waiting "))
+    {
+        extra.push_str(report_lines.next().ok_or(Refusal::RunReportGrammar)?);
+        extra.push('\n');
+    }
+    for line in report_lines {
+        normalized.push_str(line);
+        normalized.push('\n');
+    }
+    let mut fields = Cursor::new("sponsored report", extra.as_bytes())?;
+    fields.exact("capture-profile sponsored")?;
+    let policy_bytes = fields.bytes("sponsored-policy")?;
+    let census_text = fields.value("sponsored-census")?;
+    let probe_bytes = fields.bytes("sponsored-probes")?;
+    let waiting_bytes = fields.waiting()?;
+    let census = census_text
+        .split(' ')
+        .map(number)
+        .collect::<Option<Vec<_>>>()
+        .ok_or(Refusal::RunReportGrammar)?;
+    fields.done()?;
+    let policy = Policy::parse(
+        serde_json::from_slice(&policy_bytes).map_err(|_| Refusal::RunReportGrammar)?,
+    )
+    .map_err(Refusal::Derivation)?;
+    binding(
+        "sponsored-policy-encoding",
+        serde_json::to_vec(&policy.0).map_err(|_| Refusal::RunReportGrammar)? == policy_bytes,
+    )?;
+    let (mut report, _) = parse_report_body(normalized.as_bytes(), pins, None)?;
+    report.run_address = hex_bytes(&tagged::sha256(files[3].bytes));
+    check_report_address(&report, pins)?;
+    validate_common_bindings(files, pins, &report)?;
+    let floors = pins.fee_floors();
+    binding(
+        "sponsored-fee-floors",
+        floors.min_relay_tx_fee() == policy.0["relay"].as_str().unwrap_or_default()
+            && floors.block_min_tx_fee() == policy.0["block"].as_str().unwrap_or_default()
+            && floors.provenance() == MaturityPremiseProvenance::ReportedByNode
+            && floors.block_provenance() == MaturityPremiseProvenance::PinnedSourceNoOverride,
+    )?;
+    let mut cursor = Cursor::new("sponsored capture", files[0].bytes)?;
+    parse_header(&mut cursor, &report, pins)?;
+    parse_environment(&mut cursor, &report, pins)?;
+    cursor.exact("digest-count 0")?;
+    let count = number(cursor.value("operation-count")?).ok_or_else(|| cursor.refusal())?;
+    let operations = (0..count)
+        .map(|index| parse_operation_block(&mut cursor, index, "", SubjectKind::Sponsored))
+        .collect::<ImportResult<Vec<_>>>()?;
+    let payload = parse_tail(&mut cursor, files[0].bytes)?;
+    let mut cursor = Cursor::new("sponsored payload", &payload)?;
+    cursor.exact("maturity-sponsored-evidence-schema 1")?;
+    let identity = CandidateDeploymentIdentity::new(
+        cursor
+            .bytes("deployment-id")?
+            .try_into()
+            .map_err(|_| cursor.refusal())?,
+        cursor
+            .bytes("genesis-id")?
+            .try_into()
+            .map_err(|_| cursor.refusal())?,
+    )
+    .map_err(|_| cursor.refusal())?;
+    binding(
+        "sponsored-deployment",
+        hex_bytes(identity.network_id()) == report.network_id
+            && hex_bytes(identity.genesis_id()) == report.genesis_id,
+    )?;
+    let identifier = cursor
+        .bytes("branch-identifier")?
+        .try_into()
+        .map_err(|_| cursor.refusal())?;
+    let checkpoint = cursor
+        .value("branch-checkpoint")?
+        .parse::<u64>()
+        .map_err(|_| cursor.refusal())?;
+    let branch = BranchContext::new(identifier, checkpoint).map_err(|_| cursor.refusal())?;
+    binding(
+        "sponsored-policy",
+        cursor.bytes("sponsored-policy")? == policy_bytes,
+    )?;
+    binding(
+        "sponsored-census",
+        cursor.value("sponsored-census")? == census_text,
+    )?;
+    binding(
+        "sponsored-probes",
+        cursor.bytes("sponsored-probes")? == probe_bytes,
+    )?;
+    binding("sponsored-waiting", cursor.waiting()? == waiting_bytes)?;
+    let mut exchanges = Vec::new();
+    for operation in operations {
+        let bytes = cursor.bytes("exchange")?;
+        let (case, subject, response): (
+            target_elements_conformance::protocol::OperationCaseId,
+            OperationSubject,
+            NativeOperationResponse,
+        ) = serde_json::from_slice(&bytes).map_err(|_| cursor.refusal())?;
+        binding(
+            "sponsored-exchange",
+            operation.step.subject() == &subject
+                && response.case == case
+                && operation.layer == response.observed_layer
+                && operation.detail == response.observed_detail.as_deref().unwrap_or_default()
+                && operation.accepted_identity.map(|id| id.to_target_display())
+                    == response.accepted_txid,
+        )?;
+        exchanges.push((OperationStep::new(&case.step, subject), response));
+    }
+    cursor.done()?;
+    let evidence = replay(identity, branch, &exchanges).map_err(Refusal::Derivation)?;
+    binding(
+        "sponsored-derived-waiting",
+        serde_json::to_vec(&evidence.waiting_json()).map_err(|_| Refusal::RunReportGrammar)?
+            == waiting_bytes,
+    )?;
+    binding(
+        "sponsored-probe-observations",
+        serde_json::to_vec(&evidence.probes()).map_err(|_| Refusal::RunReportGrammar)?
+            == probe_bytes,
+    )?;
+    binding(
+        "sponsored-derived-census",
+        evidence.census().as_slice() == census && census.first() == Some(&count),
+    )?;
+    binding(
+        "sponsored-derived-policy",
+        evidence.policy() == Some(&policy),
+    )?;
+    Ok(ValidatedSponsoredMaturityCorpus {
+        report,
+        evidence,
+        fee_floors: floors,
+    })
+}
+
+/// Admits the sponsored archive once through its independent pins and exact replay.
+///
+/// # Errors
+/// Preserves the first binding or exact-replay refusal.
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton, which archive bytes cannot arrange.
+pub fn maturity_sponsored_run_of_record() -> ImportResult<&'static ValidatedSponsoredMaturityCorpus>
+{
+    static CORPUS: OnceLock<ImportResult<ValidatedSponsoredMaturityCorpus>> = OnceLock::new();
+    match CORPUS.get_or_init(|| admit_sponsored_maturity_corpus(&SPONSORED_FILES, &SPONSORED_PINS))
+    {
+        Ok(corpus) => Ok(corpus),
+        Err(refusal) => Err(refusal.clone()),
+    }
+}
+
 /// Admits the immutable historical maturity archive through its own pins.
 ///
 /// The payload is checked against the derived evidence; it supplies no standing by authority. The admitted relay refusal answers the declared boundary and leaves acceptance outstanding through both routes.
@@ -2363,7 +2679,7 @@ mod tests {
     use transaction::bytes::TargetTransaction;
 
     #[test]
-    fn admitted_archives_disclose_the_executor_fee_arguments() {
+    fn admitted_archives_retain_historical_zero_fee_declarations() {
         let historical = maturity_run_of_record().expect("historical archive");
         let accepted = maturity_variable_run_of_record().expect("accepted archive");
         for corpus in [historical, accepted] {
@@ -2391,15 +2707,6 @@ mod tests {
         let floors = MATURITY_DISCLOSED_FEE_FLOORS;
         assert_eq!(floors.min_relay_tx_fee(), "0");
         assert_eq!(floors.block_min_tx_fee(), "0");
-        let driver_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("..")
-            .join("scripts/elements-native-executor.py");
-        let driver = std::fs::read_to_string(driver_path).expect("native executor source");
-        assert!(driver.contains("-minrelaytxfee=0"));
-        assert!(driver.contains("-blockmintxfee=0"));
-        assert!(driver.contains(&format!("-minrelaytxfee={}", floors.min_relay_tx_fee())));
-        assert!(driver.contains(&format!("-blockmintxfee={}", floors.block_min_tx_fee())));
     }
 
     #[test]
@@ -2704,7 +3011,9 @@ mod tests {
             );
             let _ = writeln!(out, "request-role auxiliary");
             let request_bytes = match step.subject() {
-                OperationSubject::Funding(_) => &[][..],
+                OperationSubject::Funding(_)
+                | OperationSubject::SponsorFunding(_)
+                | OperationSubject::SponsorSigning(_) => &[][..],
                 OperationSubject::Submission(subject) => subject.transaction_bytes.as_slice(),
                 _ => panic!("maturity subject"),
             };
@@ -2729,14 +3038,37 @@ mod tests {
                 "response-operation-id",
                 format!("operation-{index}").as_bytes(),
             );
-            let _ = writeln!(out, "response-verdict accepted");
-            let _ = writeln!(out, "response-layer accepted");
+            let layer = match response.observed_layer {
+                ObservedOutcomeLayer::Accepted => "accepted",
+                ObservedOutcomeLayer::ScriptPathRejection => "script-path-rejection",
+                ObservedOutcomeLayer::ConsensusRejectionBeforeScript => {
+                    "consensus-rejection-before-script"
+                }
+                ObservedOutcomeLayer::ExecutorInfrastructureFailure => {
+                    "executor-infrastructure-failure"
+                }
+                _ => panic!("unexpected scripted layer"),
+            };
+            let verdict = if layer == "accepted" {
+                "accepted"
+            } else {
+                "refused"
+            };
+            let _ = writeln!(out, "response-verdict {verdict}\nresponse-layer {layer}");
             let _ = writeln!(
                 out,
                 "response-target-identity {}",
                 response.accepted_txid.as_deref().unwrap_or("none")
             );
-            write_scripted_field(&mut out, "response-detail", b"");
+            write_scripted_field(
+                &mut out,
+                "response-detail",
+                response
+                    .observed_detail
+                    .as_deref()
+                    .unwrap_or_default()
+                    .as_bytes(),
+            );
             for line in [
                 "attribution-control-request-id none",
                 "attribution-control-identity none",
@@ -2749,6 +3081,371 @@ mod tests {
             let _ = writeln!(out, "operation {index} end");
         }
         out
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "One synthetic archive binds each of its four files before testing admission."
+    )]
+    fn synthetic_sponsored(mutation: usize) -> ImportResult<ValidatedSponsoredMaturityCorpus> {
+        let source = maturity_variable_run_of_record().expect("historical bindings");
+        let identity = source.evidence().identity();
+        let branch = source.evidence().branch();
+        let plan = if mutation >= 6 {
+            crate::maturity_native::tests::sponsored_script_with_retries(
+                identity.clone(),
+                branch,
+                false,
+                true,
+            )
+        } else {
+            crate::maturity_native::tests::sponsored_script_for(identity.clone(), branch)
+        };
+        let mut exchanges = plan.exchanges().to_vec();
+        let (_, response) = exchanges
+            .iter_mut()
+            .find(|(step, _)| {
+                step.case()
+                    .step
+                    .starts_with("sponsored-without-change:control:")
+            })
+            .expect("control");
+        if mutation == 3 {
+            let mut detail: serde_json::Value =
+                serde_json::from_str(response.observed_detail.as_deref().expect("detail"))
+                    .expect("JSON");
+            detail["route"] = serde_json::json!("direct-block");
+            detail["relay_allowed"] = serde_json::json!(false);
+            detail["relay_detail"] = serde_json::json!("refused");
+            response.observed_detail = Some(detail.to_string());
+        }
+        if mutation == 4 {
+            response
+                .mined_readback
+                .as_mut()
+                .expect("readback")
+                .raw_transaction[0] ^= 1;
+        }
+        let mut payload = String::from("maturity-sponsored-evidence-schema 1\n");
+        write_scripted_field(&mut payload, "deployment-id", identity.network_id());
+        write_scripted_field(&mut payload, "genesis-id", identity.genesis_id());
+        write_scripted_field(&mut payload, "branch-identifier", branch.identifier());
+        writeln!(payload, "branch-checkpoint {}", branch.checkpoint()).expect("String write");
+        let mut extra = String::new();
+        write_scripted_field(
+            &mut extra,
+            "sponsored-policy",
+            &serde_json::to_vec(&plan.policy().expect("policy").0).expect("JSON"),
+        );
+        let mut census = plan.census();
+        if mutation == 2 {
+            census[1] += 1;
+        }
+        writeln!(
+            extra,
+            "sponsored-census {}",
+            census.map(|n| n.to_string()).join(" ")
+        )
+        .expect("String write");
+        write_scripted_field(
+            &mut extra,
+            "sponsored-probes",
+            &serde_json::to_vec(
+                &exchanges
+                    .iter()
+                    .filter_map(|(_, response)| response.observed_detail.as_deref())
+                    .collect::<Vec<_>>(),
+            )
+            .expect("probes"),
+        );
+        if mutation != 7 {
+            write_scripted_field(
+                &mut extra,
+                "sponsored-waiting",
+                &if mutation == 8 {
+                    b"[]".to_vec()
+                } else {
+                    serde_json::to_vec(&plan.waiting_json()).expect("waiting")
+                },
+            );
+        }
+        payload.push_str(&extra);
+        for (step, response) in &exchanges {
+            write_scripted_field(
+                &mut payload,
+                "exchange",
+                &serde_json::to_vec(&(step.case(), step.subject(), response)).expect("JSON"),
+            );
+        }
+        let original = std::str::from_utf8(VARIABLE_FILES[0].bytes()).expect("capture");
+        let mut capture = original
+            .split_once("operation-count ")
+            .expect("operations")
+            .0
+            .to_owned();
+        capture.push_str(&scripted_operation_lines(&exchanges));
+        write_scripted_field(&mut capture, "legacy-rendering", payload.as_bytes());
+        capture.push_str("terminal-state complete\nrun-id-input end\n");
+        let content_hash = hex_bytes(&tagged::sha256(capture.as_bytes()));
+        writeln!(
+            capture,
+            "capture-content-sha256 {content_hash}\nnative-capture-end report"
+        )
+        .expect("String write");
+        let capture_hash = hex_bytes(&tagged::sha256(capture.as_bytes()));
+        let timing = VARIABLE_FILES[1].bytes();
+        let manifest = format!(
+            "{}  {}\n{}  {}\n",
+            capture_hash,
+            VARIABLE_FILES[0].name(),
+            hex_bytes(&tagged::sha256(timing)),
+            VARIABLE_FILES[1].name()
+        );
+        let manifest_hash = hex_bytes(&tagged::sha256(manifest.as_bytes()));
+        let mut report = String::new();
+        for line in std::str::from_utf8(VARIABLE_FILES[3].bytes())
+            .expect("report")
+            .lines()
+        {
+            if line == "ceremony-roster begin" {
+                writeln!(
+                    report,
+                    "capture-profile sponsored\n{extra}ceremony-roster begin"
+                )
+                .expect("String write");
+            } else if line.starts_with("ceremony report ") {
+                writeln!(report, "ceremony report {capture_hash}").expect("String write");
+            } else if line.starts_with("manifest-sha256 ") {
+                writeln!(report, "manifest-sha256 {manifest_hash}").expect("String write");
+            } else {
+                writeln!(report, "{line}").expect("String write");
+            }
+        }
+        let address = hex_bytes(&tagged::sha256(report.as_bytes()));
+        if mutation == 5 {
+            capture.replace_range(0..1, "x");
+        }
+        let inputs = [
+            capture.as_bytes(),
+            timing,
+            manifest.as_bytes(),
+            report.as_bytes(),
+        ];
+        let files =
+            std::array::from_fn(|i| MaturityArchiveFile::new(VARIABLE_FILES[i].name(), inputs[i]));
+        let floors = if mutation == 1 {
+            MaturityDisclosedFeeFloors::declared("0.00000100", "0.00000100")
+        } else {
+            MaturityDisclosedFeeFloors::node_defaults("0.00000100", "0.00000100")
+        };
+        let pins = MaturityCorpusPins {
+            sizes: inputs.map(<[u8]>::len),
+            manifest_sha256: &manifest_hash,
+            run_address: &address,
+            ceremony_sha256: &capture_hash,
+            fee_floors: floors,
+            ..VARIABLE_PINS
+        };
+        admit_sponsored_with_replay(
+            &files,
+            &pins,
+            crate::maturity_native::sponsored::replay_through_checkpoints,
+        )
+    }
+
+    fn assert_recorded_sponsored_fees_and_reasons() {
+        let recorded = maturity_sponsored_run_of_record().expect("pinned sponsored archive");
+        assert_eq!(recorded.evidence.census(), [69, 35, 17, 17, 12, 5]);
+        let fees: Vec<_> = recorded
+            .evidence
+            .exchanges()
+            .iter()
+            .filter_map(|(step, response)| {
+                if response.observed_layer != ObservedOutcomeLayer::Accepted
+                    || !step.case().step.contains(":control:")
+                {
+                    return None;
+                }
+                let OperationSubject::Submission(subject) = step.subject() else {
+                    return None;
+                };
+                let transaction =
+                    transaction::bytes::TargetTransaction::decode(&subject.transaction_bytes)
+                        .expect("submitted transaction");
+                transaction.outputs().iter().find_map(|output| {
+                    if !output.program().is_empty() {
+                        return None;
+                    }
+                    let transaction::bytes::ValueField::Explicit(value) = output.value() else {
+                        panic!("explicit fee");
+                    };
+                    Some(value)
+                })
+            })
+            .collect();
+        assert_eq!(fees, [128, 141, 142]);
+        for (step, response) in recorded.evidence.exchanges() {
+            use crate::maturity_native::sponsored::{
+                CASES, NEGATIVE_REASONS, NEGATIVES, check_reason,
+            };
+            let name = &step.case().step;
+            let expected = if let Some(index) = NEGATIVES.iter().position(|row| name.contains(row))
+            {
+                if !matches!(step.subject(), OperationSubject::Submission(_)) {
+                    continue;
+                }
+                Some((NEGATIVE_REASONS[index], true))
+            } else if CASES[..9].iter().any(|row| name.starts_with(row))
+                && name.contains(":control:")
+            {
+                Some(("min relay fee not met", false))
+            } else if name.starts_with(CASES[12])
+                && response.observed_layer == ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+            {
+                Some(("bad-txns-in-ne-out", true))
+            } else {
+                None
+            };
+            if let Some((reason, refused)) = expected {
+                assert_eq!(check_reason(response, reason, refused), Ok(()), "{name}");
+                assert_eq!(
+                    check_reason(response, "another boundary", refused),
+                    Err(MaturityNativePlanRefusal::SponsoredBoundary)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sponsored_admission_binds_bytes_provenance_census_routes_and_readback() {
+        assert_recorded_sponsored_fees_and_reasons();
+        synthetic_sponsored(0).expect("unmutated sponsored archive");
+        let retried = synthetic_sponsored(6)
+            .expect("undecided exchanges and fresh attempts remain admissible");
+        assert_eq!(retried.evidence.waiting().len(), 1);
+        assert_fresh_reprobes(&retried.evidence);
+        for mutation in [7, 8] {
+            assert_eq!(
+                synthetic_sponsored(mutation).err(),
+                Some(Refusal::CrossFileBinding {
+                    field: "sponsored-derived-waiting",
+                })
+            );
+        }
+        for (mutation, expected) in [
+            (
+                1,
+                Refusal::CrossFileBinding {
+                    field: "sponsored-fee-floors",
+                },
+            ),
+            (
+                2,
+                Refusal::CrossFileBinding {
+                    field: "sponsored-derived-census",
+                },
+            ),
+            (
+                3,
+                Refusal::Derivation(MaturityNativePlanRefusal::SponsoredRoute),
+            ),
+            (
+                4,
+                Refusal::Derivation(MaturityNativePlanRefusal::SubmissionReadbackMismatch),
+            ),
+        ] {
+            assert_eq!(synthetic_sponsored(mutation).err(), Some(expected));
+        }
+        assert!(matches!(
+            synthetic_sponsored(5),
+            Err(Refusal::ManifestDigest { .. })
+        ));
+    }
+
+    fn assert_fresh_reprobes(evidence: &crate::maturity_native::sponsored::Planner) {
+        let mut previous = std::collections::HashMap::new();
+        let mut undecided = 0;
+        for (step, response) in evidence.exchanges() {
+            if !step.case().step.contains(":control:") {
+                continue;
+            }
+            let OperationSubject::Submission(subject) = step.subject() else {
+                panic!("submission");
+            };
+            let transaction =
+                transaction::bytes::TargetTransaction::decode(&subject.transaction_bytes)
+                    .expect("transaction");
+            let row = step.case().step.split(':').next().expect("row");
+            let coin = transaction.inputs()[0].outpoint();
+            if let Some(old) = previous.insert(row, coin) {
+                assert_ne!(old, coin, "fresh funded outpoint");
+            }
+            undecided += usize::from(
+                response.observed_layer == ObservedOutcomeLayer::ExecutorInfrastructureFailure,
+            );
+        }
+        assert_eq!(undecided, 7);
+        assert_eq!(evidence.census()[4..], [11, 5]);
+        let credited = evidence.credited();
+        let family: Vec<_> = credited
+            .iter()
+            .filter(|(step, _)| {
+                step.case()
+                    .step
+                    .starts_with("sponsored-with-change-where-supported:")
+            })
+            .collect();
+        assert_eq!(family.len(), 6);
+        let control = family
+            .iter()
+            .find(|(step, _)| step.case().step.contains(":control:"))
+            .expect("fresh control");
+        let OperationSubject::Submission(control_subject) = control.0.subject() else {
+            panic!("control");
+        };
+        let control_tx =
+            transaction::bytes::TargetTransaction::decode(&control_subject.transaction_bytes)
+                .expect("control transaction");
+        let identity = |subject: &OperationSubject| {
+            let OperationSubject::Submission(subject) = subject else {
+                panic!("submission");
+            };
+            let tx = transaction::bytes::TargetTransaction::decode(&subject.transaction_bytes)
+                .expect("transaction");
+            tagged::sha256(&tagged::sha256(&tx.encode_without_witness()))
+        };
+        let fresh_ids: Vec<_> = family
+            .iter()
+            .map(|(step, _)| identity(step.subject()))
+            .collect();
+        for (step, _) in evidence.exchanges().iter().filter(|(step, _)| {
+            step.case()
+                .step
+                .starts_with("sponsored-with-change-where-supported:")
+                && matches!(step.subject(), OperationSubject::Submission(_))
+                && !family.iter().any(|(fresh, _)| fresh.case() == step.case())
+        }) {
+            assert!(
+                !fresh_ids.contains(&identity(step.subject())),
+                "abandoned transaction credited"
+            );
+        }
+        for (step, response) in family {
+            let OperationSubject::Submission(subject) = step.subject() else {
+                panic!("subject");
+            };
+            let tx = transaction::bytes::TargetTransaction::decode(&subject.transaction_bytes)
+                .expect("transaction");
+            assert_eq!(tx.inputs()[0].outpoint(), control_tx.inputs()[0].outpoint());
+            assert_eq!(
+                evidence
+                    .exchanges()
+                    .iter()
+                    .filter(|(candidate, answer)| candidate == step && answer == response)
+                    .count(),
+                1
+            );
+        }
     }
 
     fn scripted_payload(

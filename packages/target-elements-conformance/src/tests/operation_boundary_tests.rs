@@ -37,6 +37,455 @@ use super::support::{
     development_binding, nonmock_handshake, observed_environment, reviewed_target,
 };
 
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "One adapter contract checks startup policy, bounded calls and distinct observed routes."
+)]
+fn executor_fee_policy_selects_exact_startup_arguments() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let script = r"
+import contextlib
+import ast
+import importlib.util
+import io
+import json
+import pathlib
+import sys
+import tempfile
+from unittest.mock import patch, Mock
+
+path = pathlib.Path(sys.argv[1]) / 'scripts/elements-native-executor.py'
+spec = importlib.util.spec_from_file_location('fee_policy_contract', path)
+adapter = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(adapter)
+base = ['--output', 'diagnostics', '--elements-output', 'child-output',
+        '--elementsd', 'daemon', '--elements-cli', 'client',
+        '--framework', 'framework', '--network-id', '11' * 32]
+assert adapter.parse_arguments(base).fee_policy == 'historical-zero'
+for policy, expected in [('historical-zero', ['-minrelaytxfee=0', '-blockmintxfee=0']),
+                         ('node-defaults', [])]:
+    assert adapter.parse_arguments(base + ['--fee-policy', policy]).fee_policy == policy
+    with tempfile.TemporaryDirectory() as directory:
+        with patch.object(adapter, 'free_loopback_port', return_value=0):
+            node = adapter.DisposableNode('daemon', 'client', 'elementsregtest', 1,
+                                          datadir=directory, fee_policy=policy)
+        with patch.object(adapter.subprocess, 'Popen', return_value=Mock(poll=lambda: None)) as launch:
+            with patch.object(node, 'call', return_value={}):
+                node.start()
+        argv = launch.call_args.args[0]
+        floors = [item for item in argv if item.startswith(('-minrelaytxfee=', '-blockmintxfee='))]
+        assert floors == expected, (policy, argv)
+        assert '-validatepegin=0' in argv
+        node.node_log.close()
+with patch.object(adapter.subprocess, 'run', side_effect=[adapter.subprocess.TimeoutExpired('client', 120), Mock(returncode=0, stdout='{}')]) as client:
+    assert node.call('getmempoolinfo') == {}
+    assert [call.kwargs['timeout'] for call in client.call_args_list] == [120, 240]
+    assert node.call_observations[-1]['outcome'] == 'undecided'
+with patch.object(adapter.subprocess, 'run', side_effect=adapter.subprocess.TimeoutExpired('client', 120)):
+    try:
+        node.call('getmempoolinfo')
+    except adapter.UndecidedCall as error:
+        assert error.observation['wall_seconds'] >= 0
+    else:
+        raise AssertionError('timeout became a verdict')
+tree = ast.parse(path.read_text())
+reads = {'decoderawtransaction', 'getrawtransaction', 'getblock', 'testmempoolaccept',
+         'gettxout', 'getblockhash', 'getblockchaininfo', 'getaddressinfo',
+         'listunspent', 'getnewblockhex', 'getmempoolinfo', 'getmempoolentry',
+         'getdescriptorinfo', 'gettransaction', 'listtransactions'}
+def rpc_calls(tree):
+    return [item for item in ast.walk(tree) if isinstance(item, ast.Call)
+            and isinstance(item.func, ast.Attribute) and item.func.attr == 'call']
+for call in rpc_calls(tree):
+    assert isinstance(call.args[0], ast.Constant), call.lineno
+    assert call.args[0].value in reads | adapter.SINGLE_BUDGET_METHODS, call.lineno
+def called_names(root):
+    return {getattr(item.func, 'id', getattr(item.func, 'attr', ''))
+            for item in ast.walk(root) if isinstance(item, ast.Call)}
+functions = [item for item in ast.walk(tree) if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))]
+reachable = {item.name for item in functions if rpc_calls(item)}
+while True:
+    expanded = reachable | {item.name for item in functions if called_names(item) & reachable}
+    if expanded == reachable:
+        break
+    reachable = expanded
+def caught_names(handler):
+    if handler.type is None:
+        return {'BaseException'}
+    return {item.id for item in ast.walk(handler.type) if isinstance(item, ast.Name)}
+def check_handlers(root):
+    for block in [item for item in ast.walk(root) if isinstance(item, ast.Try)]:
+        guarded = ast.Module(body=block.body, type_ignores=[])
+        if not (rpc_calls(guarded) or called_names(guarded) & reachable):
+            continue
+        earlier = set()
+        for handler in block.handlers:
+            caught = caught_names(handler)
+            if caught & {'AdapterError', 'Exception', 'BaseException'}:
+                assert 'UndecidedCall' in earlier, handler.lineno
+            earlier |= caught
+check_handlers(tree)
+for caught in ['AdapterError', '(ConstructionError, AdapterError)', 'Exception', 'BaseException', '']:
+    clause = 'except ' + caught + ':' if caught else 'except:'
+    sample = 'try:\n    supersede()\n' + clause + '\n    pass\n'
+    try:
+        check_handlers(ast.parse(sample))
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError('indirect RPC catch escaped the sweep: ' + caught)
+for method in adapter.SINGLE_BUDGET_METHODS:
+    with patch.object(adapter.subprocess, 'run', side_effect=adapter.subprocess.TimeoutExpired('client', 120)) as client:
+        try:
+            node.call(method)
+        except adapter.UndecidedCall as error:
+            assert error.observation['method'] == method
+            assert client.call_count == 1, 'mutation was repeated without a lookup'
+        else:
+            raise AssertionError('expired mutation became a verdict')
+node = Mock(fee_policy='node-defaults', start_arguments=['elementsd', '-daemon=0'], call_observations=[])
+operations = adapter.OperationExecutor.__new__(adapter.OperationExecutor)
+operations.executor = Mock(node=node, weight_of=lambda raw: 4000)
+operations.read_back_confirmed = Mock(return_value={'transaction_id': 'accepted', 'block_hash':'block'})
+operations.executor.messages.CBlock.return_value = Mock(vtx=[Mock(hash='accepted', rehash=lambda: 'accepted')], get_weight=lambda: 4000)
+floors = {'minrelaytxfee': '0.00000100', 'mempoolminfee': '0.00000100', 'size':999}
+for accepted in [True, False]:
+    calls = []
+    def call(method, *args, **kwargs):
+        calls.append((method, args, kwargs))
+        if method == 'getmempoolinfo':
+            assert kwargs == {'amount_strings': True}
+            return floors
+        if method == 'testmempoolaccept':
+            return [{'txid':'accepted', 'allowed': accepted, **({} if accepted else {'reject-reason': 'min relay fee not met'})}]
+        if method == 'getmempoolentry': return {}
+        if method == 'getnewblockhex': return '00'
+        if method == 'getrawtransaction': return {}
+        if method == 'sendrawtransaction': return 'accepted'
+        if method == 'generatetodescriptor': return ['block']
+        if method == 'generateblock': return {'hash': 'block'}
+        if method == 'decoderawtransaction': return {'txid': 'accepted'}
+        raise AssertionError(method)
+    node.call.side_effect = call
+    answer = operations.submit_maturity({'transaction_bytes': b'raw'})
+    detail = json.loads(answer['observed_detail'])
+    assert detail['relay_allowed'] == accepted
+    assert detail['route'] == ('relay-and-template' if accepted else 'direct-block')
+    assert detail['policy']['block_provenance'] == 'declared by the pinned source, no override'
+    assert detail['policy']['relay_provenance'] == 'reported by the node'
+    miners = [(name, args) for name, args, _ in calls if name in ('generateblock', 'generatetodescriptor')]
+    assert len(miners) == 1
+    assert miners[0][1] == (('1', adapter.MINING_DESCRIPTOR) if accepted else (adapter.MINING_DESCRIPTOR, json.dumps([b'raw'.hex()])))
+original_call = call
+def transport_failure(method, *args, **kwargs):
+    if method == 'generateblock': raise adapter.AdapterError('client failed')
+    return original_call(method, *args, **kwargs)
+node.call.side_effect = transport_failure
+answer = operations.submit_maturity({'transaction_bytes':b'raw'})
+assert answer['observed_layer'] == 'executor_infrastructure_failure'
+assert json.loads(answer['observed_detail'])['route'] == 'undecided'
+assert answer['transaction_weight'] is None
+def conservation_failure(method, *args, **kwargs):
+    if method == 'testmempoolaccept':
+        return [{'txid':'accepted', 'allowed':False, 'reject-reason':'bad-txns-in-ne-out'}]
+    if method == 'generateblock':
+        raise adapter.AdapterError('client failed', 'TestBlockValidity failed: mandatory-script-verify-flag-failed (unknown error)')
+    return original_call(method, *args, **kwargs)
+node.call.side_effect = conservation_failure
+answer = operations.submit_maturity({'transaction_bytes':b'raw'})
+assert answer['observed_layer'] == 'consensus_rejection_before_script'
+assert json.loads(answer['observed_detail'])['detail']['verdict_reason'] == 'bad-txns-in-ne-out'
+for expired_lookup in [1, 2]:
+    lookups = [0]
+    node.call_observations = [{'reason':'earlier-probe'}]
+    def expired_confirmation(method, *args, **kwargs):
+        if method == 'getrawtransaction':
+            lookups[0] += 1
+            if lookups[0] == expired_lookup:
+                error = adapter.UndecidedCall(method, 360)
+                node.call_observations.append(error.observation)
+                raise error
+            return {}
+        return conservation_failure(method, *args, **kwargs)
+    node.call.side_effect = expired_confirmation
+    answer = operations.submit_maturity({'transaction_bytes':b'raw'})
+    detail = json.loads(answer['observed_detail'])
+    assert answer['observed_layer'] == 'executor_infrastructure_failure'
+    assert detail['route'] == 'undecided'
+    assert detail['detail']['reason']['wall_seconds'] == 360
+    assert detail['detail']['calls'] == [node.call_observations[-1]]
+    assert 'verdict_reason' not in detail['detail']
+node.call.side_effect = lambda method, *args, **kwargs: ({'blockhash':'foreign'} if method == 'getrawtransaction' else original_call(method, *args, **kwargs))
+operations.read_back_confirmed.side_effect = adapter.UndecidedCall('getblock', 360)
+answer = operations.submit_maturity({'transaction_bytes':b'raw'})
+assert json.loads(answer['observed_detail'])['detail']['reason']['method'] == 'getblock'
+assert answer['observed_layer'] == 'executor_infrastructure_failure'
+operations.read_back_confirmed.side_effect = None
+accepted = True
+operations.executor.messages.CBlock.return_value = Mock(vtx=[], get_weight=lambda: 4000000)
+def displaced(method, *args, **kwargs):
+    if method == 'getrawtransaction': return {'blockhash':'foreign'}
+    return original_call(method, *args, **kwargs)
+node.call.side_effect = displaced
+operations.read_back_confirmed.return_value = {'transaction_id':'accepted', 'block_hash':'foreign'}
+answer = operations.submit_maturity({'transaction_bytes':b'raw'})
+detail = json.loads(answer['observed_detail'])
+assert answer['observed_layer'] == 'executor_infrastructure_failure'
+assert detail['detail']['reason'] == 'included-before-template'
+assert detail['detail']['included_block'] == 'foreign'
+assert detail['detail']['template']['weight'] == 4000000
+assert answer['transaction_weight'] is None
+def confirmed(method, *args, **kwargs):
+    if method == 'getblock': return {'tx':[] if args[0] == 'own' else ['accepted'], 'height':99}
+    if method == 'getrawtransaction':
+        return {'blockhash':'foreign', 'txid':'accepted', 'hash':'witness', 'hex':'00'}
+    raise AssertionError(method)
+node.call.side_effect = confirmed
+readback = adapter.OperationExecutor.read_back_confirmed(operations, 'own', 'accepted')
+assert readback['block_hash'] == 'foreign' and readback['raw_transaction'] == [0]
+for located in [{}, {'blockhash':'foreign'}]:
+    node.call.side_effect = lambda method, *args: located if method == 'getrawtransaction' else {'tx':[]}
+    with patch.object(adapter.time, 'monotonic', side_effect=[10, 12]):
+        try:
+            adapter.OperationExecutor.read_back_confirmed(operations, 'own', 'accepted')
+        except adapter.UndecidedCall as error:
+            assert error.observation['wall_seconds'] == 2
+        else:
+            raise AssertionError('unestablished membership became acceptance')
+for observation in [{'txid':'other'}, {'txid':'accepted'}]:
+    node.call.side_effect = lambda method, *args, **kwargs: (floors if method == 'getmempoolinfo' else {'txid':'accepted'} if method == 'decoderawtransaction' else [observation])
+    with patch.object(adapter.time, 'monotonic', side_effect=[10, 12]):
+        try:
+            operations.submit_maturity({'transaction_bytes': b'raw'})
+        except adapter.UndecidedCall as error:
+            assert error.observation['wall_seconds'] == 2
+        else:
+            raise AssertionError('missing decision became a verdict')
+for read in [lambda: adapter.CaseExecutor.weight_of(Mock(node=node), '00'),
+             lambda: adapter.observed_key_path_spend(node, '00')]:
+    node.call.side_effect = adapter.UndecidedCall('decoderawtransaction', 360)
+    try:
+        read()
+    except adapter.UndecidedCall as error:
+        assert error.observation['method'] == 'decoderawtransaction'
+    else:
+        raise AssertionError('expired read became a resource or layer verdict')
+node.call.side_effect = [ {'vin':[{'txid':'coin', 'vout':0, 'txinwitness':['00']}]}, adapter.UndecidedCall('gettxout', 360)]
+try:
+    adapter.observed_key_path_spend(node, '00')
+except adapter.UndecidedCall as error:
+    assert error.observation['method'] == 'gettxout'
+else:
+    raise AssertionError('expired spent output read selected a layer')
+operations.executor.maturity_observation = False
+operations.executor.operations = operations
+del operations.read_back_confirmed
+conservation = adapter.ConservationExecutor.__new__(adapter.ConservationExecutor)
+conservation.node = node
+operations.executor.conservation = conservation
+for site in ['submit-allowed', 'submit-refused', 'conservation']:
+    for located in ['missing', 'expired', 'confirmed', 'wrong-member', 'wrong-identity']:
+        calls = []
+        def expired_block(method, *args, **kwargs):
+            calls.append(method)
+            if method == 'testmempoolaccept':
+                return [{'txid':'accepted', 'allowed':site == 'submit-allowed', 'reject-reason':'min relay fee not met'}]
+            if method == 'generateblock':
+                raise adapter.UndecidedCall(method, 120)
+            if method == 'getrawtransaction':
+                if located == 'expired': raise adapter.UndecidedCall(method, 360)
+                if located == 'missing': raise adapter.AdapterError('not found')
+                return {'txid':'other' if located == 'wrong-identity' else 'accepted', 'blockhash':'found', 'hash':'witness', 'hex':'00'}
+            if method == 'getblock':
+                assert args == ('found',)
+                return {'tx':[] if located == 'wrong-member' else ['accepted'], 'height':9}
+            raise AssertionError(method)
+        node.call.side_effect = expired_block
+        case = {'operation':'submit', 'step':'expired-block'}
+        request = {'schema':adapter.NATIVE_PROTOCOL_SCHEMA, 'case':case, 'subject':{}}
+        with patch.object(adapter, 'write_message') as emitted, patch.object(adapter, 'log'):
+            if site == 'conservation':
+                def execute(*args):
+                    layer, detail = conservation.judge('00')
+                    return {'observed_layer':layer, 'observed_detail':detail, 'transaction_bytes':[0],
+                            'observed_value_commitments':[], 'observed_asset_commitments':[], 'observed_openings':[]}
+                conservation.execute = execute
+                request['subject'] = {'inputs':[], 'outputs':[], 'defect':'none'}
+                adapter.answer_conservation_row(operations.executor, request, case)
+            else:
+                with patch.object(adapter, 'parse_operation_subject', return_value={'transaction_bytes':b'raw'}):
+                    adapter.answer_operation_step(operations.executor, request, case)
+        response = emitted.call_args.args[0]
+        assert calls.count('generateblock') == 1
+        assert 'getrawtransaction' in calls
+        assert response['observed_layer'] == 'executor_infrastructure_failure', (site, located, response)
+        detail = json.loads(response['observed_detail'])
+        assert detail['outcome'] == 'undecided'
+        assert detail['wall_seconds'] == (360 if located == 'expired' else 120)
+        if located == 'confirmed':
+            assert detail['block_hash'] == 'found' and detail['inclusion_in_produced'] is False
+        else:
+            assert 'block_hash' not in detail
+located = 'confirmed'
+node.call.side_effect = lambda method, *args, **kwargs: ({'txid':'accepted'} if method == 'decoderawtransaction' else expired_block(method, *args, **kwargs))
+try:
+    adapter.CaseExecutor.judge_in_block(Mock(node=node), '00')
+except adapter.UndecidedCall as error:
+    assert error.observation['block_hash'] == 'found'
+    assert error.observation['inclusion_in_produced'] is False
+else:
+    raise AssertionError('lookup-found block became a verdict')
+life = adapter.LifecycleExecutor.__new__(adapter.LifecycleExecutor)
+life.node = node
+life.conservation = Mock(WALLET='wallet', address=lambda *args: 'fresh')
+life.conservation.deserialize.return_value.rehash.return_value = 'object'
+life.normalization = Mock()
+life.normalization.execute.return_value = {'observed_layer':'accepted', 'transaction_bytes':[0],
+                                         'claimed_outputs':[{'explicit_amount':100000}]}
+life.locate_normalized_output = lambda body: 0
+operations.executor.lifecycle = life
+for found in [False, True]:
+    produced = []
+    def supersede_call(method, *args, **kwargs):
+        if method == 'generateblock':
+            produced.append(args)
+            if len(produced) == 1: return {'hash':'object-block'}
+            raise adapter.UndecidedCall(method, 120)
+        if method == 'getblock': return {'tx':['object'] if args[0] == 'object-block' else ['spent']}
+        if method == 'lockunspent': return True
+        if method == 'gettxout': return {}
+        if method in ['createrawtransaction', 'blindrawtransaction']: return '00'
+        if method == 'decoderawtransaction': return {'txid':'spent', 'vout':[{'valuecommitment':'commitment'}]}
+        if method == 'signrawtransactionwithwallet': return {'complete':True, 'hex':'00'}
+        if method == 'testmempoolaccept': return [{'allowed':True}]
+        if method == 'getrawtransaction':
+            if not found: raise adapter.AdapterError('not found')
+            return {'txid':'spent', 'blockhash':'spent-block'}
+        raise AssertionError(method)
+    node.call.side_effect = supersede_call
+    case = {'lifecycle':'construct'}
+    request = {'schema':adapter.NATIVE_PROTOCOL_SCHEMA, 'case':case,
+               'subject':{'claim':{}, 'supersede':True}}
+    with patch.object(adapter, 'write_message') as emitted, patch.object(adapter, 'log'):
+        adapter.answer_lifecycle_step(operations.executor, request, case)
+    response = emitted.call_args.args[0]
+    assert response['outcome'] == 'executor_infrastructure_failure', response
+    assert response['handoff'] is None and response['supersede_failure'] is None
+    detail = json.loads(response['detail'])
+    assert detail['outcome'] == 'undecided' and detail['method'] == 'generateblock'
+    assert len(produced) == 2
+    if found:
+        assert detail['block_hash'] == 'spent-block' and detail['inclusion_in_produced'] is False
+conservation.address = lambda *args: 'fresh'
+conservation.plain_form = lambda address: address
+for found in [False, True]:
+    calls = []
+    def wallet_call(method, *args, **kwargs):
+        calls.append(method)
+        if method == 'sendtoaddress': raise adapter.UndecidedCall(method, 120)
+        if method == 'listtransactions':
+            return [{'address':'fresh', 'txid':'paid'}] if found else []
+        if method == 'gettransaction': return {'blockhash':'wallet-block'}
+        if method == 'getblock': return {'tx':['paid']}
+        raise AssertionError(method)
+    node.call.side_effect = wallet_call
+    try:
+        conservation.create_coin(100, False)
+    except adapter.UndecidedCall as error:
+        detail = json.loads(error.note)
+        assert detail['outcome'] == 'undecided'
+        assert calls.count('sendtoaddress') == 1
+        assert detail['wallet_lookup'] == ([{'txid':'paid', 'block_hash':'wallet-block', 'inclusion_in_produced':False}] if found else [])
+    else:
+        raise AssertionError('expired wallet spend became a coin')
+for method in ['sendrawtransaction', 'generatetodescriptor', 'generateblock']:
+    accepted = method != 'generateblock'
+    operations.executor.messages.CBlock.return_value = Mock(vtx=[Mock(hash='accepted', rehash=lambda: 'accepted')], get_weight=lambda:4000)
+    def expired_mutation(name, *args, **kwargs):
+        if name == method: raise adapter.UndecidedCall(name, 120)
+        if name == 'getrawtransaction': return {'txid':'accepted', 'blockhash':'found', 'hash':'witness', 'hex':'00'}
+        if name == 'getblock': return {'tx':['accepted'], 'height':9}
+        return original_call(name, *args, **kwargs)
+    # The direct route must reach its production call before confirmation appears.
+    lookups = [0]
+    def observed_mutation(name, *args, **kwargs):
+        if name == 'getrawtransaction' and method == 'generateblock':
+            lookups[0] += 1
+            if lookups[0] == 1: return {}
+        return expired_mutation(name, *args, **kwargs)
+    node.call.side_effect = observed_mutation
+    response = operations.submit_maturity({'transaction_bytes':b'raw'})
+    detail = json.loads(response['observed_detail'])
+    assert response['observed_layer'] == 'executor_infrastructure_failure'
+    assert detail['detail']['reason']['method'] == method
+    assert detail['detail']['readback']['block_hash'] == 'found'
+    assert detail['detail']['inclusion_in_produced'] is False
+for invalid in [0.000001, '0', '0.0000010']:
+    node.call.side_effect = None
+    node.call.return_value = {**floors, 'minrelaytxfee': invalid}
+    try:
+        operations.maturity_policy()
+    except adapter.AdapterError as error:
+        assert error.note == 'fee readout is not an exact amount string'
+    else:
+        raise AssertionError('invalid amount readout accepted')
+try:
+    adapter.fee_policy_arguments('unknown')
+except adapter.AdapterError as error:
+    assert error.note == 'unknown fee policy'
+else:
+    raise AssertionError('unknown fee policy was accepted')
+with contextlib.redirect_stderr(io.StringIO()):
+    try:
+        adapter.parse_arguments(base + ['--fee-policy', 'unknown'])
+    except SystemExit as error:
+        assert error.code == 2
+    else:
+        raise AssertionError('unknown command-line policy was accepted')
+";
+    let output = std::process::Command::new("python3")
+        .args(["-B", "-c", script])
+        .arg(root)
+        .output()
+        .expect("the executor contract requires Python");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn executor_launcher_forwards_the_selected_fee_policy() {
+    let launcher = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../scripts/elements-native-executor.sh");
+    for policy in [None, Some("historical-zero"), Some("node-defaults")] {
+        let mut command = std::process::Command::new("sh");
+        command
+            .arg(&launcher)
+            .env("ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD", "daemon")
+            .env("ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI", "client")
+            .env("ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK", "framework")
+            .env("ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID", "11".repeat(32))
+            .env("ELEMENTS_NATIVE_EXECUTOR_PYTHON", "/bin/echo")
+            .env_remove("ELEMENTS_NATIVE_EXECUTOR_LAUNCH_PREFIX")
+            .env_remove("ELEMENTS_NATIVE_EXECUTOR_FEE_POLICY");
+        if let Some(policy) = policy {
+            command.env("ELEMENTS_NATIVE_EXECUTOR_FEE_POLICY", policy);
+        }
+        let output = command.output().expect("configuration launcher");
+        assert!(output.status.success());
+        let text = String::from_utf8(output.stdout).expect("launcher arguments");
+        let arguments: Vec<_> = text.split_whitespace().collect();
+        let selected = arguments
+            .windows(2)
+            .find(|pair| pair[0] == "--fee-policy")
+            .map(|pair| pair[1]);
+        assert_eq!(selected, policy);
+    }
+}
+
 /// A witness program the funding steps below pay to.
 ///
 /// An arbitrary public development value. It names nothing and
