@@ -166,8 +166,8 @@ use crate::maturity_history_report::{
 use crate::maturity_mutant_ceremony::MaturityMutantEvidence;
 use crate::maturity_native::sponsored::submission_row;
 use crate::maturity_native::{
-    MaturityAcceptanceObligation, MaturityAnnouncementPlanner, MaturityNativePlanRefusal,
-    MaturityNativeStanding,
+    MaturityAcceptanceObligation, MaturityAcceptanceRoute, MaturityAnnouncementPlanner,
+    MaturityNativePlanRefusal, MaturityNativeStanding,
 };
 use crate::maturity_recovery::MaturityRecoveryRefusal;
 use crate::maturity_recovery_report::{
@@ -1163,7 +1163,10 @@ pub enum MaturityRowStanding {
         identity: Txid,
         /// The mined block height checked against the accepted readback.
         block_height: u32,
-        /// The fee floors disclosed from the executor's node arguments.
+        /// The disclosed fee floors with their typed provenance: the executor's
+        /// node arguments for the historical archive, and the node-reported
+        /// relay and mempool floors beside the pinned-source block floor with no
+        /// override for the sponsored archive.
         fee_floors: MaturityDisclosedFeeFloors,
     },
     /// A target refused this row's mutant at exactly the boundary the row
@@ -2513,13 +2516,22 @@ fn mutant_standing(
 }
 
 /// Read acceptance only from the admitted sponsored schedule and its checked readback.
+///
+/// The response must state relay acceptance followed by ordinary template
+/// selection. A direct-block acceptance after relay refusal establishes neither,
+/// so this reader refuses it on its own premise rather than on any row's bound.
 fn sponsored_acceptance_standing(
     corpus: &ValidatedSponsoredMaturityCorpus,
     response: &target_elements_conformance::protocol::NativeOperationResponse,
 ) -> Option<MaturityRowStanding> {
+    let schedule = corpus.evidence.schedule()?;
     if corpus.report.run_address() != MATURITY_SPONSORED_RUN_ADDRESS
-        || corpus.evidence.schedule() != StateWitnessSchedule::VariableMetadata
+        || schedule != StateWitnessSchedule::VariableMetadata
         || response.observed_layer != ObservedOutcomeLayer::Accepted
+        || !matches!(
+            crate::maturity_native::sponsored::detail(response),
+            Ok((_, Some(MaturityAcceptanceRoute::RelayAndTemplate)))
+        )
     {
         return None;
     }
@@ -2530,14 +2542,43 @@ fn sponsored_acceptance_standing(
     }
     Some(MaturityRowStanding::NativeAcceptanceObserved {
         run_address: MATURITY_SPONSORED_RUN_ADDRESS,
-        schedule: corpus.evidence.schedule(),
+        schedule,
         identity,
         block_height: readback.block_height,
         fee_floors: corpus.fee_floors,
     })
 }
 
+/// The locator and intended carrier each submitted sponsor fault declares.
+///
+/// The row's own declarations are the source; this table restates them only
+/// so `sponsored_refusal` can compare them against the row before recording.
+/// It guards the shared binder's earlier-boundary branch, which records a
+/// refusal observed elsewhere without reading its site or carrier, so another
+/// row's mutation cannot enter that branch under this row's name.
+fn sponsored_site_and_carrier(
+    name: &str,
+) -> Option<(MaturityMutationLocator, MaturityIntendedCarrier)> {
+    match name {
+        "missing-sponsor-authorization" => Some((
+            MaturityMutationLocator::WitnessStack,
+            MaturityIntendedCarrier::Target,
+        )),
+        "sponsor-change-at-state-output-0"
+        | "fee-change-substitution"
+        | "balanced-state-corruption-compensated-by-sponsor-change" => Some((
+            MaturityMutationLocator::TransactionOutput,
+            MaturityIntendedCarrier::AnnouncementLeaf,
+        )),
+        _ => None,
+    }
+}
+
 /// Attribute the exact replayed mutation, without selecting a refusal standing.
+///
+/// Carrier execution is read from the observed layer: a refusal before any
+/// script never reached the carrier, and a script-path refusal executed it.
+/// Any other layer states neither, so the observation is not attributed.
 fn sponsored_refusal(
     row: &MaturitySafetyRow,
     step: &target_elements_conformance::executor::OperationStep,
@@ -2551,22 +2592,12 @@ fn sponsored_refusal(
     let OperationSubject::Submission(subject) = step.subject() else {
         return None;
     };
-    let (site, carrier, execution) = match name {
-        "missing-sponsor-authorization" => (
-            MaturityMutationLocator::WitnessStack,
-            MaturityIntendedCarrier::Target,
-            MaturityCarrierExecution::Executed,
-        ),
-        "sponsor-change-at-state-output-0" | "fee-change-substitution" => (
-            MaturityMutationLocator::TransactionOutput,
-            MaturityIntendedCarrier::AnnouncementLeaf,
-            MaturityCarrierExecution::Executed,
-        ),
-        "balanced-state-corruption-compensated-by-sponsor-change" => (
-            MaturityMutationLocator::TransactionOutput,
-            MaturityIntendedCarrier::AnnouncementLeaf,
-            MaturityCarrierExecution::NotReached,
-        ),
+    let (site, carrier) = sponsored_site_and_carrier(name)?;
+    let execution = match response.observed_layer {
+        ObservedOutcomeLayer::ConsensusRejectionBeforeScript => {
+            MaturityCarrierExecution::NotReached
+        }
+        ObservedOutcomeLayer::ScriptPathRejection => MaturityCarrierExecution::Executed,
         _ => return None,
     };
     // Check attribution before the shared binder's earlier-boundary branch.
@@ -4459,6 +4490,7 @@ pub(crate) mod tests {
         use crate::maturity_corpus::{
             MATURITY_SPONSORED_RUN_ADDRESS, maturity_sponsored_run_of_record,
         };
+        use crate::maturity_native::{MaturityAcceptanceRoute, sponsored};
         let corpus = maturity_sponsored_run_of_record().expect("admitted sponsored archive");
         for name in [
             "sponsored-without-change",
@@ -4498,6 +4530,21 @@ pub(crate) mod tests {
             assert_eq!(super::sponsored_acceptance_standing(corpus, &changed), None);
             changed = response.clone();
             changed.mined_readback = None;
+            assert_eq!(super::sponsored_acceptance_standing(corpus, &changed), None);
+            // The same accepted response restated as direct-block acceptance after
+            // relay refusal is a well-formed route that the reader still refuses.
+            let text = response.observed_detail.as_deref().expect("route detail");
+            let mut detail: serde_json::Value = serde_json::from_str(text).expect("JSON detail");
+            detail["route"] = "direct-block".into();
+            detail["relay_allowed"] = false.into();
+            detail["relay_detail"] = "min relay fee not met".into();
+            changed = response.clone();
+            changed.observed_detail = Some(detail.to_string());
+            let (_, route) = sponsored::detail(&changed).expect("well-formed route");
+            assert_eq!(
+                route,
+                Some(MaturityAcceptanceRoute::DirectBlockAfterRelayRefusal)
+            );
             assert_eq!(super::sponsored_acceptance_standing(corpus, &changed), None);
         }
     }
@@ -4549,6 +4596,21 @@ pub(crate) mod tests {
             super::submission_row(&OperationStep::new(original, funding.0.subject().clone())),
             None
         );
+        // Every positive-floor control submission in the archive receives no key.
+        for name in &crate::maturity_native::sponsored::CASES[..9] {
+            let prefix = format!("{name}:control:");
+            let controls: Vec<_> = corpus
+                .evidence
+                .exchanges()
+                .iter()
+                .filter(|(step, _)| step.case().step.starts_with(&prefix))
+                .collect();
+            assert!(!controls.is_empty(), "{name} has a control submission");
+            for (step, _) in controls {
+                assert!(matches!(step.subject(), OperationSubject::Submission(_)));
+                assert_eq!(super::submission_row(step), None);
+            }
+        }
     }
 
     #[test]
