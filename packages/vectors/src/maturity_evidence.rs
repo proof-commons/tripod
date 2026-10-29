@@ -146,6 +146,10 @@ use crate::maturity_corpus::{
     ValidatedMaturityCorpus, maturity_predecessor_mutant_run_of_record, maturity_run_of_record,
     maturity_successor_mutant_run_of_record, maturity_variable_run_of_record,
 };
+use crate::maturity_corpus::{
+    MATURITY_SPONSORED_RUN_ADDRESS, ValidatedSponsoredMaturityCorpus,
+    maturity_sponsored_run_of_record,
+};
 use crate::maturity_first_party::{
     MaturityCarriedReason, MaturityFirstPartyRefusal, MaturityFirstPartyValidator,
     ValidatedMaturityFirstPartyEvidence, discharge_maturity_first_party,
@@ -160,6 +164,7 @@ use crate::maturity_history_report::{
     assemble_maturity_root_history_report, validate_maturity_root_history_report,
 };
 use crate::maturity_mutant_ceremony::MaturityMutantEvidence;
+use crate::maturity_native::sponsored::submission_row;
 use crate::maturity_native::{
     MaturityAcceptanceObligation, MaturityAnnouncementPlanner, MaturityNativePlanRefusal,
     MaturityNativeStanding,
@@ -1147,7 +1152,8 @@ pub enum MaturityRowStanding {
     /// The run address and block height locate that transaction, and the
     /// schedule distinguishes the accepted declaration from the historical
     /// refused one. The disclosed fee floors state the environment in which
-    /// acceptance holds; they are a declared premise the archive does not verify.
+    /// acceptance holds; their typed provenance distinguishes declared premises
+    /// from the sponsored archive's bound observations.
     NativeAcceptanceObserved {
         /// The pinned SHA-256 content address of the accepted run report.
         run_address: &'static str,
@@ -1343,11 +1349,25 @@ pub struct MaturityEvidenceCensus {
     report_layer_observed: usize,
     report_layer_required: usize,
     outstanding_under_typed_non_answer: usize,
+    typed_non_answer_final: usize,
+    typed_non_answer_waiting: usize,
     infrastructure_blocked: usize,
     experimental: usize,
 }
 
 impl MaturityEvidenceCensus {
+    /// Final reasons, a subset of typed non-answers rather than another partition bucket.
+    #[must_use]
+    pub const fn typed_non_answer_final(&self) -> usize {
+        self.typed_non_answer_final
+    }
+
+    /// Waiting reasons, the other subset of typed non-answers.
+    #[must_use]
+    pub const fn typed_non_answer_waiting(&self) -> usize {
+        self.typed_non_answer_waiting
+    }
+
     /// How many rows the matrix has.
     #[must_use]
     pub const fn rows(&self) -> usize {
@@ -2016,6 +2036,8 @@ pub fn derive_maturity_evidence_plan_with(
         .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
     let successor_mutants = maturity_successor_mutant_run_of_record()
         .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
+    let sponsored = maturity_sponsored_run_of_record()
+        .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
     let root_history_mutations =
         MaturityMutationRegistry::registered(MaturityMutationRegistryKind::RootHistory);
     let continuity = accepted_continuity(accepted_corpus)?;
@@ -2092,7 +2114,7 @@ pub fn derive_maturity_evidence_plan_with(
         );
         classified.push(MaturityEvidenceRow {
             row,
-            standing: mutant_standing(row, standing, refusal),
+            standing: sponsored_standing(row, mutant_standing(row, standing, refusal), sponsored),
         });
     }
     let census = census_from_rows(&classified);
@@ -2490,8 +2512,128 @@ fn mutant_standing(
     }
 }
 
+/// Read acceptance only from the admitted sponsored schedule and its checked readback.
+fn sponsored_acceptance_standing(
+    corpus: &ValidatedSponsoredMaturityCorpus,
+    response: &target_elements_conformance::protocol::NativeOperationResponse,
+) -> Option<MaturityRowStanding> {
+    if corpus.report.run_address() != MATURITY_SPONSORED_RUN_ADDRESS
+        || corpus.evidence.schedule() != StateWitnessSchedule::VariableMetadata
+        || response.observed_layer != ObservedOutcomeLayer::Accepted
+    {
+        return None;
+    }
+    let readback = response.mined_readback.as_ref()?;
+    let identity = Txid::from_target_display(response.accepted_txid.as_deref()?).ok()?;
+    if identity.to_target_display() != readback.transaction_id || readback.block_height == 0 {
+        return None;
+    }
+    Some(MaturityRowStanding::NativeAcceptanceObserved {
+        run_address: MATURITY_SPONSORED_RUN_ADDRESS,
+        schedule: corpus.evidence.schedule(),
+        identity,
+        block_height: readback.block_height,
+        fee_floors: corpus.fee_floors,
+    })
+}
+
+/// Attribute the exact replayed mutation, without selecting a refusal standing.
+fn sponsored_refusal(
+    row: &MaturitySafetyRow,
+    step: &target_elements_conformance::executor::OperationStep,
+    response: &target_elements_conformance::protocol::NativeOperationResponse,
+    control: Txid,
+) -> Option<MaturityNativeRefusal> {
+    let (section, name) = submission_row(step)?;
+    if (row.section(), row.name()) != (section, name) {
+        return None;
+    }
+    let OperationSubject::Submission(subject) = step.subject() else {
+        return None;
+    };
+    let (site, carrier, execution) = match name {
+        "missing-sponsor-authorization" => (
+            MaturityMutationLocator::WitnessStack,
+            MaturityIntendedCarrier::Target,
+            MaturityCarrierExecution::Executed,
+        ),
+        "sponsor-change-at-state-output-0" | "fee-change-substitution" => (
+            MaturityMutationLocator::TransactionOutput,
+            MaturityIntendedCarrier::AnnouncementLeaf,
+            MaturityCarrierExecution::Executed,
+        ),
+        "balanced-state-corruption-compensated-by-sponsor-change" => (
+            MaturityMutationLocator::TransactionOutput,
+            MaturityIntendedCarrier::AnnouncementLeaf,
+            MaturityCarrierExecution::NotReached,
+        ),
+        _ => return None,
+    };
+    // Check attribution before the shared binder's earlier-boundary branch.
+    if row.control() != MaturityCanonicalControl::SponsoredAnnouncement
+        || row.locator() != Some(site)
+        || row.carrier() != carrier
+    {
+        return None;
+    }
+    Some(MaturityNativeRefusal::record(
+        row.refusing_layer()?,
+        response.observed_layer,
+        MaturityAcceptedControl::new(MaturityCanonicalControl::SponsoredAnnouncement, control),
+        response.observed_detail.clone()?,
+        MaturitySubmittedSubject::ExactBytes(subject.transaction_bytes.clone()),
+        MaturityMutationSite::Locator(site),
+        MaturityCarrierOutcome::new(carrier, execution),
+    ))
+}
+
+/// Fold credited submissions into their exact section/name rows beside the mutant fold.
+fn sponsored_standing(
+    row: &MaturitySafetyRow,
+    standing: MaturityRowStanding,
+    corpus: &ValidatedSponsoredMaturityCorpus,
+) -> MaturityRowStanding {
+    if !matches!(standing, MaturityRowStanding::NativeRunRequired(_))
+        || corpus.report.run_address() != MATURITY_SPONSORED_RUN_ADDRESS
+    {
+        return standing;
+    }
+    let credited = corpus.evidence.credited();
+    let Some(position) = credited
+        .iter()
+        .position(|(step, _)| submission_row(step) == Some((row.section(), row.name())))
+    else {
+        return standing;
+    };
+    let (step, response) = credited[position];
+    if row.section() == MaturitySafetySection::Positive {
+        return sponsored_acceptance_standing(corpus, response).unwrap_or(standing);
+    }
+    // Replay credits a negative only after its own attempt's S2 control accepts.
+    // That control follows the family's negatives, including after fresh attempts.
+    let control = credited[position + 1..]
+        .iter()
+        .find_map(|(step, response)| {
+            if submission_row(step)
+                != Some((
+                    MaturitySafetySection::Positive,
+                    "sponsored-with-change-where-supported",
+                ))
+            {
+                return None;
+            }
+            match sponsored_acceptance_standing(corpus, response)? {
+                MaturityRowStanding::NativeAcceptanceObserved { identity, .. } => Some(identity),
+                _ => None,
+            }
+        });
+    let refusal = control.and_then(|control| sponsored_refusal(row, step, response, control));
+    mutant_standing(row, standing, refusal.as_ref())
+}
+
 /// Count the classified rows into one bucket per standing.
 fn census_from_rows(classified: &[MaturityEvidenceRow]) -> MaturityEvidenceCensus {
+    use crate::maturity_safety::MaturityNonAnswerFinality;
     let mut census = MaturityEvidenceCensus {
         rows: classified.len(),
         ..MaturityEvidenceCensus::default()
@@ -2520,6 +2662,13 @@ fn census_from_rows(classified: &[MaturityEvidenceRow]) -> MaturityEvidenceCensu
             MaturityRowStanding::ReportLayerRequired(_) => census.report_layer_required += 1,
             MaturityRowStanding::OutstandingUnderTypedNonAnswer(_) => {
                 census.outstanding_under_typed_non_answer += 1;
+                match row.row.boundary().finality() {
+                    Some(MaturityNonAnswerFinality::Final) => census.typed_non_answer_final += 1,
+                    Some(MaturityNonAnswerFinality::Waiting) => {
+                        census.typed_non_answer_waiting += 1;
+                    }
+                    None => {}
+                }
             }
             MaturityRowStanding::InfrastructureBlocked => census.infrastructure_blocked += 1,
             MaturityRowStanding::Experimental => census.experimental += 1,
@@ -3198,16 +3347,22 @@ pub(crate) mod tests {
         assert_eq!(census.first_party_required(), pre_target - discharged);
         assert_eq!(
             census.native_run_required(),
-            run_required - 1 - census.native_refusal_observed()
+            run_required
+                - census.native_acceptance_observed()
+                - census.native_refusal_observed()
+                - census.native_refusal_at_unexpected_boundary()
         );
         assert_eq!(census.native_declared_boundary_observed(), 0);
         assert_eq!(census.report_layer_required(), report_required);
         assert_eq!(census.outstanding_under_typed_non_answer(), outstanding);
 
         // The accepted run and bound mutant refusals change the standing partition.
-        assert_eq!(census.native_acceptance_observed(), 1);
-        assert_eq!(census.native_refusal_observed(), 7);
-        assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
+        // The two sponsored positives add two admitted acceptances.
+        assert_eq!(census.native_acceptance_observed(), 3);
+        // Missing authorization, output-zero substitution and fee substitution add three refusals.
+        assert_eq!(census.native_refusal_observed(), 10);
+        // Balanced STATE corruption reaches conservation before its declared script boundary.
+        assert_eq!(census.native_refusal_at_unexpected_boundary(), 1);
         assert_eq!(census.constructor_continuity_observed(), 0);
         assert_eq!(census.root_history_observed(), root_history);
         assert_eq!(census.public_recovery_observed(), public_recovery);
@@ -3221,6 +3376,7 @@ pub(crate) mod tests {
                 + census.native_run_required()
                 + census.native_acceptance_observed()
                 + census.native_refusal_observed()
+                + census.native_refusal_at_unexpected_boundary()
                 + census.report_layer_required()
                 + census.root_history_observed()
                 + census.public_recovery_observed()
@@ -3763,7 +3919,9 @@ pub(crate) mod tests {
                 "{row} admits a refusal it has no boundary or no mutant for",
             );
         }
-        assert_eq!(admitting_none, 37);
+        // Missing authorization, output-zero change, fee substitution and balanced corruption
+        // gain declared layers; the two sponsored positives remain their own controls.
+        assert_eq!(admitting_none, 33);
     }
 
     /// The classifier, walked row by row against every observed layer.
@@ -3773,7 +3931,7 @@ pub(crate) mod tests {
     /// reads it. Neither says what the classifier does with a row: that
     /// a refusal recorded at each layer in turn answers a row exactly
     /// where the layer is the row's own, and that the rows a run can
-    /// answer at all are the forty-three the matrix declares a
+    /// answer at all are the forty-nine the matrix declares a
     /// target verdict for, are facts about the matrix and the classifier
     /// together.
     #[test]
@@ -3825,9 +3983,10 @@ pub(crate) mod tests {
                 }
             }
         }
-        assert_eq!(pairs, 1197);
-        assert_eq!(at_the_boundary, 43);
-        assert_eq!(bound, 42);
+        // Two sponsored positives and four sponsor faults add six layer rows.
+        assert_eq!(pairs, 1239);
+        assert_eq!(at_the_boundary, 49);
+        assert_eq!(bound, 46);
     }
 
     /// The census figures the readers this module adds leave unmoved.
@@ -3844,20 +4003,26 @@ pub(crate) mod tests {
         assert_eq!(census.first_party_required(), 43);
         assert_eq!(census.native_run_required(), 35);
         assert_eq!(census.report_layer_required(), 15);
-        assert_eq!(census.outstanding_under_typed_non_answer(), 35);
-        assert_eq!(census.answered(), 78);
+        // The two sponsored positives and four submitted sponsor faults acquire layers.
+        assert_eq!(census.outstanding_under_typed_non_answer(), 29);
+        // Two sponsored acceptances and three matching refusals add five answers.
+        assert_eq!(census.answered(), 83);
         assert_eq!(census.root_history_observed(), 16);
         assert_eq!(census.public_recovery_observed(), 14);
         assert_eq!(census.native_declared_boundary_observed(), 0);
-        assert_eq!(census.native_acceptance_observed(), 1);
-        assert_eq!(census.native_refusal_observed(), 7);
-        assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
+        // The two sponsored positives add two admitted acceptances.
+        assert_eq!(census.native_acceptance_observed(), 3);
+        // Missing authorization, output-zero substitution and fee substitution add three refusals.
+        assert_eq!(census.native_refusal_observed(), 10);
+        // Balanced STATE corruption reaches conservation before its declared script boundary.
+        assert_eq!(census.native_refusal_at_unexpected_boundary(), 1);
         assert_eq!(
             census.first_party_discharged()
                 + census.first_party_required()
                 + census.native_run_required()
                 + census.native_acceptance_observed()
                 + census.native_refusal_observed()
+                + census.native_refusal_at_unexpected_boundary()
                 + census.report_layer_required()
                 + census.root_history_observed()
                 + census.public_recovery_observed()
@@ -3895,13 +4060,16 @@ pub(crate) mod tests {
             5
         );
         assert_eq!(PLAN.census().rows(), 206);
-        assert_eq!(PLAN.census().answered(), 78);
-        assert_eq!(PLAN.census().outstanding(), 128);
+        // Two sponsored acceptances and three matching refusals add five answers.
+        assert_eq!(PLAN.census().answered(), 83);
+        // Two sponsored acceptances and three matching refusals remove five outstanding rows.
+        assert_eq!(PLAN.census().outstanding(), 123);
         assert_eq!(PLAN.census().first_party_discharged(), 40);
         assert_eq!(PLAN.census().first_party_required(), 43);
         assert_eq!(PLAN.census().native_run_required(), 35);
         assert_eq!(PLAN.census().report_layer_required(), 15);
-        assert_eq!(PLAN.census().outstanding_under_typed_non_answer(), 35);
+        // The two sponsored positives and four submitted sponsor faults acquire layers.
+        assert_eq!(PLAN.census().outstanding_under_typed_non_answer(), 29);
     }
 
     #[test]
@@ -3920,6 +4088,8 @@ pub(crate) mod tests {
         let observed: Vec<_> = PLAN
             .rows()
             .iter()
+            // The two sponsored acceptances have their own separately pinned archive.
+            .filter(|row| row.row().name() == "sponsorless")
             .filter(|row| {
                 matches!(
                     row.standing(),
@@ -3947,8 +4117,10 @@ pub(crate) mod tests {
             crate::maturity_corpus::MaturityPremiseProvenance::ExecutorArguments
         );
         assert_eq!(PLAN.census().native_declared_boundary_observed(), 0);
-        assert_eq!(PLAN.census().native_acceptance_observed(), 1);
-        assert_eq!(PLAN.census().native_refusal_observed(), 7);
+        // The two sponsored positives add two admitted acceptances.
+        assert_eq!(PLAN.census().native_acceptance_observed(), 3);
+        // Missing authorization, output-zero substitution and fee substitution add three refusals.
+        assert_eq!(PLAN.census().native_refusal_observed(), 10);
         assert_eq!(
             historical.evidence().acceptance_obligation(),
             &crate::maturity_native::MaturityAcceptanceObligation::Outstanding {
@@ -4027,6 +4199,15 @@ pub(crate) mod tests {
         .into_iter()
         .collect();
         assert_eq!(offered, expected);
+        // The sponsored fold adds three matching refusals beside the seven mutant rows.
+        let mut expected = expected;
+        for name in [
+            "missing-sponsor-authorization",
+            "sponsor-change-at-state-output-0",
+            "fee-change-substitution",
+        ] {
+            expected.insert((MaturitySafetySection::SponsorFault, name));
+        }
         let observed: BTreeSet<_> = PLAN
             .rows()
             .iter()
@@ -4039,10 +4220,29 @@ pub(crate) mod tests {
             .map(|classified| (classified.row().section(), classified.row().name()))
             .collect();
         assert_eq!(observed, expected);
-        assert!(!PLAN.rows().iter().any(|classified| matches!(
-            classified.standing(),
-            MaturityRowStanding::NativeRefusalAtUnexpectedBoundary(_)
-        )));
+    }
+
+    #[test]
+    fn only_balanced_corruption_has_an_unexpected_boundary() {
+        // Balanced corruption alone adds an earlier refusal; the seven mutant answers remain.
+        let unexpected: Vec<_> = PLAN
+            .rows()
+            .iter()
+            .filter(|classified| {
+                matches!(
+                    classified.standing(),
+                    MaturityRowStanding::NativeRefusalAtUnexpectedBoundary(_)
+                )
+            })
+            .map(|classified| (classified.row().section(), classified.row().name()))
+            .collect();
+        assert_eq!(
+            unexpected,
+            [(
+                MaturitySafetySection::SponsorFault,
+                "balanced-state-corruption-compensated-by-sponsor-change"
+            )]
+        );
     }
 
     #[test]
@@ -4099,6 +4299,357 @@ pub(crate) mod tests {
         assert_eq!(
             mutant_standing(row, MaturityRowStanding::RootHistoryObserved, Some(refusal)),
             MaturityRowStanding::RootHistoryObserved
+        );
+    }
+
+    fn sponsored_row(
+        section: MaturitySafetySection,
+        name: &str,
+    ) -> &'static super::MaturityEvidenceRow {
+        PLAN.rows()
+            .iter()
+            .find(|entry| (entry.row().section(), entry.row().name()) == (section, name))
+            .expect("section and name identify a row")
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The ledger retains all fourteen row dispositions together."
+    )]
+    #[test]
+    fn sponsored_retyping_ledger_pins_all_fourteen_rows() {
+        use crate::maturity_safety::{MaturityNonAnswerFinality as F, MaturityRowBoundary as B};
+        use MaturitySafetySection::{Positive, SponsorFault};
+        let finals = [
+            (
+                "state-sponsor-overlap",
+                B::SponsorConstructionAnsweredByLandedEvidence,
+            ),
+            (
+                "foreign-sponsor-asset",
+                B::SponsorConstructionAnsweredByLandedEvidence,
+            ),
+            (
+                "empty-sponsor-offer-for-sponsored-request",
+                B::SponsorConstructionAnsweredByLandedEvidence,
+            ),
+            (
+                "two-sponsor-envelopes",
+                B::SponsorRegionAnsweredByLandedEvidence,
+            ),
+            (
+                "state-successor-in-sponsor-range",
+                B::SponsorRegionAnsweredByLandedEvidence,
+            ),
+            (
+                "sponsor-member-unclassified",
+                B::SponsorRegionAnsweredByLandedEvidence,
+            ),
+            (
+                "zero-valued-sponsor-member-under-exact-role-structure",
+                B::ZeroSponsorRoleStructureAnsweredByLandedEvidence,
+            ),
+        ];
+        for (name, boundary) in finals {
+            let entry = sponsored_row(SponsorFault, name);
+            assert_eq!(entry.row().boundary(), boundary);
+            assert_eq!(boundary.finality(), Some(F::Final));
+            assert_eq!(entry.row().mutation(), Some(MutationLayer::AbiLayout));
+            assert_eq!(
+                entry.row().carrier(),
+                MaturityIntendedCarrier::CoordinatorStructure
+            );
+            assert_eq!(
+                entry.standing(),
+                &MaturityRowStanding::OutstandingUnderTypedNonAnswer(boundary)
+            );
+            assert!(!entry.standing().is_answered());
+        }
+        for name in [
+            "sponsored-without-change",
+            "sponsored-with-change-where-supported",
+        ] {
+            let entry = sponsored_row(Positive, name);
+            assert_eq!(
+                entry.row().boundary(),
+                B::Layer(EvidenceBoundary::AcceptedTransaction)
+            );
+            assert_eq!(entry.row().carrier(), MaturityIntendedCarrier::Target);
+            assert!(matches!(
+                entry.standing(),
+                MaturityRowStanding::NativeAcceptanceObserved { .. }
+            ));
+        }
+        for (name, carrier) in [
+            (
+                "missing-sponsor-authorization",
+                MaturityIntendedCarrier::Target,
+            ),
+            (
+                "sponsor-change-at-state-output-0",
+                MaturityIntendedCarrier::AnnouncementLeaf,
+            ),
+            (
+                "fee-change-substitution",
+                MaturityIntendedCarrier::AnnouncementLeaf,
+            ),
+        ] {
+            let entry = sponsored_row(SponsorFault, name);
+            assert_eq!(
+                entry.row().boundary(),
+                B::Layer(EvidenceBoundary::ScriptPathRejection)
+            );
+            assert_eq!(entry.row().carrier(), carrier);
+            let MaturityRowStanding::NativeRefusalObserved(refusal) = entry.standing() else {
+                panic!("{name} has an admitted matching refusal");
+            };
+            assert_eq!(
+                native_refusal_binds_to_row(entry.row(), refusal),
+                MaturityRowBinding::Bound
+            );
+            assert_eq!(
+                refusal.carrier_execution(),
+                MaturityCarrierExecution::Executed
+            );
+        }
+        let entry = sponsored_row(
+            SponsorFault,
+            "balanced-state-corruption-compensated-by-sponsor-change",
+        );
+        assert_eq!(
+            entry.row().boundary(),
+            B::Layer(EvidenceBoundary::ScriptPathRejection)
+        );
+        let MaturityRowStanding::NativeRefusalAtUnexpectedBoundary(refusal) = entry.standing()
+        else {
+            panic!("conservation precedes the declared STATE script");
+        };
+        assert_eq!(
+            refusal.observed_layer(),
+            ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+        );
+        assert_eq!(
+            refusal.carrier_execution(),
+            MaturityCarrierExecution::NotReached
+        );
+        assert!(!entry.standing().is_answered());
+        let entry = sponsored_row(
+            SponsorFault,
+            "confidential-sponsor-value-where-the-selected-target-policy-claims-support",
+        );
+        let boundary = B::ConfidentialSponsorAwaitsBalancedProofRoute;
+        assert_eq!(entry.row().boundary(), boundary);
+        assert_eq!(boundary.finality(), Some(F::Waiting));
+        assert_eq!(
+            entry.standing(),
+            &MaturityRowStanding::OutstandingUnderTypedNonAnswer(boundary)
+        );
+        // Seven final ABI claims, two acceptances, three matching refusals, one contradiction and one wait.
+        assert_eq!(finals.len() + 2 + 3 + 1 + 1, 14);
+        // Seven ABI claims join the twelve finals; nine relay waits and confidential value remain.
+        assert_eq!(PLAN.census().typed_non_answer_final(), 19);
+        assert_eq!(PLAN.census().typed_non_answer_waiting(), 10);
+        assert_eq!(PLAN.census().outstanding_under_typed_non_answer(), 29);
+        writeln!(std::io::stdout(), "census sponsored: {:?}", PLAN.census())
+            .expect("census output");
+    }
+
+    #[test]
+    fn sponsored_acceptances_carry_the_admitted_pins_schedule_and_readback() {
+        use crate::maturity_corpus::{
+            MATURITY_SPONSORED_RUN_ADDRESS, maturity_sponsored_run_of_record,
+        };
+        let corpus = maturity_sponsored_run_of_record().expect("admitted sponsored archive");
+        for name in [
+            "sponsored-without-change",
+            "sponsored-with-change-where-supported",
+        ] {
+            let entry = sponsored_row(MaturitySafetySection::Positive, name);
+            let (_, response) = corpus
+                .evidence
+                .credited()
+                .into_iter()
+                .find(|(step, _)| {
+                    super::submission_row(step) == Some((entry.row().section(), name))
+                })
+                .expect("credited positive submission");
+            assert_eq!(
+                super::sponsored_acceptance_standing(corpus, response).as_ref(),
+                Some(entry.standing())
+            );
+            let MaturityRowStanding::NativeAcceptanceObserved {
+                run_address,
+                schedule,
+                identity,
+                block_height,
+                fee_floors,
+            } = entry.standing()
+            else {
+                panic!("admitted acceptance");
+            };
+            let readback = response.mined_readback.as_ref().expect("checked readback");
+            assert_eq!(*run_address, MATURITY_SPONSORED_RUN_ADDRESS);
+            assert_eq!(*schedule, tapscript::StateWitnessSchedule::VariableMetadata);
+            assert_eq!(identity.to_target_display(), readback.transaction_id);
+            assert_eq!(*block_height, readback.block_height);
+            assert_eq!(*fee_floors, corpus.fee_floors);
+            let mut changed = response.clone();
+            changed.accepted_txid = Some("00".repeat(32));
+            assert_eq!(super::sponsored_acceptance_standing(corpus, &changed), None);
+            changed = response.clone();
+            changed.mined_readback = None;
+            assert_eq!(super::sponsored_acceptance_standing(corpus, &changed), None);
+        }
+    }
+
+    #[test]
+    fn sponsored_keys_require_exact_components_and_submission_subjects() {
+        let corpus = crate::maturity_corpus::maturity_sponsored_run_of_record().expect("archive");
+        let (step, _) = corpus
+            .evidence
+            .credited()
+            .into_iter()
+            .find(|(step, _)| {
+                super::submission_row(step)
+                    .is_some_and(|(_, name)| name == "missing-sponsor-authorization")
+            })
+            .expect("submitted authorization negative");
+        let original = &step.case().step;
+        assert_eq!(
+            super::submission_row(step),
+            Some((
+                MaturitySafetySection::SponsorFault,
+                "missing-sponsor-authorization"
+            ))
+        );
+        for name in [
+            format!("prefix-{original}"),
+            format!("{original}:extra"),
+            original.replace(
+                "missing-sponsor-authorization",
+                "missing-sponsor-authorization-extra",
+            ),
+            "sponsored-with-change-where-supported:state-successor-in-sponsor-range:0".to_owned(),
+            "sponsored-with-change-where-supported:sponsor-input-added-after-signing:0".to_owned(),
+            "sponsored-without-change:missing-sponsor-authorization:0".to_owned(),
+            "sponsored-with-change-where-supported:missing-sponsor-authorization:00".to_owned(),
+        ] {
+            assert_eq!(
+                super::submission_row(&OperationStep::new(&name, step.subject().clone())),
+                None
+            );
+        }
+        let funding = corpus
+            .evidence
+            .exchanges()
+            .iter()
+            .find(|(step, _)| matches!(step.subject(), OperationSubject::SponsorFunding(_)))
+            .expect("sponsor funding");
+        assert_eq!(
+            super::submission_row(&OperationStep::new(original, funding.0.subject().clone())),
+            None
+        );
+    }
+
+    #[test]
+    fn sponsored_fold_preserves_relay_operator_and_funding_obligations() {
+        use crate::maturity_safety::MaturityRowBoundary;
+        let corpus = crate::maturity_corpus::maturity_sponsored_run_of_record().expect("archive");
+        let relay: Vec<_> = PLAN
+            .rows()
+            .iter()
+            .filter(|entry| {
+                entry.row().boundary() == MaturityRowBoundary::AcceptanceAwaitsRelayAdmissibility
+            })
+            .collect();
+        assert_eq!(relay.len(), 9);
+        for entry in relay {
+            assert_eq!(
+                super::sponsored_standing(entry.row(), entry.standing().clone(), corpus),
+                *entry.standing()
+            );
+        }
+        for name in [
+            "sponsor-input-added-after-signing",
+            "fee-output-changed-after-signing",
+        ] {
+            let entry = sponsored_row(MaturitySafetySection::OperatorFault, name);
+            assert_eq!(
+                entry.row().control(),
+                MaturityCanonicalControl::SponsorlessAnnouncement
+            );
+            assert_eq!(
+                entry.row().refusing_layer(),
+                Some(EvidenceBoundary::ScriptPathRejection)
+            );
+            assert!(matches!(
+                entry.standing(),
+                MaturityRowStanding::NativeRunRequired(_)
+            ));
+        }
+        let funding_refusals: Vec<_> = corpus
+            .evidence
+            .exchanges()
+            .iter()
+            .filter(|(step, response)| {
+                matches!(step.subject(), OperationSubject::SponsorFunding(_))
+                    && response.observed_layer
+                        == ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+            })
+            .collect();
+        assert_eq!(funding_refusals.len(), 1);
+        assert_eq!(super::submission_row(&funding_refusals[0].0), None);
+        assert_eq!(PLAN.census().native_run_required(), 35);
+    }
+
+    #[test]
+    fn sponsored_refusal_requires_its_own_row_control_site_and_carrier() {
+        let corpus = crate::maturity_corpus::maturity_sponsored_run_of_record().expect("archive");
+        let entry = sponsored_row(
+            MaturitySafetySection::SponsorFault,
+            "fee-change-substitution",
+        );
+        let MaturityRowStanding::NativeRefusalObserved(refusal) = entry.standing() else {
+            panic!("retained signature refuses");
+        };
+        let waiting = MaturityRowStanding::NativeRunRequired(None);
+        for changed in [
+            with_control(
+                refusal,
+                MaturityAcceptedControl::new(
+                    MaturityCanonicalControl::SponsorlessAnnouncement,
+                    refusal.control_identity(),
+                ),
+            ),
+            with_site(
+                refusal,
+                MaturityMutationSite::Locator(MaturityMutationLocator::TransactionInput),
+            ),
+            with_carrier(
+                refusal,
+                MaturityCarrierOutcome::new(
+                    MaturityIntendedCarrier::Target,
+                    MaturityCarrierExecution::Executed,
+                ),
+            ),
+        ] {
+            assert_eq!(
+                mutant_standing(entry.row(), waiting.clone(), Some(&changed)),
+                waiting
+            );
+        }
+        let (step, response) = corpus
+            .evidence
+            .credited()
+            .into_iter()
+            .find(|(step, _)| {
+                super::submission_row(step)
+                    .is_some_and(|(_, name)| name == "missing-sponsor-authorization")
+            })
+            .expect("another submitted negative");
+        assert_eq!(
+            super::sponsored_refusal(entry.row(), step, response, refusal.control_identity()),
+            None
         );
     }
 

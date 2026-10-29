@@ -232,7 +232,7 @@ pub enum MaturityRowBoundary {
     /// route: no deployed argument list relaxes standardness, and an
     /// acceptance under a policy nobody runs would carry that caveat wherever it went.
     AcceptanceAwaitsRelayAdmissibility,
-    /// Inherited standing pending admission of the sponsored row's evidence.
+    /// Former waiting reason for eleven sponsored rows; no row retains it.
     ///
     /// Former reason: construction refused both sponsored request forms for
     /// lack of a carrier, as ruling 58 in
@@ -241,17 +241,65 @@ pub enum MaturityRowBoundary {
     /// `each_request_form_is_built_or_refused_by_name` test in
     /// `packages/transaction/src/tests/state_construct_tests.rs` pins
     /// the request cross-product. Construction supplies both explicit sponsored
-    /// controls under ruling 130; the row's declared evidence remains owed and
-    /// this inherited bound awaits its evidence-backed disposition.
+    /// controls under ruling 130. The two positives now use admitted acceptance;
+    /// missing authorization, output-zero substitution and fee substitution use
+    /// script refusals; balanced corruption retains an earlier conservation
+    /// refusal against its script boundary. Overlap, foreign asset and empty
+    /// offer use `SponsorConstructionAnsweredByLandedEvidence`; successor
+    /// membership uses `SponsorRegionAnsweredByLandedEvidence`; confidential
+    /// value uses `ConfidentialSponsorAwaitsBalancedProofRoute`.
     /// The compatibility entry without a sponsor context returns
     /// `SponsorRequestedWithoutCapability` for both sponsored change choices.
     SponsoredControlRefusedAtConstruction,
-    /// Inherited waiting boundary for the three sponsor-region rows.
+    /// Former waiting boundary for the three sponsor-region rows.
     ///
     /// The region refit supplies their relation dispositions; admission of
-    /// their exact subjects remains with `T12-005`. A construction refusal
-    /// cannot supply membership or envelope-count mutation evidence.
+    /// their exact subjects was owed by this former reason. A construction
+    /// refusal cannot supply membership or envelope-count mutation evidence.
+    /// Two envelopes and unclassified membership now use
+    /// `SponsorRegionAnsweredByLandedEvidence`; the zero-valued member uses
+    /// `ZeroSponsorRoleStructureAnsweredByLandedEvidence`. No row retains this reason.
     SponsorArmAwaitsRegionScoping,
+    /// Three ABI-layout claims are answered by landed construction evidence.
+    ///
+    /// Their declared mutation layer is pre-target ABI layout: no target
+    /// observation is their obligation. In
+    /// `packages/transaction/src/tests/state_construct_tests.rs`, overlap is
+    /// answered by `state_input_cannot_join_sponsor_offer` and
+    /// `state_input_and_successor_cannot_join_sponsor_flow`; foreign asset by
+    /// `sponsor_views_are_required_and_foreign_assets_refuse` and
+    /// `foreign_sponsor_asset_fails_model_recognition`; empty offer by
+    /// `malformed_and_empty_offers_refuse_against_a_nonempty_control`.
+    /// These answers are held outside the vectors first-party registry.
+    SponsorConstructionAnsweredByLandedEvidence,
+    /// Three ABI-layout claims are answered by landed region evidence.
+    ///
+    /// Their declared mutation layer is pre-target ABI layout: no target
+    /// observation is their obligation. The region membership and multiplicity
+    /// claims have no target carrier. In
+    /// `packages/transaction/src/tests/state_construct_tests.rs`, two envelopes
+    /// are answered by `second_sponsor_envelope_fails_region_multiplicity`;
+    /// successor membership by `state_input_and_successor_cannot_join_sponsor_flow`;
+    /// unclassified membership by `missing_sponsor_membership_fails_isolation`,
+    /// with normalization separately pinned by
+    /// `surplus_sponsor_membership_refuses_at_observation_boundary`.
+    SponsorRegionAnsweredByLandedEvidence,
+    /// The zero-valued member's ABI-layout role claim has its landed answer.
+    ///
+    /// Its declared mutation layer is pre-target ABI layout: no target
+    /// observation is its obligation. Erased value does not alter membership,
+    /// as `zero_sponsor_value_does_not_erase_membership` in
+    /// `packages/transaction/src/tests/state_construct_tests.rs` establishes.
+    /// The funding refusal establishes no zero-valued-input execution; that
+    /// execution question is not a row of this matrix.
+    ZeroSponsorRoleStructureAnsweredByLandedEvidence,
+    /// A balanced confidential control, proofs and selected-policy observation are owed.
+    ///
+    /// `confidential_sponsor_value_requires_balanced_proof_route` in
+    /// `packages/transaction/src/tests/state_construct_tests.rs` establishes
+    /// only the explicit route's refusal. The confidential-value row waits
+    /// for the balanced confidential route and retains its observable obligation.
+    ConfidentialSponsorAwaitsBalancedProofRoute,
     /// The row is answered by landed nonce and tweak evidence.
     ///
     /// The admissible-nonce search and the tweak arithmetic were
@@ -279,6 +327,10 @@ impl MaturityRowBoundary {
             Self::AcceptanceAwaitsRelayAdmissibility
             | Self::SponsoredControlRefusedAtConstruction
             | Self::SponsorArmAwaitsRegionScoping
+            | Self::SponsorConstructionAnsweredByLandedEvidence
+            | Self::SponsorRegionAnsweredByLandedEvidence
+            | Self::ZeroSponsorRoleStructureAnsweredByLandedEvidence
+            | Self::ConfidentialSponsorAwaitsBalancedProofRoute
             | Self::TotalityAnsweredByLandedNonceEvidence
             | Self::PropertyOfTheBuildRatherThanAFixture => None,
         }
@@ -289,6 +341,34 @@ impl MaturityRowBoundary {
     pub const fn is_typed_non_answer(self) -> bool {
         self.layer().is_none()
     }
+
+    /// Finality names where an answer is held, independently of evidence standing.
+    #[must_use]
+    pub const fn finality(self) -> Option<MaturityNonAnswerFinality> {
+        match self {
+            Self::Layer(_) => None,
+            Self::AcceptanceAwaitsRelayAdmissibility
+            | Self::SponsoredControlRefusedAtConstruction
+            | Self::SponsorArmAwaitsRegionScoping
+            | Self::ConfidentialSponsorAwaitsBalancedProofRoute => {
+                Some(MaturityNonAnswerFinality::Waiting)
+            }
+            Self::SponsorConstructionAnsweredByLandedEvidence
+            | Self::SponsorRegionAnsweredByLandedEvidence
+            | Self::ZeroSponsorRoleStructureAnsweredByLandedEvidence
+            | Self::TotalityAnsweredByLandedNonceEvidence
+            | Self::PropertyOfTheBuildRatherThanAFixture => Some(MaturityNonAnswerFinality::Final),
+        }
+    }
+}
+
+/// Whether a typed non-answer retains an observable obligation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MaturityNonAnswerFinality {
+    /// The claim's answer is held by other admitted evidence.
+    Final,
+    /// The claim still requires its named observable route.
+    Waiting,
 }
 
 /// The carrier one row intends to exercise.
@@ -1450,10 +1530,8 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         Bound::AcceptanceAwaitsRelayAdmissibility,
         C::LinkedConstructor,
     ),
-    // This is the one §16.1 row an admitted run answers. The accepted
-    // archive carries its acceptance, so its standing is
-    // `NativeAcceptanceObserved` while its declared boundary stays the
-    // relay layer the historical run observed.
+    // The sponsorless and two sponsored positives carry admitted acceptances.
+    // The sponsorless archive retains its historical relay declaration.
     positive(
         "sponsorless",
         Bound::Layer(B::RelayPolicyRejection),
@@ -1461,13 +1539,13 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     ),
     positive(
         "sponsored-without-change",
-        Bound::SponsoredControlRefusedAtConstruction,
-        C::CoordinatorStructure,
+        Bound::Layer(B::AcceptedTransaction),
+        C::Target,
     ),
     positive(
         "sponsored-with-change-where-supported",
-        Bound::SponsoredControlRefusedAtConstruction,
-        C::CoordinatorStructure,
+        Bound::Layer(B::AcceptedTransaction),
+        C::Target,
     ),
     positive(
         "public-successor-recovery",
@@ -2658,22 +2736,15 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     ),
     // §16.10 — the fourteen sponsor faults.
     //
-    // Nine rows retain the former construction-refusal standing pending
-    // admission of evidence at their declared boundaries. Explicit sponsored
-    // controls construct. Three ask about sponsor-region
-    // membership or envelope multiplicity, whose region dispositions are
-    // stated below without supplying their admission evidence. The other
-    // two ask what the canonical report published, which is a
-    // property of bytes this workspace renders and needs no sponsor
-    // region to check: no target can answer them and no relation is
-    // indexed by them.
-    //
+    // Explicit sponsored observations answer their own declared boundaries.
+    // ABI-layout claims retain final construction or region reasons; confidential
+    // value still requires its balanced route. Report subjects stay separate.
     fault(
         S::SponsorFault,
         "state-sponsor-overlap",
         L::AbiLayout,
         Loc::SponsorEnvelope,
-        Bound::SponsoredControlRefusedAtConstruction,
+        Bound::SponsorConstructionAnsweredByLandedEvidence,
         C::CoordinatorStructure,
         names(
             relation(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
@@ -2685,7 +2756,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "two-sponsor-envelopes",
         L::AbiLayout,
         Loc::SponsorEnvelope,
-        Bound::SponsorArmAwaitsRegionScoping,
+        Bound::SponsorRegionAnsweredByLandedEvidence,
         C::CoordinatorStructure,
         names(
             relation(
@@ -2700,7 +2771,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "foreign-sponsor-asset",
         L::AbiLayout,
         Loc::SponsorEnvelope,
-        Bound::SponsoredControlRefusedAtConstruction,
+        Bound::SponsorConstructionAnsweredByLandedEvidence,
         C::CoordinatorStructure,
         names(sponsor_recognition(), Class::WrongRecognizedAsset),
     ),
@@ -2710,8 +2781,8 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "missing-sponsor-authorization",
         L::WitnessProof,
         Loc::WitnessStack,
-        Bound::SponsoredControlRefusedAtConstruction,
-        C::CoordinatorStructure,
+        Bound::Layer(B::ScriptPathRejection),
+        C::Target,
         names(
             relation(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
             Class::MissingSponsorAuthorization,
@@ -2723,8 +2794,8 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "sponsor-change-at-state-output-0",
         L::TargetTransaction,
         Loc::TransactionOutput,
-        Bound::SponsoredControlRefusedAtConstruction,
-        C::CoordinatorStructure,
+        Bound::Layer(B::ScriptPathRejection),
+        C::AnnouncementLeaf,
         unlinked(Why::SubjectOutsideTheRelationsRegion),
     ),
     fault(
@@ -2732,7 +2803,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "state-successor-in-sponsor-range",
         L::AbiLayout,
         Loc::SponsorEnvelope,
-        Bound::SponsoredControlRefusedAtConstruction,
+        Bound::SponsorRegionAnsweredByLandedEvidence,
         C::CoordinatorStructure,
         names(
             relation(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
@@ -2745,8 +2816,8 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "fee-change-substitution",
         L::TargetTransaction,
         Loc::TransactionOutput,
-        Bound::SponsoredControlRefusedAtConstruction,
-        C::CoordinatorStructure,
+        Bound::Layer(B::ScriptPathRejection),
+        C::AnnouncementLeaf,
         unlinked(Why::SubjectOutsideTheRelationsRegion),
     ),
     fault(
@@ -2754,7 +2825,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "sponsor-member-unclassified",
         L::AbiLayout,
         Loc::SponsorEnvelope,
-        Bound::SponsorArmAwaitsRegionScoping,
+        Bound::SponsorRegionAnsweredByLandedEvidence,
         C::CoordinatorStructure,
         names(
             relation(RelationKind::SponsorIsolation, RelationSubject::Sponsor),
@@ -2767,7 +2838,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "empty-sponsor-offer-for-sponsored-request",
         L::AbiLayout,
         Loc::SponsorEnvelope,
-        Bound::SponsoredControlRefusedAtConstruction,
+        Bound::SponsorConstructionAnsweredByLandedEvidence,
         C::CoordinatorStructure,
         unlinked(Why::SubjectOutsideTheRelationsRegion),
     ),
@@ -2792,8 +2863,8 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "balanced-state-corruption-compensated-by-sponsor-change",
         L::TargetTransaction,
         Loc::TransactionOutput,
-        Bound::SponsoredControlRefusedAtConstruction,
-        C::CoordinatorStructure,
+        Bound::Layer(B::ScriptPathRejection),
+        C::AnnouncementLeaf,
         names(
             substrate_conservation(),
             Class::ExternalReportSubjectMismatch,
@@ -2805,7 +2876,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "zero-valued-sponsor-member-under-exact-role-structure",
         L::AbiLayout,
         Loc::SponsorEnvelope,
-        Bound::SponsorArmAwaitsRegionScoping,
+        Bound::ZeroSponsorRoleStructureAnsweredByLandedEvidence,
         C::CoordinatorStructure,
         unlinked(Why::SubjectOutsideTheRelationsRegion),
     ),
@@ -2814,7 +2885,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "confidential-sponsor-value-where-the-selected-target-policy-claims-support",
         L::TargetTransaction,
         Loc::SponsorEnvelope,
-        Bound::SponsoredControlRefusedAtConstruction,
+        Bound::ConfidentialSponsorAwaitsBalancedProofRoute,
         C::CoordinatorStructure,
         unlinked(Why::NoPublishedRelationNamesIt),
     ),
@@ -3825,21 +3896,33 @@ mod tests {
         let standing = |wanted: MaturityRowBoundary| {
             rows().iter().filter(|row| row.boundary() == wanted).count()
         };
-        // Nine positive rows ask for an acceptance no admitted run supplies,
-        // including §16.1's last, four-term row. Eleven rows stand on
-        // the former construction refusal pending admitted evidence; three sponsor
-        // faults stand on region membership or envelope multiplicity.
+        // Nine relay obligations stay waiting. The two sponsored positives and
+        // four submitted sponsor faults leave the typed reasons; seven ABI-layout
+        // rows become final and confidential value keeps its observable route.
         assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 9);
-        assert_eq!(standing(Bound::SponsoredControlRefusedAtConstruction), 11);
-        assert_eq!(standing(Bound::SponsorArmAwaitsRegionScoping), 3);
+        assert_eq!(standing(Bound::SponsoredControlRefusedAtConstruction), 0);
+        assert_eq!(standing(Bound::SponsorArmAwaitsRegionScoping), 0);
         assert_eq!(standing(Bound::TotalityAnsweredByLandedNonceEvidence), 11);
         assert_eq!(standing(Bound::PropertyOfTheBuildRatherThanAFixture), 1);
+        assert_eq!(
+            standing(Bound::SponsorConstructionAnsweredByLandedEvidence),
+            3
+        );
+        assert_eq!(standing(Bound::SponsorRegionAnsweredByLandedEvidence), 3);
+        assert_eq!(
+            standing(Bound::ZeroSponsorRoleStructureAnsweredByLandedEvidence),
+            1
+        );
+        assert_eq!(
+            standing(Bound::ConfidentialSponsorAwaitsBalancedProofRoute),
+            1
+        );
         let non_answers = rows()
             .iter()
             .filter(|row| row.boundary().is_typed_non_answer())
             .count();
-        assert_eq!(non_answers, 35);
-        assert_eq!(row_count() - non_answers, 171);
+        assert_eq!(non_answers, 29);
+        assert_eq!(row_count() - non_answers, 177);
         assert_eq!(
             rows()
                 .iter()
@@ -3869,7 +3952,11 @@ mod tests {
                         "{row} is outside the sponsored positive and sponsor-fault tables",
                     );
                 }
-                Bound::SponsorArmAwaitsRegionScoping => {
+                Bound::SponsorArmAwaitsRegionScoping
+                | Bound::SponsorConstructionAnsweredByLandedEvidence
+                | Bound::SponsorRegionAnsweredByLandedEvidence
+                | Bound::ZeroSponsorRoleStructureAnsweredByLandedEvidence
+                | Bound::ConfidentialSponsorAwaitsBalancedProofRoute => {
                     assert_eq!(row.section(), S::SponsorFault, "{row} is not a sponsor row");
                 }
                 Bound::TotalityAnsweredByLandedNonceEvidence => {
@@ -4228,9 +4315,10 @@ mod tests {
                 reachable += 1;
             }
         }
-        assert_eq!(reachable, 43);
+        // Two sponsored positives and four sponsor negatives add six native layers.
+        assert_eq!(reachable, 49);
         assert_eq!(unreachable, 128);
-        assert_eq!(reachable + unreachable, 171);
+        assert_eq!(reachable + unreachable, 177);
         let pre_target = rows()
             .iter()
             .filter(|row| row.refusing_layer().is_some_and(B::is_pre_target))

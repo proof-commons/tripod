@@ -2323,8 +2323,11 @@ mod tests {
         )
         .expect("the evidence plan derives");
         assert_eq!(plan.census().rows(), 206);
-        assert_eq!(plan.census().answered(), 78);
-        assert_eq!(plan.census().outstanding(), 128);
+        // Both sponsored positives, missing authorization, output-zero change and fee substitution
+        // add five answers to the admitted maturity plan.
+        assert_eq!(plan.census().answered(), 83);
+        // Those two positives and three sponsor refusals remove five outstanding obligations.
+        assert_eq!(plan.census().outstanding(), 123);
         assert_eq!(plan.census().native_run_required(), 35);
         assert_eq!(row_count(), 206);
 
