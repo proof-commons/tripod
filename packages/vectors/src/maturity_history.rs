@@ -15,7 +15,7 @@ use transaction::state_abi::CandidateMaturityAnnouncementAbi;
 use transaction::taproot::Digest32;
 
 use crate::maturity_continuity::{ValidatedMaturityContinuity, submitted_transaction_identities};
-use crate::maturity_native::MaturityAcceptanceRoute;
+use crate::maturity_native::{MaturityAcceptanceRoute, MaturityAcceptedReadback};
 use crate::maturity_recovery::{
     MaturityRecoveryRefusal, PublicAnnouncementHandoff, recover_public_successor,
 };
@@ -567,9 +567,6 @@ pub struct MaturityRootCheckpoint {
 pub(crate) struct MaturityRootCheckpointFacts {
     pub(crate) network_identity: String,
     pub(crate) genesis_identity: String,
-    pub(crate) block_hash: Digest32,
-    pub(crate) block_height: u32,
-    pub(crate) transaction_identity: Txid,
     pub(crate) predecessor: Outpoint,
     pub(crate) successor: Outpoint,
     pub(crate) target_contract: String,
@@ -721,17 +718,28 @@ pub enum MaturityRootObservationRefusal {
 impl MaturityRootCheckpoint {
     pub(crate) fn from_readback(
         facts: MaturityRootCheckpointFacts,
+        readback: &MaturityAcceptedReadback,
         linked_candidate: MaturityDeclaredPremise<CandidateLinkedMaturityBundle>,
         candidate_abi: MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi>,
         edge: &StateRootEdge,
         handoff: &PublicAnnouncementHandoff,
     ) -> Result<Self, MaturityRootCheckpointRefusal> {
+        let checkpoint_digest =
+            target_elements_conformance::constructor::tagged::sha256(readback.bytes());
+        let handoff_digest =
+            target_elements_conformance::constructor::tagged::sha256(handoff.bytes());
+        if checkpoint_digest != handoff_digest {
+            return Err(MaturityRootCheckpointRefusal::SubmittedBytesDisagree {
+                checkpoint: checkpoint_digest,
+                handoff: handoff_digest,
+            });
+        }
         let checkpoint = Self {
             network_identity: facts.network_identity,
             genesis_identity: facts.genesis_identity,
-            block_hash: facts.block_hash,
-            block_height: facts.block_height,
-            transaction_identity: facts.transaction_identity,
+            block_hash: *readback.block_hash(),
+            block_height: readback.block_height(),
+            transaction_identity: readback.identity(),
             predecessor: facts.predecessor,
             successor: facts.successor,
             target_contract: facts.target_contract,
@@ -1468,6 +1476,62 @@ mod tests {
             assert_eq!(fact, *roster_fact);
             assert_eq!(fact.kind(), kind);
         }
+    }
+
+    #[test]
+    fn private_readback_route_checks_the_complete_handoff_bytes() {
+        let corpus = maturity_variable_run_of_record().expect("accepted corpus");
+        let handoff = accepted_handoff();
+        let continuity =
+            project_maturity_continuity(variable_archived().input()).expect("continuity");
+        let edge = StateRootEdge::from_continuity(&continuity);
+        let MaturityAcceptanceObligation::Established { readback, .. } =
+            corpus.evidence().acceptance_obligation()
+        else {
+            panic!("accepted readback")
+        };
+        let bind = |offered: &PublicAnnouncementHandoff| {
+            let (linked, abi) = declarations(&continuity);
+            MaturityRootCheckpoint::from_readback(
+                MaturityRootCheckpointFacts {
+                    network_identity: corpus.report().network_id().to_owned(),
+                    genesis_identity: corpus.report().genesis_id().to_owned(),
+                    predecessor: edge.predecessor(),
+                    successor: edge.successor(),
+                    target_contract: corpus.report().target_contract().to_owned(),
+                    branch: corpus.evidence().branch(),
+                },
+                readback,
+                linked,
+                abi,
+                &edge,
+                offered,
+            )
+        };
+        let control = bind(&handoff).expect("exact readback control");
+        assert_eq!(control.block_hash(), readback.block_hash());
+        assert_eq!(control.block_height(), readback.block_height());
+        assert_eq!(control.transaction_identity(), readback.identity());
+        let mut bytes = handoff.bytes().to_vec();
+        let last = bytes.last_mut().expect("transaction byte");
+        *last ^= 1;
+        let subject = PublicAnnouncementHandoff::new(
+            handoff.locator().clone(),
+            bytes,
+            handoff.state_output_index(),
+            handoff.schedule(),
+            handoff.bounds(),
+            handoff.static_subtree().clone(),
+            handoff.internal_key(),
+            handoff.contract(),
+        );
+        assert_eq!(
+            bind(&subject),
+            Err(MaturityRootCheckpointRefusal::SubmittedBytesDisagree {
+                checkpoint: sha256(readback.bytes()),
+                handoff: sha256(subject.bytes()),
+            })
+        );
     }
 
     #[test]

@@ -4559,6 +4559,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the historical recount keeps the six exact links beside all five reason classes"
+    )]
     fn the_whole_transaction_scoped_rows_are_exactly_the_recounted_set() {
         // Before: 55 / 9 / 9 / 17; all seventeen subjects retain their rows.
         let reason = |wanted: Why| {
@@ -4572,6 +4576,7 @@ mod tests {
         assert_eq!(reason(Why::TheReportIsTheSubject), 9);
         assert_eq!(reason(Why::RelationScopedToTheWholeTransaction), 0);
         assert_eq!(reason(Why::SubjectOutsideTheRelationsRegion), 11);
+        let mut relinked = 0;
         for (name, kind, subject, class) in [
             (
                 "introduce-canonical-u-ent-or-dist-ctl-flow",
@@ -4615,6 +4620,7 @@ mod tests {
                 row.relation(),
                 &super::names(super::relation(kind, subject), class)
             );
+            relinked += 1;
         }
         let outside: BTreeSet<_> = rows()
             .iter()
@@ -4656,8 +4662,884 @@ mod tests {
         assert_eq!(positive, 14);
         assert_eq!(declared, 108);
         assert_eq!(unlinked, 84);
+        assert_eq!(relinked, 6);
+        // Reconstruct the earlier scope bucket from the six exact links and
+        // eleven exclusions; the other three reason classes never moved.
+        assert_eq!(
+            (positive, declared - relinked, unlinked + relinked),
+            (14, 102, 90)
+        );
+        assert_eq!(
+            [
+                reason(Why::NoPublishedRelationNamesIt),
+                reason(Why::SeveralPublishedRelationsFit),
+                reason(Why::TheReportIsTheSubject),
+                relinked + outside.len(),
+            ],
+            [55, 9, 9, 17]
+        );
         assert_eq!(positive + declared + unlinked, row_count());
         print_region_census(positive, declared, unlinked);
+    }
+
+    // Each key is reviewed against the declaration domains below. Keeping keys
+    // and locators here makes a renamed or repurposed row require a new reading.
+    const RELATION_NON_LINKS: &[(S, &str, Why, Loc)] = &[
+        (
+            S::WindowFault,
+            "one-below-minimum",
+            Why::NoPublishedRelationNamesIt,
+            Loc::SemanticRequestField,
+        ),
+        (
+            S::WindowFault,
+            "one-above-maximum",
+            Why::NoPublishedRelationNamesIt,
+            Loc::SemanticRequestField,
+        ),
+        (
+            S::WindowFault,
+            "equal-to-current-cycle-where-outside-the-lead",
+            Why::NoPublishedRelationNamesIt,
+            Loc::SemanticRequestField,
+        ),
+        (
+            S::WindowFault,
+            "lower-bound-addition-overflow",
+            Why::NoPublishedRelationNamesIt,
+            Loc::SemanticRequestField,
+        ),
+        (
+            S::WindowFault,
+            "upper-bound-addition-overflow",
+            Why::NoPublishedRelationNamesIt,
+            Loc::SemanticRequestField,
+        ),
+        (
+            S::WindowFault,
+            "malformed-cycle-encoding",
+            Why::NoPublishedRelationNamesIt,
+            Loc::SemanticRequestField,
+        ),
+        (
+            S::WindowFault,
+            "request-cycle-differs-from-successor",
+            Why::NoPublishedRelationNamesIt,
+            Loc::SemanticRequestField,
+        ),
+        (
+            S::MetadataFault,
+            "omit-one-field",
+            Why::NoPublishedRelationNamesIt,
+            Loc::MetadataEncoding,
+        ),
+        (
+            S::MetadataFault,
+            "duplicate-one-field",
+            Why::NoPublishedRelationNamesIt,
+            Loc::MetadataEncoding,
+        ),
+        (
+            S::MetadataFault,
+            "reorder-fields",
+            Why::NoPublishedRelationNamesIt,
+            Loc::MetadataEncoding,
+        ),
+        (
+            S::MetadataFault,
+            "unknown-schema",
+            Why::NoPublishedRelationNamesIt,
+            Loc::MetadataEncoding,
+        ),
+        (
+            S::MetadataFault,
+            "wrong-domain-separator",
+            Why::NoPublishedRelationNamesIt,
+            Loc::MetadataEncoding,
+        ),
+        (
+            S::MetadataFault,
+            "noncanonical-enum-tag",
+            Why::NoPublishedRelationNamesIt,
+            Loc::MetadataEncoding,
+        ),
+        (
+            S::MetadataFault,
+            "nonzero-reserved-field",
+            Why::NoPublishedRelationNamesIt,
+            Loc::MetadataEncoding,
+        ),
+        (
+            S::MetadataFault,
+            "trailing-bytes",
+            Why::NoPublishedRelationNamesIt,
+            Loc::MetadataEncoding,
+        ),
+        (
+            S::MetadataFault,
+            "correct-semantic-metadata-with-noncanonical-representation-nonce",
+            Why::NoPublishedRelationNamesIt,
+            Loc::MetadataEncoding,
+        ),
+        (
+            S::SuccessorConstructorFault,
+            "wrong-representation-nonce",
+            Why::NoPublishedRelationNamesIt,
+            Loc::NonceSearch,
+        ),
+        (
+            S::SuccessorConstructorFault,
+            "later-admissible-nonce-instead-of-first",
+            Why::NoPublishedRelationNamesIt,
+            Loc::NonceSearch,
+        ),
+        (
+            S::TotalityFault,
+            "nonce-starts-at-one",
+            Why::NoPublishedRelationNamesIt,
+            Loc::NonceSearch,
+        ),
+        (
+            S::TotalityFault,
+            "nonce-skips-an-admissible-value",
+            Why::NoPublishedRelationNamesIt,
+            Loc::NonceSearch,
+        ),
+        (
+            S::TotalityFault,
+            "nonce-search-exceeds-bound",
+            Why::NoPublishedRelationNamesIt,
+            Loc::NonceSearch,
+        ),
+        (
+            S::TotalityFault,
+            "repeated-hashing-used-as-fixed-point-search",
+            Why::NoPublishedRelationNamesIt,
+            Loc::NonceSearch,
+        ),
+        (
+            S::AbsenceFault,
+            "add-issuance",
+            Why::NoPublishedRelationNamesIt,
+            Loc::TransactionField,
+        ),
+        (
+            S::AbsenceFault,
+            "add-destruction",
+            Why::NoPublishedRelationNamesIt,
+            Loc::TransactionField,
+        ),
+        (
+            S::AbsenceFault,
+            "add-burn-record",
+            Why::NoPublishedRelationNamesIt,
+            Loc::TransactionField,
+        ),
+        (
+            S::AbsenceFault,
+            "add-clear-event",
+            Why::NoPublishedRelationNamesIt,
+            Loc::TransactionField,
+        ),
+        (
+            S::SponsorFault,
+            "confidential-sponsor-value-where-the-selected-target-policy-claims-support",
+            Why::NoPublishedRelationNamesIt,
+            Loc::SponsorEnvelope,
+        ),
+        (
+            S::AbiLinkerFault,
+            "wrong-coordinator",
+            Why::NoPublishedRelationNamesIt,
+            Loc::TransactionField,
+        ),
+        (
+            S::AbiLinkerFault,
+            "duplicate-coordinator",
+            Why::NoPublishedRelationNamesIt,
+            Loc::TransactionField,
+        ),
+        (
+            S::AbiLinkerFault,
+            "no-coordinator",
+            Why::NoPublishedRelationNamesIt,
+            Loc::TransactionField,
+        ),
+        (
+            S::AbiLinkerFault,
+            "wrong-transaction-version",
+            Why::NoPublishedRelationNamesIt,
+            Loc::TransactionField,
+        ),
+        (
+            S::AbiLinkerFault,
+            "wrong-sequence",
+            Why::NoPublishedRelationNamesIt,
+            Loc::TransactionField,
+        ),
+        (
+            S::AbiLinkerFault,
+            "witness-item-reorder",
+            Why::NoPublishedRelationNamesIt,
+            Loc::WitnessStack,
+        ),
+        (
+            S::AbiLinkerFault,
+            "predecessor-and-successor-metadata-witnesses-exchanged",
+            Why::NoPublishedRelationNamesIt,
+            Loc::WitnessStack,
+        ),
+        (
+            S::AbiLinkerFault,
+            "unresolved-metadata-schema-symbol",
+            Why::NoPublishedRelationNamesIt,
+            Loc::LinkerRelocation,
+        ),
+        (
+            S::AbiLinkerFault,
+            "unresolved-lead-bound-symbol",
+            Why::NoPublishedRelationNamesIt,
+            Loc::LinkerRelocation,
+        ),
+        (
+            S::AbiLinkerFault,
+            "unresolved-operator-symbol",
+            Why::NoPublishedRelationNamesIt,
+            Loc::LinkerRelocation,
+        ),
+        (
+            S::AbiLinkerFault,
+            "relocation-omitted",
+            Why::NoPublishedRelationNamesIt,
+            Loc::LinkerRelocation,
+        ),
+        (
+            S::AbiLinkerFault,
+            "relocation-applied-twice",
+            Why::NoPublishedRelationNamesIt,
+            Loc::LinkerRelocation,
+        ),
+        (
+            S::AbiLinkerFault,
+            "candidate-outside-bounds",
+            Why::NoPublishedRelationNamesIt,
+            Loc::LinkedProgram,
+        ),
+        (
+            S::AbiLinkerFault,
+            "target-bytes-changed-after-abi-validation",
+            Why::NoPublishedRelationNamesIt,
+            Loc::TransactionField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "blank-request",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolRequestField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "oversized-request",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolRequestField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "unterminated-request",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolRequestField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "malformed-json",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolRequestField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "unknown-request-field",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolRequestField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "wrong-schema",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolRequestField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "wrong-environment",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolRequestField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "wrong-provenance",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolRequestField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "accepted-submission-without-identity",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolResponseField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "accepted-submission-without-mined-readback-where-required",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolResponseField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "rejected-submission-carrying-accepted-identity",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolResponseField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "rejected-signing-response-carrying-witness",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolResponseField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "infrastructure-response-carrying-target-observation",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolResponseField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "conservation-rejection-carrying-accepted-only-openings",
+            Why::NoPublishedRelationNamesIt,
+            Loc::ProtocolResponseField,
+        ),
+        (
+            S::MetadataFault,
+            "unaffected-field-omega-changed-alone",
+            Why::SubjectOutsideTheRelationsRegion,
+            Loc::SuccessorMetadataField,
+        ),
+        (
+            S::MetadataFault,
+            "unaffected-field-y-l-changed-alone",
+            Why::SubjectOutsideTheRelationsRegion,
+            Loc::SuccessorMetadataField,
+        ),
+        (
+            S::MetadataFault,
+            "unaffected-field-y-t-changed-alone",
+            Why::SubjectOutsideTheRelationsRegion,
+            Loc::SuccessorMetadataField,
+        ),
+        (
+            S::MetadataFault,
+            "unaffected-field-q-changed-alone",
+            Why::SubjectOutsideTheRelationsRegion,
+            Loc::SuccessorMetadataField,
+        ),
+        (
+            S::MetadataFault,
+            "unaffected-field-cycle-changed-alone",
+            Why::SubjectOutsideTheRelationsRegion,
+            Loc::SuccessorMetadataField,
+        ),
+        (
+            S::MetadataFault,
+            "semantic-field-changes-compensated-by-another-field",
+            Why::SubjectOutsideTheRelationsRegion,
+            Loc::SuccessorMetadataField,
+        ),
+        (
+            S::SponsorFault,
+            "sponsor-change-at-state-output-0",
+            Why::SubjectOutsideTheRelationsRegion,
+            Loc::TransactionOutput,
+        ),
+        (
+            S::SponsorFault,
+            "fee-change-substitution",
+            Why::SubjectOutsideTheRelationsRegion,
+            Loc::TransactionOutput,
+        ),
+        (
+            S::SponsorFault,
+            "empty-sponsor-offer-for-sponsored-request",
+            Why::SubjectOutsideTheRelationsRegion,
+            Loc::SponsorEnvelope,
+        ),
+        (
+            S::SponsorFault,
+            "zero-valued-sponsor-member-under-exact-role-structure",
+            Why::SubjectOutsideTheRelationsRegion,
+            Loc::SponsorEnvelope,
+        ),
+        (
+            S::AbiLinkerFault,
+            "state-and-sponsor-positions-exchanged",
+            Why::SubjectOutsideTheRelationsRegion,
+            Loc::SponsorEnvelope,
+        ),
+        (
+            S::AbsenceFault,
+            "add-live-receipt-input-or-output",
+            Why::SeveralPublishedRelationsFit,
+            Loc::AdmittedObjectFamily,
+        ),
+        (
+            S::AbsenceFault,
+            "add-time-locked-receipt",
+            Why::SeveralPublishedRelationsFit,
+            Loc::AdmittedObjectFamily,
+        ),
+        (
+            S::AbsenceFault,
+            "add-ash",
+            Why::SeveralPublishedRelationsFit,
+            Loc::AdmittedObjectFamily,
+        ),
+        (
+            S::AbsenceFault,
+            "add-entitlement",
+            Why::SeveralPublishedRelationsFit,
+            Loc::AdmittedObjectFamily,
+        ),
+        (
+            S::AbsenceFault,
+            "add-request",
+            Why::SeveralPublishedRelationsFit,
+            Loc::AdmittedObjectFamily,
+        ),
+        (
+            S::AbsenceFault,
+            "add-distribution-control-or-vault",
+            Why::SeveralPublishedRelationsFit,
+            Loc::AdmittedObjectFamily,
+        ),
+        (
+            S::AbsenceFault,
+            "add-resv-input-or-output",
+            Why::SeveralPublishedRelationsFit,
+            Loc::AdmittedObjectFamily,
+        ),
+        (
+            S::AbsenceFault,
+            "add-pace",
+            Why::SeveralPublishedRelationsFit,
+            Loc::AdmittedObjectFamily,
+        ),
+        (
+            S::AbsenceFault,
+            "add-authority-object",
+            Why::SeveralPublishedRelationsFit,
+            Loc::AdmittedObjectFamily,
+        ),
+        (
+            S::SponsorFault,
+            "report-publishes-sponsor-amount",
+            Why::TheReportIsTheSubject,
+            Loc::ReportField,
+        ),
+        (
+            S::SponsorFault,
+            "report-publishes-sponsor-opening",
+            Why::TheReportIsTheSubject,
+            Loc::ReportField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "caller-authored-evidence-standing",
+            Why::TheReportIsTheSubject,
+            Loc::ReportField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "report-summary-edited",
+            Why::TheReportIsTheSubject,
+            Loc::ReportField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "failed-row-removed",
+            Why::TheReportIsTheSubject,
+            Loc::ReportField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "duplicate-passing-row",
+            Why::TheReportIsTheSubject,
+            Loc::ReportField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "observed-target-layer-differs-from-declared-row-boundary",
+            Why::TheReportIsTheSubject,
+            Loc::ReportField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "canonical-report-includes-wall-time",
+            Why::TheReportIsTheSubject,
+            Loc::ReportField,
+        ),
+        (
+            S::ProtocolReportFault,
+            "typed-diagnostic-contains-a-caller-path-or-injected-line",
+            Why::TheReportIsTheSubject,
+            Loc::ReportField,
+        ),
+    ];
+
+    #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the keyed disposition compares the source domains and published plan in one reading"
+    )]
+    fn every_non_link_has_a_keyed_semantic_disposition() {
+        use architecture::{ARCHITECTURE, OperationId};
+        use realization::{RealizationScope, Relation, derive};
+        let spec = derive(
+            &ARCHITECTURE,
+            RealizationScope::from_operations([
+                OperationId::AnnounceMaturity,
+                OperationId::CompactAsh,
+                OperationId::TransferLive,
+            ])
+            .expect("scope"),
+        )
+        .expect("published realization");
+        let operation = spec
+            .operation(OperationId::AnnounceMaturity)
+            .expect("operation");
+        let plan = announcement_plan();
+        let source_ids: BTreeSet<_> = operation
+            .relations
+            .iter()
+            .map(|declaration| declaration.id.clone())
+            .collect();
+        for projection in plan.representations() {
+            assert_eq!(
+                projection
+                    .relations()
+                    .map(|requirement| requirement.relation.clone())
+                    .collect::<BTreeSet<_>>(),
+                source_ids
+            );
+        }
+        // The window is a State transition law, not a published expression relation.
+        // Representation names modes and authentication, not codec fields or nonce
+        // minimality. Constructibility names operator witness availability, not ABI
+        // offsets, relocation execution or search order. Protocol/report syntax is
+        // absent from all these typed relation subjects.
+        assert_eq!(operation.expressions, []);
+        for declaration in &operation.relations {
+            match &declaration.relation {
+                Relation::Cardinality { object, .. } | Relation::Recognition { object, .. } => {
+                    assert!(matches!(object, ObjectId::State | ObjectId::PlainLbtc));
+                }
+                Relation::AllowedObjectFamilies { allowed, .. } => assert_eq!(
+                    allowed,
+                    &BTreeSet::from([ObjectId::State, ObjectId::PlainLbtc])
+                ),
+                Relation::Representation { object, allowed } => {
+                    assert_eq!(*object, ObjectId::State);
+                    assert_eq!(
+                        allowed,
+                        &BTreeSet::from([
+                            realization::RepresentationMode::Explicit,
+                            realization::RepresentationMode::PublicCommitted
+                        ])
+                    );
+                }
+                Relation::Constructibility { class } => {
+                    assert_eq!(*class, realization::ConstructibilityClass::Operator);
+                }
+                Relation::CanonicalDeltaPolicy { expected } => assert!(expected.is_empty()),
+                Relation::LifecycleExit { object, .. } => assert_eq!(*object, ObjectId::State),
+                Relation::OperatorAuthorization
+                | Relation::SponsorIsolation
+                | Relation::SponsorEnvelopeMultiplicity { .. }
+                | Relation::RootPolicy { .. }
+                | Relation::ProjectionPolicy { .. }
+                | Relation::OpenFlowPolicy { .. }
+                | Relation::SubstrateConservation { .. } => {}
+                other => panic!("new relation domain needs non-link review: {other:?}"),
+            }
+        }
+        let expected: BTreeSet<_> = RELATION_NON_LINKS
+            .iter()
+            .map(|(section, name, _, _)| (*section, *name))
+            .collect();
+        assert_eq!(expected.len(), 84);
+        assert_eq!(expected.len(), RELATION_NON_LINKS.len());
+        let actual: BTreeSet<_> = rows()
+            .iter()
+            .filter(|row| matches!(row.relation(), Standing::Unlinked(_)))
+            .map(|row| (row.section(), row.name()))
+            .collect();
+        assert_eq!(actual, expected);
+        for (section, name, why, locator) in RELATION_NON_LINKS {
+            let row = rows()
+                .iter()
+                .find(|row| (row.section(), row.name()) == (*section, *name))
+                .expect("keyed row");
+            assert_eq!(row.relation(), &Standing::Unlinked(*why), "{name}");
+            assert_eq!(row.locator(), Some(*locator), "{name}");
+            match why {
+                Why::SeveralPublishedRelationsFit => {
+                    confirm_both_family_closures(row, &operation.relations, &plan);
+                }
+                Why::TheReportIsTheSubject => {
+                    assert_eq!(row.carrier(), C::Report);
+                    assert_eq!(row.locator(), Some(Loc::ReportField));
+                    assert_eq!(
+                        row.refusing_layer(),
+                        Some(B::ReportSemanticProjectionRejection)
+                    );
+                    assert_eq!(row.projection(), Projection::ForbiddenPublicationRefused);
+                }
+                Why::SubjectOutsideTheRelationsRegion => {
+                    confirm_outside_region(row, &operation.relations, &plan);
+                }
+                Why::NoPublishedRelationNamesIt => confirm_unnamed_coordinate(row, &plan),
+                Why::RelationScopedToTheWholeTransaction => panic!("legacy scope cannot remain"),
+            }
+        }
+    }
+
+    fn confirm_both_family_closures(
+        row: &MaturitySafetyRow,
+        declarations: &[realization::RelationDeclaration],
+        plan: &ValidatedMaturityAnnouncementOperationPlan,
+    ) {
+        use realization::{ObservedSide, Relation, TransactionSide};
+        let families: &[ObjectId] = match row.name() {
+            "add-live-receipt-input-or-output" => &[ObjectId::ReceiptLive],
+            "add-time-locked-receipt" => &[ObjectId::ReceiptTimeLocked],
+            "add-ash" => &[ObjectId::Ash],
+            "add-entitlement" => &[ObjectId::DepositEntitlement],
+            "add-request" => &[ObjectId::DepositRequest],
+            "add-distribution-control-or-vault" => {
+                &[ObjectId::DistributionControl, ObjectId::DistributionVault]
+            }
+            "add-resv-input-or-output" => &[ObjectId::Resv],
+            "add-pace" => &[ObjectId::Pace],
+            "add-authority-object" => &[
+                ObjectId::EntitlementAuthority,
+                ObjectId::DistributionAuthority,
+            ],
+            _ => panic!("absence row needs a family reading"),
+        };
+        assert_eq!(row.section(), S::AbsenceFault);
+        // These rows leave the side unspecialized. Both side-specific closures
+        // forbid each named family and publish the same exact violation class.
+        for (side, subject) in [
+            (ObservedSide::Input, TransactionSide::Input),
+            (ObservedSide::Output, TransactionSide::Output),
+        ] {
+            let declaration = declarations.iter().find(|declaration| matches!(&declaration.relation,
+                Relation::AllowedObjectFamilies { side: stated, allowed } if *stated == side && families.iter().all(|family| !allowed.contains(family))))
+                .expect("both closures exclude the row's family");
+            assert_eq!(
+                declaration.id.subject(),
+                &RelationSubject::TransactionSide { side: subject }
+            );
+            for projection in plan.representations() {
+                assert!(projection.coverage().any(|requirement| requirement.id.relation == declaration.id
+                    && matches!(&requirement.obligation, TargetCoverageObligation::Negative(negative)
+                        if negative.mutation == compiler::operation_plan::RelationMutation::UndeclaredObjectFamily)));
+            }
+        }
+    }
+
+    #[expect(
+        clippy::match_same_arms,
+        reason = "each named exclusion retains its own semantic comment"
+    )]
+    fn confirm_outside_region(
+        row: &MaturitySafetyRow,
+        declarations: &[realization::RelationDeclaration],
+        plan: &ValidatedMaturityAnnouncementOperationPlan,
+    ) {
+        match row.name() {
+            // Semantic successor copies, including compensated changes, are
+            // outside the empty canonical asset-flow delta set.
+            "unaffected-field-omega-changed-alone"
+            | "unaffected-field-y-l-changed-alone"
+            | "unaffected-field-y-t-changed-alone"
+            | "unaffected-field-q-changed-alone"
+            | "unaffected-field-cycle-changed-alone"
+            | "semantic-field-changes-compensated-by-another-field" => {
+                assert_eq!(row.carrier(), C::Report);
+                assert_eq!(
+                    row.projection(),
+                    Projection::TermDiffers(super::Term::Semantic)
+                );
+            }
+            // Absolute output position is outside sponsor role membership.
+            "sponsor-change-at-state-output-0" => {
+                confirm_sponsor_coordinate_exclusion(row, declarations, plan);
+            }
+            // Absolute state/sponsor ordering is outside region membership.
+            "state-and-sponsor-positions-exchanged" => {
+                confirm_sponsor_coordinate_exclusion(row, declarations, plan);
+            }
+            // Fee/change value is outside value-blind isolation.
+            "fee-change-substitution" => {
+                confirm_sponsor_coordinate_exclusion(row, declarations, plan);
+            }
+            // Request/offer agreement is outside observed membership.
+            "empty-sponsor-offer-for-sponsored-request" => {
+                confirm_sponsor_coordinate_exclusion(row, declarations, plan);
+            }
+            // Zero value can preserve exact role structure.
+            "zero-valued-sponsor-member-under-exact-role-structure" => {
+                confirm_sponsor_coordinate_exclusion(row, declarations, plan);
+            }
+            _ => panic!("outside-region row needs its own exclusion"),
+        }
+    }
+
+    fn confirm_sponsor_coordinate_exclusion(
+        row: &MaturitySafetyRow,
+        declarations: &[realization::RelationDeclaration],
+        plan: &ValidatedMaturityAnnouncementOperationPlan,
+    ) {
+        use compiler::operation_plan::RelationMutation;
+        use realization::Relation;
+        for (kind, expected_classes) in [
+            (
+                RelationKind::SponsorIsolation,
+                BTreeSet::from([
+                    RelationMutation::SponsorProtocolOverlap,
+                    RelationMutation::SponsorMemberUnclaimed,
+                    RelationMutation::MissingSponsorAuthorization,
+                ]),
+            ),
+            (
+                RelationKind::SponsorEnvelopeMultiplicity,
+                BTreeSet::from([RelationMutation::SponsorEnvelopeMultiplicityExceeded]),
+            ),
+        ] {
+            let declaration = declarations
+                .iter()
+                .find(|declaration| declaration.id.kind() == kind)
+                .expect("published sponsor declaration");
+            assert_eq!(declaration.id.subject(), &RelationSubject::Sponsor);
+            match &declaration.relation {
+                Relation::SponsorIsolation => assert_eq!(kind, RelationKind::SponsorIsolation),
+                Relation::SponsorEnvelopeMultiplicity { maximum } => {
+                    assert_eq!(*maximum, realization::Count::ONE);
+                }
+                _ => panic!("sponsor declaration changed its parameters"),
+            }
+            for projection in plan.representations() {
+                assert!(
+                    projection
+                        .relations()
+                        .any(|requirement| requirement.relation == declaration.id)
+                );
+                let classes: BTreeSet<_> = projection
+                    .coverage()
+                    .filter_map(|requirement| {
+                        if requirement.id.relation != declaration.id {
+                            return None;
+                        }
+                        match &requirement.obligation {
+                            TargetCoverageObligation::Negative(negative) => Some(negative.mutation),
+                            TargetCoverageObligation::Positive(_) => None,
+                        }
+                    })
+                    .collect();
+                // These exact classes name membership, authorization and envelope
+                // count only: a new position, value or request/offer class fails.
+                assert_eq!(
+                    classes,
+                    expected_classes,
+                    "{} acquired a published sponsor coordinate",
+                    row.name()
+                );
+            }
+        }
+    }
+
+    fn confirm_unnamed_coordinate(
+        row: &MaturitySafetyRow,
+        plan: &ValidatedMaturityAnnouncementOperationPlan,
+    ) {
+        use compiler::operation_plan::RelationMutation;
+        // Each class below has an independently pinned row key and locator.
+        // Inspect the nearest published vocabulary without assigning its name:
+        // external evidence failure, for example, does not name JSON framing.
+        let nearest = match row.section() {
+            S::WindowFault => RelationKind::Lifecycle,
+            S::MetadataFault => RelationKind::Representation,
+            S::SuccessorConstructorFault | S::TotalityFault | S::AbiLinkerFault => {
+                RelationKind::Constructibility
+            }
+            S::AbsenceFault => RelationKind::CanonicalDeltaPolicy,
+            S::SponsorFault => RelationKind::SubstrateConservation,
+            S::ProtocolReportFault => RelationKind::Constructibility,
+            _ => panic!("unnamed coordinate requires a new domain reading"),
+        };
+        let expected_classes = match nearest {
+            RelationKind::Lifecycle => {
+                BTreeSet::from([RelationMutation::RequiredLifecycleExitMissing])
+            }
+            RelationKind::Representation => BTreeSet::from([
+                RelationMutation::UnsupportedRepresentation,
+                RelationMutation::UnauthenticatedRepresentation,
+            ]),
+            RelationKind::Constructibility | RelationKind::SubstrateConservation => {
+                BTreeSet::from([
+                    RelationMutation::ExternalEvidenceMissing,
+                    RelationMutation::ExternalEvidenceFailed,
+                    RelationMutation::ExternalEvidenceIdentityMismatch,
+                ])
+            }
+            RelationKind::CanonicalDeltaPolicy => BTreeSet::from([
+                RelationMutation::MissingCanonicalDeltaFamily,
+                RelationMutation::UnexpectedCanonicalDeltaFamily,
+                RelationMutation::DuplicateCanonicalSourceOrDestination,
+            ]),
+            _ => panic!("nearest domain requires an exact class reading"),
+        };
+        for projection in plan.representations() {
+            assert!(
+                projection
+                    .relations()
+                    .any(|requirement| requirement.relation.kind() == nearest)
+            );
+            let classes: BTreeSet<_> = projection
+                .coverage()
+                .filter_map(|requirement| {
+                    if requirement.id.relation.kind() != nearest {
+                        return None;
+                    }
+                    match &requirement.obligation {
+                        TargetCoverageObligation::Negative(negative) => Some(negative.mutation),
+                        TargetCoverageObligation::Positive(_) => None,
+                    }
+                })
+                .collect();
+            assert_eq!(
+                classes,
+                expected_classes,
+                "{} changed its nearest published vocabulary",
+                row.name()
+            );
+            assert!(!projection.coverage().any(|requirement| matches!(&requirement.obligation,
+                TargetCoverageObligation::Negative(negative) if negative.mutation == RelationMutation::ExpressionPredicateFalse)));
+        }
+        // Issuance/destruction/burn/clear events are not a named canonical
+        // asset-flow family. No side or delta family is inferred from them.
+        if row.section() == S::AbsenceFault {
+            assert!(matches!(
+                row.name(),
+                "add-issuance" | "add-destruction" | "add-burn-record" | "add-clear-event"
+            ));
+        }
     }
 
     fn print_region_census(positive: usize, declared: usize, unlinked: usize) {

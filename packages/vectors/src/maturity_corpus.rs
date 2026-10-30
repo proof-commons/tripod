@@ -3236,26 +3236,22 @@ impl crate::maturity_history::MaturityRootCheckpoint {
             }
             MaturityAcceptanceObligation::Established { readback, .. } => readback,
         };
-        let checkpoint_digest = tagged::sha256(readback.bytes());
-        let handoff_digest = tagged::sha256(handoff.bytes());
-        if checkpoint_digest != handoff_digest {
-            return Err(MaturityRootCheckpointRefusal::SubmittedBytesDisagree {
-                checkpoint: checkpoint_digest,
-                handoff: handoff_digest,
-            });
-        }
         let facts = crate::maturity_history::MaturityRootCheckpointFacts {
             network_identity: corpus.report().network_id().to_owned(),
             genesis_identity: corpus.report().genesis_id().to_owned(),
-            block_hash: *readback.block_hash(),
-            block_height: readback.block_height(),
-            transaction_identity: readback.identity(),
             predecessor: edge.predecessor(),
             successor: edge.successor(),
             target_contract: corpus.report().target_contract().to_owned(),
             branch: corpus.evidence().branch(),
         };
-        Self::from_readback(facts, linked_candidate, candidate_abi, edge, handoff)
+        Self::from_readback(
+            facts,
+            readback,
+            linked_candidate,
+            candidate_abi,
+            edge,
+            handoff,
+        )
     }
 }
 

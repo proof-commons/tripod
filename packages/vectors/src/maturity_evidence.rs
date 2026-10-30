@@ -1217,11 +1217,11 @@ pub enum MaturityRowStanding {
     /// Guide 14 §1.14's public successor recovery class holds the one
     /// positive and thirteen §16.13 rows observed by the validated handoff report.
     PublicRecoveryObserved,
-    /// Report validation observed the row's projection in the rendered
-    /// bytes.
+    /// Report validation observed the offered semantic tuple or publication.
     ///
-    /// The answered counterpart of [`Self::ReportLayerRequired`]. No row
-    /// stands here at this tip.
+    /// The answered counterpart of [`Self::ReportLayerRequired`]. The six
+    /// metadata, two sponsor and seven protocol-report rows stand here only
+    /// after their exact report-consumer pairs and two-way join pass.
     ReportLayerObserved,
     /// The row's boundary is this workspace's own rendered report, and no
     /// validation has read it yet.
@@ -1359,6 +1359,12 @@ pub struct MaturityEvidenceCensus {
 }
 
 impl MaturityEvidenceCensus {
+    /// Stage one caller-authored report claim without changing its source plan.
+    pub(crate) const fn with_report_observed_claim(mut self, stated: usize) -> Self {
+        self.report_layer_observed = stated;
+        self
+    }
+
     /// Final reasons, a subset of typed non-answers rather than another partition bucket.
     #[must_use]
     pub const fn typed_non_answer_final(&self) -> usize {
@@ -1648,6 +1654,8 @@ impl MaturityAnnouncementEvidencePlan {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum MaturityEvidenceRefusal {
+    /// An exact report pair, its keyed join, or final report validation failed.
+    ReportCampaignRefused(Box<crate::maturity_report::MaturityReportConsumerRefusal>),
     /// The committed maturity run failed its byte, grammar, binding or replay admission.
     NativeCorpusImportRefused(MaturityCorpusImportRefusal),
     /// The validated announcement plan could not be derived.
@@ -2004,11 +2012,41 @@ fn accepted_continuity(
 /// the refusal that layer raised, or the disagreement a classification met
 /// between the matrix and the first-party census or the published plan.
 #[must_use = "the derived plan carries the evidence partition and supplied material"]
+pub fn derive_maturity_evidence_plan_with(
+    provenance: MaturityExecutorProvenanceExpectation,
+    material: MaturityConstructorMaterial,
+) -> Result<MaturityAnnouncementEvidencePlan, MaturityEvidenceRefusal> {
+    let mut plan = derive_maturity_evidence_source(provenance, material)?;
+    let admissions = crate::maturity_report::run_maturity_report_campaign(&plan)
+        .map_err(|error| MaturityEvidenceRefusal::ReportCampaignRefused(Box::new(error)))?;
+    for entry in &mut plan.rows {
+        if matches!(entry.standing, MaturityRowStanding::ReportLayerRequired(_)) {
+            if !admissions.observes(entry.row.section(), entry.row.name()) {
+                return Err(MaturityEvidenceRefusal::RowAbsentFromItsReport {
+                    layer: EvidenceBoundary::ReportSemanticProjectionRejection,
+                    section: entry.row.section(),
+                    name: entry.row.name(),
+                });
+            }
+            entry.standing = MaturityRowStanding::ReportLayerObserved;
+        }
+    }
+    plan.census = census_from_rows(&plan.rows);
+    let report = crate::maturity_report::assemble_maturity_safety_report(&plan)
+        .and_then(|report| crate::maturity_report::validate_maturity_safety_report(report, &plan));
+    report.map_err(|error| {
+        MaturityEvidenceRefusal::ReportCampaignRefused(Box::new(
+            crate::maturity_report::MaturityReportConsumerRefusal::Structured(Box::new(error)),
+        ))
+    })?;
+    Ok(plan)
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "The ordered accepted-report checks stay before the single row-classification loop."
 )]
-pub fn derive_maturity_evidence_plan_with(
+fn derive_maturity_evidence_source(
     provenance: MaturityExecutorProvenanceExpectation,
     material: MaturityConstructorMaterial,
 ) -> Result<MaturityAnnouncementEvidencePlan, MaturityEvidenceRefusal> {
@@ -2912,6 +2950,87 @@ fn census_from_rows(classified: &[MaturityEvidenceRow]) -> MaturityEvidenceCensu
 
 #[cfg(test)]
 pub(crate) mod tests {
+    pub fn contradicted_report_plan() -> MaturityAnnouncementEvidencePlan {
+        let mut plan = PLAN.clone();
+        let entry = plan
+            .rows
+            .iter_mut()
+            .find(|entry| {
+                matches!(
+                    entry.standing,
+                    MaturityRowStanding::NativeRefusalObserved(_)
+                )
+            })
+            .expect("native refusal");
+        let MaturityRowStanding::NativeRefusalObserved(mut refusal) = entry.standing.clone() else {
+            panic!("native refusal")
+        };
+        refusal.observed_layer = ObservedOutcomeLayer::ExecutorInfrastructureFailure;
+        entry.standing = MaturityRowStanding::NativeRefusalAtUnexpectedBoundary(refusal);
+        plan.census = super::census_from_rows(&plan.rows);
+        plan
+    }
+
+    #[test]
+    fn report_campaign_moves_only_its_fifteen_rows() {
+        let source = super::derive_maturity_evidence_source(
+            MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            absent_material(),
+        )
+        .expect("source plan");
+        let before = source.census();
+        let after = PLAN.census();
+        // Report pairs move fifteen rows; target and typed-reason buckets do not move.
+        assert_eq!(
+            (
+                before.rows(),
+                before.answered(),
+                before.outstanding(),
+                before.report_layer_required(),
+                before.report_layer_observed(),
+                before.outstanding_under_typed_non_answer()
+            ),
+            (206, 119, 87, 15, 0, 29)
+        );
+        assert_eq!(
+            (
+                after.rows(),
+                after.answered(),
+                after.outstanding(),
+                after.report_layer_required(),
+                after.report_layer_observed(),
+                after.outstanding_under_typed_non_answer()
+            ),
+            (206, 134, 72, 0, 15, 29)
+        );
+        assert_eq!(
+            (
+                after.typed_non_answer_final(),
+                after.typed_non_answer_waiting()
+            ),
+            (22, 7)
+        );
+        let mut changed = 0;
+        for (old, new) in source.rows().iter().zip(PLAN.rows()) {
+            assert_eq!(
+                (old.row().section(), old.row().name()),
+                (new.row().section(), new.row().name())
+            );
+            if old.row().refusing_layer()
+                == Some(EvidenceBoundary::ReportSemanticProjectionRejection)
+            {
+                assert!(matches!(
+                    old.standing(),
+                    MaturityRowStanding::ReportLayerRequired(_)
+                ));
+                assert_eq!(new.standing(), &MaturityRowStanding::ReportLayerObserved);
+                changed += 1;
+            } else {
+                assert_eq!(old.standing(), new.standing());
+            }
+        }
+        assert_eq!(changed, 15);
+    }
     #[test]
     fn native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals() {
         use crate::maturity_native::native::submission_rows;
@@ -2971,8 +3090,10 @@ pub(crate) mod tests {
             }
         }
         assert_eq!([accepted_departures, positives, native_claims], [3, 8, 28]);
-        assert_eq!(PLAN.census().answered(), 119);
-        assert_eq!(PLAN.census().outstanding(), 87);
+        // Fifteen exact report pairs add report-only answers to the native census.
+        assert_eq!(PLAN.census().answered(), 134);
+        // The fifteen validated report pairs remove only report obligations.
+        assert_eq!(PLAN.census().outstanding(), 72);
     }
 
     #[test]
@@ -3701,7 +3822,9 @@ pub(crate) mod tests {
                 - census.native_refusal_at_unexpected_boundary()
         );
         assert_eq!(census.native_declared_boundary_observed(), 0);
-        assert_eq!(census.report_layer_required(), report_required);
+        // All fifteen matrix report obligations have validated pairs.
+        assert_eq!(census.report_layer_required(), 0);
+        assert_eq!(census.report_layer_observed(), report_required);
         assert_eq!(census.outstanding_under_typed_non_answer(), outstanding);
 
         // The accepted run and bound mutant refusals change the standing partition.
@@ -3716,7 +3839,8 @@ pub(crate) mod tests {
         assert_eq!(census.constructor_continuity_observed(), 0);
         assert_eq!(census.root_history_observed(), root_history);
         assert_eq!(census.public_recovery_observed(), public_recovery);
-        assert_eq!(census.report_layer_observed(), 0);
+        // Six metadata, two sponsor and seven protocol-report pairs are admitted.
+        assert_eq!(census.report_layer_observed(), 15);
         assert_eq!(census.infrastructure_blocked(), 0);
         assert_eq!(census.experimental(), 0);
 
@@ -3728,6 +3852,7 @@ pub(crate) mod tests {
                 + census.native_refusal_observed()
                 + census.native_refusal_at_unexpected_boundary()
                 + census.report_layer_required()
+                + census.report_layer_observed()
                 + census.root_history_observed()
                 + census.public_recovery_observed()
                 + census.outstanding_under_typed_non_answer(),
@@ -3842,6 +3967,7 @@ pub(crate) mod tests {
                         | MaturityRowStanding::NativeRefusalObserved(_)
                         | MaturityRowStanding::RootHistoryObserved
                         | MaturityRowStanding::PublicRecoveryObserved
+                        | MaturityRowStanding::ReportLayerObserved
                 ),
                 "answers are recomputed first-party refusals, bound native refusals, admitted acceptance or validated report rows",
             );
@@ -3860,6 +3986,7 @@ pub(crate) mod tests {
                 + census.native_refusal_observed()
                 + census.root_history_observed()
                 + census.public_recovery_observed()
+                + census.report_layer_observed()
         );
         assert_eq!(
             census.answered() + census.outstanding(),
@@ -3873,7 +4000,8 @@ pub(crate) mod tests {
                 - census.native_acceptance_observed()
                 - census.native_refusal_observed()
                 - census.root_history_observed()
-                - census.public_recovery_observed(),
+                - census.public_recovery_observed()
+                - census.report_layer_observed(),
         );
     }
 
@@ -4353,14 +4481,16 @@ pub(crate) mod tests {
         assert_eq!(census.first_party_discharged(), 40);
         assert_eq!(census.first_party_required(), 43);
         assert_eq!(census.native_run_required(), 0);
-        assert_eq!(census.report_layer_required(), 15);
+        // Every declared report row now has its exact consumer pair.
+        assert_eq!(census.report_layer_required(), 0);
         // Eight semantic positive waits leave; later-admissible-nonce, extra-state-like
         // output and wrong-version enter as final. Stale-operator, wrong semantic metadata,
         // wrong control recipe, two successors and exchanged witnesses enter as waiting.
         assert_eq!(census.outstanding_under_typed_non_answer(), 29);
         // The eight semantic positives, twenty-seven native refusal rows and
         // balanced-state-corruption add thirty-six answers to the prior eighty-three.
-        assert_eq!(census.answered(), 119);
+        // Fifteen exact report pairs add report-only answers to the native census.
+        assert_eq!(census.answered(), 134);
         assert_eq!(census.root_history_observed(), 16);
         assert_eq!(census.public_recovery_observed(), 14);
         assert_eq!(census.native_declared_boundary_observed(), 0);
@@ -4380,6 +4510,7 @@ pub(crate) mod tests {
                 + census.native_refusal_observed()
                 + census.native_refusal_at_unexpected_boundary()
                 + census.report_layer_required()
+                + census.report_layer_observed()
                 + census.root_history_observed()
                 + census.public_recovery_observed()
                 + census.outstanding_under_typed_non_answer(),
@@ -4418,14 +4549,17 @@ pub(crate) mod tests {
         assert_eq!(PLAN.census().rows(), 206);
         // The eight semantic positives, twenty-seven native refusal rows and
         // balanced-state-corruption add thirty-six answers to the prior eighty-three.
-        assert_eq!(PLAN.census().answered(), 119);
+        // Fifteen exact report pairs add report-only answers to the native census.
+        assert_eq!(PLAN.census().answered(), 134);
         // Those eight semantic positives and twenty-eight refusal claims remove thirty-six
         // outstanding rows; accepted departures and unavailable subjects stay outstanding.
-        assert_eq!(PLAN.census().outstanding(), 87);
+        // The fifteen validated report pairs remove only report obligations.
+        assert_eq!(PLAN.census().outstanding(), 72);
         assert_eq!(PLAN.census().first_party_discharged(), 40);
         assert_eq!(PLAN.census().first_party_required(), 43);
         assert_eq!(PLAN.census().native_run_required(), 0);
-        assert_eq!(PLAN.census().report_layer_required(), 15);
+        // Every declared report row now has its exact consumer pair.
+        assert_eq!(PLAN.census().report_layer_required(), 0);
         // Eight semantic positive waits leave; later-admissible-nonce, extra-state-like
         // output and wrong-version enter as final. Stale-operator, wrong semantic metadata,
         // wrong control recipe, two successors and exchanged witnesses enter as waiting.

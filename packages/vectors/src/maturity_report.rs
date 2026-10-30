@@ -44,6 +44,7 @@ use crate::maturity_evidence::{
     MaturityRowStanding, MaturityTargetBinding,
 };
 use crate::maturity_first_party::MaturityFirstPartyValidator;
+use crate::maturity_fixture::MaturitySemanticCase;
 use crate::maturity_negative_half::{
     MaturityNegativeHalfGap, MaturityNegativeHalfLink, STILL_REQUIRED, gap_census,
 };
@@ -374,7 +375,10 @@ impl MaturityWaitingRow {
 
 /// One obligation this report states about itself.
 ///
-/// The rows whose declared boundary is this workspace's own canonical serialization are the rows a validation reading these bytes would answer. This report is their subject rather than their answer, so it carries them as requirements it is owed and leaves the reading to the validation that owns it.
+/// The report-boundary rows, whatever their current standing.
+///
+/// These entries retain the matrix's requirements; the census buckets carry
+/// whether their report consumers have observed them or are still required.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MaturityReportLayerRequirement {
     section: MaturitySafetySection,
@@ -1033,13 +1037,12 @@ fn report_layer_requirements(
     plan.rows()
         .iter()
         .filter_map(|classified| match classified.standing() {
-            MaturityRowStanding::ReportLayerRequired(projection) => {
-                Some(MaturityReportLayerRequirement {
-                    section: classified.row().section(),
-                    row: classified.row().name(),
-                    projection: *projection,
-                })
-            }
+            MaturityRowStanding::ReportLayerRequired(_)
+            | MaturityRowStanding::ReportLayerObserved => Some(MaturityReportLayerRequirement {
+                section: classified.row().section(),
+                row: classified.row().name(),
+                projection: classified.row().projection(),
+            }),
             _ => None,
         })
         .collect()
@@ -1354,7 +1357,10 @@ fn validate_report_layer(
     done: &mut BTreeSet<MaturityRecomputedItem>,
 ) -> Result<(), MaturitySafetyReportRefusal> {
     let recomputed = report_layer_requirements(plan);
-    for expected in [recomputed.len(), plan.census().report_layer_required()] {
+    for expected in [
+        recomputed.len(),
+        plan.census().report_layer_required() + plan.census().report_layer_observed(),
+    ] {
         if report.report_layer.len() != expected {
             return Err(
                 MaturitySafetyReportRefusal::ReportLayerRequirementCountDiffers {
@@ -1629,7 +1635,8 @@ fn render_rows(text: &mut String, report: &MaturityAnnouncementSafetyReport) {
 /// classes and byte identities, excluding archived addresses and refusal
 /// diagnostic text. Timing travels separately in [`MaturityReportTiming`].
 ///
-/// The bytes are computed here rather than sealed into the wrapper because nothing validates them: the rows whose boundary is this serialization are carried as obligations the report states about itself, and the validation that reads these bytes is the subject of a later step. A sealed field would be a cache with no reader.
+/// The publication consumer compares offered bytes with this canonical projection after
+/// rebinding the structured report to its source plan. Rendering alone grants no row credit.
 ///
 /// # Panics
 ///
@@ -1648,6 +1655,427 @@ pub fn render_maturity_safety_report(
     text
 }
 
+/// A report consumer's exact refusal, independent of target acceptance.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MaturityReportConsumerRefusal {
+    /// The structured report failed source recomputation.
+    Structured(Box<MaturitySafetyReportRefusal>),
+    /// The semantic case is absent from the supplied plan.
+    SemanticCaseUnbound,
+    /// The admitted predecessor and request did not derive their retained successor.
+    SemanticSourceDisagrees,
+    /// One offered semantic field differs from the derived successor.
+    SemanticTermDiffers(realization::StateField),
+    /// A sponsor-private publication key was offered.
+    ForbiddenPublication(&'static str),
+    /// Offered bytes differ at this one-based canonical line.
+    PublicationDiffers(usize),
+    /// A required pair is missing, duplicated, surplus or bound to another row.
+    CampaignJoin,
+    /// The row has no exact staging recipe.
+    UnstagedRow,
+    /// The control refused, the subject accepted, or the refusal differed.
+    PairDidNotEstablishClaim,
+}
+
+/// Compare a complete offered successor tuple with an admitted semantic case.
+///
+/// The validated control is rebound to the supplied plan before the case is read.
+/// This comparison establishes a report semantic term, never target acceptance.
+///
+/// # Errors
+/// Refuses an unbound control or case, a changed source, or the first differing field.
+pub fn validate_report_semantic_projection(
+    control: &ValidatedMaturityAnnouncementSafetyReport,
+    plan: &MaturityAnnouncementEvidencePlan,
+    case: &MaturitySemanticCase,
+    offered: &realization::StateMetadata,
+) -> Result<(), MaturityReportConsumerRefusal> {
+    use realization::{StateField, announce_maturity};
+    validate_maturity_safety_report(control.report.clone(), plan)
+        .map_err(|error| MaturityReportConsumerRefusal::Structured(Box::new(error)))?;
+    if !plan
+        .semantic_fixtures()
+        .iter()
+        .any(|entry| entry.subject() == case)
+    {
+        return Err(MaturityReportConsumerRefusal::SemanticCaseUnbound);
+    }
+    let expected = announce_maturity(&case.predecessor(), case.announced_cycle(), case.bounds())
+        .map_err(|_| MaturityReportConsumerRefusal::SemanticSourceDisagrees)?;
+    if expected != case.expected() {
+        return Err(MaturityReportConsumerRefusal::SemanticSourceDisagrees);
+    }
+    for (field, agrees) in [
+        (StateField::Omega, offered.omega == expected.omega),
+        (StateField::YL, offered.y_l == expected.y_l),
+        (StateField::YT, offered.y_t == expected.y_t),
+        (StateField::Q, offered.q == expected.q),
+        (StateField::Cycle, offered.cycle == expected.cycle),
+        (StateField::Maturity, offered.maturity == expected.maturity),
+    ] {
+        if !agrees {
+            return Err(MaturityReportConsumerRefusal::SemanticTermDiffers(field));
+        }
+    }
+    Ok(())
+}
+
+/// Validate both a report's structured claims and its offered publication bytes.
+///
+/// The source plan supplies every expected field. A surplus line or a diagnostic
+/// carrying arbitrary text cannot enter the closed canonical projection.
+///
+/// # Errors
+/// Returns the structured refusal, forbidden sponsor key, or differing line.
+pub fn validate_maturity_safety_publication(
+    report: &MaturityAnnouncementSafetyReport,
+    plan: &MaturityAnnouncementEvidencePlan,
+    offered: &str,
+) -> Result<(), MaturityReportConsumerRefusal> {
+    let validated = validate_maturity_safety_report(report.clone(), plan)
+        .map_err(|error| MaturityReportConsumerRefusal::Structured(Box::new(error)))?;
+    for line in offered.lines() {
+        for key in ["sponsor_amount", "sponsor_opening"] {
+            if line.split_whitespace().any(|token| token == key) {
+                return Err(MaturityReportConsumerRefusal::ForbiddenPublication(key));
+            }
+        }
+    }
+    let expected = render_maturity_safety_report(&validated);
+    if offered != expected {
+        let line = offered
+            .lines()
+            .zip(expected.lines())
+            .take_while(|(a, b)| a == b)
+            .count()
+            + 1;
+        return Err(MaturityReportConsumerRefusal::PublicationDiffers(line));
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum ReportOperand {
+    Semantic {
+        case: Box<MaturitySemanticCase>,
+        offered: realization::StateMetadata,
+    },
+    Publication {
+        report: Box<MaturityAnnouncementSafetyReport>,
+        offered: String,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ReportPair {
+    section: MaturitySafetySection,
+    name: &'static str,
+    boundary: EvidenceBoundary,
+    projection: MaturityExpectedProjection,
+    control: ReportOperand,
+    subject: ReportOperand,
+    expected: MaturityReportConsumerRefusal,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ReportReading {
+    pair: ReportPair,
+    observed: MaturityReportConsumerRefusal,
+}
+
+/// Only the report campaign can construct this exact-key admission.
+pub(crate) struct ValidatedMaturityReportAdmissions {
+    readings: Vec<ReportReading>,
+}
+
+impl ValidatedMaturityReportAdmissions {
+    pub(crate) fn observes(&self, section: MaturitySafetySection, name: &str) -> bool {
+        self.readings
+            .iter()
+            .any(|reading| (reading.pair.section, reading.pair.name) == (section, name))
+    }
+}
+
+fn read_report_operand(
+    operand: &ReportOperand,
+    control: &ValidatedMaturityAnnouncementSafetyReport,
+    plan: &MaturityAnnouncementEvidencePlan,
+) -> Result<(), MaturityReportConsumerRefusal> {
+    match operand {
+        ReportOperand::Semantic { case, offered } => {
+            validate_report_semantic_projection(control, plan, case, offered)
+        }
+        ReportOperand::Publication { report, offered } => {
+            validate_maturity_safety_publication(report, plan, offered)
+        }
+    }
+}
+
+fn semantic_report_pair(
+    row: &crate::maturity_safety::MaturitySafetyRow,
+    plan: &MaturityAnnouncementEvidencePlan,
+) -> Result<
+    (ReportOperand, ReportOperand, MaturityReportConsumerRefusal),
+    MaturityReportConsumerRefusal,
+> {
+    use realization::{Cycle, ProtocolAmount, StateField};
+    let case = *plan
+        .semantic_fixtures()
+        .iter()
+        .find(|entry| entry.subject().row().name() == "nontrivial-unaffected-fields")
+        .ok_or(MaturityReportConsumerRefusal::SemanticCaseUnbound)?
+        .subject();
+    let honest = case.expected();
+    let mut offered = honest;
+    let amount = |value: u64| {
+        ProtocolAmount::new(value)
+            .map_err(|_| MaturityReportConsumerRefusal::SemanticSourceDisagrees)
+    };
+    let increment = |value: u64| {
+        value
+            .checked_add(1)
+            .ok_or(MaturityReportConsumerRefusal::SemanticSourceDisagrees)
+    };
+    let field = match row.name() {
+        "unaffected-field-omega-changed-alone" => {
+            offered.omega = amount(increment(honest.omega.get())?)?;
+            StateField::Omega
+        }
+        "unaffected-field-y-l-changed-alone" => {
+            offered.y_l = amount(increment(honest.y_l.get())?)?;
+            StateField::YL
+        }
+        "unaffected-field-y-t-changed-alone" => {
+            offered.y_t = amount(increment(honest.y_t.get())?)?;
+            StateField::YT
+        }
+        "unaffected-field-q-changed-alone" => {
+            offered.q = amount(increment(honest.q.get())?)?;
+            StateField::Q
+        }
+        "unaffected-field-cycle-changed-alone" => {
+            offered.cycle = Cycle::new(increment(honest.cycle.get())?);
+            StateField::Cycle
+        }
+        "semantic-field-changes-compensated-by-another-field" => {
+            offered.omega = amount(increment(honest.omega.get())?)?;
+            offered.y_l = amount(
+                honest
+                    .y_l
+                    .get()
+                    .checked_sub(1)
+                    .ok_or(MaturityReportConsumerRefusal::SemanticSourceDisagrees)?,
+            )?;
+            StateField::Omega
+        }
+        _ => return Err(MaturityReportConsumerRefusal::UnstagedRow),
+    };
+    Ok((
+        ReportOperand::Semantic {
+            case: Box::new(case),
+            offered: honest,
+        },
+        ReportOperand::Semantic {
+            case: Box::new(case),
+            offered,
+        },
+        MaturityReportConsumerRefusal::SemanticTermDiffers(field),
+    ))
+}
+
+fn publication_report_pair(
+    row: &crate::maturity_safety::MaturitySafetyRow,
+    control: &ValidatedMaturityAnnouncementSafetyReport,
+) -> Result<
+    (ReportOperand, ReportOperand, MaturityReportConsumerRefusal),
+    MaturityReportConsumerRefusal,
+> {
+    use MaturityReportConsumerRefusal as Refusal;
+    let original = &control.report;
+    let bytes = render_maturity_safety_report(control);
+    let mut report = original.clone();
+    let mut offered = bytes.clone();
+    let expected = match row.name() {
+        "report-publishes-sponsor-amount" => {
+            offered.push_str("sponsor_amount 1000\n");
+            Refusal::ForbiddenPublication("sponsor_amount")
+        }
+        "report-publishes-sponsor-opening" => {
+            offered.push_str("sponsor_opening 0000\n");
+            Refusal::ForbiddenPublication("sponsor_opening")
+        }
+        "caller-authored-evidence-standing" => {
+            report.census = report
+                .census
+                .with_report_observed_claim(report.census.report_layer_observed() + 1);
+            Refusal::Structured(Box::new(MaturitySafetyReportRefusal::CensusBucketDiffers {
+                bucket: "report_layer_observed",
+                stated: original.census.report_layer_observed() + 1,
+                recomputed: original.census.report_layer_observed(),
+            }))
+        }
+        "report-summary-edited" => {
+            report.answered += 1;
+            Refusal::Structured(Box::new(
+                MaturitySafetyReportRefusal::AnsweredOrOutstandingDiffers {
+                    figure: "answered",
+                    stated: report.answered,
+                    recomputed: original.answered,
+                },
+            ))
+        }
+        "failed-row-removed" => {
+            report
+                .native_refusals
+                .pop()
+                .ok_or(Refusal::PairDidNotEstablishClaim)?;
+            Refusal::Structured(Box::new(
+                MaturitySafetyReportRefusal::NativeRefusalCountDiffers {
+                    stated: report.native_refusals.len(),
+                    recomputed: original.native_refusals.len(),
+                },
+            ))
+        }
+        "duplicate-passing-row" => {
+            report.witnessed.push(
+                *report
+                    .witnessed
+                    .first()
+                    .ok_or(Refusal::PairDidNotEstablishClaim)?,
+            );
+            Refusal::Structured(Box::new(
+                MaturitySafetyReportRefusal::WitnessedRefusalCountDiffers {
+                    stated: report.witnessed.len(),
+                    recomputed: original.witnessed.len(),
+                },
+            ))
+        }
+        "observed-target-layer-differs-from-declared-row-boundary" => {
+            let line = report
+                .native_refusals
+                .first_mut()
+                .ok_or(Refusal::PairDidNotEstablishClaim)?;
+            line.observed_layer =
+                if line.observed_layer == ObservedOutcomeLayer::ExecutorInfrastructureFailure {
+                    ObservedOutcomeLayer::ScriptPathRejection
+                } else {
+                    ObservedOutcomeLayer::ExecutorInfrastructureFailure
+                };
+            Refusal::Structured(Box::new(
+                MaturitySafetyReportRefusal::NativeRefusalDiffers {
+                    section: line.section,
+                    name: line.row,
+                },
+            ))
+        }
+        "canonical-report-includes-wall-time" => {
+            offered.push_str("wall_time 1\n");
+            Refusal::PublicationDiffers(bytes.lines().count() + 1)
+        }
+        "typed-diagnostic-contains-a-caller-path-or-injected-line" => {
+            offered.push_str("diagnostic /caller/private\nanswered 206\n");
+            Refusal::PublicationDiffers(bytes.lines().count() + 1)
+        }
+        _ => return Err(Refusal::UnstagedRow),
+    };
+    Ok((
+        ReportOperand::Publication {
+            report: Box::new(original.clone()),
+            offered: bytes,
+        },
+        ReportOperand::Publication {
+            report: Box::new(report),
+            offered,
+        },
+        expected,
+    ))
+}
+
+fn stage_report_pair(
+    row: &crate::maturity_safety::MaturitySafetyRow,
+    plan: &MaturityAnnouncementEvidencePlan,
+    control: &ValidatedMaturityAnnouncementSafetyReport,
+) -> Result<ReportPair, MaturityReportConsumerRefusal> {
+    let (honest, subject, expected) = match row.projection() {
+        MaturityExpectedProjection::TermDiffers(_) => semantic_report_pair(row, plan)?,
+        MaturityExpectedProjection::ForbiddenPublicationRefused => {
+            publication_report_pair(row, control)?
+        }
+        _ => return Err(MaturityReportConsumerRefusal::UnstagedRow),
+    };
+    Ok(ReportPair {
+        section: row.section(),
+        name: row.name(),
+        boundary: EvidenceBoundary::ReportSemanticProjectionRejection,
+        projection: row.projection(),
+        control: honest,
+        subject,
+        expected,
+    })
+}
+
+fn report_manifest() -> impl Iterator<Item = &'static crate::maturity_safety::MaturitySafetyRow> {
+    crate::maturity_safety::rows().iter().filter(|row| {
+        row.refusing_layer() == Some(EvidenceBoundary::ReportSemanticProjectionRejection)
+    })
+}
+
+fn admit_report_readings(
+    plan: &MaturityAnnouncementEvidencePlan,
+    control: &ValidatedMaturityAnnouncementSafetyReport,
+    readings: Vec<ReportReading>,
+) -> Result<ValidatedMaturityReportAdmissions, MaturityReportConsumerRefusal> {
+    let mut seen = BTreeSet::new();
+    for reading in &readings {
+        let key = (reading.pair.section, reading.pair.name);
+        if !seen.insert(key) {
+            return Err(MaturityReportConsumerRefusal::CampaignJoin);
+        }
+        let row = report_manifest()
+            .find(|row| (row.section(), row.name()) == key)
+            .ok_or(MaturityReportConsumerRefusal::CampaignJoin)?;
+        if reading.pair != stage_report_pair(row, plan, control)?
+            || reading.observed != reading.pair.expected
+        {
+            return Err(MaturityReportConsumerRefusal::CampaignJoin);
+        }
+        read_report_operand(&reading.pair.control, control, plan)?;
+        if read_report_operand(&reading.pair.subject, control, plan)
+            != Err(reading.observed.clone())
+        {
+            return Err(MaturityReportConsumerRefusal::PairDidNotEstablishClaim);
+        }
+    }
+    if report_manifest().any(|row| !seen.contains(&(row.section(), row.name()))) {
+        return Err(MaturityReportConsumerRefusal::CampaignJoin);
+    }
+    Ok(ValidatedMaturityReportAdmissions { readings })
+}
+
+/// Run exact accepted-control/refused-subject pairs before folding report credit.
+pub(crate) fn run_maturity_report_campaign(
+    plan: &MaturityAnnouncementEvidencePlan,
+) -> Result<ValidatedMaturityReportAdmissions, MaturityReportConsumerRefusal> {
+    let report = assemble_maturity_safety_report(plan)
+        .map_err(|error| MaturityReportConsumerRefusal::Structured(Box::new(error)))?;
+    let control = validate_maturity_safety_report(report, plan)
+        .map_err(|error| MaturityReportConsumerRefusal::Structured(Box::new(error)))?;
+    let mut readings = Vec::new();
+    for row in report_manifest() {
+        let pair = stage_report_pair(row, plan, &control)?;
+        read_report_operand(&pair.control, &control, plan)?;
+        let observed = read_report_operand(&pair.subject, &control, plan)
+            .err()
+            .ok_or(MaturityReportConsumerRefusal::PairDidNotEstablishClaim)?;
+        if observed != pair.expected {
+            return Err(MaturityReportConsumerRefusal::PairDidNotEstablishClaim);
+        }
+        readings.push(ReportReading { pair, observed });
+    }
+    admit_report_readings(plan, &control, readings)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1657,6 +2085,11 @@ mod tests {
         MaturitySafetyReportRole, MaturityVolatileField, ValidatedMaturityAnnouncementSafetyReport,
         assemble_maturity_safety_report, render_maturity_safety_report,
         validate_maturity_safety_report,
+    };
+    use super::{
+        MaturityReportConsumerRefusal, ReportOperand, ReportReading, admit_report_readings,
+        read_report_operand, report_manifest, run_maturity_report_campaign, stage_report_pair,
+        validate_maturity_safety_publication,
     };
     use crate::matrix::EvidenceBoundary;
     use crate::maturity_evidence::tests::{absent_material, present_material};
@@ -1668,6 +2101,7 @@ mod tests {
     };
     use crate::maturity_first_party::{MaturityFirstPartyCase, maturity_first_party_cases};
     use crate::maturity_negative_half::STILL_REQUIRED;
+    use crate::maturity_safety::MaturityExpectedProjection;
     use crate::maturity_safety::{MaturitySafetySection, rows};
     use std::collections::BTreeSet;
     use std::sync::LazyLock;
@@ -1720,6 +2154,389 @@ mod tests {
         "waiting",
         "report_layer",
     ];
+
+    fn pinned_report_pair(
+        section: MaturitySafetySection,
+        name: &'static str,
+    ) -> MaturityReportConsumerRefusal {
+        let row = report_manifest()
+            .find(|row| (row.section(), row.name()) == (section, name))
+            .expect("exact manifest key");
+        let control = validated();
+        let pair = stage_report_pair(row, &PLAN, &control).expect("exact staged pair");
+        assert_eq!(read_report_operand(&pair.control, &control, &PLAN), Ok(()));
+        let refusal =
+            read_report_operand(&pair.subject, &control, &PLAN).expect_err("subject refused");
+        assert_eq!(refusal, pair.expected);
+        assert_eq!(pair.boundary, row.refusing_layer().expect("boundary"));
+        assert_eq!(pair.projection, row.projection());
+        let classified = PLAN
+            .rows()
+            .iter()
+            .find(|entry| (entry.row().section(), entry.row().name()) == (section, name))
+            .expect("classified key");
+        assert_eq!(
+            classified.standing(),
+            &MaturityRowStanding::ReportLayerObserved
+        );
+        if name == "semantic-field-changes-compensated-by-another-field" {
+            let (
+                ReportOperand::Semantic {
+                    offered: honest, ..
+                },
+                ReportOperand::Semantic { offered, .. },
+            ) = (&pair.control, &pair.subject)
+            else {
+                panic!("semantic operands")
+            };
+            assert_ne!(honest.omega, offered.omega);
+            assert_ne!(honest.y_l, offered.y_l);
+            assert_eq!(
+                honest.omega.get() + honest.y_l.get(),
+                offered.omega.get() + offered.y_l.get()
+            );
+            assert_eq!(
+                (honest.y_t, honest.q, honest.cycle, honest.maturity),
+                (offered.y_t, offered.q, offered.cycle, offered.maturity)
+            );
+        }
+        refusal
+    }
+
+    #[test]
+    fn report_pair_metadata_omega() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::MetadataFault,
+            "unaffected-field-omega-changed-alone",
+        );
+        assert!(
+            matches!(
+                refusal,
+                MaturityReportConsumerRefusal::SemanticTermDiffers(realization::StateField::Omega)
+            ),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_metadata_y_l() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::MetadataFault,
+            "unaffected-field-y-l-changed-alone",
+        );
+        assert!(
+            matches!(
+                refusal,
+                MaturityReportConsumerRefusal::SemanticTermDiffers(realization::StateField::YL)
+            ),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_metadata_y_t() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::MetadataFault,
+            "unaffected-field-y-t-changed-alone",
+        );
+        assert!(
+            matches!(
+                refusal,
+                MaturityReportConsumerRefusal::SemanticTermDiffers(realization::StateField::YT)
+            ),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_metadata_q() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::MetadataFault,
+            "unaffected-field-q-changed-alone",
+        );
+        assert!(
+            matches!(
+                refusal,
+                MaturityReportConsumerRefusal::SemanticTermDiffers(realization::StateField::Q)
+            ),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_metadata_cycle() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::MetadataFault,
+            "unaffected-field-cycle-changed-alone",
+        );
+        assert!(
+            matches!(
+                refusal,
+                MaturityReportConsumerRefusal::SemanticTermDiffers(realization::StateField::Cycle)
+            ),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_metadata_compensation() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::MetadataFault,
+            "semantic-field-changes-compensated-by-another-field",
+        );
+        assert!(
+            matches!(
+                refusal,
+                MaturityReportConsumerRefusal::SemanticTermDiffers(realization::StateField::Omega)
+            ),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_sponsor_amount() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::SponsorFault,
+            "report-publishes-sponsor-amount",
+        );
+        assert!(
+            refusal == MaturityReportConsumerRefusal::ForbiddenPublication("sponsor_amount"),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_sponsor_opening() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::SponsorFault,
+            "report-publishes-sponsor-opening",
+        );
+        assert!(
+            refusal == MaturityReportConsumerRefusal::ForbiddenPublication("sponsor_opening"),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_authored_standing() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::ProtocolReportFault,
+            "caller-authored-evidence-standing",
+        );
+        assert!(
+            matches!(refusal, MaturityReportConsumerRefusal::Structured(ref error) if matches!(error.as_ref(), MaturitySafetyReportRefusal::CensusBucketDiffers { bucket: "report_layer_observed", .. })),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_summary() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::ProtocolReportFault,
+            "report-summary-edited",
+        );
+        assert!(
+            matches!(refusal, MaturityReportConsumerRefusal::Structured(ref error) if matches!(error.as_ref(), MaturitySafetyReportRefusal::AnsweredOrOutstandingDiffers { figure: "answered", .. })),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_removed_failure() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::ProtocolReportFault,
+            "failed-row-removed",
+        );
+        assert!(
+            matches!(refusal, MaturityReportConsumerRefusal::Structured(ref error) if matches!(error.as_ref(), MaturitySafetyReportRefusal::NativeRefusalCountDiffers { .. })),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_duplicate_pass() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::ProtocolReportFault,
+            "duplicate-passing-row",
+        );
+        assert!(
+            matches!(refusal, MaturityReportConsumerRefusal::Structured(ref error) if matches!(error.as_ref(), MaturitySafetyReportRefusal::WitnessedRefusalCountDiffers { .. })),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_falsified_boundary() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::ProtocolReportFault,
+            "observed-target-layer-differs-from-declared-row-boundary",
+        );
+        assert!(
+            matches!(refusal, MaturityReportConsumerRefusal::Structured(ref error) if matches!(error.as_ref(), MaturitySafetyReportRefusal::NativeRefusalDiffers { .. })),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_wall_time() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::ProtocolReportFault,
+            "canonical-report-includes-wall-time",
+        );
+        assert!(
+            matches!(
+                refusal,
+                MaturityReportConsumerRefusal::PublicationDiffers(_)
+            ),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_pair_diagnostic() {
+        let refusal = pinned_report_pair(
+            MaturitySafetySection::ProtocolReportFault,
+            "typed-diagnostic-contains-a-caller-path-or-injected-line",
+        );
+        assert!(
+            matches!(
+                refusal,
+                MaturityReportConsumerRefusal::PublicationDiffers(_)
+            ),
+            "{refusal:?}"
+        );
+    }
+
+    #[test]
+    fn report_campaign_joins_every_manifest_key_in_both_directions() {
+        let control = validated();
+        let admissions = run_maturity_report_campaign(&PLAN).expect("campaign");
+        assert_eq!(admissions.readings.len(), 15);
+        let joined =
+            admit_report_readings(&PLAN, &control, admissions.readings).expect("two-way join");
+        assert_eq!(report_manifest().count(), joined.readings.len());
+        for row in report_manifest() {
+            assert!(joined.observes(row.section(), row.name()));
+        }
+    }
+
+    fn joined_mutation(change: impl FnOnce(&mut Vec<ReportReading>)) {
+        let mut readings = run_maturity_report_campaign(&PLAN)
+            .expect("campaign")
+            .readings;
+        change(&mut readings);
+        assert!(matches!(
+            admit_report_readings(&PLAN, &validated(), readings),
+            Err(MaturityReportConsumerRefusal::CampaignJoin)
+        ));
+    }
+
+    #[test]
+    fn report_join_refuses_missing() {
+        joined_mutation(|readings| {
+            readings.pop();
+        });
+    }
+
+    #[test]
+    fn report_join_refuses_duplicate() {
+        joined_mutation(|readings| readings.push(readings[0].clone()));
+    }
+
+    #[test]
+    fn report_join_refuses_surplus() {
+        joined_mutation(|readings| {
+            let mut extra = readings[0].clone();
+            extra.pair.name = "undeclared-output";
+            readings.push(extra);
+        });
+    }
+
+    #[test]
+    fn report_join_refuses_wrong_section() {
+        joined_mutation(|readings| readings[0].pair.section = MaturitySafetySection::Positive);
+    }
+
+    #[test]
+    fn report_join_refuses_changed_subject_and_projection() {
+        joined_mutation(|readings| readings[0].pair.subject = readings[0].pair.control.clone());
+        joined_mutation(|readings| {
+            readings[0].pair.projection = MaturityExpectedProjection::ForbiddenPublicationRefused;
+        });
+    }
+
+    #[test]
+    fn report_campaign_admits_a_truthful_contradicted_plan() {
+        let plan = crate::maturity_evidence::tests::contradicted_report_plan();
+        assert_eq!(
+            validated_from(&plan).report().completeness(),
+            MaturitySafetyCompleteness::Failed
+        );
+        run_maturity_report_campaign(&plan)
+            .expect("the whole campaign admits the truthful contradicted plan");
+    }
+
+    #[test]
+    fn truthful_unexpected_boundary_stays_failed_and_only_the_falsification_refuses() {
+        let plan = crate::maturity_evidence::tests::contradicted_report_plan();
+        let report = assemble_maturity_safety_report(&plan).expect("honest assembly");
+        let control =
+            validate_maturity_safety_report(report.clone(), &plan).expect("truthful failed report");
+        assert_eq!(
+            control.report().completeness(),
+            MaturitySafetyCompleteness::Failed
+        );
+        let bytes = render_maturity_safety_report(&control);
+        assert_eq!(
+            validate_maturity_safety_publication(&report, &plan, &bytes),
+            Ok(())
+        );
+        let mut altered = report;
+        altered
+            .native_refusals
+            .iter_mut()
+            .find(|row| row.observed_layer == ObservedOutcomeLayer::ExecutorInfrastructureFailure)
+            .expect("honestly reported layer")
+            .observed_layer = ObservedOutcomeLayer::ScriptPathRejection;
+        assert!(
+            matches!(validate_maturity_safety_publication(&altered, &plan, &bytes), Err(MaturityReportConsumerRefusal::Structured(error))
+            if matches!(error.as_ref(), MaturitySafetyReportRefusal::NativeRefusalDiffers { .. }))
+        );
+    }
+
+    #[test]
+    fn publication_bytes_refuse_altered_surplus_duplicate_and_diagnostic_lines() {
+        let control = validated();
+        let canonical = render_maturity_safety_report(&control);
+        let first = canonical.lines().next().expect("canonical line");
+        let subjects = [
+            canonical.replacen("answered 134", "answered 135", 1),
+            format!("{canonical}surplus 1\n"),
+            format!("{canonical}{first}\n"),
+            format!("{canonical}diagnostic /caller/private\n"),
+            format!("{canonical}diagnostic refused\nanswered 206\n"),
+        ];
+        for subject in subjects {
+            assert_ne!(subject, canonical);
+            assert!(matches!(
+                validate_maturity_safety_publication(control.report(), &PLAN, &subject),
+                Err(MaturityReportConsumerRefusal::PublicationDiffers(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn publication_refuses_sponsor_keys_after_another_token() {
+        let control = validated();
+        let canonical = render_maturity_safety_report(&control);
+        for key in ["sponsor_amount", "sponsor_opening"] {
+            let subject = format!("{canonical}diagnostic {key} private\n");
+            assert_eq!(
+                validate_maturity_safety_publication(control.report(), &PLAN, &subject),
+                Err(MaturityReportConsumerRefusal::ForbiddenPublication(key))
+            );
+        }
+    }
 
     /// Derive the plan the way the register and the evidence tests derive it.
     ///
@@ -1859,6 +2676,7 @@ mod tests {
                 + census.native_refusal_observed()
                 + census.root_history_observed()
                 + census.public_recovery_observed()
+                + census.report_layer_observed()
         );
         assert_eq!(validated.report().answered(), census.answered());
         assert_eq!(validated.report().outstanding(), census.outstanding());
@@ -2326,15 +3144,21 @@ mod tests {
             .rows()
             .iter()
             .filter_map(|row| match row.standing() {
-                MaturityRowStanding::ReportLayerRequired(projection) => {
-                    Some((row.row().section(), row.row().name(), *projection))
-                }
+                MaturityRowStanding::ReportLayerRequired(_)
+                | MaturityRowStanding::ReportLayerObserved => Some((
+                    row.row().section(),
+                    row.row().name(),
+                    row.row().projection(),
+                )),
                 _ => None,
             })
             .collect();
 
         assert_eq!(stated.len(), expected.len());
-        assert_eq!(stated.len(), PLAN.census().report_layer_required());
+        assert_eq!(
+            stated.len(),
+            PLAN.census().report_layer_required() + PLAN.census().report_layer_observed()
+        );
         for (requirement, (section, name, projection)) in stated.iter().zip(&expected) {
             assert_eq!(requirement.section(), *section);
             assert_eq!(requirement.row(), *name);
