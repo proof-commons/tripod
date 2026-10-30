@@ -2084,6 +2084,7 @@ fn render_controls(text: &mut String, controls: &MaturityControlPaths) {
 fn render_entry_bindings(text: &mut String, entry: &MaturityContinuityReportEntry) {
     let _ = writeln!(text, "source_index {}", entry.position);
     let (class, address) = match &entry.source {
+        MaturityByteSource::NodeInterface { binding } => ("node-interface", binding.clone()),
         MaturityByteSource::NodeFreeSubmitReady => ("node-free-submit-ready", "-".to_owned()),
         MaturityByteSource::ArchivedSubmission { run_address } => {
             ("archived-submission", hex(run_address.as_bytes()))
@@ -2848,6 +2849,17 @@ mod tests {
     #[test]
     fn assembles_over_both_public_source_paths() {
         let report = assembled();
+        let mut observed = report.entries()[0].clone();
+        observed.source = MaturityByteSource::NodeInterface {
+            binding: "chain:genesis:block:height".to_owned(),
+        };
+        let mut rendered = String::new();
+        render_entry_bindings(&mut rendered, &observed);
+        assert!(
+            rendered.contains(
+                "source_class node-interface\nsource_address chain:genesis:block:height\n"
+            )
+        );
         assert_eq!(report.entries().len(), SOURCES.len());
         assert!(matches!(
             report.entries()[0].source(),

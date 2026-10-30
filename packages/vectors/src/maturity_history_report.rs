@@ -25,6 +25,69 @@ use crate::maturity_safety::MaturitySafetySection;
 /// Canonical schema for the root-history report.
 pub const MATURITY_ROOT_HISTORY_REPORT_SCHEMA: u32 = 1;
 
+/// A validated single-edge report with a separately checked node acquisition.
+pub struct ValidatedObservedRootHistoryReport {
+    rendered: String,
+}
+
+impl ValidatedObservedRootHistoryReport {
+    /// Canonical report bytes; no caller-authored verdict is accepted.
+    #[must_use]
+    pub fn render(&self) -> &str {
+        &self.rendered
+    }
+}
+
+/// Validate the acquired handoff, its checkpoint and the exact one-edge sequence.
+/// # Errors
+/// Refuses changed acquisition operands or a history that cannot advance its cursor.
+pub fn validate_observed_root_history(
+    observation: &crate::maturity_observer::CheckedNodeObservation,
+) -> Result<ValidatedObservedRootHistoryReport, String> {
+    observation.revalidate()?;
+    let edge = StateRootEdge::from_public_handoff(observation.handoff().clone())
+        .map_err(|e| format!("history-edge:{e:?}"))?;
+    let cursor = validate_state_root_history(std::slice::from_ref(&edge), edge.predecessor())
+        .map_err(|e| format!("history-sequence:{e:?}"))?;
+    if cursor != edge.successor() {
+        return Err("history-cursor-disagrees".to_owned());
+    }
+    let mut rendered =
+        String::from("schema 1\nrole state-root-history\nacquisition node-interface\nedges 1\n");
+    let _ = writeln!(
+        rendered,
+        "starting_cursor {} {}",
+        edge.predecessor().txid().to_target_display(),
+        edge.predecessor().index()
+    );
+    let _ = writeln!(
+        rendered,
+        "edge 0 {} {} {} {}",
+        edge.predecessor().txid().to_target_display(),
+        edge.predecessor().index(),
+        edge.successor().txid().to_target_display(),
+        edge.successor().index()
+    );
+    let _ = writeln!(
+        rendered,
+        "final_cursor {} {}",
+        cursor.txid().to_target_display(),
+        cursor.index()
+    );
+    let _ = writeln!(
+        rendered,
+        "checkpoint {}",
+        observation.checkpoint().binding()
+    );
+    let _ = writeln!(
+        rendered,
+        "checkpoint_facts {}",
+        observation.checkpoint().facts()
+    );
+    rendered.push_str("residual single-node-acquisition-only\nresidual no-root-cursor-freshness\nresidual no-archive-origin-beyond-admission\nresidual no-full-artifact-authentication\n");
+    Ok(ValidatedObservedRootHistoryReport { rendered })
+}
+
 /// The root-history evidence role.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MaturityRootHistoryReportRole {
@@ -641,6 +704,7 @@ mod tests {
         MaturityByteSource, ValidatedMaturityContinuity, project_maturity_continuity,
         submitted_transaction_identities,
     };
+    use crate::maturity_corpus::accepted_public_handoff;
     use crate::maturity_corpus::{
         MaturityDeclaredPremise, MaturityPremiseProvenance, maturity_run_of_record,
         maturity_variable_run_of_record,
@@ -651,7 +715,6 @@ mod tests {
         derive_maturity_evidence_plan_with,
     };
     use crate::maturity_recovery::PublicAnnouncementLocator;
-    use crate::maturity_recovery_report::accepted_public_handoff;
     use crate::maturity_report::MaturityVolatileField;
 
     static PLAN: LazyLock<MaturityAnnouncementEvidencePlan> = LazyLock::new(|| {

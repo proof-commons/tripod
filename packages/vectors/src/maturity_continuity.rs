@@ -179,6 +179,11 @@ impl MaturityCheckedPrefix {
 /// The origin claimed for submitted bytes, separate from acceptance and observation class.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MaturityByteSource {
+    /// Bytes acquired through the node interface at an explicit chain and block binding.
+    NodeInterface {
+        /// Canonical chain/genesis/block/height token, separate from an archive address.
+        binding: String,
+    },
     /// A planner driven in process, with no node observation.
     NodeFreeSubmitReady,
     /// A submission retained by a content-addressed corpus.

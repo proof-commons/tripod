@@ -7,10 +7,13 @@ script_source_files = files(
   'diagnose-taproot-issuance-rangeproof-digest.py',
   'diagnose-taproot-output-witness-digest.py',
   'elements-native-executor.py',
+  'elements-observer-capture.py',
+  'elements-observer-read.py',
   'executor_supervision.py',
   'run-conservation-matrix.py',
   'run-fresh-process-lifecycle.py',
   'run-normalization-matrix.py',
+  'test-elements-observer-contract.py',
   'test-executor-boundaries.py',
   'test-executor-classification.py',
 )

@@ -349,6 +349,44 @@ fn the_maturity_announcement_runs_against_a_real_target() {
         ANNOUNCEMENT_STEPS.len()
     );
     assert_completed(&planner, &evidence);
+    if common::environment("TRIPOD_MATURITY_CAPTURE_PROFILE").as_deref() == Some("observer") {
+        let bytes = planner.submission_bytes().expect("submitted public bytes");
+        let tx = TargetTransaction::decode(bytes).expect("public transaction");
+        let identity =
+            vectors::maturity_continuity::submitted_transaction_identities(&tx, bytes).identity();
+        let candidate = serde_json::json!({
+            "witness_schedule":"variable-metadata", "minimum_lead":4, "maximum_lead":6,
+            "static_root":common::hex_bytes(planner.bundle().static_subtree().root()),
+            "internal_policy":"state-nums", "contract_revision":"elements-tapscript-v2"
+        });
+        let mut manifest = candidate.clone();
+        let object = manifest.as_object_mut().expect("public declaration object");
+        object.insert("schema".to_owned(), serde_json::json!(1));
+        object.insert(
+            "chain_name".to_owned(),
+            serde_json::json!("elementsregtest"),
+        );
+        object.insert(
+            "chain_id".to_owned(),
+            serde_json::json!(common::hex_bytes(deployment.network_id())),
+        );
+        object.insert(
+            "genesis_id".to_owned(),
+            serde_json::json!(common::hex_bytes(deployment.genesis_id())),
+        );
+        object.insert(
+            "transaction_id".to_owned(),
+            serde_json::json!(identity.to_target_display()),
+        );
+        object.insert("state_output_index".to_owned(), serde_json::json!(0));
+        object.insert("candidate_declaration".to_owned(), candidate);
+        object.insert("abi_declaration".to_owned(), serde_json::json!({"witness_schedule":"variable-metadata", "contract_revision":"elements-tapscript-v2"}));
+        std::io::Write::write_fmt(
+            &mut std::io::stdout(),
+            format_args!("OBSERVER-MANIFEST {manifest}\n"),
+        )
+        .expect("public manifest output");
+    }
 }
 
 fn assert_completed(planner: &MaturityAnnouncementPlanner, evidence: &MaturityNativeEvidence) {

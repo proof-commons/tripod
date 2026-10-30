@@ -143,8 +143,9 @@ use crate::maturity_continuity_report::{
 use crate::maturity_corpus::{
     MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS, MaturityCorpusImportRefusal,
     MaturityDeclaredPremise, MaturityDisclosedFeeFloors, MaturityPremiseProvenance,
-    ValidatedMaturityCorpus, maturity_predecessor_mutant_run_of_record, maturity_run_of_record,
-    maturity_successor_mutant_run_of_record, maturity_variable_run_of_record,
+    ValidatedMaturityCorpus, accepted_public_handoff, maturity_predecessor_mutant_run_of_record,
+    maturity_run_of_record, maturity_successor_mutant_run_of_record,
+    maturity_variable_run_of_record,
 };
 use crate::maturity_corpus::{
     MATURITY_SPONSORED_RUN_ADDRESS, ValidatedSponsoredMaturityCorpus,
@@ -172,8 +173,7 @@ use crate::maturity_native::{
 use crate::maturity_recovery::MaturityRecoveryRefusal;
 use crate::maturity_recovery_report::{
     MaturityPublicRecoveryReportRefusal, ValidatedMaturityPublicRecoveryReport,
-    accepted_public_handoff, assemble_maturity_public_recovery_report,
-    validate_maturity_public_recovery_report,
+    assemble_maturity_public_recovery_report, validate_maturity_public_recovery_report,
 };
 use crate::maturity_safety::{
     MaturityCanonicalControl, MaturityExpectedProjection, MaturityIntendedCarrier,
@@ -3053,7 +3053,7 @@ pub(crate) mod tests {
         assemble_maturity_continuity_report, validate_maturity_continuity_report,
     };
     use crate::maturity_corpus::{
-        MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS,
+        MATURITY_RUN_ADDRESS, MATURITY_VARIABLE_RUN_ADDRESS, accepted_public_handoff,
         maturity_predecessor_mutant_run_of_record, maturity_run_of_record,
         maturity_successor_mutant_run_of_record, maturity_variable_run_of_record,
     };
@@ -3068,8 +3068,8 @@ pub(crate) mod tests {
         MaturityAcceptanceObligation, MaturityAnnouncementPlanner, MaturityNativeStanding,
     };
     use crate::maturity_recovery_report::{
-        ValidatedMaturityPublicRecoveryReport, accepted_public_handoff,
-        assemble_maturity_public_recovery_report, validate_maturity_public_recovery_report,
+        ValidatedMaturityPublicRecoveryReport, assemble_maturity_public_recovery_report,
+        validate_maturity_public_recovery_report,
     };
     use crate::maturity_safety::{
         MaturityCanonicalControl, MaturityIntendedCarrier, MaturityMutationLocator,
@@ -4269,8 +4269,8 @@ pub(crate) mod tests {
                 "{row} admits a refusal it has no boundary or no mutant for",
             );
         }
-        // Missing authorization, output-zero change, fee substitution and balanced corruption
-        // gain declared layers; the two sponsored positives remain their own controls.
+        // Fourteen positive rows are their own controls; twenty-seven other rows
+        // carry a typed reason rather than a layer.
         assert_eq!(admitting_none, 41);
     }
 
@@ -4347,6 +4347,7 @@ pub(crate) mod tests {
     /// classification, moves a number here rather than passing quietly.
     #[test]
     fn the_census_figures_are_unmoved_by_the_binding_readers() {
+        // The observer archive is admitted beside the census and links no row.
         let census = PLAN.census();
         assert_eq!(census.rows(), 206);
         assert_eq!(census.first_party_discharged(), 40);
@@ -4447,7 +4448,7 @@ pub(crate) mod tests {
         let observed: Vec<_> = PLAN
             .rows()
             .iter()
-            // The two sponsored acceptances have their own separately pinned archive.
+            // The other ten acceptances are pinned by the sponsored (two) and native (eight) archives.
             .filter(|row| row.row().name() == "sponsorless")
             .filter(|row| {
                 matches!(

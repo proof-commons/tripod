@@ -7,29 +7,23 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use realization::{
-    AnnouncementLeadBounds, Cycle, EncodedStateMetadata, RealizationError, StateMetadata,
-    StateRepresentationNonce, encode_state_metadata,
+    Cycle, EncodedStateMetadata, RealizationError, StateMetadata, StateRepresentationNonce,
+    encode_state_metadata,
 };
-use tapscript::{
-    STATE_NUMS_KEY, StateConstructorRefusal, StateInternalKeyPolicy, StateLeafRole,
-    StateStaticLeaf, StateStaticNode, StateStaticSubtree, TapscriptError, TapscriptProgram,
-};
+use tapscript::{StateConstructorRefusal, TapscriptError};
 use target_elements::TargetContractVersion;
 use transaction::bytes::TargetTransaction;
 use transaction::error::TransactionRefusal;
 
-use crate::maturity_closure::{
-    MaturityClosureRefusal, MaturityDeployment, OracleStateCurve, closure_target,
-};
+use crate::maturity_closure::MaturityClosureRefusal;
 use crate::maturity_continuity::{
     MaturityByteComparison, MaturityByteSource, MaturityContinuityRefusal, witness,
 };
-use crate::maturity_corpus::ValidatedMaturityCorpus;
 use crate::maturity_history_report::MaturitySyntheticOriginResidual;
-use crate::maturity_native::{MaturityAcceptanceObligation, MaturityAcceptanceRoute};
+use crate::maturity_native::MaturityAcceptanceRoute;
 use crate::maturity_recovery::{
-    MaturityRecoveryRefusal, PublicAnnouncementHandoff, PublicAnnouncementLocator,
-    PublicHandoffInput, recover_public_successor,
+    MaturityRecoveryRefusal, PublicAnnouncementHandoff, PublicHandoffInput,
+    recover_public_successor,
 };
 use crate::maturity_report::MaturitySafetyCompleteness;
 use crate::maturity_safety::{
@@ -38,6 +32,48 @@ use crate::maturity_safety::{
 
 /// Canonical schema for a public-recovery report.
 pub const MATURITY_PUBLIC_RECOVERY_REPORT_SCHEMA: u32 = 1;
+
+/// Public recovery validated together with its independent acquisition operands.
+pub struct ValidatedObservedPublicRecoveryReport {
+    rendered: String,
+}
+
+impl ValidatedObservedPublicRecoveryReport {
+    /// Canonical public-recovery bytes with acquisition-specific residuals.
+    #[must_use]
+    pub fn render(&self) -> &str {
+        &self.rendered
+    }
+}
+
+/// Validate reconstruction and bind its public input to a checked node reading.
+/// # Errors
+/// Refuses changed acquisition operands or any public-recovery report disagreement.
+pub fn validate_observed_public_recovery(
+    observation: &crate::maturity_observer::CheckedNodeObservation,
+) -> Result<ValidatedObservedPublicRecoveryReport, String> {
+    observation.revalidate()?;
+    let handoff = observation.handoff();
+    let report = assemble_maturity_public_recovery_report(handoff.clone())
+        .map_err(|e| format!("recovery-assembly:{e:?}"))?;
+    let validated = validate_maturity_public_recovery_report(&report, handoff)
+        .map_err(|e| format!("recovery-validation:{e:?}"))?;
+    if !validated.report().program().agrees() {
+        return Err("observed-programs-disagree".to_owned());
+    }
+    // Preserve the structural validator's claims and name the acquisition substitution separately.
+    let mut rendered = render_maturity_public_recovery_report(&validated);
+    rendered.push_str(
+        "acquisition_residual single-node-acquisition-only replaces no-chain-observation\n",
+    );
+    rendered.push_str("residual no-full-artifact-authentication\n");
+    let _ = writeln!(
+        rendered,
+        "acquisition_checkpoint {}",
+        observation.checkpoint().binding()
+    );
+    Ok(ValidatedObservedPublicRecoveryReport { rendered })
+}
 
 /// The distinct evidence role of public successor recovery.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -810,6 +846,7 @@ pub fn render_maturity_public_recovery_report(
     let locator = handoff.locator();
     let (source, address) = match locator.source() {
         MaturityByteSource::NodeFreeSubmitReady => ("node-free-submit-ready", "-".to_owned()),
+        MaturityByteSource::NodeInterface { binding } => ("node-interface", binding.clone()),
         MaturityByteSource::ArchivedSubmission { run_address } => {
             ("archived-submission", hex(run_address.as_bytes()))
         }
@@ -897,109 +934,12 @@ pub fn render_maturity_public_recovery_report(
     text
 }
 
-/// Build the admitted archive's public handoff for report derivation.
-///
-/// This builder reads an admitted archive; the constrained producer receives
-/// only the resulting handoff.
-///
-/// # Errors
-/// Returns the first unavailable accepted reading with its stage.
-#[must_use = "an admitted handoff can be unavailable"]
-pub fn accepted_public_handoff(
-    corpus: &ValidatedMaturityCorpus,
-) -> Result<PublicAnnouncementHandoff, MaturityPublicRecoveryReportRefusal> {
-    use MaturityAcceptedHandoffStage as Stage;
-    let readback = match corpus.evidence().acceptance_obligation() {
-        MaturityAcceptanceObligation::Established { readback, .. } => readback,
-        MaturityAcceptanceObligation::Outstanding { routes } => {
-            return Err(
-                MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
-                    stage: Box::new(Stage::AcceptanceOutstanding { routes: *routes }),
-                },
-            );
-        }
-    };
-    let transaction = TargetTransaction::decode(readback.bytes()).map_err(|refusal| {
-        MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
-            stage: Box::new(Stage::TransactionUndecodable(refusal)),
-        }
-    })?;
-    let target = closure_target().map_err(|refusal| {
-        MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
-            stage: Box::new(Stage::ReviewedTargetUnavailable(refusal)),
-        }
-    })?;
-    let stack = transaction
-        .witnesses()
-        .first()
-        .map_or(&[][..], |input| input.stack());
-    let leaf = stack.get(7).ok_or_else(|| {
-        MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
-            stage: Box::new(Stage::LeafAbsent { items: stack.len() }),
-        }
-    })?;
-    let program = TapscriptProgram::decode(&target, leaf).map_err(|refusal| {
-        MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
-            stage: Box::new(Stage::LeafUndecodable(refusal)),
-        }
-    })?;
-    let subtree = StateStaticSubtree::new(
-        &target,
-        Some(StateStaticNode::Leaf {
-            identity: 0,
-            leaf: StateStaticLeaf {
-                role: StateLeafRole::Announcement,
-                program,
-                version: target.definition().leaf_version().get(),
-            },
-        }),
-    )
-    .map_err(
-        |refusal| MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
-            stage: Box::new(Stage::SubtreeRefused(refusal)),
-        },
-    )?;
-    let (minimum, maximum) = MaturityDeployment::PublishedSignerHeld
-        .parameters()
-        .map_err(
-            |refusal| MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
-                stage: Box::new(Stage::DeploymentUnavailable(refusal)),
-            },
-        )?
-        .lead();
-    let bounds = AnnouncementLeadBounds::new(Cycle::new(minimum), Cycle::new(maximum)).map_err(
-        |refusal| MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
-            stage: Box::new(Stage::LeadBoundsRefused(refusal)),
-        },
-    )?;
-    let internal_key =
-        StateInternalKeyPolicy::new(STATE_NUMS_KEY, &OracleStateCurve).map_err(|refusal| {
-            MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
-                stage: Box::new(Stage::InternalKeyRefused(refusal)),
-            }
-        })?;
-    Ok(PublicAnnouncementHandoff::new(
-        PublicAnnouncementLocator::new(
-            MaturityByteSource::ArchivedSubmission {
-                run_address: corpus.report().run_address().to_owned(),
-            },
-            readback.identity(),
-        ),
-        readback.bytes().to_vec(),
-        0,
-        corpus.schedule(),
-        bounds,
-        subtree,
-        internal_key,
-        TargetContractVersion::V2,
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::maturity_continuity::project_maturity_continuity;
     use crate::maturity_continuity::tests::variable_archived;
+    use crate::maturity_corpus::accepted_public_handoff;
     use crate::maturity_corpus::maturity_variable_run_of_record;
     use crate::maturity_evidence::{
         MaturityConstructorMaterial, MaturityConstructorMaterialAbsence,
@@ -1010,6 +950,7 @@ mod tests {
         assemble_maturity_root_history_report, render_maturity_root_history_report,
         validate_maturity_root_history_report,
     };
+    use crate::maturity_recovery::PublicAnnouncementLocator;
     use crate::maturity_report::MaturityVolatileField;
 
     fn accepted() -> (PublicAnnouncementHandoff, MaturityPublicRecoveryReport) {

@@ -968,6 +968,14 @@ test(
 live_native_maturity_mutant_capture_test = find_program('scripts/test-live-native-maturity-mutant-capture.sh')
 
 test(
+  'live-native-maturity-observer-capture-contract',
+  find_program('scripts/test-live-native-maturity-observer-capture.sh'),
+  args: [meson.project_source_root()],
+  suite: 'integration',
+  timeout: 300,
+)
+
+test(
   'live-native-maturity-native-capture-contract',
   find_program('scripts/test-live-native-maturity-native-capture.sh'),
   args: [meson.project_source_root()],

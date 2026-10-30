@@ -23,9 +23,10 @@
 //!
 //! # A row's identity is its table and its name
 //!
-//! Both constructor tables contain `wrong-leaf-version`, with distinct
-//! locators and grounds. Section and name together identify each entry;
-//! a shared name or published requirement cannot identify a row's fault.
+//! Both constructor tables contain `wrong-leaf-version`, sharing
+//! `Loc::ControlBlock` but differing in section and ground. Section and name
+//! together identify each entry; a shared name or published requirement
+//! cannot identify a row's fault.
 //!
 //! # What this register is not
 //!

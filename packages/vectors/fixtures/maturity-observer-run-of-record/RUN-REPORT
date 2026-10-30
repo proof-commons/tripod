@@ -1,0 +1,22 @@
+run-report-schema maturity-observer-run-report 1
+suite-commit 94b380dd04dc9f15b7845ff8a577d0c8b8431e4a
+suite-tree 3bddd13c1cc4cf81235995528f880ca21a93d554
+suite-clean yes
+protocol-revision 8
+capture-profile observer
+phase-wall-ms preflight 34
+phase-wall-ms build 7533
+phase-wall-ms producer 11434
+phase-wall-ms acquisition 619
+phase-wall-ms observer 1387
+phase-wall-ms census 2
+phase-wall-ms manifest 0
+phase-wall-ms coordinator 102
+elapsed-wall-ms 21111
+producer-exit 0
+acquisition-exit 0
+observer-exit 0
+experiment-count 7
+ceremony report bbf0f7cefdd412cde6e6705b8c73d3084949e694279df046550762251951582b
+manifest-sha256 ef34c7d29b8bf6c54a9b23fbbd072ae97d11533fd47aafddf996c88edb0f57e8
+eligible yes

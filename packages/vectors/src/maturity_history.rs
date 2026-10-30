@@ -9,17 +9,13 @@ use linker::{StateLinkRefusal, state_bundle_continuity};
 use realization::AnnouncementLeadBounds;
 use tapscript::{StateInternalKeyPolicy, StateStaticSubtree, StateWitnessSchedule};
 use target_elements::TargetContractVersion;
-use target_elements_conformance::constructor::tagged::sha256;
 use transaction::bytes::{Outpoint, TargetTransaction, Txid};
 use transaction::operator_right::BranchContext;
 use transaction::state_abi::CandidateMaturityAnnouncementAbi;
 use transaction::taproot::Digest32;
 
 use crate::maturity_continuity::{ValidatedMaturityContinuity, submitted_transaction_identities};
-use crate::maturity_corpus::{
-    MaturityDeclaredPremise, MaturityPremiseProvenance, ValidatedMaturityCorpus,
-};
-use crate::maturity_native::{MaturityAcceptanceObligation, MaturityAcceptanceRoute};
+use crate::maturity_native::MaturityAcceptanceRoute;
 use crate::maturity_recovery::{
     MaturityRecoveryRefusal, PublicAnnouncementHandoff, recover_public_successor,
 };
@@ -456,6 +452,59 @@ pub enum MaturityRootFact {
     CandidateAbi,
 }
 
+/// Source of a disclosed environment premise that corpus admission does not check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityPremiseProvenance {
+    /// The node arguments passed by the native executor.
+    ExecutorArguments,
+    /// A decimal amount returned by the running node.
+    ReportedByNode,
+    /// The pinned source constant, with no startup override.
+    PinnedSourceNoOverride,
+    /// A caller's deployment declaration, which archive admission cannot check.
+    DeploymentDeclaration,
+}
+
+impl MaturityPremiseProvenance {
+    /// The provenance's canonical report name.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::ExecutorArguments => "executor-arguments",
+            Self::ReportedByNode => "reported by the node",
+            Self::PinnedSourceNoOverride => "declared by the pinned source, no override",
+            Self::DeploymentDeclaration => "deployment-declaration",
+        }
+    }
+}
+
+/// A whole deployment value with its stated provenance.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MaturityDeclaredPremise<T> {
+    value: T,
+    provenance: MaturityPremiseProvenance,
+}
+
+impl<T> MaturityDeclaredPremise<T> {
+    /// Records a declaration without attributing it to admitted archive bytes.
+    #[must_use]
+    pub const fn declared(value: T, provenance: MaturityPremiseProvenance) -> Self {
+        Self { value, provenance }
+    }
+
+    /// The whole value stated by the caller.
+    #[must_use]
+    pub const fn value(&self) -> &T {
+        &self.value
+    }
+
+    /// The source of the declaration.
+    #[must_use]
+    pub const fn provenance(&self) -> MaturityPremiseProvenance {
+        self.provenance
+    }
+}
+
 /// How a checkpoint obtains a fact.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MaturityRootFactKind {
@@ -513,6 +562,18 @@ pub struct MaturityRootCheckpoint {
     linked_candidate: MaturityDeclaredPremise<CandidateLinkedMaturityBundle>,
     candidate_abi: MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi>,
     branch: BranchContext,
+}
+
+pub(crate) struct MaturityRootCheckpointFacts {
+    pub(crate) network_identity: String,
+    pub(crate) genesis_identity: String,
+    pub(crate) block_hash: Digest32,
+    pub(crate) block_height: u32,
+    pub(crate) transaction_identity: Txid,
+    pub(crate) predecessor: Outpoint,
+    pub(crate) successor: Outpoint,
+    pub(crate) target_contract: String,
+    pub(crate) branch: BranchContext,
 }
 
 /// A disagreement found while binding the admitted checkpoint.
@@ -658,46 +719,25 @@ pub enum MaturityRootObservationRefusal {
 }
 
 impl MaturityRootCheckpoint {
-    /// Bind the admitted readback and its ten checkpoint facts to a public handoff and edge.
-    ///
-    /// # Errors
-    /// Refuses an outstanding acceptance or the first digest, identity, outpoint or premise
-    /// disagreement.
-    pub fn bind(
-        edge: &StateRootEdge,
-        handoff: &PublicAnnouncementHandoff,
-        corpus: &ValidatedMaturityCorpus,
+    pub(crate) fn from_readback(
+        facts: MaturityRootCheckpointFacts,
         linked_candidate: MaturityDeclaredPremise<CandidateLinkedMaturityBundle>,
         candidate_abi: MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi>,
+        edge: &StateRootEdge,
+        handoff: &PublicAnnouncementHandoff,
     ) -> Result<Self, MaturityRootCheckpointRefusal> {
-        let readback = match corpus.evidence().acceptance_obligation() {
-            MaturityAcceptanceObligation::Outstanding { routes } => {
-                return Err(MaturityRootCheckpointRefusal::AcceptanceIsOutstanding {
-                    routes: *routes,
-                });
-            }
-            MaturityAcceptanceObligation::Established { readback, .. } => readback,
-        };
-        let checkpoint_digest = sha256(readback.bytes());
-        let handoff_digest = sha256(handoff.bytes());
-        if checkpoint_digest != handoff_digest {
-            return Err(MaturityRootCheckpointRefusal::SubmittedBytesDisagree {
-                checkpoint: checkpoint_digest,
-                handoff: handoff_digest,
-            });
-        }
         let checkpoint = Self {
-            network_identity: corpus.report().network_id().to_owned(),
-            genesis_identity: corpus.report().genesis_id().to_owned(),
-            block_hash: *readback.block_hash(),
-            block_height: readback.block_height(),
-            transaction_identity: readback.identity(),
-            predecessor: edge.predecessor(),
-            successor: edge.successor(),
-            target_contract: corpus.report().target_contract().to_owned(),
+            network_identity: facts.network_identity,
+            genesis_identity: facts.genesis_identity,
+            block_hash: facts.block_hash,
+            block_height: facts.block_height,
+            transaction_identity: facts.transaction_identity,
+            predecessor: facts.predecessor,
+            successor: facts.successor,
+            target_contract: facts.target_contract,
+            branch: facts.branch,
             linked_candidate,
             candidate_abi,
-            branch: corpus.evidence().branch(),
         };
         checkpoint.binds(edge, handoff)?;
         Ok(checkpoint)
@@ -1165,17 +1205,21 @@ mod tests {
     use crate::maturity_closure::closure_target;
     use crate::maturity_continuity::tests::{archived, variable_archived};
     use crate::maturity_continuity::{MaturityByteSource, project_maturity_continuity};
-    use crate::maturity_corpus::{maturity_run_of_record, maturity_variable_run_of_record};
+    use crate::maturity_corpus::accepted_public_handoff;
+    use crate::maturity_corpus::{
+        ValidatedMaturityCorpus, maturity_run_of_record, maturity_variable_run_of_record,
+    };
     use crate::maturity_evidence::{
         MaturityConstructorMaterial, MaturityConstructorMaterialAbsence,
         MaturityExecutorProvenanceExpectation, checkpoint_premises_of,
         derive_maturity_evidence_plan_with,
     };
+    use crate::maturity_native::MaturityAcceptanceObligation;
     use crate::maturity_recovery::PublicAnnouncementLocator;
-    use crate::maturity_recovery_report::accepted_public_handoff;
     use realization::Cycle;
     use std::sync::LazyLock;
     use tapscript::StateStaticNode;
+    use target_elements_conformance::constructor::tagged::sha256;
     use transaction::bytes::Txid;
 
     static WHOLE_METADATA_PREMISES: LazyLock<(

@@ -69,6 +69,7 @@ pub mod maturity_mutants;
 pub mod maturity_native;
 pub mod maturity_negative_half;
 pub mod maturity_nonce_corpus;
+pub mod maturity_observer;
 pub mod maturity_operator;
 pub mod maturity_recovery;
 pub mod maturity_recovery_report;

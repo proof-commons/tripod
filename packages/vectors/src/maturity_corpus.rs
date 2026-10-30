@@ -6,8 +6,15 @@
 //!
 //! Two constructor-mutant archives use the same byte bindings and replay each recorded offer through the mutant ceremony planner. Their report phase walls are recorded facts, while the replayed offer records establish only the submitted requests and observed responses under the pinned target.
 
+use crate::maturity_history::{MaturityRootCheckpointRefusal, StateRootEdge};
+use crate::maturity_recovery::PublicAnnouncementHandoff;
+use crate::maturity_recovery_report::{
+    MaturityAcceptedHandoffStage, MaturityPublicRecoveryReportRefusal,
+};
+use linker::CandidateLinkedMaturityBundle;
 use std::fmt::Write as _;
 use std::sync::OnceLock;
+use transaction::state_abi::CandidateMaturityAnnouncementAbi;
 
 use linker::CandidateDeploymentIdentity;
 use target_elements_conformance::constructor::tagged;
@@ -79,6 +86,41 @@ pub const MATURITY_NATIVE_RUN_ADDRESS: &str =
     "a0232585c887fcaf8ac4fd7050e77258bf7a6e0aebba7fce7d67c829374682f8";
 const MATURITY_NATIVE_CEREMONY_SHA256: &str =
     "707adc52ee34f394fde4d95f9c5f5c5ec5fac48f051694a760b05afc4abbcae1";
+/// SHA-256 of the independent observation manifest.
+pub const MATURITY_OBSERVER_MANIFEST_SHA256: &str =
+    "ef34c7d29b8bf6c54a9b23fbbd072ae97d11533fd47aafddf996c88edb0f57e8";
+/// SHA-256 of the independent observation report and measured phase durations.
+pub const MATURITY_OBSERVER_RUN_ADDRESS: &str =
+    "e003e7d24e6edcad193561ce88a7da01ddf134269629930d9e6ba8bf862946dc";
+/// SHA-256 of the independent acquisition ceremony.
+pub const MATURITY_OBSERVER_CEREMONY_SHA256: &str =
+    "bbf0f7cefdd412cde6e6705b8c73d3084949e694279df046550762251951582b";
+
+const OBSERVER_FILES: [MaturityArchiveFile<'_>; 4] = [
+    MaturityArchiveFile::new(
+        "94b380dd04.report.capture",
+        include_bytes!("../fixtures/maturity-observer-run-of-record/94b380dd04.report.capture"),
+    ),
+    MaturityArchiveFile::new(
+        "94b380dd04.report.capture.timing",
+        include_bytes!(
+            "../fixtures/maturity-observer-run-of-record/94b380dd04.report.capture.timing"
+        ),
+    ),
+    MaturityArchiveFile::new(
+        "MANIFEST.sha256",
+        include_bytes!("../fixtures/maturity-observer-run-of-record/MANIFEST.sha256"),
+    ),
+    MaturityArchiveFile::new(
+        "RUN-REPORT",
+        include_bytes!("../fixtures/maturity-observer-run-of-record/RUN-REPORT"),
+    ),
+];
+const OBSERVER_PINS: [&str; 3] = [
+    MATURITY_OBSERVER_MANIFEST_SHA256,
+    MATURITY_OBSERVER_RUN_ADDRESS,
+    MATURITY_OBSERVER_CEREMONY_SHA256,
+];
 const PREDECESSOR_MUTANT_CEREMONY_SHA256: &str =
     "730a0670d76a59e4640726ef54f0d40853987c35792a4329401abd485d42f319";
 const SUCCESSOR_MUTANT_CEREMONY_SHA256: &str =
@@ -238,58 +280,7 @@ pub enum MaturityFrameworkRevision {
     IntendedTip,
 }
 
-/// Source of a disclosed environment premise that corpus admission does not check.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MaturityPremiseProvenance {
-    /// The node arguments passed by the native executor.
-    ExecutorArguments,
-    /// A decimal amount returned by the running node.
-    ReportedByNode,
-    /// The pinned source constant, with no startup override.
-    PinnedSourceNoOverride,
-    /// A caller's deployment declaration, which archive admission cannot check.
-    DeploymentDeclaration,
-}
-
-impl MaturityPremiseProvenance {
-    /// The provenance's canonical report name.
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::ExecutorArguments => "executor-arguments",
-            Self::ReportedByNode => "reported by the node",
-            Self::PinnedSourceNoOverride => "declared by the pinned source, no override",
-            Self::DeploymentDeclaration => "deployment-declaration",
-        }
-    }
-}
-
-/// A whole deployment value with its stated provenance.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MaturityDeclaredPremise<T> {
-    value: T,
-    provenance: MaturityPremiseProvenance,
-}
-
-impl<T> MaturityDeclaredPremise<T> {
-    /// Records a declaration without attributing it to admitted archive bytes.
-    #[must_use]
-    pub const fn declared(value: T, provenance: MaturityPremiseProvenance) -> Self {
-        Self { value, provenance }
-    }
-
-    /// The whole value stated by the caller.
-    #[must_use]
-    pub const fn value(&self) -> &T {
-        &self.value
-    }
-
-    /// The source of the declaration.
-    #[must_use]
-    pub const fn provenance(&self) -> MaturityPremiseProvenance {
-        self.provenance
-    }
-}
+pub use crate::maturity_history::{MaturityDeclaredPremise, MaturityPremiseProvenance};
 
 /// Fee floors disclosed for the node that ran an admitted archive.
 ///
@@ -2635,6 +2626,295 @@ pub fn maturity_native_run_of_record() -> ImportResult<&'static ValidatedNativeM
     }
 }
 
+/// Admitted independent acquisition and the two separately validated reports.
+pub struct ValidatedObserverMaturityCorpus {
+    observation: serde_json::Value,
+}
+
+impl ValidatedObserverMaturityCorpus {
+    /// Exact checked experiment, including its declarations and node answers.
+    #[must_use]
+    pub const fn observation(&self) -> &serde_json::Value {
+        &self.observation
+    }
+}
+
+fn observer_check(agrees: bool, field: &str) -> Result<(), String> {
+    agrees
+        .then_some(())
+        .ok_or_else(|| format!("observer-archive:{field}"))
+}
+
+fn observer_text<'a>(value: &'a serde_json::Value, field: &str) -> Result<&'a str, String> {
+    value[field]
+        .as_str()
+        .ok_or_else(|| format!("observer-text:{field}"))
+}
+
+fn observer_subject(capture: &str) -> Result<Vec<u8>, String> {
+    let lines: Vec<_> = capture
+        .lines()
+        .filter(|line| line.starts_with("request-bytes ") && !line.starts_with("request-bytes 0 "))
+        .collect();
+    observer_check(lines.len() == 1, "one-submission")?;
+    let bytes = lines[0]
+        .strip_prefix("request-bytes 1701 ")
+        .ok_or("observer-subject-length")?;
+    crate::maturity_observer::decode_hex(bytes)
+}
+
+fn observer_file_binding(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: [&str; 3],
+) -> Result<(), String> {
+    observer_check(
+        hex_bytes(&tagged::sha256(files[2].bytes)) == pins[0],
+        "manifest-pin",
+    )?;
+    observer_check(
+        hex_bytes(&tagged::sha256(files[3].bytes)) == pins[1],
+        "report-pin",
+    )?;
+    observer_check(
+        hex_bytes(&tagged::sha256(files[0].bytes)) == pins[2],
+        "capture-pin",
+    )?;
+    observer_check(
+        files[2].name == "MANIFEST.sha256"
+            && files[3].name == "RUN-REPORT"
+            && files[1].name == format!("{}.timing", files[0].name),
+        "file-roster",
+    )?;
+    let manifest = format!(
+        "{}  {}\n{}  {}\n",
+        pins[2],
+        files[0].name,
+        hex_bytes(&tagged::sha256(files[1].bytes)),
+        files[1].name
+    );
+    observer_check(files[2].bytes == manifest.as_bytes(), "manifest-content")?;
+    observer_check(
+        files[1].bytes == b"timing-schema 1\nceremony-id report\nstatus passed\n",
+        "timing",
+    )?;
+    Ok(())
+}
+
+fn observer_report(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: [&str; 3],
+) -> Result<[String; 2], String> {
+    observer_file_binding(files, pins)?;
+    let report = std::str::from_utf8(files[3].bytes).map_err(|_| "observer-report-encoding")?;
+    let lines: Vec<_> = report.lines().collect();
+    observer_check(lines.len() == 22 && report.ends_with('\n'), "report-roster")?;
+    for (index, expected) in [
+        (0, "run-report-schema maturity-observer-run-report 1"),
+        (3, "suite-clean yes"),
+        (4, "protocol-revision 8"),
+        (5, "capture-profile observer"),
+        (15, "producer-exit 0"),
+        (16, "acquisition-exit 0"),
+        (17, "observer-exit 0"),
+        (18, "experiment-count 7"),
+        (21, "eligible yes"),
+    ] {
+        observer_check(lines[index] == expected, "report-field")?;
+    }
+    let mut phase_sum = 0_u64;
+    for (index, prefix) in [
+        (6, "phase-wall-ms preflight "),
+        (7, "phase-wall-ms build "),
+        (8, "phase-wall-ms producer "),
+        (9, "phase-wall-ms acquisition "),
+        (10, "phase-wall-ms observer "),
+        (11, "phase-wall-ms census "),
+        (12, "phase-wall-ms manifest "),
+        (13, "phase-wall-ms coordinator "),
+    ] {
+        let duration = lines[index]
+            .strip_prefix(prefix)
+            .ok_or("observer-phase-order")?;
+        phase_sum = phase_sum
+            .checked_add(
+                duration
+                    .parse::<u64>()
+                    .map_err(|_| "observer-phase-duration")?,
+            )
+            .ok_or("observer-phase-overflow")?;
+    }
+    let elapsed = lines[14]
+        .strip_prefix("elapsed-wall-ms ")
+        .ok_or("observer-phase-order")?
+        .parse::<u64>()
+        .map_err(|_| "observer-phase-duration")?;
+    observer_check(phase_sum == elapsed, "phase-sum")?;
+    observer_check(
+        lines[19] == format!("ceremony report {}", pins[2])
+            && lines[20] == format!("manifest-sha256 {}", pins[0]),
+        "report-content-binding",
+    )?;
+    let commit = lines[1]
+        .strip_prefix("suite-commit ")
+        .ok_or("observer-suite-commit")?;
+    let tree = lines[2]
+        .strip_prefix("suite-tree ")
+        .ok_or("observer-suite-tree")?;
+    for revision in [commit, tree] {
+        observer_check(
+            crate::maturity_observer::decode_hex(revision)?.len() == 20,
+            "source-identity",
+        )?;
+    }
+    Ok([commit.to_owned(), tree.to_owned()])
+}
+
+fn observer_route(producer: &str, observation: &serde_json::Value) -> Result<(), String> {
+    let mut direct = false;
+    for line in producer
+        .lines()
+        .filter_map(|line| line.strip_prefix("response-detail "))
+    {
+        let (length, encoded) = line.split_once(' ').ok_or("observer-producer-detail")?;
+        if length == "0" {
+            continue;
+        }
+        let bytes = crate::maturity_observer::decode_hex(encoded)?;
+        observer_check(
+            length.parse::<usize>().ok() == Some(bytes.len()),
+            "producer-detail-length",
+        )?;
+        let detail: serde_json::Value =
+            serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+        if detail["route"] == "direct-block" {
+            observer_check(
+                detail["relay_allowed"] == false
+                    && detail["detail"]["included_block"] == observation["reading"]["block_hash"],
+                "direct-inclusion",
+            )?;
+            direct = true;
+        }
+    }
+    observer_check(direct, "direct-route-present")?;
+    Ok(())
+}
+
+fn observer_isolation(isolation: &serde_json::Value) -> Result<(), String> {
+    let probe = &isolation["probe"];
+    observer_check(
+        probe["diagnostic"].is_string()
+            && (probe["command"].is_string() || probe["command"].is_null())
+            && (probe["exit"].is_i64() || probe["exit"].is_null()),
+        "namespace-probe-shape",
+    )?;
+    observer_check(
+        isolation["observer_arguments"] == serde_json::json!([])
+            && isolation["observer_environment"] == serde_json::json!({})
+            && isolation["producer_wallet_survived"] == false,
+        "construction-boundary",
+    )?;
+    observer_check(
+        isolation["child_exits"] == serde_json::json!({"producer":0,"acquisition":0,"observer":0}),
+        "child-exits",
+    )?;
+    observer_check(
+        match isolation["namespace"].as_str() {
+            Some("available") => {
+                isolation["layer"] == "construction+namespace"
+                    && probe["available"] == true
+                    && probe["exit"] == 0
+                    && isolation["excluded_paths"] == "unopenable"
+                    && isolation["exclusion_check_exit"] == 0
+            }
+            Some("unavailable") => {
+                isolation["layer"] == "construction"
+                    && isolation["excluded_paths"] == "unnamed"
+                    && probe["available"] == false
+                    && probe["diagnostic"]
+                        .as_str()
+                        .is_some_and(|text| !text.trim().is_empty())
+            }
+            _ => false,
+        },
+        "isolation-evidence",
+    )?;
+    Ok(())
+}
+
+fn admit_observer_maturity_corpus(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: [&str; 3],
+) -> Result<ValidatedObserverMaturityCorpus, String> {
+    use crate::maturity_observer::{
+        ObserverManifest, ObserverNodeReader, observe_maturity, render_maturity_observation,
+    };
+    let suite = observer_report(files, pins)?;
+    let record: serde_json::Value =
+        serde_json::from_slice(files[0].bytes).map_err(|e| e.to_string())?;
+    observer_check(
+        record.as_object().is_some_and(|o| o.len() == 7) && record["schema"] == 1,
+        "capture-shape",
+    )?;
+    observer_check(
+        record["suite_commit"] == suite[0] && record["suite_tree"] == suite[1],
+        "suite-binding",
+    )?;
+    observer_check(
+        record["route"] == "relay refusal then direct block",
+        "route",
+    )?;
+    let observation = &record["observation"];
+    let variable =
+        maturity_variable_run_of_record().map_err(|e| format!("variable-admission:{e:?}"))?;
+    observer_check(
+        observation["manifest"]["chain_id"].as_str() == Some(variable.report().network_id()),
+        "declared-chain-id-disagrees",
+    )?;
+    let manifest = ObserverManifest::from_value(observation["manifest"].clone())?;
+    let reading = ObserverNodeReader::from_value(observation["reading"].clone())?;
+    let validated = observe_maturity(&manifest, &reading)?;
+    let reconstructed: serde_json::Value =
+        serde_json::from_str(&render_maturity_observation(&validated))
+            .map_err(|e| e.to_string())?;
+    observer_check(
+        &reconstructed == observation,
+        "report-and-experiment-replay",
+    )?;
+    let producer = observer_text(&record, "producer_capture")?;
+    let submitted = observer_subject(producer)?;
+    let acquired = crate::maturity_observer::decode_hex(observer_text(
+        &observation["reading"],
+        "raw_transaction",
+    )?)?;
+    observer_check(
+        submitted == acquired && acquired.len() == 1701,
+        "submitted-acquired-bytes",
+    )?;
+    let MaturityAcceptanceObligation::Established { readback, .. } =
+        variable.evidence().acceptance_obligation()
+    else {
+        return Err("variable-acceptance-absent".to_owned());
+    };
+    observer_check(readback.bytes() == acquired, "exact-variable-subject")?;
+    observer_route(producer, observation)?;
+    observer_isolation(&record["isolation"])?;
+    Ok(ValidatedObserverMaturityCorpus {
+        observation: reconstructed,
+    })
+}
+
+/// Admit the independently acquired subject and its two reports once.
+/// # Errors
+/// Refuses changed archive bytes, process evidence, public inputs or reconstructed reports.
+pub fn maturity_observer_run_of_record() -> Result<&'static ValidatedObserverMaturityCorpus, String>
+{
+    static CORPUS: OnceLock<Result<ValidatedObserverMaturityCorpus, String>> = OnceLock::new();
+    match CORPUS.get_or_init(|| admit_observer_maturity_corpus(&OBSERVER_FILES, OBSERVER_PINS)) {
+        Ok(corpus) => Ok(corpus),
+        Err(refusal) => Err(refusal.clone()),
+    }
+}
+
 /// Replay-derived sponsored observations; no Safety standing is changed.
 pub struct ValidatedSponsoredMaturityCorpus {
     /// Checked four-file report identity.
@@ -2933,6 +3213,159 @@ pub fn replay_maturity_variable_run_of_record(
         corpus.exchanges(),
     )
     .map_err(Refusal::Derivation)
+}
+
+impl crate::maturity_history::MaturityRootCheckpoint {
+    /// Bind the admitted readback and its ten checkpoint facts to a public handoff and edge.
+    ///
+    /// # Errors
+    /// Refuses an outstanding acceptance or the first digest, identity, outpoint or premise
+    /// disagreement.
+    pub fn bind(
+        edge: &StateRootEdge,
+        handoff: &PublicAnnouncementHandoff,
+        corpus: &ValidatedMaturityCorpus,
+        linked_candidate: MaturityDeclaredPremise<CandidateLinkedMaturityBundle>,
+        candidate_abi: MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi>,
+    ) -> Result<Self, MaturityRootCheckpointRefusal> {
+        let readback = match corpus.evidence().acceptance_obligation() {
+            MaturityAcceptanceObligation::Outstanding { routes } => {
+                return Err(MaturityRootCheckpointRefusal::AcceptanceIsOutstanding {
+                    routes: *routes,
+                });
+            }
+            MaturityAcceptanceObligation::Established { readback, .. } => readback,
+        };
+        let checkpoint_digest = tagged::sha256(readback.bytes());
+        let handoff_digest = tagged::sha256(handoff.bytes());
+        if checkpoint_digest != handoff_digest {
+            return Err(MaturityRootCheckpointRefusal::SubmittedBytesDisagree {
+                checkpoint: checkpoint_digest,
+                handoff: handoff_digest,
+            });
+        }
+        let facts = crate::maturity_history::MaturityRootCheckpointFacts {
+            network_identity: corpus.report().network_id().to_owned(),
+            genesis_identity: corpus.report().genesis_id().to_owned(),
+            block_hash: *readback.block_hash(),
+            block_height: readback.block_height(),
+            transaction_identity: readback.identity(),
+            predecessor: edge.predecessor(),
+            successor: edge.successor(),
+            target_contract: corpus.report().target_contract().to_owned(),
+            branch: corpus.evidence().branch(),
+        };
+        Self::from_readback(facts, linked_candidate, candidate_abi, edge, handoff)
+    }
+}
+
+/// Build the admitted archive's public handoff for report derivation.
+///
+/// This builder reads an admitted archive; the constrained producer receives
+/// only the resulting handoff.
+///
+/// # Errors
+/// Returns the first unavailable accepted reading with its stage.
+#[must_use = "an admitted handoff can be unavailable"]
+pub fn accepted_public_handoff(
+    corpus: &ValidatedMaturityCorpus,
+) -> Result<PublicAnnouncementHandoff, MaturityPublicRecoveryReportRefusal> {
+    use crate::maturity_closure::{MaturityDeployment, OracleStateCurve, closure_target};
+    use crate::maturity_continuity::MaturityByteSource;
+    use crate::maturity_recovery::PublicAnnouncementLocator;
+    use realization::{AnnouncementLeadBounds, Cycle};
+    use tapscript::{
+        STATE_NUMS_KEY, StateInternalKeyPolicy, StateLeafRole, StateStaticLeaf, StateStaticNode,
+        StateStaticSubtree, TapscriptProgram,
+    };
+    use target_elements::TargetContractVersion;
+    use transaction::bytes::TargetTransaction;
+
+    use MaturityAcceptedHandoffStage as Stage;
+    let readback = match corpus.evidence().acceptance_obligation() {
+        MaturityAcceptanceObligation::Established { readback, .. } => readback,
+        MaturityAcceptanceObligation::Outstanding { routes } => {
+            return Err(
+                MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+                    stage: Box::new(Stage::AcceptanceOutstanding { routes: *routes }),
+                },
+            );
+        }
+    };
+    let transaction = TargetTransaction::decode(readback.bytes()).map_err(|refusal| {
+        MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+            stage: Box::new(Stage::TransactionUndecodable(refusal)),
+        }
+    })?;
+    let target = closure_target().map_err(|refusal| {
+        MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+            stage: Box::new(Stage::ReviewedTargetUnavailable(refusal)),
+        }
+    })?;
+    let stack = transaction
+        .witnesses()
+        .first()
+        .map_or(&[][..], |input| input.stack());
+    let leaf = stack.get(7).ok_or_else(|| {
+        MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+            stage: Box::new(Stage::LeafAbsent { items: stack.len() }),
+        }
+    })?;
+    let program = TapscriptProgram::decode(&target, leaf).map_err(|refusal| {
+        MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+            stage: Box::new(Stage::LeafUndecodable(refusal)),
+        }
+    })?;
+    let subtree = StateStaticSubtree::new(
+        &target,
+        Some(StateStaticNode::Leaf {
+            identity: 0,
+            leaf: StateStaticLeaf {
+                role: StateLeafRole::Announcement,
+                program,
+                version: target.definition().leaf_version().get(),
+            },
+        }),
+    )
+    .map_err(
+        |refusal| MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+            stage: Box::new(Stage::SubtreeRefused(refusal)),
+        },
+    )?;
+    let (minimum, maximum) = MaturityDeployment::PublishedSignerHeld
+        .parameters()
+        .map_err(
+            |refusal| MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+                stage: Box::new(Stage::DeploymentUnavailable(refusal)),
+            },
+        )?
+        .lead();
+    let bounds = AnnouncementLeadBounds::new(Cycle::new(minimum), Cycle::new(maximum)).map_err(
+        |refusal| MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+            stage: Box::new(Stage::LeadBoundsRefused(refusal)),
+        },
+    )?;
+    let internal_key =
+        StateInternalKeyPolicy::new(STATE_NUMS_KEY, &OracleStateCurve).map_err(|refusal| {
+            MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+                stage: Box::new(Stage::InternalKeyRefused(refusal)),
+            }
+        })?;
+    Ok(PublicAnnouncementHandoff::new(
+        PublicAnnouncementLocator::new(
+            MaturityByteSource::ArchivedSubmission {
+                run_address: corpus.report().run_address().to_owned(),
+            },
+            readback.identity(),
+        ),
+        readback.bytes().to_vec(),
+        0,
+        corpus.schedule(),
+        bounds,
+        subtree,
+        internal_key,
+        TargetContractVersion::V2,
+    ))
 }
 
 #[cfg(test)]
@@ -5175,5 +5608,136 @@ mod tests {
             }
             assert!(changed.rebind(false).is_ok());
         }
+    }
+}
+
+#[cfg(test)]
+mod observer_archive_tests {
+    use super::*;
+
+    #[test]
+    fn observer_archive_refuses_phase_sum_disagreement() {
+        let report = std::str::from_utf8(OBSERVER_FILES[3].bytes).expect("report");
+        let elapsed = report
+            .lines()
+            .find(|line| line.starts_with("elapsed-wall-ms "))
+            .expect("elapsed wall");
+        let duration = elapsed
+            .strip_prefix("elapsed-wall-ms ")
+            .expect("prefix")
+            .parse::<u64>()
+            .expect("duration");
+        let changed = report.replace(elapsed, &format!("elapsed-wall-ms {}", duration + 1));
+        let report_pin = hex_bytes(&tagged::sha256(changed.as_bytes()));
+        let mut files = OBSERVER_FILES;
+        files[3] = MaturityArchiveFile::new("RUN-REPORT", changed.as_bytes());
+        let mut pins = OBSERVER_PINS;
+        pins[1] = &report_pin;
+        assert_eq!(
+            observer_report(&files, pins).expect_err("inconsistent walls"),
+            "observer-archive:phase-sum"
+        );
+    }
+
+    #[test]
+    fn observer_archive_replays_reports_and_preserves_each_boundary() {
+        let admitted = maturity_observer_run_of_record().expect("independent observation archive");
+        let observation = admitted.observation();
+        let rows = observation["experiment"].as_array().expect("experiment");
+        let keys: Vec<_> = rows
+            .iter()
+            .map(|row| row["key"].as_str().expect("row key"))
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "16.13 / missing-transaction",
+                "checkpoint-genesis",
+                "16.13 / copied-transaction-bytes",
+                "checkpoint-block",
+                "checkpoint-height",
+                "equal-final-cursor / altered-predecessor-edge-refused",
+                "accepted-observation"
+            ]
+        );
+        assert_eq!(rows[5]["equal_final_cursor"], true);
+        assert_eq!(
+            rows[5]["related"],
+            "16.8 / successor-cursor-restored-after-invalid-intermediate-edge"
+        );
+        assert_eq!(rows[6]["programs_agree"], true);
+        for field in ["history_report", "recovery_report"] {
+            let report = observation[field].as_str().expect("report");
+            if field == "recovery_report" {
+                assert!(report.contains("residual no-chain-observation\n"));
+                assert!(report.contains("acquisition_residual single-node-acquisition-only replaces no-chain-observation\n"));
+            } else {
+                assert!(report.contains("residual single-node-acquisition-only\n"));
+                assert!(!report.contains("residual no-chain-observation\n"));
+            }
+            assert!(report.contains("residual no-root-cursor-freshness\n"));
+            assert!(report.contains("residual no-archive-origin-beyond-admission\n"));
+            assert!(report.contains("residual no-full-artifact-authentication\n"));
+        }
+        assert!(
+            observation["history_report"]
+                .as_str()
+                .expect("history")
+                .contains("edges 1\n")
+        );
+        assert!(
+            observation["recovery_report"]
+                .as_str()
+                .expect("recovery")
+                .contains("programs_agree true\n")
+        );
+    }
+
+    #[test]
+    fn observer_archive_refuses_each_changed_file() {
+        for (position, file) in OBSERVER_FILES.iter().enumerate() {
+            let mut changed = file.bytes.to_vec();
+            changed[0] ^= 1;
+            let mut files = OBSERVER_FILES;
+            files[position] = MaturityArchiveFile::new(file.name, &changed);
+            assert!(
+                admit_observer_maturity_corpus(&files, OBSERVER_PINS).is_err(),
+                "changed {}",
+                file.name
+            );
+        }
+    }
+
+    #[test]
+    fn observer_archive_refuses_a_different_declared_chain_id() {
+        let mut record: serde_json::Value =
+            serde_json::from_slice(OBSERVER_FILES[0].bytes).expect("capture");
+        record["observation"]["manifest"]["chain_id"] = serde_json::json!("de".repeat(32));
+        let capture = format!("{record}\n");
+        let ceremony_pin = hex_bytes(&tagged::sha256(capture.as_bytes()));
+        let manifest = format!(
+            "{}  {}\n{}  {}\n",
+            ceremony_pin,
+            OBSERVER_FILES[0].name,
+            hex_bytes(&tagged::sha256(OBSERVER_FILES[1].bytes)),
+            OBSERVER_FILES[1].name
+        );
+        let manifest_pin = hex_bytes(&tagged::sha256(manifest.as_bytes()));
+        let report = std::str::from_utf8(OBSERVER_FILES[3].bytes)
+            .expect("report")
+            .replace(OBSERVER_PINS[2], &ceremony_pin)
+            .replace(OBSERVER_PINS[0], &manifest_pin);
+        let report_pin = hex_bytes(&tagged::sha256(report.as_bytes()));
+        let files = [
+            MaturityArchiveFile::new(OBSERVER_FILES[0].name, capture.as_bytes()),
+            OBSERVER_FILES[1],
+            MaturityArchiveFile::new("MANIFEST.sha256", manifest.as_bytes()),
+            MaturityArchiveFile::new("RUN-REPORT", report.as_bytes()),
+        ];
+        let refusal =
+            admit_observer_maturity_corpus(&files, [&manifest_pin, &report_pin, &ceremony_pin])
+                .err()
+                .expect("different declaration refused");
+        assert_eq!(refusal, "observer-archive:declared-chain-id-disagrees");
     }
 }

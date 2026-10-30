@@ -1545,6 +1545,7 @@ fn render_constructor_material(text: &mut String, report: &MaturityAnnouncementS
     for record in &report.records {
         let source = match record.source() {
             MaturityByteSource::NodeFreeSubmitReady => "node-free-submit-ready",
+            MaturityByteSource::NodeInterface { .. } => "node-interface",
             MaturityByteSource::ArchivedSubmission { .. } => "archived-submission",
         };
         let _ = write!(
@@ -2434,6 +2435,9 @@ mod tests {
         assert_eq!(lines.len(), PRESENT_PLAN.continuity_records().len());
         for (line, record) in lines.iter().zip(PRESENT_PLAN.continuity_records()) {
             let source = match record.source() {
+                crate::maturity_continuity::MaturityByteSource::NodeInterface { .. } => {
+                    "node-interface"
+                }
                 crate::maturity_continuity::MaturityByteSource::NodeFreeSubmitReady => {
                     "node-free-submit-ready"
                 }
