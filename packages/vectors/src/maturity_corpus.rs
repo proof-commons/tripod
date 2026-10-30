@@ -71,6 +71,14 @@ pub const MATURITY_SPONSORED_RUN_ADDRESS: &str =
     "c78d141a6f236a7bd9006b6bbba77cff0055c7caf7eb672bb3341be112c0a962";
 const MATURITY_SPONSORED_CEREMONY_SHA256: &str =
     "5299269816ae154ef0cd5b84edc23002953a4daa447294a4ebff6a3d3e0d6e94";
+/// SHA-256 of the native observation manifest.
+pub const MATURITY_NATIVE_MANIFEST_SHA256: &str =
+    "75283f89a898d12559686ea03259c741e4e84b4fcdec3e489fe1c9ac760bcd52";
+/// SHA-256 of the native observation report, including measured phase durations.
+pub const MATURITY_NATIVE_RUN_ADDRESS: &str =
+    "a0232585c887fcaf8ac4fd7050e77258bf7a6e0aebba7fce7d67c829374682f8";
+const MATURITY_NATIVE_CEREMONY_SHA256: &str =
+    "707adc52ee34f394fde4d95f9c5f5c5ec5fac48f051694a760b05afc4abbcae1";
 const PREDECESSOR_MUTANT_CEREMONY_SHA256: &str =
     "730a0670d76a59e4640726ef54f0d40853987c35792a4329401abd485d42f319";
 const SUCCESSOR_MUTANT_CEREMONY_SHA256: &str =
@@ -561,6 +569,41 @@ const SPONSORED_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins {
     manifest_sha256: MATURITY_SPONSORED_MANIFEST_SHA256,
     run_address: MATURITY_SPONSORED_RUN_ADDRESS,
     ceremony_sha256: MATURITY_SPONSORED_CEREMONY_SHA256,
+    fee_floors: MaturityDisclosedFeeFloors::node_defaults("0.00000100", "0.00000100"),
+    ..VARIABLE_PINS
+};
+
+const NATIVE_FILES: [MaturityArchiveFile<'static>; 4] = [
+    MaturityArchiveFile::new(
+        "745e4e01ad.report.capture",
+        include_bytes!("../fixtures/maturity-native-run-of-record/745e4e01ad.report.capture"),
+    ),
+    MaturityArchiveFile::new(
+        "745e4e01ad.report.capture.timing",
+        include_bytes!(
+            "../fixtures/maturity-native-run-of-record/745e4e01ad.report.capture.timing"
+        ),
+    ),
+    MaturityArchiveFile::new(
+        "MANIFEST.sha256",
+        include_bytes!("../fixtures/maturity-native-run-of-record/MANIFEST.sha256"),
+    ),
+    MaturityArchiveFile::new(
+        "RUN-REPORT",
+        include_bytes!("../fixtures/maturity-native-run-of-record/RUN-REPORT"),
+    ),
+];
+const NATIVE_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins {
+    names: [
+        "745e4e01ad.report.capture",
+        "745e4e01ad.report.capture.timing",
+        "MANIFEST.sha256",
+        "RUN-REPORT",
+    ],
+    sizes: [6_046_070, 49, 191, 446_426],
+    manifest_sha256: MATURITY_NATIVE_MANIFEST_SHA256,
+    run_address: MATURITY_NATIVE_RUN_ADDRESS,
+    ceremony_sha256: MATURITY_NATIVE_CEREMONY_SHA256,
     fee_floors: MaturityDisclosedFeeFloors::node_defaults("0.00000100", "0.00000100"),
     ..VARIABLE_PINS
 };
@@ -2364,6 +2407,234 @@ pub fn admit_maturity_corpus<'a>(
     validate_inputs(files, pins)
 }
 
+/// Replay-derived native observations; no Safety standing is changed.
+pub struct ValidatedNativeMaturityCorpus {
+    /// Checked four-file report identity.
+    pub report: MaturityReportFacts,
+    /// Exact request replay and its derived census.
+    pub evidence: crate::maturity_native::native::Planner,
+    /// Floors with their distinct provenance markers.
+    pub fee_floors: MaturityDisclosedFeeFloors,
+}
+
+/// Admits a native capture through its own file pins and exact request replay.
+///
+/// # Errors
+/// Returns the first byte, grammar, policy, census, route or readback disagreement.
+///
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton, which its census cannot arrange.
+pub fn admit_native_maturity_corpus(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<ValidatedNativeMaturityCorpus> {
+    admit_native_with_replay(files, pins, crate::maturity_native::native::replay)
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "The admission follows the four-file binding order before replaying the schedule."
+)]
+fn admit_native_with_replay(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: &MaturityCorpusPins<'_>,
+    replay: impl FnOnce(
+        CandidateDeploymentIdentity,
+        BranchContext,
+        &[(OperationStep, NativeOperationResponse)],
+    ) -> Result<
+        crate::maturity_native::native::Planner,
+        crate::maturity_native::MaturityNativePlanRefusal,
+    >,
+) -> ImportResult<ValidatedNativeMaturityCorpus> {
+    use crate::maturity_native::sponsored::Policy;
+    validate_census(files, pins)?;
+    validate_manifest(files, pins.manifest_sha256())?;
+    let original_report =
+        std::str::from_utf8(files[3].bytes).map_err(|_| Refusal::RunReportGrammar)?;
+    Cursor::new("native report", files[3].bytes)?;
+    let mut report_lines = original_report.lines().peekable();
+    let mut normalized = String::new();
+    let mut extra = String::new();
+    for line in report_lines.by_ref() {
+        if line == "capture-profile native" {
+            extra.push_str(line);
+            extra.push('\n');
+            break;
+        }
+        normalized.push_str(line);
+        normalized.push('\n');
+    }
+    for phase in ["preflight", "cargo", "census", "manifest"] {
+        let line = report_lines.next().ok_or(Refusal::RunReportGrammar)?;
+        let prefix = format!("phase-wall-ms {phase} ");
+        let duration = line
+            .strip_prefix(&prefix)
+            .ok_or(Refusal::RunReportGrammar)?;
+        number(duration).ok_or(Refusal::RunReportGrammar)?;
+    }
+    let elapsed = report_lines.next().ok_or(Refusal::RunReportGrammar)?;
+    number(
+        elapsed
+            .strip_prefix("elapsed-wall-ms ")
+            .ok_or(Refusal::RunReportGrammar)?,
+    )
+    .ok_or(Refusal::RunReportGrammar)?;
+    for _ in 0..3 {
+        extra.push_str(report_lines.next().ok_or(Refusal::RunReportGrammar)?);
+        extra.push('\n');
+    }
+    if report_lines
+        .peek()
+        .is_some_and(|line| line.starts_with("native-waiting "))
+    {
+        extra.push_str(report_lines.next().ok_or(Refusal::RunReportGrammar)?);
+        extra.push('\n');
+    }
+    for line in report_lines {
+        normalized.push_str(line);
+        normalized.push('\n');
+    }
+    let mut fields = Cursor::new("native report", extra.as_bytes())?;
+    fields.exact("capture-profile native")?;
+    let policy_bytes = fields.bytes("native-policy")?;
+    let census_text = fields.value("native-census")?;
+    let probe_bytes = fields.bytes("native-probes")?;
+    let waiting_bytes = fields.bytes("native-waiting")?;
+    let census = census_text
+        .split(' ')
+        .map(number)
+        .collect::<Option<Vec<_>>>()
+        .ok_or(Refusal::RunReportGrammar)?;
+    fields.done()?;
+    let policy = Policy::parse(
+        serde_json::from_slice(&policy_bytes).map_err(|_| Refusal::RunReportGrammar)?,
+    )
+    .map_err(Refusal::Derivation)?;
+    binding(
+        "native-policy-encoding",
+        serde_json::to_vec(&policy.0).map_err(|_| Refusal::RunReportGrammar)? == policy_bytes,
+    )?;
+    let (mut report, _) = parse_report_body(normalized.as_bytes(), pins, None)?;
+    report.run_address = hex_bytes(&tagged::sha256(files[3].bytes));
+    check_report_address(&report, pins)?;
+    validate_common_bindings(files, pins, &report)?;
+    let floors = pins.fee_floors();
+    binding(
+        "native-fee-floors",
+        floors.min_relay_tx_fee() == policy.0["relay"].as_str().unwrap_or_default()
+            && floors.block_min_tx_fee() == policy.0["block"].as_str().unwrap_or_default()
+            && floors.provenance() == MaturityPremiseProvenance::ReportedByNode
+            && floors.block_provenance() == MaturityPremiseProvenance::PinnedSourceNoOverride,
+    )?;
+    let mut cursor = Cursor::new("native capture", files[0].bytes)?;
+    parse_header(&mut cursor, &report, pins)?;
+    parse_environment(&mut cursor, &report, pins)?;
+    cursor.exact("digest-count 0")?;
+    let count = number(cursor.value("operation-count")?).ok_or_else(|| cursor.refusal())?;
+    let operations = (0..count)
+        .map(|index| parse_operation_block(&mut cursor, index, "", SubjectKind::Sponsored))
+        .collect::<ImportResult<Vec<_>>>()?;
+    let payload = parse_tail(&mut cursor, files[0].bytes)?;
+    let mut cursor = Cursor::new("native payload", &payload)?;
+    cursor.exact("maturity-native-evidence-schema 1")?;
+    let identity = CandidateDeploymentIdentity::new(
+        cursor
+            .bytes("deployment-id")?
+            .try_into()
+            .map_err(|_| cursor.refusal())?,
+        cursor
+            .bytes("genesis-id")?
+            .try_into()
+            .map_err(|_| cursor.refusal())?,
+    )
+    .map_err(|_| cursor.refusal())?;
+    binding(
+        "native-deployment",
+        hex_bytes(identity.network_id()) == report.network_id
+            && hex_bytes(identity.genesis_id()) == report.genesis_id,
+    )?;
+    let identifier = cursor
+        .bytes("branch-identifier")?
+        .try_into()
+        .map_err(|_| cursor.refusal())?;
+    let checkpoint = cursor
+        .value("branch-checkpoint")?
+        .parse::<u64>()
+        .map_err(|_| cursor.refusal())?;
+    let branch = BranchContext::new(identifier, checkpoint).map_err(|_| cursor.refusal())?;
+    binding(
+        "native-policy",
+        cursor.bytes("native-policy")? == policy_bytes,
+    )?;
+    binding(
+        "native-census",
+        cursor.value("native-census")? == census_text,
+    )?;
+    binding(
+        "native-probes",
+        cursor.bytes("native-probes")? == probe_bytes,
+    )?;
+    binding(
+        "native-waiting",
+        cursor.bytes("native-waiting")? == waiting_bytes,
+    )?;
+    let mut exchanges = Vec::new();
+    for operation in operations {
+        let bytes = cursor.bytes("exchange")?;
+        let (case, subject, response): (
+            target_elements_conformance::protocol::OperationCaseId,
+            OperationSubject,
+            NativeOperationResponse,
+        ) = serde_json::from_slice(&bytes).map_err(|_| cursor.refusal())?;
+        binding(
+            "native-exchange",
+            operation.step.subject() == &subject
+                && response.case == case
+                && operation.layer == response.observed_layer
+                && operation.detail == response.observed_detail.as_deref().unwrap_or_default()
+                && operation.accepted_identity.map(|id| id.to_target_display())
+                    == response.accepted_txid,
+        )?;
+        exchanges.push((OperationStep::new(&case.step, subject), response));
+    }
+    cursor.done()?;
+    let evidence = replay(identity, branch, &exchanges).map_err(Refusal::Derivation)?;
+    binding(
+        "native-derived-waiting",
+        serde_json::to_vec(&evidence.waiting_json()).map_err(|_| Refusal::RunReportGrammar)?
+            == waiting_bytes,
+    )?;
+    binding(
+        "native-probe-observations",
+        serde_json::to_vec(&evidence.probes()).map_err(|_| Refusal::RunReportGrammar)?
+            == probe_bytes,
+    )?;
+    binding(
+        "native-derived-census",
+        evidence.census().as_slice() == census && census.first() == Some(&count),
+    )?;
+    binding("native-derived-policy", evidence.policy() == Some(&policy))?;
+    Ok(ValidatedNativeMaturityCorpus {
+        report,
+        evidence,
+        fee_floors: floors,
+    })
+}
+
+/// Admit the immutable native archive once, including exact live request replay.
+/// # Errors
+/// Preserves byte, provenance, schedule and readback disagreements.
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton.
+pub fn maturity_native_run_of_record() -> ImportResult<&'static ValidatedNativeMaturityCorpus> {
+    static CORPUS: OnceLock<ImportResult<ValidatedNativeMaturityCorpus>> = OnceLock::new();
+    match CORPUS.get_or_init(|| admit_native_maturity_corpus(&NATIVE_FILES, &NATIVE_PINS)) {
+        Ok(corpus) => Ok(corpus),
+        Err(refusal) => Err(refusal.clone()),
+    }
+}
+
 /// Replay-derived sponsored observations; no Safety standing is changed.
 pub struct ValidatedSponsoredMaturityCorpus {
     /// Checked four-file report identity.
@@ -2666,6 +2937,28 @@ pub fn replay_maturity_variable_run_of_record(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_observation_admission_binds_bytes_policy_census_and_replay() {
+        let corpus = super::maturity_native_run_of_record().expect("native archive");
+        assert_eq!(corpus.evidence.census(), [137, 63, 27, 47, 21, 26]);
+        assert_eq!(corpus.evidence.waiting_json(), [] as [serde_json::Value; 0]);
+        for index in 0..4 {
+            let mut bytes = super::NATIVE_FILES[index].bytes().to_vec();
+            bytes[0] ^= 1;
+            let mut files = super::NATIVE_FILES;
+            files[index] = super::MaturityArchiveFile::new(files[index].name(), &bytes);
+            assert!(super::admit_native_maturity_corpus(&files, &super::NATIVE_PINS).is_err());
+        }
+        let pins = super::MaturityCorpusPins {
+            fee_floors: super::MaturityDisclosedFeeFloors::node_defaults(
+                "0.00000200",
+                "0.00000100",
+            ),
+            ..super::NATIVE_PINS
+        };
+        assert!(super::admit_native_maturity_corpus(&super::NATIVE_FILES, &pins).is_err());
+    }
+
     use super::*;
     use crate::maturity_evidence::{
         MaturityConstructorMaterial, MaturityConstructorMaterialAbsence,

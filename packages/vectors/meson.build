@@ -138,6 +138,10 @@ vectors_fixture_files = files(
   'fixtures/maturity-sponsored-run-of-record/17280cedd2.report.capture.timing',
   'fixtures/maturity-sponsored-run-of-record/MANIFEST.sha256',
   'fixtures/maturity-sponsored-run-of-record/RUN-REPORT',
+  'fixtures/maturity-native-run-of-record/745e4e01ad.report.capture',
+  'fixtures/maturity-native-run-of-record/745e4e01ad.report.capture.timing',
+  'fixtures/maturity-native-run-of-record/MANIFEST.sha256',
+  'fixtures/maturity-native-run-of-record/RUN-REPORT',
 ) + files(
   'fixtures/native-operator-run-of-record/353e698f.report.capture',
   'fixtures/native-operator-run-of-record/353e698f.report.capture.timing',

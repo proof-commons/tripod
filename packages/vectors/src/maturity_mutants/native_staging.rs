@@ -3,21 +3,18 @@
 //!
 //! The candidate of record is the accepted variable-schedule maturity
 //! control's deployment: the sponsorless announcement the planner rebuilds
-//! byte-equal to the archived submission. Every §16 row a native run is
-//! still owed stands in one of four places on it: staged with a refusal
-//! expected, staged with acceptance expected, waiting on the sponsored fee
-//! form, or unstageable for a typed reason.
+//! byte-equal to the archived submission. The historical inventory partitions
+//! its thirty-five §16 rows into staged refusals, expected acceptances,
+//! subjects awaiting the sponsored fee form and unavailable constructions.
 //!
 //! # What this module stages, and what it does not
 //!
-//! The subjects here are STAGED and PINNED, never executed: this step
-//! submits nothing, runs no target, writes no fixture and captures no
-//! evidence. Each subject is a deterministic one-coordinate departure
-//! from the control, and each is pinned by the digest of its spend-time
-//! serialization so that a byte that moves after the record is written
-//! fails a test rather than passing quietly. The observation step that
-//! submits these subjects, and funds the second-coin rows over real
-//! outpoints, belongs to a later wave.
+//! The native planner restages subjects over live funded coins and submits
+//! them before their consuming controls. Exact replay checks those live
+//! requests. Archived-context digests remain the staging baseline: each
+//! deterministic one-coordinate departure is pinned by its spend-time
+//! serialization, so a changed baseline byte fails a test. A staging pin
+//! alone supplies no observation or refusal credit.
 //!
 //! # One coordinate, and the collateral that balances it
 //!
@@ -34,10 +31,10 @@
 //!   amount or program is one change read on both sides of the spend, and
 //!   the predecessor control block is re-committed under a changed program;
 //! - the one two-input subject funds a state-like output of another asset
-//!   from a stand-in key-path coin, because an extra output the covenant
-//!   does not read still has to balance; a second output of the state
-//!   asset itself is unstageable, because singleton conservation admits
-//!   no second state-asset coin to fund it.
+//!   from a key-path coin, with a stand-in outpoint in the baseline and a
+//!   funded outpoint in the live request, because the extra output must
+//!   balance; two state-asset successors await a construction that preserves
+//!   singleton conservation and the retained issuance reserves.
 
 use linker::CandidateLinkedMaturityBundle;
 use realization::{
@@ -281,12 +278,11 @@ const GENERIC: &str = "staged; generic verdict expected";
 /// A specific script-path refusal of the row's own fault is expected.
 const SPECIFIC: &str = "staged; script-path refusal of the row's fault";
 
-/// Every native-run-required §16 row and its standing on this candidate.
+/// Every historically native-run-required §16 row and its staging standing.
 ///
-/// The set of keys here is exactly [`crate::maturity_negative_half::STILL_REQUIRED`]
-/// and the classifier's recomputed waiting set; the test below holds all
-/// three to the same thirty-five keys so the standings cannot drift from
-/// the register they classify.
+/// The set of keys here is exactly [`crate::maturity_negative_half::NATIVE_STAGING_HISTORY`]
+/// with thirty-five retained keys. Observation discharges or types each key;
+/// the current waiting register is checked independently.
 pub const NATIVE_ROWS: &[NativeRow] = &[
     // §16.2 — the two window faults.
     staged(
@@ -1182,6 +1178,7 @@ fn key_path_coin_census(
 fn stage_extra_output(
     context: &MaturityMutantContext<'_>,
     original: &TargetTransaction,
+    live: Option<&MaturityFundedPredecessor>,
 ) -> Result<Vec<u8>, NativeStageError> {
     let state_stack = witness(original, context.bundle.record().schedule())
         .map_err(|refusal| NativeStageError::Continuity(Box::new(refusal)))?
@@ -1191,7 +1188,10 @@ fn stage_extra_output(
         .first()
         .ok_or(NativeStageError::Shape)?
         .clone();
-    let standin = standin_outpoint(context)?;
+    let standin = match live {
+        Some(coin) => coin.outpoint,
+        None => standin_outpoint(context)?,
+    };
     let inputs = vec![
         honest_input.clone(),
         TargetInput::new(standin, honest_input.sequence()),
@@ -1201,7 +1201,10 @@ fn stage_extra_output(
         .first()
         .ok_or(NativeStageError::Shape)?
         .clone();
-    let (coin_asset, coin_amount, _coin_program) = key_path_coin(context)?;
+    let (coin_asset, coin_amount, _coin_program) = match live {
+        Some(coin) => (coin.asset, coin.amount, coin.program.clone()),
+        None => key_path_coin(context)?,
+    };
     let extra = TargetOutput::new(
         AssetField::Explicit(coin_asset),
         ValueField::Explicit(coin_amount),
@@ -1209,7 +1212,11 @@ fn stage_extra_output(
         output.program().to_vec(),
     );
     let outputs = vec![output, extra];
-    let census = vec![census_of(context.funded), key_path_coin_census(context)?];
+    let extra_census = match live {
+        Some(coin) => census_of(coin),
+        None => key_path_coin_census(context)?,
+    };
+    let census = vec![census_of(context.funded), extra_census];
     let control_block = state_stack[8].clone();
     let candidate = assemble_two(
         original,
@@ -1293,10 +1300,59 @@ fn operator_over(
 /// Retains the source, constructor, transaction and signing refusals each
 /// derivation can produce, and refuses when no admissible nonce is found
 /// or a retained position lacks its shape.
-#[allow(clippy::too_many_lines)]
 pub fn stage_native_subject(
     subject: NativeSubject,
     context: &MaturityMutantContext<'_>,
+) -> Result<Vec<u8>, NativeStageError> {
+    stage_native_subject_inner(subject, context, None, false)
+}
+
+/// Replay the same coordinate over the supplied funded coin and live context.
+/// # Errors
+/// Preserves construction and signing refusals without substituting another subject.
+pub(crate) fn stage_live_subject(
+    subject: NativeSubject,
+    context: &MaturityMutantContext<'_>,
+    funded: Option<&MaturityFundedPredecessor>,
+) -> Result<Vec<u8>, NativeStageError> {
+    stage_native_subject_inner(subject, context, funded, true)
+}
+
+/// The program and amount requested for a subject's additional funding.
+/// # Errors
+/// Preserves constructor and signer refusals.
+pub(crate) fn live_funding_shape(
+    subject: NativeSubject,
+    context: &MaturityMutantContext<'_>,
+) -> Result<(u64, Vec<u8>), NativeStageError> {
+    match subject {
+        NativeSubject::WrongStateAsset => {
+            Ok((context.funded.amount, context.funded.program.clone()))
+        }
+        NativeSubject::WrongSingletonAmount => {
+            Ok((context.funded.amount + 1, context.funded.program.clone()))
+        }
+        NativeSubject::WrongPredecessorProgram => {
+            let (coin, _) = wrong_predecessor_funded(context)?;
+            Ok((coin.amount, coin.program))
+        }
+        NativeSubject::ExtraStateLikeOutput => {
+            let (_, amount, program) = key_path_coin(context)?;
+            Ok((amount, program))
+        }
+        _ => Err(NativeStageError::Shape),
+    }
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Each subject retains its coordinate and the balancing edits it requires."
+)]
+fn stage_native_subject_inner(
+    subject: NativeSubject,
+    context: &MaturityMutantContext<'_>,
+    live: Option<&MaturityFundedPredecessor>,
+    live_context: bool,
 ) -> Result<Vec<u8>, NativeStageError> {
     let original = decode(context.submitted_bytes)?;
     let mut stack = witness(&original, context.bundle.record().schedule())
@@ -1445,7 +1501,21 @@ pub fn stage_native_subject(
             resign(context, &original, inputs, outputs, stack, context.funded)
         }
         NativeSubject::SuccessorMetadataChangedAfterSigning => {
-            let latest = lead_submission(context, MaturityLead::Maximum)?;
+            let latest = if live_context {
+                let finalized = crate::maturity_native::build_announcement(
+                    context.bundle,
+                    context.funded.asset,
+                    context.funded.outpoint,
+                    context.branch,
+                    context.funded.amount,
+                    MaturityLead::Maximum,
+                )
+                .map_err(|error| NativeStageError::NativePlan(Box::new(error)))?;
+                crate::maturity_native::sign_announcement(&finalized)
+                    .map_err(|error| NativeStageError::NativePlan(Box::new(error)))?
+            } else {
+                lead_submission(context, MaturityLead::Maximum)?
+            };
             let latest = decode(&latest)?;
             let latest_stack = witness(&latest, context.bundle.record().schedule())
                 .map_err(|refusal| NativeStageError::Continuity(Box::new(refusal)))?;
@@ -1498,7 +1568,10 @@ pub fn stage_native_subject(
             )
         }
         NativeSubject::WrongStateAsset => {
-            let funded = wrong_asset_funded(context)?;
+            let funded = match live {
+                Some(coin) => coin.clone(),
+                None => wrong_asset_funded(context)?,
+            };
             inputs[0] = TargetInput::new(funded.outpoint, inputs[0].sequence());
             let output = &outputs[0];
             outputs[0] = TargetOutput::new(
@@ -1510,7 +1583,10 @@ pub fn stage_native_subject(
             resign(context, &original, inputs, outputs, stack, &funded)
         }
         NativeSubject::WrongSingletonAmount => {
-            let funded = wrong_amount_funded(context)?;
+            let funded = match live {
+                Some(coin) => coin.clone(),
+                None => wrong_amount_funded(context)?,
+            };
             inputs[0] = TargetInput::new(funded.outpoint, inputs[0].sequence());
             let output = &outputs[0];
             outputs[0] = TargetOutput::new(
@@ -1523,9 +1599,10 @@ pub fn stage_native_subject(
         }
         NativeSubject::WrongPredecessorProgram => {
             let (funded, control) = wrong_predecessor_funded(context)?;
+            let funded = live.unwrap_or(&funded);
             stack[8] = control;
             inputs[0] = TargetInput::new(funded.outpoint, inputs[0].sequence());
-            resign(context, &original, inputs, outputs, stack, &funded)
+            resign(context, &original, inputs, outputs, stack, funded)
         }
         NativeSubject::ControlBlockFromAnotherProgram => {
             let other = second_bundle()?;
@@ -1547,7 +1624,7 @@ pub fn stage_native_subject(
             *byte ^= 0x02;
             Ok(assemble(&original, inputs, outputs, stack, lock)?.encode())
         }
-        NativeSubject::ExtraStateLikeOutput => stage_extra_output(context, &original),
+        NativeSubject::ExtraStateLikeOutput => stage_extra_output(context, &original, live),
     }
 }
 
@@ -1564,7 +1641,7 @@ mod tests {
         MaturitySupplementaryDisposition, maturity_first_party_dispositions,
     };
     use crate::maturity_mutants::MaturityMutantRow;
-    use crate::maturity_negative_half::STILL_REQUIRED;
+    use crate::maturity_negative_half::NATIVE_STAGING_HISTORY;
     use crate::maturity_operator::OperatorVerifier;
     use crate::maturity_safety::row_count;
     use std::collections::{BTreeMap, BTreeSet};
@@ -2024,7 +2101,7 @@ mod tests {
             .iter()
             .map(|row| (row.section(), row.name()))
             .collect();
-        let registered: BTreeSet<(MaturitySafetySection, &str)> = STILL_REQUIRED
+        let registered: BTreeSet<(MaturitySafetySection, &str)> = NATIVE_STAGING_HISTORY
             .iter()
             .map(|entry| (entry.section(), entry.row()))
             .collect();
@@ -2035,7 +2112,7 @@ mod tests {
                 .expect("the evidence plan derives")
                 .into_iter()
                 .collect();
-        assert_eq!(classified, recomputed);
+        assert!(recomputed.is_empty());
     }
 
     /// Every row's full standing is pinned by key against an independent
@@ -2312,9 +2389,9 @@ mod tests {
         }
     }
 
-    /// The historical censuses stay exactly where they were.
+    /// The observation fold preserves the denominator and historical staging keys.
     #[test]
-    fn native_staging_leaves_the_historical_census_unchanged() {
+    fn native_observation_preserves_the_denominator_and_staging_history() {
         let plan = derive_maturity_evidence_plan_with(
             MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
             MaturityConstructorMaterial::Absent(
@@ -2323,12 +2400,10 @@ mod tests {
         )
         .expect("the evidence plan derives");
         assert_eq!(plan.census().rows(), 206);
-        // Both sponsored positives, missing authorization, output-zero change and fee substitution
-        // add five answers to the admitted maturity plan.
-        assert_eq!(plan.census().answered(), 83);
-        // Those two positives and three sponsor refusals remove five outstanding obligations.
-        assert_eq!(plan.census().outstanding(), 123);
-        assert_eq!(plan.census().native_run_required(), 35);
+        // Eight positives and twenty-eight refusal claims add thirty-six answers.
+        assert_eq!(plan.census().answered(), 119);
+        assert_eq!(plan.census().outstanding(), 87);
+        assert_eq!(plan.census().native_run_required(), 0);
         assert_eq!(row_count(), 206);
 
         let ledger = maturity_first_party_dispositions().expect("valid retained subjects");

@@ -1832,17 +1832,17 @@ mod tests {
     }
 
     #[test]
-    fn the_completeness_preserves_the_sponsored_boundary_contradiction() {
+    fn the_completeness_retains_outstanding_rows_after_native_observation() {
         let validated = validated();
         let census = PLAN.census();
 
         assert!(!census.every_required_row_is_answered());
-        // Balanced STATE corruption is refused before its script boundary.
-        assert_eq!(census.native_refusal_at_unexpected_boundary(), 1);
+        // Balanced STATE corruption now reaches its declared script boundary.
+        assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
         assert_eq!(census.infrastructure_blocked(), 0);
         assert_eq!(
             validated.report().completeness(),
-            MaturitySafetyCompleteness::Failed,
+            MaturitySafetyCompleteness::PartialRequiredRowsOutstanding,
         );
 
         // The two halves partition the matrix, summed from both sides
@@ -1878,10 +1878,10 @@ mod tests {
         ] {
             assert!(rendered.contains(&format!("{key} {figure}\n")));
         }
-        assert!(rendered.contains("clause_standing contradicted-at-an-observed-boundary\n"));
+        assert!(rendered.contains("clause_standing partial-over-the-refusals-observed\n"));
         assert!(rendered.contains(concat!(
             "native_refusal 16.10 balanced-state-corruption-compensated-by-sponsor-change ",
-            "ScriptPathRejection ConsensusRejectionBeforeScript NotReached\n"
+            "ScriptPathRejection ScriptPathRejection Executed\n"
         )));
         assert!(
             !validated.report().waiting().iter().any(|row| {
@@ -2005,10 +2005,16 @@ mod tests {
         );
 
         let mut short_waiting = assembled();
-        short_waiting.waiting.pop();
+        let historical = &crate::maturity_negative_half::NATIVE_STAGING_HISTORY[0];
+        short_waiting.waiting.push(super::MaturityWaitingRow {
+            section: historical.section(),
+            row: historical.row(),
+            gap: historical.gap(),
+            link: historical.link(),
+        });
         assert_eq!(
             validate_maturity_safety_report(short_waiting, &PLAN)
-                .expect_err("a dropped waiting row is refused")
+                .expect_err("a historical row cannot be restored to the current waiting set")
                 .failed_item(),
             Some(MaturityRecomputedItem::RegisterSetEquality),
         );
@@ -2027,8 +2033,8 @@ mod tests {
     fn the_native_refusal_block_names_every_observed_refusal() {
         let validated = validated();
         let reported = validated.report().native_refusals();
-        // Three matching sponsor refusals and one earlier conservation refusal add four rows.
-        assert_eq!(reported.len(), 11);
+        // Thirty-eight row claims carry matching native refusals.
+        assert_eq!(reported.len(), 38);
         assert_eq!(
             reported.len(),
             PLAN.census().native_refusal_observed()
@@ -2053,16 +2059,16 @@ mod tests {
             .enumerate()
             .filter(|(_, line)| line.starts_with("native_refusal "))
             .collect();
-        // The same four sponsor refusals render, including the contradiction.
-        assert_eq!(native.len(), 11);
+        // Every admitted refusal claim renders at its declared boundary.
+        assert_eq!(native.len(), 38);
         let last_witness = lines
             .iter()
             .rposition(|line| line.starts_with("witness "))
             .expect("witness block");
         let first_waiting = lines
             .iter()
-            .position(|line| line.starts_with("waiting "))
-            .expect("waiting block");
+            .position(|line| line.starts_with("report_layer "))
+            .expect("report layer block");
         assert!(last_witness < native[0].0);
         assert!(native.last().expect("native refusal block").0 < first_waiting);
         for ((reported, (row, refusal)), (_, line)) in reported.iter().zip(observed).zip(native) {
@@ -2120,8 +2126,8 @@ mod tests {
         assert_eq!(
             refusal,
             MaturitySafetyReportRefusal::NativeRefusalCountDiffers {
-                stated: 10,
-                recomputed: 11,
+                stated: 37,
+                recomputed: 38,
             }
         );
         assert_eq!(
@@ -2258,7 +2264,7 @@ mod tests {
         );
         assert_eq!(
             clause.standing(),
-            MaturityClauseStanding::ContradictedAtAnObservedBoundary,
+            MaturityClauseStanding::PartialOverTheRefusalsObserved,
         );
 
         // Recomputed from the plan on both sides: the witness stands on
@@ -2283,8 +2289,8 @@ mod tests {
             clause.native_refusals_witnessed(),
             census.native_refusal_observed()
         );
-        // Missing authorization, output-zero substitution and fee substitution add three answers.
-        assert_eq!(clause.native_refusals_witnessed(), 10);
+        // Native observation adds twenty-eight refusal claims to the prior ten.
+        assert_eq!(clause.native_refusals_witnessed(), 38);
         assert_eq!(clause.rows_still_owed(), census.rows() - census.answered());
 
         // Every witnessed refusal names the boundary its row declared and
@@ -2529,6 +2535,7 @@ mod tests {
                 .iter()
                 .copied()
                 .filter(|key| *key != "continuity_record" || !plan.continuity_records().is_empty())
+                .filter(|key| *key != "waiting" || plan.census().native_run_required() != 0)
                 .collect();
             assert_eq!(actual, expected);
             let positions: Vec<_> = keys

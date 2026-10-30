@@ -220,6 +220,23 @@ impl MaturitySafetyPolarity {
 pub enum MaturityRowBoundary {
     /// One named layer produces the verdict.
     Layer(EvidenceBoundary),
+    /// The candidate leaves these coordinates undecided: nonce leastness in
+    /// `16.6 / later-admissible-nonce-instead-of-first`, output count in
+    /// `16.6 / extra-state-like-output`, and version in
+    /// `16.11 / wrong-transaction-version`. Consensus accepts each valid
+    /// construction; relay policy decides the fee; the covenant reads none of
+    /// these coordinates. Retained acceptances witness this property of the build.
+    NativeCoordinateUndecidedByCandidate,
+    /// Five subjects await a construction route on this candidate.
+    /// `16.4 / stale-operator` needs a superseded key; none is present.
+    /// `16.6 / successor-from-wrong-semantic-metadata` needs distinct semantic
+    /// censuses; the deployments share one. `16.6 / wrong-control-recipe` needs
+    /// an offerable successor position. `16.6 / two-state-successors` needs a
+    /// balanced construction accounting for singleton conservation and retained
+    /// issuance reserves. `16.11 / predecessor-and-successor-metadata-witnesses-exchanged`
+    /// needs a successor metadata witness. These are staging grounds, not universal
+    /// impossibility claims.
+    NativeSubjectAwaitsConstructionRoute,
     /// The row asks for an acceptance of its own shape.
     ///
     /// The constant-elision route closed on `0.6.245-dev`; its accepted
@@ -325,6 +342,8 @@ impl MaturityRowBoundary {
         match self {
             Self::Layer(boundary) => Some(boundary),
             Self::AcceptanceAwaitsRelayAdmissibility
+            | Self::NativeCoordinateUndecidedByCandidate
+            | Self::NativeSubjectAwaitsConstructionRoute
             | Self::SponsoredControlRefusedAtConstruction
             | Self::SponsorArmAwaitsRegionScoping
             | Self::SponsorConstructionAnsweredByLandedEvidence
@@ -348,12 +367,14 @@ impl MaturityRowBoundary {
         match self {
             Self::Layer(_) => None,
             Self::AcceptanceAwaitsRelayAdmissibility
+            | Self::NativeSubjectAwaitsConstructionRoute
             | Self::SponsoredControlRefusedAtConstruction
             | Self::SponsorArmAwaitsRegionScoping
             | Self::ConfidentialSponsorAwaitsBalancedProofRoute => {
                 Some(MaturityNonAnswerFinality::Waiting)
             }
             Self::SponsorConstructionAnsweredByLandedEvidence
+            | Self::NativeCoordinateUndecidedByCandidate
             | Self::SponsorRegionAnsweredByLandedEvidence
             | Self::ZeroSponsorRoleStructureAnsweredByLandedEvidence
             | Self::TotalityAnsweredByLandedNonceEvidence
@@ -1492,43 +1513,43 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     // evidence; both explicit sponsored controls construct.
     positive(
         "minimum-valid-lead",
-        Bound::AcceptanceAwaitsRelayAdmissibility,
-        C::AnnouncementLeaf,
+        Bound::Layer(B::AcceptedTransaction),
+        C::Target,
     ),
     positive(
         "maximum-valid-lead",
-        Bound::AcceptanceAwaitsRelayAdmissibility,
-        C::AnnouncementLeaf,
+        Bound::Layer(B::AcceptedTransaction),
+        C::Target,
     ),
     positive(
         "representative-interior-lead",
-        Bound::AcceptanceAwaitsRelayAdmissibility,
-        C::AnnouncementLeaf,
+        Bound::Layer(B::AcceptedTransaction),
+        C::Target,
     ),
     positive(
         "smallest-current-cycle",
-        Bound::AcceptanceAwaitsRelayAdmissibility,
-        C::AnnouncementLeaf,
+        Bound::Layer(B::AcceptedTransaction),
+        C::Target,
     ),
     positive(
         "current-cycle-near-checked-upper-domain",
-        Bound::AcceptanceAwaitsRelayAdmissibility,
-        C::AnnouncementLeaf,
+        Bound::Layer(B::AcceptedTransaction),
+        C::Target,
     ),
     positive(
         "nontrivial-unaffected-fields",
-        Bound::AcceptanceAwaitsRelayAdmissibility,
-        C::AnnouncementLeaf,
+        Bound::Layer(B::AcceptedTransaction),
+        C::Target,
     ),
     positive(
         "representation-nonce-zero",
-        Bound::AcceptanceAwaitsRelayAdmissibility,
-        C::LinkedConstructor,
+        Bound::Layer(B::AcceptedTransaction),
+        C::Target,
     ),
     positive(
         "representation-nonce-nonzero",
-        Bound::AcceptanceAwaitsRelayAdmissibility,
-        C::LinkedConstructor,
+        Bound::Layer(B::AcceptedTransaction),
+        C::Target,
     ),
     // The sponsorless and two sponsored positives carry admitted acceptances.
     // The sponsorless archive retains its historical relay declaration.
@@ -1884,7 +1905,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "stale-operator",
         L::WitnessProof,
         Loc::ApprovedOperatorKey,
-        Bound::Layer(B::ScriptPathRejection),
+        Bound::NativeSubjectAwaitsConstructionRoute,
         C::AnnouncementLeaf,
         names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
@@ -1996,15 +2017,19 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         C::AnnouncementLeaf,
         names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
-    fault(
-        S::OperatorFault,
-        "fee-output-changed-after-signing",
-        L::TargetTransaction,
-        Loc::TransactionOutput,
-        Bound::Layer(B::ScriptPathRejection),
-        C::AnnouncementLeaf,
-        names(authorization(), Class::ExternalReportSubjectMismatch),
-    ),
+    // The sponsorless form has no fee output; this fault uses the deployed sponsored form.
+    MaturitySafetyRow {
+        control: Control::SponsoredAnnouncement,
+        ..fault(
+            S::OperatorFault,
+            "fee-output-changed-after-signing",
+            L::TargetTransaction,
+            Loc::TransactionOutput,
+            Bound::Layer(B::ScriptPathRejection),
+            C::AnnouncementLeaf,
+            names(authorization(), Class::ExternalReportSubjectMismatch),
+        )
+    },
     // §16.5 — the fifteen predecessor-constructor faults.
     //
     // The first three change what the spent object is, which is the
@@ -2166,7 +2191,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "successor-from-wrong-semantic-metadata",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        Bound::Layer(B::ScriptPathRejection),
+        Bound::NativeSubjectAwaitsConstructionRoute,
         C::AnnouncementLeaf,
         names(output_recognition(), Class::WrongRecognizedObject),
     ),
@@ -2202,7 +2227,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "later-admissible-nonce-instead-of-first",
         L::LinkedConstructorProgram,
         Loc::NonceSearch,
-        Bound::Layer(B::ScriptPathRejection),
+        Bound::NativeCoordinateUndecidedByCandidate,
         C::LinkedConstructor,
         unlinked(Why::NoPublishedRelationNamesIt),
     ),
@@ -2247,7 +2272,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "wrong-control-recipe",
         L::LinkedConstructorProgram,
         Loc::ControlBlock,
-        Bound::Layer(B::ScriptPathRejection),
+        Bound::NativeSubjectAwaitsConstructionRoute,
         C::LinkedConstructor,
         names(constructibility(), Class::ExternalReportFailed),
     ),
@@ -2274,7 +2299,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "two-state-successors",
         L::TargetTransaction,
         Loc::TransactionOutput,
-        Bound::Layer(B::ScriptPathRejection),
+        Bound::NativeSubjectAwaitsConstructionRoute,
         C::CoordinatorStructure,
         names(output_cardinality(), Class::CardinalityAboveMaximum),
     ),
@@ -2283,7 +2308,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "extra-state-like-output",
         L::TargetTransaction,
         Loc::TransactionOutput,
-        Bound::Layer(B::ScriptPathRejection),
+        Bound::NativeCoordinateUndecidedByCandidate,
         C::CoordinatorStructure,
         names(output_cardinality(), Class::CardinalityAboveMaximum),
     ),
@@ -2961,7 +2986,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "wrong-transaction-version",
         L::TargetTransaction,
         Loc::TransactionField,
-        Bound::Layer(B::ConsensusRejectionBeforeScript),
+        Bound::NativeCoordinateUndecidedByCandidate,
         C::Target,
         unlinked(Why::NoPublishedRelationNamesIt),
     ),
@@ -2988,7 +3013,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "predecessor-and-successor-metadata-witnesses-exchanged",
         L::WitnessProof,
         Loc::WitnessStack,
-        Bound::Layer(B::ScriptPathRejection),
+        Bound::NativeSubjectAwaitsConstructionRoute,
         C::AnnouncementLeaf,
         unlinked(Why::NoPublishedRelationNamesIt),
     ),
@@ -3683,7 +3708,7 @@ mod tests {
         (
             Control::SponsoredAnnouncement,
             Some(Subj::TransactionOutput),
-            3,
+            4,
         ),
         (Control::SponsoredAnnouncement, Some(Subj::Witness), 1),
         (
@@ -3771,7 +3796,7 @@ mod tests {
         (
             Control::SponsorlessAnnouncement,
             Some(Subj::TransactionOutput),
-            8,
+            7,
         ),
         (Control::SponsorlessAnnouncement, Some(Subj::Tweak), 4),
         (Control::SponsorlessAnnouncement, Some(Subj::Witness), 3),
@@ -3896,10 +3921,11 @@ mod tests {
         let standing = |wanted: MaturityRowBoundary| {
             rows().iter().filter(|row| row.boundary() == wanted).count()
         };
-        // Nine relay obligations stay waiting. The two sponsored positives and
-        // four submitted sponsor faults leave the typed reasons; seven ABI-layout
-        // rows become final and confidential value keeps its observable route.
-        assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 9);
+        // Eight relay obligations accept; three departures and five unavailable
+        // subjects enter typed reasons. Confidential value retains its route.
+        assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 1);
+        assert_eq!(standing(Bound::NativeCoordinateUndecidedByCandidate), 3);
+        assert_eq!(standing(Bound::NativeSubjectAwaitsConstructionRoute), 5);
         assert_eq!(standing(Bound::SponsoredControlRefusedAtConstruction), 0);
         assert_eq!(standing(Bound::SponsorArmAwaitsRegionScoping), 0);
         assert_eq!(standing(Bound::TotalityAnsweredByLandedNonceEvidence), 11);
@@ -3965,6 +3991,18 @@ mod tests {
                         S::TotalityFault,
                         "{row} is not a totality row"
                     );
+                }
+                Bound::NativeCoordinateUndecidedByCandidate => {
+                    assert!(matches!(
+                        row.section(),
+                        S::SuccessorConstructorFault | S::AbiLinkerFault
+                    ));
+                }
+                Bound::NativeSubjectAwaitsConstructionRoute => {
+                    assert!(matches!(
+                        row.section(),
+                        S::OperatorFault | S::SuccessorConstructorFault | S::AbiLinkerFault
+                    ));
                 }
                 Bound::Layer(layer) => match layer {
                     B::RootHistoryReportRejection => assert_eq!(

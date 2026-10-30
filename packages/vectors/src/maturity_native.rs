@@ -89,6 +89,8 @@ pub enum MaturityNativePlanRefusal {
     Signing(TestSigningDefect),
     /// An exact mutant could not be staged for a native offer.
     MutantStage(Box<MaturityMutantStageRefusal>),
+    /// A native subject could not be constructed; its full diagnostic is retained.
+    NativeStaging(String),
     /// The construction-right registry refused the frozen candidate.
     ConstructionRight(Box<RightRefusal>),
     /// A response was missing, unsolicited, or named a different pending case.
@@ -857,7 +859,7 @@ fn link_for_metadata(
     Ok((linked, sources.record().schedule()))
 }
 
-fn build_announcement(
+pub(crate) fn build_announcement(
     bundle: &CandidateLinkedMaturityBundle,
     asset: AssetId,
     outpoint: Outpoint,
@@ -934,7 +936,9 @@ fn build_with_sponsor(
     Ok(finalize_maturity_announcement(construction))
 }
 
-fn sign_announcement(finalized: &FinalizedMaturityAnnouncement) -> Result<Vec<u8>, Refusal> {
+pub(crate) fn sign_announcement(
+    finalized: &FinalizedMaturityAnnouncement,
+) -> Result<Vec<u8>, Refusal> {
     sign_with_sponsor(finalized, None)
 }
 
@@ -986,6 +990,771 @@ fn check_coin(
         return Err(Refusal::FundingMismatch);
     }
     outpoint_of(&coin.outpoint).ok_or(Refusal::FundedOutpointInvalid)
+}
+
+/// Serial native observations, with credit conditional on each family's control.
+pub mod native {
+    use super::{
+        ANNOUNCEMENT_STEPS, AssetField, BranchContext, CandidateDeploymentIdentity, FundedOutput,
+        MaturityAnnouncementPlanner, MaturityWitnessSelection, NATIVE_PROTOCOL_SCHEMA,
+        NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationStep,
+        OperationSubject, PlanRefused, Refusal, TargetFundingSubject, TargetOperationPlanner,
+        TargetSubmissionSubject, TargetTransaction, Txid, ValueField, asset_of, check_coin,
+        closure, closure_target, outpoint_of, sponsored, transaction,
+    };
+    use crate::maturity_continuity::MaturityFundedPredecessor;
+    use crate::maturity_mutants::MaturityMutantContext;
+    use crate::maturity_mutants::native_staging::{
+        NATIVE_ROWS, NativeSubject, live_funding_shape, stage_live_subject,
+    };
+    use target_elements_conformance::protocol::{
+        TargetSponsorFundingSubject, TargetSponsorSigningSubject, WireSighashProfile,
+    };
+    use transaction::bytes::{InputWitness, NonceField, TargetInput, TargetOutput};
+
+    const FAMILIES: [&str; 10] = [
+        "window",
+        "metadata",
+        "operator",
+        "predecessor",
+        "successor",
+        "abi",
+        "later-nonce",
+        "extra-output",
+        "version",
+        "added-sponsor",
+    ];
+    const RANGES: [(usize, usize); 6] = [(0, 2), (2, 3), (3, 9), (9, 13), (13, 19), (19, 23)];
+
+    /// Exact section/name claims for a submission; shared subjects return both keys.
+    #[must_use]
+    pub fn submission_rows(
+        step: &OperationStep,
+    ) -> Vec<(crate::maturity_safety::MaturitySafetySection, &'static str)> {
+        use crate::maturity_safety::MaturitySafetySection as Section;
+        if !matches!(step.subject(), OperationSubject::Submission(_)) {
+            return Vec::new();
+        }
+        let parts = step.case().step.split(':').collect::<Vec<_>>();
+        let [case, label, ordinal] = parts.as_slice() else {
+            return Vec::new();
+        };
+        if ordinal
+            .parse::<usize>()
+            .ok()
+            .is_none_or(|value| value.to_string() != *ordinal)
+        {
+            return Vec::new();
+        }
+        if *label == "control" {
+            return sponsored::CASES[..8]
+                .iter()
+                .filter(|name| **name == *case)
+                .map(|name| (Section::Positive, *name))
+                .collect();
+        }
+        if *case == sponsored::CASES[2] {
+            return match *label {
+                "fee-change-substitution" => {
+                    vec![(Section::OperatorFault, "fee-output-changed-after-signing")]
+                }
+                "balanced-state-corruption-compensated-by-sponsor-change" => {
+                    vec![(Section::SponsorFault, sponsored::NEGATIVES[3])]
+                }
+                _ => Vec::new(),
+            };
+        }
+        if *case == "added-sponsor" && *label == "sponsor-input-added-after-signing" {
+            return vec![(Section::OperatorFault, "sponsor-input-added-after-signing")];
+        }
+        let Some(family) = FAMILIES.iter().position(|name| name == case) else {
+            return Vec::new();
+        };
+        let subject = NATIVE_ROWS
+            .iter()
+            .find(|row| {
+                row.name() == *label
+                    && row
+                        .standing()
+                        .subject()
+                        .is_some_and(|subject| permits(family, subject))
+            })
+            .and_then(|row| row.standing().subject());
+        let Some(subject) = subject else {
+            return Vec::new();
+        };
+        NATIVE_ROWS
+            .iter()
+            .filter(|row| row.standing().subject() == Some(subject))
+            .map(|row| (row.section(), row.name()))
+            .collect()
+    }
+
+    fn permits(family: usize, subject: NativeSubject) -> bool {
+        if family < RANGES.len() {
+            NativeSubject::ALL[RANGES[family].0..RANGES[family].1].contains(&subject)
+        } else {
+            matches!(
+                (family, subject),
+                (6, NativeSubject::LaterAdmissibleNonce)
+                    | (7, NativeSubject::ExtraStateLikeOutput)
+                    | (8, NativeSubject::WrongTransactionVersion)
+            )
+        }
+    }
+
+    #[derive(Clone)]
+    enum Action {
+        Inner(OperationStep),
+        Additional(NativeSubject),
+        Subject,
+        SponsorCoin,
+        SponsorSign,
+        Sponsored(OperationStep),
+    }
+
+    /// An exact serial schedule; no acceptance is inferred from a refusal.
+    pub struct Planner {
+        identity: CandidateDeploymentIdentity,
+        branch: BranchContext,
+        inner: MaturityAnnouncementPlanner,
+        sponsored: Option<sponsored::Planner>,
+        family: usize,
+        cursor: usize,
+        classification_control: bool,
+        honest: Option<MaturityFundedPredecessor>,
+        control: Option<OperationStep>,
+        sponsor_coin: Option<FundedOutput>,
+        pending: Option<(OperationStep, Action)>,
+        exchanges: Vec<(OperationStep, NativeOperationResponse)>,
+        family_start: usize,
+        credited: Vec<usize>,
+        policy: Option<sponsored::Policy>,
+        refusal: Option<Refusal>,
+        done: bool,
+    }
+
+    fn stage_error(error: impl std::fmt::Debug) -> Refusal {
+        Refusal::NativeStaging(format!("{error:?}"))
+    }
+
+    impl Planner {
+        /// Start the fixed family schedule on the declared deployment.
+        /// # Errors
+        /// Retains public construction refusals.
+        /// # Panics
+        /// Panics only if the fixed architecture omits its singleton.
+        pub fn new(
+            identity: CandidateDeploymentIdentity,
+            branch: BranchContext,
+        ) -> Result<Self, Refusal> {
+            let inner = Self::inner(&identity, branch)?;
+            Ok(Self {
+                identity,
+                branch,
+                inner,
+                sponsored: None,
+                family: 0,
+                cursor: 0,
+                classification_control: false,
+                honest: None,
+                control: None,
+                sponsor_coin: None,
+                pending: None,
+                exchanges: Vec::new(),
+                family_start: 0,
+                credited: Vec::new(),
+                policy: None,
+                refusal: None,
+                done: false,
+            })
+        }
+
+        fn inner(
+            identity: &CandidateDeploymentIdentity,
+            branch: BranchContext,
+        ) -> Result<MaturityAnnouncementPlanner, Refusal> {
+            MaturityAnnouncementPlanner::new(
+                identity.clone(),
+                branch,
+                MaturityWitnessSelection::Retained(
+                    tapscript::StateWitnessSchedule::VariableMetadata,
+                ),
+            )
+        }
+
+        /// All settled requests and responses, including any terminal failure.
+        #[must_use]
+        pub fn exchanges(&self) -> &[(OperationStep, NativeOperationResponse)] {
+            &self.exchanges
+        }
+        /// The schedule recorded from the sponsored cases' linked bundle.
+        #[must_use]
+        pub const fn schedule(&self) -> Option<tapscript::StateWitnessSchedule> {
+            match &self.sponsored {
+                Some(planner) => planner.schedule(),
+                None => None,
+            }
+        }
+        /// The first response's validated policy declaration.
+        #[must_use]
+        pub const fn policy(&self) -> Option<&sponsored::Policy> {
+            self.policy.as_ref()
+        }
+        /// The retained construction or protocol failure.
+        #[must_use]
+        pub const fn refusal(&self) -> Option<&Refusal> {
+            self.refusal.as_ref()
+        }
+        /// Observations paired with an accepted family control.
+        #[must_use]
+        pub fn credited(&self) -> Vec<&(OperationStep, NativeOperationResponse)> {
+            self.credited
+                .iter()
+                .map(|index| &self.exchanges[*index])
+                .collect()
+        }
+        /// Detailed operation observations without reinterpretation.
+        #[must_use]
+        pub fn probes(&self) -> Vec<&str> {
+            self.exchanges
+                .iter()
+                .filter_map(|(_, response)| response.observed_detail.as_deref())
+                .collect()
+        }
+        /// Unsettled rows retained by the funded sponsored schedule.
+        #[must_use]
+        pub fn waiting_json(&self) -> Vec<serde_json::Value> {
+            self.sponsored
+                .as_ref()
+                .map_or_else(Vec::new, sponsored::Planner::waiting_json)
+        }
+        /// Operations, fundings, signings, submissions, accepted and refused observations.
+        #[must_use]
+        pub fn census(&self) -> [usize; 6] {
+            let mut counts = [self.exchanges.len(), 0, 0, 0, 0, 0];
+            for (step, response) in &self.exchanges {
+                match step.subject() {
+                    OperationSubject::Funding(_) | OperationSubject::SponsorFunding(_) => {
+                        counts[1] += 1;
+                    }
+                    OperationSubject::SponsorSigning(_) => counts[2] += 1,
+                    OperationSubject::Submission(_) => {
+                        counts[3] += 1;
+                        match response.observed_layer {
+                            ObservedOutcomeLayer::Accepted => counts[4] += 1,
+                            ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+                            | ObservedOutcomeLayer::ScriptPathRejection
+                            | ObservedOutcomeLayer::KeyPathRejection
+                            | ObservedOutcomeLayer::RelayPolicyRejection => counts[5] += 1,
+                            _ => {}
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            counts
+        }
+        /// Require a fully settled schedule; boundary agreement is checked by the fold.
+        /// # Errors
+        /// Returns the first refusal or an incomplete schedule.
+        pub fn complete(&self) -> Result<(), Refusal> {
+            if let Some(error) = &self.refusal {
+                return Err(error.clone());
+            }
+            if !self.done || self.pending.is_some() {
+                return Err(Refusal::IncompleteTranscript);
+            }
+            Ok(())
+        }
+
+        fn offer(
+            &mut self,
+            label: &str,
+            subject: OperationSubject,
+            action: Action,
+        ) -> OperationStep {
+            let family = FAMILIES.get(self.family).copied().unwrap_or("sponsored");
+            let name = format!("{family}:{label}:{}", self.exchanges.len());
+            let step = OperationStep::new(&name, subject);
+            self.pending = Some((step.clone(), action));
+            step
+        }
+        fn inner_offer(&mut self, step: OperationStep) -> OperationStep {
+            let label = if matches!(step.subject(), OperationSubject::Submission(_)) {
+                "control"
+            } else {
+                step.case().step.as_str()
+            }
+            .to_owned();
+            self.offer(&label, step.subject().clone(), Action::Inner(step))
+        }
+        fn context<'a>(
+            &'a self,
+            target: &'a target_elements::ReviewedElementsTapscriptDefinition,
+        ) -> Result<MaturityMutantContext<'a>, Refusal> {
+            Ok(MaturityMutantContext {
+                target,
+                bundle: self.inner.bundle(),
+                finalized: self
+                    .inner
+                    .announcement()
+                    .ok_or(Refusal::IncompleteTranscript)?,
+                submitted_bytes: self
+                    .inner
+                    .submission_bytes()
+                    .ok_or(Refusal::IncompleteTranscript)?,
+                funded: self.honest.as_ref().ok_or(Refusal::IncompleteTranscript)?,
+                identity: &self.identity,
+                branch: self.branch,
+                foreign_funded: None,
+            })
+        }
+        fn subject(&self) -> Option<NativeSubject> {
+            match self.family {
+                0..=5 => {
+                    (self.cursor < RANGES[self.family].1).then(|| NativeSubject::ALL[self.cursor])
+                }
+                6 => Some(NativeSubject::LaterAdmissibleNonce),
+                7 => Some(NativeSubject::ExtraStateLikeOutput),
+                8 => Some(NativeSubject::WrongTransactionVersion),
+                _ => None,
+            }
+        }
+        fn stage(
+            &mut self,
+            subject: NativeSubject,
+            extra: Option<&MaturityFundedPredecessor>,
+        ) -> Result<OperationStep, Refusal> {
+            let target = closure_target().map_err(closure)?;
+            let bytes =
+                stage_live_subject(subject, &self.context(&target)?, extra).map_err(stage_error)?;
+            let label = NATIVE_ROWS
+                .iter()
+                .find(|row| row.standing().subject() == Some(subject))
+                .ok_or(Refusal::IncompleteTranscript)?
+                .name();
+            Ok(self.offer(
+                label,
+                OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                    transaction_bytes: bytes,
+                })),
+                Action::Subject,
+            ))
+        }
+        fn next_subject(&mut self) -> Result<OperationStep, Refusal> {
+            let Some(subject) = self.subject() else {
+                let control = self.control.take().ok_or(Refusal::IncompleteTranscript)?;
+                return Ok(self.inner_offer(control));
+            };
+            if matches!(
+                subject,
+                NativeSubject::WrongStateAsset
+                    | NativeSubject::WrongSingletonAmount
+                    | NativeSubject::WrongPredecessorProgram
+                    | NativeSubject::ExtraStateLikeOutput
+            ) {
+                let target = closure_target().map_err(closure)?;
+                let context = self.context(&target)?;
+                let (amount, program) =
+                    live_funding_shape(subject, &context).map_err(stage_error)?;
+                let issue = matches!(
+                    subject,
+                    NativeSubject::WrongStateAsset | NativeSubject::ExtraStateLikeOutput
+                );
+                let asset = (!issue).then(|| {
+                    Txid::from_internal(*context.funded.asset.internal()).to_target_display()
+                });
+                return Ok(self.offer(
+                    "fund-subject",
+                    OperationSubject::Funding(Box::new(TargetFundingSubject {
+                        issue_asset: issue,
+                        asset,
+                        output_program: program,
+                        outputs: 1,
+                        amount_per_output: amount,
+                    })),
+                    Action::Additional(subject),
+                ));
+            }
+            self.stage(subject, None)
+        }
+        fn coin(
+            step: &OperationStep,
+            response: &NativeOperationResponse,
+        ) -> Result<MaturityFundedPredecessor, Refusal> {
+            let OperationSubject::Funding(subject) = step.subject() else {
+                return Err(Refusal::UnexpectedResponse);
+            };
+            let [coin] = response.funded_outputs.as_slice() else {
+                return Err(Refusal::FundingMismatch);
+            };
+            let asset = if subject.issue_asset {
+                response.issued_asset.as_deref()
+            } else {
+                subject.asset.as_deref()
+            }
+            .ok_or(Refusal::FundingMismatch)?;
+            let outpoint = check_coin(subject, coin, asset)?;
+            if response.observed_layer != ObservedOutcomeLayer::Accepted {
+                return Err(Refusal::FundingMismatch);
+            }
+            Ok(MaturityFundedPredecessor {
+                outpoint,
+                asset: asset_of(asset).ok_or(Refusal::FundingMismatch)?,
+                amount: coin.amount_satoshis,
+                program: subject.output_program.clone(),
+            })
+        }
+        fn start_inner(&mut self) -> Result<OperationStep, Refusal> {
+            self.inner = Self::inner(&self.identity, self.branch)?;
+            self.honest = None;
+            self.control = None;
+            let step = self
+                .inner
+                .next_step(None)
+                .map_err(|_| Refusal::UnexpectedResponse)?
+                .ok_or(Refusal::IncompleteTranscript)?;
+            Ok(self.inner_offer(step))
+        }
+        fn next_family(&mut self) -> Result<Option<OperationStep>, Refusal> {
+            self.family += 1;
+            self.family_start = self.exchanges.len();
+            self.classification_control = false;
+            if self.family < FAMILIES.len() {
+                self.cursor = RANGES.get(self.family).map_or(0, |range| range.0);
+                return self.start_inner().map(Some);
+            }
+            let mut planner =
+                sponsored::Planner::for_native_observation(self.identity.clone(), self.branch)?;
+            let step = planner
+                .next_step(None)
+                .map_err(|_| Refusal::UnexpectedResponse)?;
+            self.sponsored = Some(planner);
+            self.sponsored_offer(step)
+        }
+        fn sponsored_offer(
+            &mut self,
+            step: Option<OperationStep>,
+        ) -> Result<Option<OperationStep>, Refusal> {
+            if let Some(step) = step {
+                let mut parts = step.case().step.split(':');
+                let case = parts.next().ok_or(Refusal::UnexpectedResponse)?;
+                let label = parts.next().ok_or(Refusal::UnexpectedResponse)?;
+                let name = format!("{case}:{label}:{}", self.exchanges.len());
+                let offered = OperationStep::new(&name, step.subject().clone());
+                self.pending = Some((offered.clone(), Action::Sponsored(step)));
+                Ok(Some(offered))
+            } else {
+                let plan = self
+                    .sponsored
+                    .as_ref()
+                    .ok_or(Refusal::IncompleteTranscript)?;
+                plan.complete()?;
+                for (index, exchange) in plan.exchanges().iter().enumerate() {
+                    if plan.credited().contains(&exchange) {
+                        self.credited.push(self.family_start + index);
+                    }
+                }
+                self.done = true;
+                Ok(None)
+            }
+        }
+        fn credit_family(&mut self) {
+            self.credited
+                .extend((self.family_start..self.exchanges.len()).filter(|index| {
+                    matches!(
+                        self.exchanges[*index].0.subject(),
+                        OperationSubject::Submission(_)
+                    )
+                }));
+        }
+        #[expect(
+            clippy::too_many_lines,
+            reason = "Each settled operation advances the serial family with its own checks."
+        )]
+        fn settle(
+            &mut self,
+            step: &OperationStep,
+            action: &Action,
+            response: &NativeOperationResponse,
+        ) -> Result<Option<OperationStep>, Refusal> {
+            let (policy, _) = sponsored::detail(response)?;
+            self.policy = Some(policy);
+            match action {
+                Action::Inner(original) => {
+                    if original.case().step == ANNOUNCEMENT_STEPS[1] {
+                        self.honest = Some(Self::coin(step, response)?);
+                    }
+                    let control = matches!(original.subject(), OperationSubject::Submission(_));
+                    let mut translated = response.clone();
+                    translated.case = original.case().clone();
+                    let next = self
+                        .inner
+                        .next_step(Some((original.case(), &translated)))
+                        .map_err(|_| {
+                            self.inner
+                                .refusal()
+                                .cloned()
+                                .unwrap_or(Refusal::UnexpectedResponse)
+                        })?;
+                    if control {
+                        if response.observed_layer != ObservedOutcomeLayer::Accepted {
+                            return Err(Refusal::SponsoredBoundary);
+                        }
+                        if (6..=8).contains(&self.family) && !self.classification_control {
+                            self.classification_control = true;
+                            return self.start_inner().map(Some);
+                        }
+                        self.credit_family();
+                        return self.next_family();
+                    }
+                    let next = next.ok_or(Refusal::IncompleteTranscript)?;
+                    if !matches!(next.subject(), OperationSubject::Submission(_)) {
+                        return Ok(Some(self.inner_offer(next)));
+                    }
+                    self.control = Some(next.clone());
+                    if (6..=8).contains(&self.family) && !self.classification_control {
+                        return Ok(Some(self.inner_offer(next)));
+                    }
+                    if self.family == 9 {
+                        return Ok(Some(self.offer(
+                            "fund-sponsor",
+                            OperationSubject::SponsorFunding(Box::new(
+                                TargetSponsorFundingSubject {
+                                    sponsor_outputs: 1,
+                                    amount_per_sponsor_output: 1_000_000,
+                                },
+                            )),
+                            Action::SponsorCoin,
+                        )));
+                    }
+                    self.next_subject().map(Some)
+                }
+                Action::Additional(subject) => {
+                    let coin = Self::coin(step, response)?;
+                    self.stage(*subject, Some(&coin)).map(Some)
+                }
+                Action::Subject => {
+                    if (6..=8).contains(&self.family) {
+                        if response.observed_layer == ObservedOutcomeLayer::Accepted {
+                            let OperationSubject::Submission(subject) = step.subject() else {
+                                return Err(Refusal::UnexpectedResponse);
+                            };
+                            sponsored::check_readback(&subject.transaction_bytes, response)?;
+                        }
+                        self.credit_family();
+                        return self.next_family();
+                    }
+                    self.cursor += 1;
+                    self.next_subject().map(Some)
+                }
+                Action::SponsorCoin => {
+                    let [coin] = response.funded_outputs.as_slice() else {
+                        return Err(Refusal::FundingMismatch);
+                    };
+                    if response.observed_layer != ObservedOutcomeLayer::Accepted
+                        || coin.amount_satoshis != 1_000_000
+                    {
+                        return Err(Refusal::FundingMismatch);
+                    }
+                    let original = TargetTransaction::decode(
+                        self.inner
+                            .submission_bytes()
+                            .ok_or(Refusal::IncompleteTranscript)?,
+                    )
+                    .map_err(transaction)?;
+                    let mut inputs = original.inputs().to_vec();
+                    inputs.push(TargetInput::new(
+                        outpoint_of(&coin.outpoint).ok_or(Refusal::FundingMismatch)?,
+                        u32::MAX,
+                    ));
+                    let mut outputs = original.outputs().to_vec();
+                    outputs.push(TargetOutput::new(
+                        AssetField::Explicit(
+                            asset_of(&coin.asset).ok_or(Refusal::FundingMismatch)?,
+                        ),
+                        ValueField::Explicit(coin.amount_satoshis),
+                        NonceField::Null,
+                        Vec::new(),
+                    ));
+                    let mut witnesses = original.witnesses().to_vec();
+                    witnesses.push(InputWitness::new(Vec::new()));
+                    let candidate = TargetTransaction::new(
+                        original.version(),
+                        inputs,
+                        outputs,
+                        original.lock_time(),
+                        witnesses,
+                    )
+                    .map_err(transaction)?;
+                    self.sponsor_coin = Some(coin.clone());
+                    Ok(Some(self.offer(
+                        "sign-sponsor",
+                        OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                            finalized_transaction: candidate.encode(),
+                            sponsor_input_index: 1,
+                            sponsor_outpoint: coin.outpoint.clone(),
+                            sighash_profile: WireSighashProfile::AllInputsAllOutputs,
+                        })),
+                        Action::SponsorSign,
+                    )))
+                }
+                Action::SponsorSign => {
+                    let signature = sponsored::checked_signature(
+                        step,
+                        response,
+                        self.sponsor_coin
+                            .as_ref()
+                            .ok_or(Refusal::IncompleteTranscript)?,
+                    )?;
+                    let OperationSubject::SponsorSigning(subject) = step.subject() else {
+                        return Err(Refusal::UnexpectedResponse);
+                    };
+                    let candidate = TargetTransaction::decode(&subject.finalized_transaction)
+                        .map_err(transaction)?;
+                    let mut witnesses = candidate.witnesses().to_vec();
+                    witnesses[1] = InputWitness::new(signature.stack().to_vec());
+                    let signed = TargetTransaction::new(
+                        candidate.version(),
+                        candidate.inputs().to_vec(),
+                        candidate.outputs().to_vec(),
+                        candidate.lock_time(),
+                        witnesses,
+                    )
+                    .map_err(transaction)?;
+                    Ok(Some(self.offer(
+                        "sponsor-input-added-after-signing",
+                        OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                            transaction_bytes: signed.encode(),
+                        })),
+                        Action::Subject,
+                    )))
+                }
+                Action::Sponsored(original) => {
+                    let plan = self
+                        .sponsored
+                        .as_mut()
+                        .ok_or(Refusal::IncompleteTranscript)?;
+                    let mut translated = response.clone();
+                    translated.case = original.case().clone();
+                    let next = plan
+                        .next_step(Some((original.case(), &translated)))
+                        .map_err(|_| {
+                            plan.refusal()
+                                .cloned()
+                                .unwrap_or(Refusal::UnexpectedResponse)
+                        })?;
+                    self.sponsored_offer(next)
+                }
+            }
+        }
+        fn advance(
+            &mut self,
+            previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+        ) -> Result<Option<OperationStep>, Refusal> {
+            match (self.pending.take(), previous) {
+                (None, None) if self.exchanges.is_empty() => self.start_inner().map(Some),
+                (Some((step, action)), Some((case, response)))
+                    if step.case() == case && &response.case == case =>
+                {
+                    if response.schema != NATIVE_PROTOCOL_SCHEMA {
+                        return Err(Refusal::ResponseSchema {
+                            offered: response.schema,
+                        });
+                    }
+                    response.validate_shape().map_err(Refusal::ResponseShape)?;
+                    self.exchanges.push((step.clone(), response.clone()));
+                    self.settle(&step, &action, response)
+                }
+                _ => Err(Refusal::UnexpectedResponse),
+            }
+        }
+    }
+    impl TargetOperationPlanner for Planner {
+        fn next_step(
+            &mut self,
+            previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+        ) -> Result<Option<OperationStep>, PlanRefused> {
+            if self.refusal.is_some() {
+                return Err(PlanRefused);
+            }
+            self.advance(previous).map_err(|error| {
+                self.refusal = Some(error);
+                PlanRefused
+            })
+        }
+    }
+
+    /// Reconstruct every request before admitting its response or family credit.
+    /// # Errors
+    /// Returns exact-request disagreement, construction refusal or incomplete schedule.
+    /// # Panics
+    /// Panics only if the fixed architecture omits its singleton.
+    pub fn replay(
+        identity: CandidateDeploymentIdentity,
+        branch: BranchContext,
+        exchanges: &[(OperationStep, NativeOperationResponse)],
+    ) -> Result<Planner, Refusal> {
+        let mut plan = Planner::new(identity, branch)?;
+        let mut next = plan.advance(None)?;
+        for (position, (step, response)) in exchanges.iter().enumerate() {
+            if next.as_ref() != Some(step) {
+                return Err(Refusal::TranscriptStepMismatch { position });
+            }
+            next = plan.advance(Some((step.case(), response)))?;
+        }
+        plan.complete()?;
+        Ok(plan)
+    }
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn native_replay_refuses_changed_requests_and_missing_control_readback() {
+            let corpus =
+                crate::maturity_corpus::maturity_native_run_of_record().expect("native archive");
+            let plan = &corpus.evidence;
+            let mut exchanges = plan.exchanges().to_vec();
+            let original = &exchanges[0].0;
+            exchanges[0].0 = OperationStep::new("window:other:0", original.subject().clone());
+            assert!(replay(plan.identity.clone(), plan.branch, &exchanges).is_err());
+            let mut exchanges = plan.exchanges().to_vec();
+            let (_, response) = exchanges
+                .iter_mut()
+                .find(|(step, _)| step.case().step.contains(":control:"))
+                .expect("accepted family control");
+            response.mined_readback = None;
+            assert!(replay(plan.identity.clone(), plan.branch, &exchanges).is_err());
+        }
+
+        #[test]
+        fn submission_keys_require_the_exact_family_label_and_decimal_ordinal() {
+            let step = |name| {
+                OperationStep::new(
+                    name,
+                    OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                        transaction_bytes: Vec::new(),
+                    })),
+                )
+            };
+            assert_eq!(submission_rows(&step("operator:wrong-operator:7")).len(), 2);
+            assert_eq!(
+                submission_rows(&step("window:successor-remains-unannounced:2")).len(),
+                2
+            );
+            for name in [
+                "operator:wrong-operator:07",
+                "operator:wrong-operator:+7",
+                "operator:wrong-operator:7:extra",
+                "window:wrong-operator:7",
+                "operator:control:7",
+            ] {
+                assert!(submission_rows(&step(name)).is_empty(), "{name}");
+            }
+        }
+    }
 }
 
 /// Funded default-policy observations, with replay independent of capture provenance.
@@ -1454,6 +2223,7 @@ pub mod sponsored {
     /// One serialized schedule; controls consume their coins after their negative subjects.
     #[cfg_attr(test, derive(Clone))]
     pub struct Planner {
+        native_observation: bool,
         identity: CandidateDeploymentIdentity,
         branch: BranchContext,
         schedule: Option<tapscript::StateWitnessSchedule>,
@@ -1492,6 +2262,7 @@ pub mod sponsored {
             branch: BranchContext,
         ) -> Result<Self, Refusal> {
             let mut plan = Self {
+                native_observation: false,
                 identity,
                 branch,
                 schedule: None,
@@ -1520,6 +2291,36 @@ pub mod sponsored {
             };
             plan.issue()?;
             Ok(plan)
+        }
+
+        /// Fund the eight semantic selections in the deployed sponsored form.
+        /// # Errors
+        /// Preserves the same linking refusals as the sponsored ceremony.
+        /// # Panics
+        /// Panics only if the fixed architecture omits its singleton.
+        pub(crate) fn for_native_observation(
+            identity: CandidateDeploymentIdentity,
+            branch: BranchContext,
+        ) -> Result<Self, Refusal> {
+            let mut plan = Self::new(identity, branch)?;
+            plan.native_observation = true;
+            Ok(plan)
+        }
+
+        const fn case_count(&self) -> usize {
+            if self.native_observation {
+                8
+            } else {
+                CASES.len()
+            }
+        }
+
+        const fn has_mutants(&self) -> bool {
+            if self.native_observation {
+                self.case == 2
+            } else {
+                self.case == 10
+            }
         }
 
         /// The exact settled exchanges, including a failed terminal attempt.
@@ -1620,7 +2421,7 @@ pub mod sponsored {
             if let Some(refusal) = &self.refusal {
                 return Err(refusal.clone());
             }
-            if self.case != CASES.len() || self.pending.is_some() || !self.queue.is_empty() {
+            if self.case != self.case_count() || self.pending.is_some() || !self.queue.is_empty() {
                 return Err(Refusal::IncompleteTranscript);
             }
             Ok(())
@@ -1823,7 +2624,7 @@ pub mod sponsored {
                         only_coin(response)?,
                         self.asset.as_deref().ok_or(Refusal::FundingMismatch)?,
                     )?);
-                    if self.case < 9 {
+                    if self.case < 9 && !self.native_observation {
                         self.finalized = Some(self.build()?);
                         self.signed = sign_announcement(
                             self.finalized
@@ -1890,7 +2691,7 @@ pub mod sponsored {
                         let coin = sponsor.coin.clone();
                         self.sign(self.signed.clone(), &coin, 1, Action::Measure);
                     } else if let Some(target) = self.retry.take() {
-                        if self.case == 10 {
+                        if self.has_mutants() {
                             self.next_mutant(0)?;
                         } else {
                             match target {
@@ -1902,7 +2703,7 @@ pub mod sponsored {
                         }
                     } else if self.case == 12 {
                         self.fund_sponsor(0, Action::Zero);
-                    } else if self.case == 10 {
+                    } else if self.has_mutants() {
                         self.next_mutant(0)?;
                     } else {
                         self.submit("control", self.signed.clone(), Action::Control);
@@ -1954,18 +2755,33 @@ pub mod sponsored {
                     }
                 }
                 Action::MutantSubmit(which) => {
-                    let expected = if which == 3 {
+                    let expected = if which == 3 && !self.native_observation {
                         ObservedOutcomeLayer::ConsensusRejectionBeforeScript
                     } else {
                         ObservedOutcomeLayer::ScriptPathRejection
                     };
-                    if response.observed_layer != expected {
+                    if response.observed_layer != expected && !self.native_observation {
                         return Err(Refusal::SponsoredBoundary);
                     }
-                    check_reason(response, NEGATIVE_REASONS[which], true)?;
+                    if !self.native_observation {
+                        check_reason(response, NEGATIVE_REASONS[which], true)?;
+                    }
                     self.next_mutant(which + 1)?;
                 }
                 Action::Control => {
+                    if self.native_observation
+                        && response.observed_layer != ObservedOutcomeLayer::Accepted
+                    {
+                        self.waiting.push(WaitingRow {
+                            row: step.case().step.clone(),
+                            reason: response.observed_detail.clone().unwrap_or_default(),
+                        });
+                        self.case += 1;
+                        if self.case < self.case_count() {
+                            self.issue()?;
+                        }
+                        return Ok(());
+                    }
                     if response.observed_layer != ObservedOutcomeLayer::Accepted {
                         return Err(Refusal::SponsoredBoundary);
                     }
@@ -1973,18 +2789,19 @@ pub mod sponsored {
                         return Err(Refusal::SponsoredRoute);
                     }
                     if self.case < 9
+                        && !self.native_observation
                         && route != Some(MaturityAcceptanceRoute::DirectBlockAfterRelayRefusal)
                     {
                         return Err(Refusal::SponsoredRoute);
                     }
-                    if self.case < 9 {
+                    if self.case < 9 && !self.native_observation {
                         check_reason(response, "min relay fee not met", false)?;
                     }
                     check_readback(&self.signed, response)?;
-                    if self.case < 9 {
+                    if self.case < 9 && !self.native_observation {
                         self.project()?;
                     }
-                    if self.case >= 9 {
+                    if self.case >= 9 || self.native_observation {
                         let weight = response
                             .resources
                             .transaction_weight
@@ -2008,7 +2825,7 @@ pub mod sponsored {
                         }));
                     self.case += 1;
                     self.retry = None;
-                    if self.case < CASES.len() {
+                    if self.case < self.case_count() {
                         self.issue()?;
                     }
                 }
@@ -2084,7 +2901,7 @@ pub mod sponsored {
                 self.retried.push((self.case, target));
                 self.retry = Some(target);
             }
-            if self.case < CASES.len() {
+            if self.case < self.case_count() {
                 self.issue()?;
             }
             Ok(())
@@ -2108,6 +2925,9 @@ pub mod sponsored {
             checked_signature(step, response, coin)
         }
         fn next_mutant(&mut self, which: usize) -> Result<(), Refusal> {
+            if self.native_observation && which < NEGATIVES.len() && !matches!(which, 2 | 3) {
+                return self.next_mutant(which + 1);
+            }
             if self.skipped_negatives.contains(&which) {
                 return self.next_mutant(which + 1);
             }
@@ -2125,6 +2945,22 @@ pub mod sponsored {
                 2 => {
                     outputs[1] = move_value(&outputs[1], -1)?;
                     outputs[2] = move_value(&outputs[2], 1)?;
+                }
+                3 if self.native_observation => {
+                    let state = outputs[0].clone();
+                    let change = outputs[1].clone();
+                    outputs[0] = TargetOutput::new(
+                        change.asset(),
+                        change.value(),
+                        state.nonce(),
+                        state.program().to_vec(),
+                    );
+                    outputs[1] = TargetOutput::new(
+                        state.asset(),
+                        state.value(),
+                        change.nonce(),
+                        change.program().to_vec(),
+                    );
                 }
                 3 => {
                     outputs[0] = move_value(&outputs[0], 1)?;

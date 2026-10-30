@@ -1,79 +1,38 @@
-//! The maturity announcement's negative half: every §16 row a target run
-//! has not answered, each carrying the NAMED GAP that keeps it waiting.
+//! Current native-run requirements and the retained staging history.
+//!
+//! `STILL_REQUIRED` equals the evidence plan's waiting set. The thirty-five
+//! original keys remain in `NATIVE_STAGING_HISTORY`, including the five
+//! unavailable subjects and their construction grounds. Historical gaps
+//! are planning records; only admitted observations change evidence standing.
 //!
 //! # Why a register and not a number
 //!
-//! [`crate::maturity_evidence`] classifies every row of the §16 matrix
-//! and counts how many stand at
-//! [`MaturityRowStanding::NativeRunRequired`]. The count is enough to
-//! know the half is unfinished and not enough to work on: it says HOW
-//! MANY rows are waiting and never WHICH, so a wave reading it has to
-//! re-derive the classifier's routing to recover the list, and two waves
-//! can agree about the number while disagreeing about the rows. The
-//! count stays on the census and is deliberately not repeated here — a
-//! second place for one figure is a second place for it to drift.
-//!
-//! This register is that list, held against the classifier by
-//! `every_outstanding_row_is_registered`. The test is set equality in
-//! BOTH directions, which is what makes the register load-bearing rather
-//! than documentation: a row that reaches an answered standing and is
-//! left here fails it, and a row that stands waiting without being
-//! listed here fails it too. Neither can happen quietly.
+//! A census states how many rows need a run, but cannot identify them. The
+//! register names those rows and is held against the classifier by set
+//! equality in both directions. An omitted waiting row or a retained row
+//! whose standing has changed fails that check. The register is now empty;
+//! the thirty-five historical keys remain available for staging replay.
 //!
 //! # Why every entry carries a gap
 //!
-//! [`MaturityRowStanding::NativeRunRequired`] says a run would answer the
-//! row. §14.2's rule is that an answerable capability is not an answered
-//! standing, and the sharper reading this register is built on is that
-//! "answerable" is itself a claim: for most of the rows below a run alone
-//! would answer nothing, because nothing stages the row's change, or the
-//! shape it needs is not the shape this ceremony builds, or the verdict
-//! it would draw belongs to a rule that never reads the row. A standing
-//! that says a run is owed, for a row no run can reach, sends every wave
-//! that reads it to charter the run.
-//!
-//! So each entry names its own [`MaturityNegativeHalfGap`]. The
-//! vocabulary has no member meaning "not yet looked at": an entry without
-//! a gap does not compile, so the register's coverage is total rather
-//! than aspirational. What the gaps buy is triage a reader can act on —
-//! four of the six members are work somebody can do, and two are not
-//! moved by any run at all.
-//!
-//! # What keeps a STATE row waiting, and what does not
-//!
-//! Each of the thirty-five rows still waits on the obstacle its gap names.
-//! An admitted run answers a row only when its exact refusal binds to the
-//! row's declared facts. The largest member names a stager's work, while
-//! the smallest members name walls.
+//! A run requirement alone does not say whether its subject can be built or
+//! whether the declared boundary decides its coordinate. Every entry must
+//! carry a named gap and its ground, so construction work and classification
+//! questions remain distinguishable. The historical gaps record the reasons
+//! that preceded observation; they do not override the current typed bounds.
 //!
 //! # A row's identity is its table and its name
 //!
-//! `wrong-leaf-version` stands in both constructor tables inside the
-//! waiting set, with different mutation layers, locators and grounds.
-//! A register keyed by name alone would drop one entry even while its
-//! comparison appeared complete. Each entry therefore uses its section
-//! and name together as its identity.
-//!
-//! # One published requirement, many rows
-//!
-//! Twenty-eight of the thirty-five rows carry a published relation; seven
-//! name none. Resolution selects on relation, case, boundary and class,
-//! so several rows can resolve to one requirement identity. The gap still
-//! belongs to each row: a shared requirement does not identify the fault
-//! that a particular refusal answered.
+//! Both constructor tables contain `wrong-leaf-version`, with distinct
+//! locators and grounds. Section and name together identify each entry;
+//! a shared name or published requirement cannot identify a row's fault.
 //!
 //! # What this register is not
 //!
-//! It is not evidence, and it moves no row. A row leaves this list by
-//! being ANSWERED at its own site — an observed refusal recorded against
-//! an accepted control at exactly the boundary the row declared — and
-//! never by being deleted from here. The register follows the classifier;
-//! the classifier never follows the register.
-//!
-//! Nor is a gap a verdict on the row. A gap names what stands between the
-//! row and an answer at this tip, and several of the entries below record
-//! that the answer would need a ruling or a published relation rather
-//! than a run. Naming that is not settling it.
+//! The register is not evidence and changes no standing. Admitted observations
+//! must bind to the row's accepted control and declared boundary; typed
+//! non-answers retain outstanding obligations even when no run is owed.
+//! An empty register therefore establishes neither native nor Safety closure.
 
 use std::collections::BTreeMap;
 
@@ -266,8 +225,12 @@ use MaturitySafetySection as S;
 /// routing and the test below is what keeps the writing and the routing
 /// one list.
 ///
-/// The waiting set contains thirty-five faults after the accepted run answers the sponsorless positive row and the two admitted mutant runs answer seven constructor rows at their declared boundaries. Other positive rows state typed non-answers and do not enter this register.
-pub const STILL_REQUIRED: &[MaturityNegativeHalfEntry] = &[
+/// Admitted refusals answer twenty-seven original keys; three accepted coordinates
+/// and five unavailable subjects retain typed non-answers in the staging history.
+pub const STILL_REQUIRED: &[MaturityNegativeHalfEntry] = &[];
+
+/// The original staging register, preserved by section and row name.
+pub const NATIVE_STAGING_HISTORY: &[MaturityNegativeHalfEntry] = &[
     // §16.2 — the two window faults, both a write at the successor's own
     // metadata field.
     entry(
@@ -581,8 +544,9 @@ pub fn gap_census() -> BTreeMap<MaturityNegativeHalfGap, usize> {
 mod tests {
     use super::{
         MaturityEvidenceRefusal, MaturityExecutorProvenanceExpectation, MaturityNegativeHalfEntry,
-        MaturityNegativeHalfGap, MaturityNegativeHalfLink, MaturityRowStanding, RowIdentity,
-        STILL_REQUIRED, derive_maturity_evidence_plan_with, gap_census, outstanding_rows,
+        MaturityNegativeHalfGap, MaturityNegativeHalfLink, MaturityRowStanding,
+        NATIVE_STAGING_HISTORY, RowIdentity, STILL_REQUIRED, derive_maturity_evidence_plan_with,
+        gap_census, outstanding_rows,
     };
     use crate::maturity_evidence::MaturityAnnouncementEvidencePlan;
     use std::collections::BTreeSet;
@@ -636,8 +600,8 @@ mod tests {
     ///
     /// A duplicated entry would satisfy set equality above while making
     /// the register's own length disagree with what it holds, and the
-    /// identity is the table and the name because two names repeat inside
-    /// the waiting set.
+    /// identity is the table and the name because names repeat across the
+    /// thirty-five historical keys. The current waiting register is empty.
     #[test]
     fn the_register_holds_no_duplicate() {
         let unique: BTreeSet<RowIdentity> = STILL_REQUIRED.iter().map(identity).collect();
@@ -657,7 +621,7 @@ mod tests {
     #[test]
     fn every_entry_grounds_its_gap() {
         let mut seen: BTreeSet<&str> = BTreeSet::new();
-        for entry in STILL_REQUIRED {
+        for entry in NATIVE_STAGING_HISTORY {
             assert_ne!(
                 entry.ground().len(),
                 0,
@@ -686,7 +650,7 @@ mod tests {
             census.get(&MaturityNegativeHalfGap::TargetRunNotYetPlanned),
             None
         );
-        assert_eq!(census.values().sum::<usize>(), 35);
+        assert_eq!(census.values().sum::<usize>(), 0);
         assert_eq!(
             census.values().sum::<usize>(),
             STILL_REQUIRED.len(),
@@ -705,7 +669,7 @@ mod tests {
     #[test]
     fn the_register_length_is_the_figure_the_plan_recomputes() {
         let plan = plan().expect("the evidence plan derives");
-        assert_eq!(STILL_REQUIRED.len(), 35);
+        assert_eq!(STILL_REQUIRED.len(), 0);
         assert!(
             !STILL_REQUIRED
                 .iter()
@@ -728,7 +692,7 @@ mod tests {
     /// row into one bucket has stopped triaging.
     #[test]
     fn the_workable_rows_are_separable_from_the_walls() {
-        let walls = STILL_REQUIRED
+        let walls = NATIVE_STAGING_HISTORY
             .iter()
             .filter(|entry| {
                 matches!(
@@ -741,7 +705,7 @@ mod tests {
         assert_ne!(walls, 0, "no row is a wall, so the split says nothing");
         assert_ne!(
             walls,
-            STILL_REQUIRED.len(),
+            NATIVE_STAGING_HISTORY.len(),
             "every row cannot be a wall, or no work remains to plan",
         );
     }
