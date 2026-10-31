@@ -101,10 +101,28 @@ pub enum StateConstructorRefusal {
     /// Construction refused: resource-bound-exceeded.
     #[error("resource-bound-exceeded")]
     ResourceBoundExceeded,
+    /// The offered representation is not the supplied capability's search selection.
+    #[error("noncanonical-representation-nonce")]
+    NoncanonicalRepresentationNonce {
+        /// The representation committed before running the search.
+        offered: StateRepresentationNonce,
+        /// The nonce the supplied capability's search selected.
+        ///
+        /// This need not be below the offer if the capability changes its answers.
+        least: StateRepresentationNonce,
+    },
+    /// The search exhausted its budget before reaching the admitted offer.
+    #[error("offered-representation-beyond-search-budget")]
+    OfferedRepresentationBeyondSearchBudget {
+        /// The representation that committed successfully.
+        offered: StateRepresentationNonce,
+        /// The number of attempts available to the search from zero.
+        attempts: u32,
+    },
 }
 
 impl StateConstructorRefusal {
-    /// Every refusal in declaration order.
+    /// One representative of every variant, in declaration order.
     pub const ALL: &'static [Self] = &[
         Self::MetadataEncodingRefused,
         Self::MetadataLeafNotUnspendable,
@@ -124,9 +142,17 @@ impl StateConstructorRefusal {
         Self::ExecutingLeafRepeated,
         Self::ConstructorReferenceCycleUnresolved,
         Self::ResourceBoundExceeded,
+        Self::NoncanonicalRepresentationNonce {
+            offered: StateRepresentationNonce::new(1),
+            least: StateRepresentationNonce::ZERO,
+        },
+        Self::OfferedRepresentationBeyondSearchBudget {
+            offered: StateRepresentationNonce::new(4096),
+            attempts: 4096,
+        },
     ];
 
-    /// Whether changing only the representation nonce can repair this refusal.
+    /// Whether the constructor search may retry this commitment refusal at another nonce.
     #[must_use]
     pub const fn retryable(self) -> bool {
         matches!(
@@ -159,6 +185,10 @@ impl StateConstructorRefusal {
             Self::ExecutingLeafRepeated => "executing-leaf-repeated",
             Self::ConstructorReferenceCycleUnresolved => "constructor-reference-cycle-unresolved",
             Self::ResourceBoundExceeded => "resource-bound-exceeded",
+            Self::NoncanonicalRepresentationNonce { .. } => "noncanonical-representation-nonce",
+            Self::OfferedRepresentationBeyondSearchBudget { .. } => {
+                "offered-representation-beyond-search-budget"
+            }
         }
     }
 }
@@ -790,7 +820,7 @@ impl StateNonceEvidence {
 /// Committing an exact encoding and searching for an encoding answer two
 /// different questions, so they are two functions: this one is the
 /// algebra — the metadata leaf, the fixed outer side, the outer root and
-/// the tweak — while leastness is a property of a scan over it. Both
+/// the tweak — while leastness is a property of a scan over it. All
 /// callers below run this function, so a nonce a scan settled on and a
 /// nonce a caller names are committed by the same bytes rather than by
 /// two copies of them that could drift.
@@ -858,6 +888,65 @@ pub struct CandidateStateConstructor {
 }
 
 impl CandidateStateConstructor {
+    /// Compare an admitted representation with the supplied capability's search.
+    ///
+    /// The offered encoding is checked through `state_output_program_at_nonce`
+    /// before its semantic metadata is searched from zero. As in `derive`,
+    /// internal-key and static-path checks precede the commitment. Equality
+    /// returns the search's whole evidence, retaining every rejected lower
+    /// nonce. Leastness remains host leastness within the supplied budget;
+    /// this entry adds no condition to the announcement leaf.
+    ///
+    /// # Errors
+    /// Propagates internal-key and static-path refusals before the offered
+    /// commitment's refusal, all before any search, as in `derive`. Propagates
+    /// nonretryable search failures unchanged. A different search
+    /// selection returns `NoncanonicalRepresentationNonce`; its `least` is
+    /// the nonce selected by that search. A selection above the admitted
+    /// offer is reachable only through a capability whose answers change
+    /// between calls: pattern validation failures stop the search rather
+    /// than skipping an admitted commitment. Exhaustion returns
+    /// `OfferedRepresentationBeyondSearchBudget` only when the offered nonce
+    /// is at or beyond the attempt bound; exhaustion inside that range is
+    /// propagated unchanged.
+    pub fn compare_offered_representation(
+        target: &ReviewedElementsTapscriptDefinition,
+        offered: &EncodedStateMetadata,
+        static_subtree: &StateStaticSubtree,
+        policy: StateInternalKeyPolicy,
+        budget: StateNonceBudget,
+        curve: &impl StateCurveCapability,
+    ) -> Result<StateNonceEvidence, StateConstructorRefusal> {
+        state_output_program_at_nonce(target, offered, static_subtree, policy, curve)?;
+        let searched = match Self::derive(
+            target,
+            &offered.semantic,
+            static_subtree,
+            policy,
+            budget,
+            curve,
+        ) {
+            Err(StateConstructorRefusal::RepresentationSearchExhausted)
+                if offered.representation.get() >= budget.attempts() =>
+            {
+                return Err(
+                    StateConstructorRefusal::OfferedRepresentationBeyondSearchBudget {
+                        offered: offered.representation,
+                        attempts: budget.attempts(),
+                    },
+                );
+            }
+            result => result?,
+        };
+        if searched.nonce() != offered.representation {
+            return Err(StateConstructorRefusal::NoncanonicalRepresentationNonce {
+                offered: offered.representation,
+                least: searched.nonce(),
+            });
+        }
+        Ok(searched.evidence)
+    }
+
     /// Grind from zero, retaining every rejected lower representation.
     ///
     /// # Errors

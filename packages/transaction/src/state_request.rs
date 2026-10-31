@@ -41,9 +41,26 @@
 //! true of the request alone without reference to any deployment.
 
 use realization::Cycle;
+use tapscript::StateProgramWitness;
 
 use crate::error::TransactionRefusal;
 use crate::live_request::{RequestedForm, SponsorChangeRequest};
+use crate::state_abi::CandidateMaturityAnnouncementAbi;
+
+/// Why offered bytes do not encode the request's announced cycle.
+///
+/// This vocabulary describes encoding alone. Whether a decoded cycle may
+/// be announced is a question for the leaf and the realization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MaturityRequestDecodingRefusal {
+    /// The role must declare the cycle's exact eight-byte width and the offered bytes must have it.
+    CycleWidth {
+        /// The maximum width stated by the cycle role, also required as its minimum.
+        declared: usize,
+        /// The number of bytes offered for decoding.
+        offered: usize,
+    },
+}
 
 /// One choice §12.3 and §2.3 admit a request making.
 ///
@@ -219,6 +236,48 @@ pub struct MaturityAnnouncementRequest {
 }
 
 impl MaturityAnnouncementRequest {
+    /// Decode the cycle written by the signing stage as witness item 2.
+    ///
+    /// This is the inverse of the `RequestedCycle` arm in
+    /// `state_signing::witness_item`: eight big-endian bytes become a cycle.
+    /// The width comes from the ABI's role record, not its stack position.
+    /// Decoding claims nothing about admissibility, which the leaf and the
+    /// realization decide. At this landing the consumers are tests; the
+    /// continuity and recovery readers in the vectors crate are prospective
+    /// consumers. This entry broadens no existing production validator.
+    ///
+    /// # Errors
+    /// Returns `CycleWidth` unless the role declares the cycle's exact
+    /// eight-byte width and the offered bytes have it.
+    ///
+    /// # Panics
+    /// Panics only if the ABI has no requested-cycle role, which callers
+    /// cannot arrange: every ABI the crate derives carries the seven roles
+    /// of the composed record.
+    pub fn decode_announced_cycle(
+        abi: &CandidateMaturityAnnouncementAbi,
+        encoded: &[u8],
+    ) -> Result<Cycle, MaturityRequestDecodingRefusal> {
+        let record = abi
+            .witness_roles()
+            .iter()
+            .find(|record| record.role() == StateProgramWitness::RequestedCycle)
+            .expect("a derived ABI carries the composed record's requested-cycle role");
+        let declared = record.maximum_width().unwrap_or(0);
+        let refusal = MaturityRequestDecodingRefusal::CycleWidth {
+            declared,
+            offered: encoded.len(),
+        };
+        if declared != size_of::<u64>()
+            || record.minimum_width() != Some(declared)
+            || encoded.len() != declared
+        {
+            return Err(refusal);
+        }
+        let bytes = encoded.try_into().map_err(|_| refusal)?;
+        Ok(Cycle::new(u64::from_be_bytes(bytes)))
+    }
+
     /// The request announcing `announced_cycle` in `requested_form`.
     ///
     /// A request is data, and nearly everything that could be wrong with

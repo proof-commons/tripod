@@ -138,7 +138,8 @@ pub use state_finalize::{
     MaturityFinalizedOutputCensus, MaturitySpentOutputRecord, finalize_maturity_announcement,
 };
 pub use state_request::{
-    MaturityAnnouncementRequest, SelectableMaturityRequestFacet, UnselectableMaturityRequestFacet,
+    MaturityAnnouncementRequest, MaturityRequestDecodingRefusal, SelectableMaturityRequestFacet,
+    UnselectableMaturityRequestFacet,
 };
 pub use state_signing::{
     MaturityAuthorizationFailure, MaturityProtectedRegion, MaturitySubmissionStatus,

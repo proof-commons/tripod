@@ -615,11 +615,7 @@ curve-derived reconstruction agree before their bytes are compared with the
 recorded value. A change to an announcement leaf therefore reaches the static
 root, outer commitment, and control recipes through the schedule's own tree.
 
-`StateConstructorRefusal` is a closed sum of eighteen refusals. Only
-`TweakAboveGroupOrder`, `TweakedPointIsIdentity`, and
-`CanonicalBranchSideNotSatisfied` are retryable; every refused lower nonce is
-retained in `StateNonceEvidence`, while zero budget and exhaustion have their
-own non-retryable forms (`0.6.174-dev`).
+`StateConstructorRefusal` is a closed sum of twenty refusals, including the non-retryable comparison refusals `NoncanonicalRepresentationNonce` and `OfferedRepresentationBeyondSearchBudget`. Only `TweakAboveGroupOrder`, `TweakedPointIsIdentity`, and `CanonicalBranchSideNotSatisfied` are retryable; every refused lower nonce is retained in `StateNonceEvidence`, while zero budget and exhaustion have their own non-retryable forms (`0.6.174-dev`).
 
 The abstract oracle establishes that the production metadata leaf has no success or non-aborting-failure path for empty, true, false, arbitrary, and depth-edge initial stacks. The abstract result alone supplies no target verdict (`0.6.178-dev`); an accepted spend through the leaf is admitted in the second corpus on `0.6.245-dev`, while `T11-099` owns classification of the row standings over those accepted bytes.
 

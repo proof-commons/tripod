@@ -1043,7 +1043,7 @@ fn reference_census_accepts_dag_edges_and_bounds_graph_work() {
 }
 
 #[test]
-fn refusal_sum_has_eighteen_stable_names_and_exact_retry_split() {
+fn refusal_sum_has_twenty_stable_names_and_exact_retry_split() {
     let expected = [
         "metadata-encoding-refused",
         "metadata-leaf-not-unspendable",
@@ -1063,8 +1063,10 @@ fn refusal_sum_has_eighteen_stable_names_and_exact_retry_split() {
         "executing-leaf-repeated",
         "constructor-reference-cycle-unresolved",
         "resource-bound-exceeded",
+        "noncanonical-representation-nonce",
+        "offered-representation-beyond-search-budget",
     ];
-    assert_eq!(StateConstructorRefusal::ALL.len(), 18);
+    assert_eq!(StateConstructorRefusal::ALL.len(), 20);
     assert_eq!(
         StateConstructorRefusal::ALL
             .iter()
@@ -1647,6 +1649,254 @@ fn real_nonce_search_checks_a_pinned_nonzero_prefix_and_exhausts_one_attempt_sho
         ),
         Err(StateConstructorRefusal::RepresentationSearchExhausted)
     );
+}
+
+fn compare_real_offer(
+    encoded: &EncodedStateMetadata,
+    tree: &StateStaticSubtree,
+    budget: StateNonceBudget,
+) -> Result<StateNonceEvidence, StateConstructorRefusal> {
+    let curve = PublicArithmeticCurve;
+    CandidateStateConstructor::compare_offered_representation(
+        &reviewed_target(),
+        encoded,
+        tree,
+        StateInternalKeyPolicy::new(STATE_NUMS_KEY, &curve).unwrap(),
+        budget,
+        &curve,
+    )
+}
+
+#[test]
+fn offered_representations_compare_the_whole_search_evidence_and_next_admissible_nonce() {
+    let budget = StateNonceBudget::default();
+    let production = real_constructor(&metadata(), &production_tree(), budget).unwrap();
+    // The independent prefix test establishes cycle 7 and selection 2.
+    let nonzero = real_constructor(
+        &StateMetadata {
+            cycle: Cycle::new(7),
+            ..metadata()
+        },
+        &production_tree(),
+        budget,
+    )
+    .unwrap();
+    let [_, whole_after] = recipe_pair(StateWitnessSchedule::WholeMetadata);
+    let [variable_before, variable_after] = recipe_pair(StateWitnessSchedule::VariableMetadata);
+    // Selected values are pinned by the independent golden, prefix and recipe
+    // tests. Next values are checked only after scanning fixed-nonce commitments.
+    // The whole-metadata predecessor coincides with the production control.
+    for (name, built, selected, expected_next) in [
+        ("production", production, 0, 1),
+        ("cycle-seven", nonzero, 2, 3),
+        ("whole-after", whole_after, 0, 1),
+        ("variable-before", variable_before, 1, 13),
+        ("variable-after", variable_after, 5, 6),
+    ] {
+        assert_eq!(built.nonce().get(), selected, "{name}");
+        let tree = built.static_subtree();
+        let control = built.encoded_metadata();
+        assert_eq!(
+            compare_real_offer(control, tree, budget),
+            Ok(built.evidence().clone()),
+            "{name}"
+        );
+        let curve = PublicArithmeticCurve;
+        let policy = StateInternalKeyPolicy::new(STATE_NUMS_KEY, &curve).unwrap();
+        let subject = (built.nonce().get() + 1..budget.attempts())
+            .find_map(|attempt| {
+                let offered = EncodedStateMetadata {
+                    representation: StateRepresentationNonce::new(attempt),
+                    ..*control
+                };
+                match state_output_program_at_nonce(
+                    &reviewed_target(),
+                    &offered,
+                    tree,
+                    policy,
+                    &curve,
+                ) {
+                    Ok(_) => Some(offered),
+                    Err(refusal) => {
+                        assert!(refusal.retryable(), "{name}: {refusal}");
+                        None
+                    }
+                }
+            })
+            .expect("the next admitted representation fits the default budget");
+        assert_eq!(subject.representation.get(), expected_next, "{name}");
+        assert_eq!(subject.semantic, control.semantic);
+        assert_eq!(
+            compare_real_offer(&subject, tree, budget),
+            Err(StateConstructorRefusal::NoncanonicalRepresentationNonce {
+                offered: subject.representation,
+                least: built.nonce(),
+            }),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn offered_representation_beyond_the_exhausted_budget_preserves_the_host_residual() {
+    // real_nonce_search_checks_a_pinned_nonzero_prefix_and_exhausts_one_attempt_short
+    // establishes the two branch refusals below cycle 7's selected nonce 2.
+    let tree = production_tree();
+    let built = real_constructor(
+        &StateMetadata {
+            cycle: Cycle::new(7),
+            ..metadata()
+        },
+        &tree,
+        StateNonceBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(built.nonce().get(), 2);
+    assert_eq!(
+        compare_real_offer(
+            built.encoded_metadata(),
+            &tree,
+            StateNonceBudget::new(2).unwrap()
+        ),
+        Err(
+            StateConstructorRefusal::OfferedRepresentationBeyondSearchBudget {
+                offered: built.nonce(),
+                attempts: 2,
+            }
+        )
+    );
+    assert_eq!(
+        compare_real_offer(
+            built.encoded_metadata(),
+            &tree,
+            StateNonceBudget::new(3).unwrap()
+        ),
+        Ok(built.evidence().clone())
+    );
+}
+
+fn scripted_offer_comparison(
+    curve: &ScriptedCurve,
+    attempts: u32,
+) -> Result<StateNonceEvidence, StateConstructorRefusal> {
+    CandidateStateConstructor::compare_offered_representation(
+        &reviewed_target(),
+        &EncodedStateMetadata {
+            semantic: metadata(),
+            representation: StateRepresentationNonce::ZERO,
+        },
+        &production_tree(),
+        policy(curve),
+        StateNonceBudget::new(attempts).unwrap(),
+        curve,
+    )
+}
+
+#[test]
+fn offered_commitment_refusals_precede_the_search() {
+    let curve = ScriptedCurve::new([]);
+    let repeated = StateStaticSubtree::new(
+        &reviewed_target(),
+        Some(branch(
+            node(0, StateLeafRole::Announcement, 1),
+            node(1, StateLeafRole::Announcement, 2),
+        )),
+    )
+    .unwrap();
+    let offered = EncodedStateMetadata {
+        semantic: StateMetadata {
+            cycle: Cycle::new(7),
+            ..metadata()
+        },
+        representation: StateRepresentationNonce::ZERO,
+    };
+    assert_eq!(
+        CandidateStateConstructor::compare_offered_representation(
+            &reviewed_target(),
+            &offered,
+            &production_tree(),
+            policy(&curve),
+            StateNonceBudget::default(),
+            &curve,
+        ),
+        Err(StateConstructorRefusal::CanonicalBranchSideNotSatisfied)
+    );
+    assert_eq!(curve.calls.get(), 0);
+    assert_eq!(
+        CandidateStateConstructor::compare_offered_representation(
+            &reviewed_target(),
+            &offered,
+            &repeated,
+            policy(&curve),
+            StateNonceBudget::default(),
+            &curve,
+        ),
+        Err(StateConstructorRefusal::ExecutingLeafRepeated)
+    );
+    assert_eq!(
+        curve.calls.get(),
+        0,
+        "static paths precede commitment and search"
+    );
+    for (outcome, refusal) in [
+        (
+            StateTweakOutcome::TweakAboveGroupOrder,
+            StateConstructorRefusal::TweakAboveGroupOrder,
+        ),
+        (
+            StateTweakOutcome::TweakedPointIsIdentity,
+            StateConstructorRefusal::TweakedPointIsIdentity,
+        ),
+        (
+            StateTweakOutcome::InternalKeyNotAPoint,
+            StateConstructorRefusal::InternalKeyNotAPoint,
+        ),
+    ] {
+        let curve = ScriptedCurve::new([outcome]);
+        assert_eq!(scripted_offer_comparison(&curve, 2), Err(refusal));
+        assert_eq!(curve.calls.get(), 1, "the search must not run");
+    }
+}
+
+#[test]
+fn offered_representation_refuses_a_higher_selection_from_a_changing_capability() {
+    let success = StateTweakOutcome::OutputKey {
+        key: [0x42; 32],
+        parity: true,
+    };
+    // The offer at zero commits, then the same commitment is refused on the
+    // search's next call. Nonces zero and one both satisfy the branch order.
+    let curve = ScriptedCurve::new([success, StateTweakOutcome::TweakAboveGroupOrder, success]);
+    assert_eq!(
+        scripted_offer_comparison(&curve, 2),
+        Err(StateConstructorRefusal::NoncanonicalRepresentationNonce {
+            offered: StateRepresentationNonce::ZERO,
+            least: StateRepresentationNonce::new(1),
+        })
+    );
+    assert_eq!(curve.calls.get(), 3);
+}
+
+#[test]
+fn offered_representation_propagates_search_defects_and_exhaustion_inside_the_range() {
+    let success = StateTweakOutcome::OutputKey {
+        key: [0x42; 32],
+        parity: true,
+    };
+    for (outcome, refusal) in [
+        (
+            StateTweakOutcome::InternalKeyNotAPoint,
+            StateConstructorRefusal::InternalKeyNotAPoint,
+        ),
+        (
+            StateTweakOutcome::TweakAboveGroupOrder,
+            StateConstructorRefusal::RepresentationSearchExhausted,
+        ),
+    ] {
+        let curve = ScriptedCurve::new([success, outcome]);
+        assert_eq!(scripted_offer_comparison(&curve, 1), Err(refusal));
+        assert_eq!(curve.calls.get(), 2);
+    }
 }
 
 // Sorted branch hashes and leaf programs forget child source order and caller identities, but the retained descriptor keeps both. All three real outputs therefore agree; changing a support program checks that this agreement is about committed bytes rather than an indiscriminate continuity answer.

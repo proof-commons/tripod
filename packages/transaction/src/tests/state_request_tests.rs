@@ -4,12 +4,24 @@
 use std::collections::BTreeSet;
 
 use realization::Cycle;
+use tapscript::StateProgramWitness;
 
+use super::reviewed_target;
+use super::state_support::{
+    FixtureLiveCurve, FixtureScriptPathVerifier, FixtureStateCurve, fixture_sign, validated_view,
+};
 use crate::error::TransactionRefusal;
 use crate::live_request::{RequestedForm, SponsorChangeRequest};
+use crate::operator_right::OperatorRightRegistry;
+use crate::operator_signing::{OPERATOR_SIGHASH_TYPE_BYTE, OperatorSigningResponse};
+use crate::state_abi::derive_maturity_announcement_abi;
+use crate::state_construct::construct_maturity_announcement;
+use crate::state_finalize::{FinalizedMaturityAnnouncement, finalize_maturity_announcement};
 use crate::state_request::{
-    MaturityAnnouncementRequest, SelectableMaturityRequestFacet, UnselectableMaturityRequestFacet,
+    MaturityAnnouncementRequest, MaturityRequestDecodingRefusal, SelectableMaturityRequestFacet,
+    UnselectableMaturityRequestFacet,
 };
+use crate::state_signing::{OperatorSigningStarted, SubmitReadyMaturityAnnouncement};
 
 // --- The two censuses -------------------------------------------------
 
@@ -107,4 +119,113 @@ fn a_sponsorless_request_asking_for_sponsor_change_is_refused() {
         ),
         Err(TransactionRefusal::SponsorChangeWithoutSponsoredForm),
     );
+}
+
+fn finalized_request() -> FinalizedMaturityAnnouncement {
+    let target = reviewed_target();
+    let view = validated_view();
+    let abi = derive_maturity_announcement_abi(&target, &view).unwrap();
+    let request = MaturityAnnouncementRequest::new(
+        Cycle::new(8),
+        RequestedForm::Sponsorless,
+        SponsorChangeRequest::NotRequested,
+    )
+    .unwrap();
+    finalize_maturity_announcement(
+        construct_maturity_announcement(&target, &abi, &view, &request, &FixtureStateCurve)
+            .unwrap(),
+    )
+}
+
+fn bound_request(finalized: &FinalizedMaturityAnnouncement) -> SubmitReadyMaturityAnnouncement<'_> {
+    let target = reviewed_target();
+    let state = OperatorSigningStarted::open(finalized, &target, &FixtureLiveCurve).unwrap();
+    let binding = state.request().binding();
+    let signature = fixture_sign(
+        binding.key().bytes(),
+        state.request().message().with_vector_grown(),
+    );
+    let response = OperatorSigningResponse::new(
+        state.request().input_index(),
+        signature.to_vec(),
+        OPERATOR_SIGHASH_TYPE_BYTE,
+        state.protected_bytes().to_vec(),
+        binding.key().clone(),
+        binding.deployment().clone(),
+        binding.capability_revision(),
+    );
+    let mut registry = OperatorRightRegistry::default();
+    let right = registry
+        .issue(state.construction_right_scope(), state.protected_bytes())
+        .unwrap();
+    state
+        .authorize(&mut registry, right, [response], &FixtureScriptPathVerifier)
+        .unwrap()
+        .bind_for_submission(&target)
+        .unwrap()
+}
+
+#[test]
+fn cycle_decoder_inverts_the_bound_witness_writer_and_refuses_wrong_widths() {
+    let finalized = finalized_request();
+    let ready = bound_request(&finalized);
+    let construction = finalized.construction();
+    let abi = construction.abi();
+    let role = abi
+        .witness_roles()
+        .iter()
+        .find(|record| record.role() == StateProgramWitness::RequestedCycle)
+        .unwrap();
+    let encoded = &ready.witness().stack()[role.position()];
+    assert_eq!(
+        MaturityAnnouncementRequest::decode_announced_cycle(abi, encoded),
+        Ok(construction.request().announced_cycle())
+    );
+    // Truncation is the subject answering the malformed-cycle-encoding row
+    // in packages/vectors/src/maturity_safety.rs; extension checks the other direction.
+    assert_eq!(
+        MaturityAnnouncementRequest::decode_announced_cycle(abi, &encoded[..encoded.len() - 1]),
+        Err(MaturityRequestDecodingRefusal::CycleWidth {
+            declared: 8,
+            offered: 7,
+        })
+    );
+    let mut extended = encoded.clone();
+    extended.push(0);
+    assert_eq!(
+        MaturityAnnouncementRequest::decode_announced_cycle(abi, &extended),
+        Err(MaturityRequestDecodingRefusal::CycleWidth {
+            declared: 8,
+            offered: 9,
+        })
+    );
+}
+
+#[test]
+fn cycle_decoder_admits_the_whole_unsigned_domain() {
+    let finalized = finalized_request();
+    let abi = finalized.construction().abi();
+    // state_announcement.rs: reverse_cycle reverses all eight bytes and
+    // biases unsigned order into signed order; window uses 64-bit
+    // comparisons. Width is the encoding boundary, not signed-number range.
+    for value in [0, (1_u64 << 63) - 1, 1_u64 << 63, u64::MAX] {
+        assert_eq!(
+            MaturityAnnouncementRequest::decode_announced_cycle(abi, &value.to_be_bytes()),
+            Ok(Cycle::new(value))
+        );
+    }
+}
+
+fn every_decoding_refusal_is_censused(refusal: MaturityRequestDecodingRefusal) {
+    match refusal {
+        MaturityRequestDecodingRefusal::CycleWidth { .. } => {}
+    }
+}
+
+#[test]
+fn the_decoding_refusal_vocabulary_has_no_wildcard_guard() {
+    every_decoding_refusal_is_censused(MaturityRequestDecodingRefusal::CycleWidth {
+        declared: 8,
+        offered: 7,
+    });
 }
