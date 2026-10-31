@@ -21,7 +21,7 @@
 # exactly what `cargo test -p <package>` proved before.
 #
 # Usage: cargo-test-json.sh <cargo> <manifest> <package> <profile> <stream>
-#   profile  debug | release
+#   profile  gate | release
 #   stream   absolute path for the libtest JSON event stream (build tree)
 set -eu
 
@@ -37,8 +37,8 @@ profile="$4"
 stream="$5"
 
 case "$profile" in
-  debug|release) ;;
-  *) echo "ERROR: unknown profile '$profile'; expected debug or release" >&2; exit 2 ;;
+  gate|release) ;;
+  *) echo "ERROR: unknown profile '$profile'; expected gate or release" >&2; exit 2 ;;
 esac
 
 mkdir -p "$(dirname "$stream")"
@@ -47,6 +47,8 @@ rm -f "$stream"
 set -- test --manifest-path "$manifest" -p "$package"
 if [ "$profile" = release ]; then
   set -- "$@" --release
+else
+  set -- "$@" --profile gate
 fi
 
 if "$cargo" --version 2>/dev/null | grep -q -- '-nightly'; then

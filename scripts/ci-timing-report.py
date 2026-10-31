@@ -125,7 +125,7 @@ def stream_for(build_directory: str, test_name: str):
         return None
     remainder = test_name[len("cargo-test-"):]
     profile, _, package = remainder.partition("-")
-    if profile not in ("debug", "release") or not package:
+    if profile not in ("debug", "gate", "release") or not package:
         return None
     return os.path.join(build_directory, "cargo-test-json", profile, package + ".json")
 

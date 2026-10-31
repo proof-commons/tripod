@@ -121,3 +121,9 @@ suspicious = { level = "deny", priority = -1 }
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+[profile.gate]
+inherits = "dev"
+opt-level = 1
+debug = 0
+debug-assertions = true

@@ -649,12 +649,12 @@ test(
 # Per-package test lanes (CI-002). The gate runs no workspace-level
 # `cargo test`: each workspace member is its own Meson test, so a
 # duration and a failure both name the package they belong to, and
-# `meson test --suite cargo-debug` is the whole Rust test surface for
+# `meson test --suite cargo-gate` is the whole Rust test surface for
 # that profile. Both profiles keep a full set of lanes; the release
 # duplicate is retained deliberately, and the per-package data is what
 # a later ruling on its value will be argued from.
 #
-# The list is the thirteen [workspace].members of Cargo.toml, spelled
+# The list is the sixteen [workspace].members of Cargo.toml, spelled
 # out in the census discipline of ADR-014 rather than derived: each
 # entry pairs the package directory (the lane's short name) with the
 # published package name that `cargo test -p` takes, so a rename fails
@@ -717,48 +717,51 @@ cargo_test_json = find_program('scripts/cargo-test-json.sh')
 # Warm-up: one workspace-wide `cargo build --tests` per profile, which
 # every per-package lane of that profile depends on. Cargo serializes
 # concurrent invocations on a lock over the shared target directory, so
-# thirteen lanes that each had to compile would spend most of their wall
+# sixteen lanes that each had to compile would spend most of their wall
 # time queued behind that lock and their per-package durations would
 # measure the queue rather than the package. Building once and running
 # many leaves each lane holding the lock only briefly, which is what
 # makes the per-package figures attributable at all.
 #
-# Measured on a 14-core host, wall clock, the debug lanes (CI-002):
+# Historical measurements on a 14-core host, wall clock, of the former
+# debug-profile lanes (CI-002), not measurements of the gate profile:
 #
 #   warm-up build then serial lanes (--num-processes 1)   0:52 + 8:32
 #   warm-up build then parallel lanes (meson's default)   0:52 + 5:00
 #   no warm-up, parallel lanes, cold target directory            6:53
 #
-# Two things follow. Parallel is faster, so the lanes really do overlap:
-# cargo's lock over the shared target directory is held only briefly
-# once the binaries are built, and the serialization it could have
-# forced does not materialize. The gain is bounded from below by the
-# slowest single package -- target-elements-conformance alone is about
-# 250s serial and 300s while the other lanes share the cores -- so it is
-# 1.7x, not 13x. And the third row is why the warm-up exists at all:
-# without it every lane's cargo has to build, it is slower in total, and
-# worse, each lane's duration then measures how long that lane waited
+# Two things followed. Parallel was faster, so the lanes overlapped:
+# cargo's lock over the shared target directory was held only briefly
+# once the binaries were built, and the serialization it could have
+# forced did not materialize. The gain was bounded from below by the
+# slowest single package -- target-elements-conformance alone was about
+# 250s serial and 300s while the other lanes shared the cores -- so it was
+# 1.7x, not the 13x of that run's thirteen packages. The third row explained
+# the warm-up: without it every lane's cargo had to build, it was slower
+# in total, and each lane's duration measured how long that lane waited
 # for the build lock rather than how long its tests took.
 #
 # What the warm-up does NOT cover is documentation tests: `cargo build
 # --tests` does not compile them, so rustdoc compiles each package's
 # doctests inside its own lane, holding cargo's lock while it does. In
-# debug that cost is small. In release it dominates: a full gate run
-# measured 7:04 of warm-up and 10:31 of lanes, with individual packages
+# the historical debug run that cost was small. A full gate run of both
+# profiles measured 7:04 of warm-up and 10:31 of lanes, with release packages
 # reporting ten-minute durations against a tenth of a second of actual
 # test execution and cargo's own "Blocking waiting for file lock" lines
-# in the logs. The release per-package durations are therefore honest
-# wall times but poor attributions -- they are mostly queueing -- and
-# that is a known residual of this design, not a measurement to read as
-# test cost.
+# in the logs. Those release per-package durations were honest wall
+# times but poor attributions -- mostly queueing. Doctest compilation
+# remains outside the warm-up; measure its cost for each run rather than
+# treating those historical walls as current test cost.
 cargo_test_warmup = {}
-foreach profile : ['debug', 'release']
+foreach profile : ['gate', 'release']
   warmup_args = [
     cargo, 'build', '--tests', '--workspace',
     '--manifest-path', cargo_manifest,
   ]
   if profile == 'release'
     warmup_args += ['--release']
+  else
+    warmup_args += ['--profile', 'gate']
   endif
   warmup = custom_target(
     'run-cargo-test-warmup-' + profile,
@@ -783,20 +786,20 @@ endforeach
 # left at its default: the measurement behind the value is directly
 # above.
 #
-# Budget (CI-005), stated per suite, which is the unit a cadence
-# decision actually chooses. Per lane the spread is too wide to budget:
-# target-elements-conformance owns roughly a sixth of the debug suite by
-# itself. Warm cache, sixteen lanes: debug 5:00, tolerance 8:00; release
-# 10:30, tolerance 15:00. Cold cache, measured 2026-08-20 on the 14-core
-# reference host: debug 15:45, release 30:30, tolerance 1.5x each.
+# Historical budgets (CI-005), stated per suite, for the former debug
+# profile and release on the 14-core reference host. Per-lane spread was
+# wide: target-elements-conformance owned roughly a sixth of debug.
+# Warm cache, sixteen lanes: debug 5:00, tolerance 8:00; release 10:30,
+# tolerance 15:00. Cold cache, measured 2026-08-20: debug 15:45, release
+# 30:30, tolerance 1.5x each. These are not measured budgets for the gate profile.
 #
 # The cold and warm figures differ by 3x, so a run that does not say
-# which cache it had has not reported its duration. The release suite is
-# the whole gate's cost -- 30:30 of a 33:20 test phase -- and most of it
-# is the doctest queueing described above rather than test execution.
+# which cache it had has not reported its duration. In that historical
+# run release dominated -- 30:30 of a 33:20 test phase -- mostly through
+# the doctest queueing described above rather than test execution.
 cargo_test_stream_root = meson.project_build_root() / 'cargo-test-json'
 
-foreach profile : ['debug', 'release']
+foreach profile : ['gate', 'release']
   foreach entry : cargo_test_packages
     test(
       'cargo-test-' + profile + '-' + entry[0],
