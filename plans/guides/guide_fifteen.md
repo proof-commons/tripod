@@ -560,7 +560,7 @@ Dispose all 128 outstanding Safety rows, preserve the 78 admitted answers unless
 
 **Setting (bite-0-5 — Files and packages)** · `setup:guide15-exec:bite-0-5-files-and-packages`
 
-`packages/vectors/src/maturity_safety.rs`, `packages/vectors/src/maturity_evidence.rs`, `packages/vectors/src/maturity_first_party.rs`, `packages/vectors/src/maturity_mutants.rs`, the native corpus and report modules, `packages/target-elements-conformance/src/`, and `plans/backlog.md`. (`pkg:vectors:contract`).
+`packages/vectors/src/maturity_safety.rs`, `packages/vectors/src/maturity_evidence.rs`, `packages/vectors/src/maturity_first_party.rs`, `packages/vectors/src/maturity_mutants.rs`, the native corpus and report modules, `packages/target-elements-conformance/src/`, and `plans/backlog.md`. (`pkg:vectors:contract`). The ABI-entry routes add `transaction::validate_maturity_abi_classification`, `transaction::validate_maturity_abi_roles` and the typed request-cycle decoder in `packages/transaction/src/state_abi.rs` and `packages/transaction/src/state_request.rs`, with exports in `packages/transaction/src/lib.rs` and the three-way outcome in `packages/vectors/src/abi_validation.rs`, and the validator-side nonce comparison in `packages/tapscript/src/state_constructor.rs`, each with its tests; each is a new entry beside its owner and broadens no existing production validator (`pkg:transaction:contract`); (`pkg:tapscript:contract`). The residual routes also touch `packages/transaction/src/state_confidential.rs`, `packages/transaction/src/state_construct.rs`, `packages/transaction/src/state_finalize.rs` and `packages/transaction/src/state_signing.rs` for the balanced confidential form, the continuity, recovery, corpus and evidence modules in `packages/vectors/src/`, `scripts/elements-native-executor.py` and its capture scripts, and the admitted fixture directories under `packages/vectors/fixtures/`.
 
 **Setting (Native mutation staging precedent)** · `setup:guide15-exec:mutation-staging`
 
@@ -576,7 +576,7 @@ Conjuncts 11 and 13 require the separate process, pinned import boundary, node-i
 
 **Task (Part 0.5 — 43 first-party rows)** · `task:guide15-exec:bite-0-5-first-party`
 
-The 43 first-party-required rows each need their own retained comparison object and exact relation, with final out-of-contract claims separated from observable work (`sec:phase6:gate-record`); (`rule:guide15-exec:observable-retention`).
+The 43 first-party-required rows each need their own retained comparison object and exact relation, with final out-of-contract claims separated from observable work (`sec:phase6:gate-record`); (`rule:guide15-exec:observable-retention`). The fifteen §16.9 classification rows, the six §16.11 role rows and the §16.2 cycle-encoding row are compared at `transaction::validate_maturity_abi_classification`, `transaction::validate_maturity_abi_roles` and the typed request-cycle decoder, and the §16.3 noncanonical-nonce row at the validator-side comparison of `CandidateStateConstructor` (`rule:guide13-exec:first-party-negatives`).
 
 **Gate (bite-0-5 — First-party gate)** · `gate:guide15-exec:bite-0-5-first-party-gate`
 
