@@ -2400,10 +2400,10 @@ mod tests {
         )
         .expect("the evidence plan derives");
         assert_eq!(plan.census().rows(), 206);
-        // Fifteen validated report pairs add answers to the prior native census.
-        assert_eq!(plan.census().answered(), 134);
-        // Only those fifteen report obligations leave the outstanding partition.
-        assert_eq!(plan.census().outstanding(), 72);
+        // Five supplementary comparisons add answers after the report campaign.
+        assert_eq!(plan.census().answered(), 139);
+        // Two ordering claims retire without becoming answered; five comparisons answer.
+        assert_eq!(plan.census().outstanding(), 67);
         assert_eq!(plan.census().native_run_required(), 0);
         assert_eq!(row_count(), 206);
 

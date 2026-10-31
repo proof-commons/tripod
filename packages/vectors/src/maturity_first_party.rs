@@ -738,6 +738,8 @@ impl MaturityFirstPartyCase {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum MaturityFirstPartyRefusal {
+    /// Supplementary keys or retained evidence differ from the recomputed ledger.
+    SupplementaryLedgerMismatch,
     /// §16 names no such row in that table.
     RowNotInTheMatrix(MaturitySafetySection, &'static str),
     /// The row's boundary needs a target execution, so a first-party
@@ -801,6 +803,10 @@ pub struct ValidatedMaturityFirstPartyEvidence {
 }
 
 impl ValidatedMaturityFirstPartyEvidence {
+    /// The exact class established by a supplementary comparison, if applicable.
+    pub(crate) fn supplementary_class(&self) -> Option<&'static str> {
+        supplemental_discharge(self.section, self.name).map(|case| case.expected_class())
+    }
     /// Exact objects retained by a supplementary comparison.
     #[must_use]
     pub const fn comparison(&self) -> Option<&MaturityRetainedComparison> {
@@ -3882,8 +3888,8 @@ fn retained_boundary(case: &MaturityFirstPartyCase) -> MaturityRetainedBoundary 
 
 /// Derive dispositions for exactly the inherited first-party-required keys.
 ///
-/// Comparison discharges do not enter the historical 78 admitted answers.
-/// Reconciliation into that census belongs to the close-safety step.
+/// Comparison discharges remain distinct from the historical 78 admitted answers.
+/// The evidence fold admits this ledger through its complete keyed comparison.
 ///
 /// # Errors
 /// Returns failure to retain a valid subject or validate a normalization argument.
@@ -3949,8 +3955,92 @@ pub fn maturity_first_party_dispositions()
         .collect()
 }
 
+/// Supplementary evidence derived here or admitted against complete keyed recomputation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ValidatedMaturitySupplementaryLedger(Vec<MaturitySupplementaryRow>);
+
+impl ValidatedMaturitySupplementaryLedger {
+    pub(crate) fn rows(&self) -> &[MaturitySupplementaryRow] {
+        &self.0
+    }
+}
+
+/// Derive and admit the production ledger once, retaining its validated evidence.
+pub(crate) fn derive_maturity_first_party_dispositions()
+-> Result<ValidatedMaturitySupplementaryLedger, MaturityFirstPartyRefusal> {
+    maturity_first_party_dispositions().map(ValidatedMaturitySupplementaryLedger)
+}
+
+/// Compare every offered key and its complete retained evidence in both directions.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "production derives its ledger; offered ledgers retain their separate admission"
+    )
+)]
+pub(crate) fn admit_maturity_first_party_dispositions(
+    offered: Vec<MaturitySupplementaryRow>,
+) -> Result<ValidatedMaturitySupplementaryLedger, MaturityFirstPartyRefusal> {
+    let expected = maturity_first_party_dispositions()?;
+    let keyed = |rows: &[MaturitySupplementaryRow]| {
+        rows.iter()
+            .map(|row| (row.key(), row.clone()))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let actual = keyed(&offered);
+    if actual.len() != offered.len() || actual != keyed(&expected) {
+        return Err(MaturityFirstPartyRefusal::SupplementaryLedgerMismatch);
+    }
+    Ok(ValidatedMaturitySupplementaryLedger(offered))
+}
+
 #[cfg(test)]
 mod supplementary_tests {
+    #[test]
+    fn supplementary_join_refuses_missing_duplicate_surplus_and_misbound_evidence() {
+        use super::{MaturityFirstPartyRefusal, admit_maturity_first_party_dispositions};
+        let honest = ledger();
+        assert!(admit_maturity_first_party_dispositions(honest.clone()).is_ok());
+        let refuse = |offered| {
+            assert_eq!(
+                admit_maturity_first_party_dispositions(offered),
+                Err(MaturityFirstPartyRefusal::SupplementaryLedgerMismatch),
+            );
+        };
+        let mut missing = honest.clone();
+        missing.pop();
+        refuse(missing);
+        let mut duplicate = honest.clone();
+        duplicate.push(honest[0].clone());
+        refuse(duplicate);
+        let mut surplus = honest.clone();
+        let mut extra = honest[0].clone();
+        extra.name = "unregistered-supplementary-row";
+        surplus.push(extra);
+        refuse(surplus);
+        let mut misbound = honest.clone();
+        let comparison_positions: Vec<_> = honest
+            .iter()
+            .enumerate()
+            .filter_map(|(position, row)| {
+                matches!(
+                    row.disposition(),
+                    super::MaturitySupplementaryDisposition::Discharged(_)
+                )
+                .then_some(position)
+            })
+            .collect();
+        misbound[comparison_positions[0]].disposition =
+            honest[comparison_positions[1]].disposition.clone();
+        refuse(misbound);
+        let mut wrong_section = honest.clone();
+        wrong_section[0].section = super::MaturitySafetySection::Positive;
+        refuse(wrong_section);
+        let mut wrong_reason = honest;
+        wrong_reason[0].previous = super::MaturityCarriedReason::TheValueIsDerivedNotAccepted;
+        refuse(wrong_reason);
+    }
     use super::*;
     use std::collections::{BTreeMap, BTreeSet};
 

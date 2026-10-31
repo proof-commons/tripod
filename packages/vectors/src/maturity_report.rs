@@ -52,8 +52,8 @@ use crate::maturity_safety::{MaturityExpectedProjection, MaturitySafetySection};
 
 /// The schema of the canonical rendered safety report.
 ///
-/// Revision 2 adds a `native_refusal` row block to revision 1's grammar. A revision-1 reader sees no such line, while a revision-2 reader requires the block, so the new line kind has its own schema.
-pub const MATURITY_SAFETY_REPORT_SCHEMA: u32 = 2;
+/// Revision 3 adds five census keys: the detailed retired bucket and four disposition keys for observed, final, retired and waiting rows; revision 2 readers do not admit that grammar. The native protocol schema is independent and unchanged.
+pub const MATURITY_SAFETY_REPORT_SCHEMA: u32 = 3;
 
 /// What kind of report this is, said in the bytes.
 ///
@@ -373,12 +373,7 @@ impl MaturityWaitingRow {
     }
 }
 
-/// One obligation this report states about itself.
-///
-/// The report-boundary rows, whatever their current standing.
-///
-/// These entries retain the matrix's requirements; the census buckets carry
-/// whether their report consumers have observed them or are still required.
+/// One report-boundary obligation, whatever its current standing; this entry retains the matrix's requirement, while the census buckets carry whether its report consumer has observed it or is still required.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct MaturityReportLayerRequirement {
     section: MaturitySafetySection,
@@ -905,12 +900,13 @@ const fn completeness_of(census: MaturityEvidenceCensus) -> MaturitySafetyComple
     CompletenessFacts::of(census).completeness()
 }
 
-/// Census buckets and two supplemental finality counts, never summed together.
-const fn census_buckets(census: MaturityEvidenceCensus) -> [(&'static str, usize); 18] {
+/// Detailed buckets, supplemental finality counts and an independent four-way partition.
+const fn census_buckets(census: MaturityEvidenceCensus) -> [(&'static str, usize); 23] {
     [
         ("rows", census.rows()),
         ("first_party_discharged", census.first_party_discharged()),
         ("first_party_required", census.first_party_required()),
+        ("retired", census.retired()),
         (
             "native_acceptance_observed",
             census.native_acceptance_observed(),
@@ -947,6 +943,10 @@ const fn census_buckets(census: MaturityEvidenceCensus) -> [(&'static str, usize
             "typed_non_answer_waiting",
             census.typed_non_answer_waiting(),
         ),
+        ("disposition_observed", census.observed()),
+        ("disposition_final", census.final_dispositions()),
+        ("disposition_retired", census.retired()),
+        ("disposition_waiting", census.waiting()),
     ]
 }
 
@@ -2123,6 +2123,7 @@ mod tests {
         "rows",
         "first_party_discharged",
         "first_party_required",
+        "retired",
         "native_acceptance_observed",
         "native_refusal_observed",
         "native_declared_boundary_observed",
@@ -2138,6 +2139,10 @@ mod tests {
         "experimental",
         "typed_non_answer_final",
         "typed_non_answer_waiting",
+        "disposition_observed",
+        "disposition_final",
+        "disposition_retired",
+        "disposition_waiting",
         "answered",
         "outstanding",
         "completeness",
@@ -2510,7 +2515,7 @@ mod tests {
         let canonical = render_maturity_safety_report(&control);
         let first = canonical.lines().next().expect("canonical line");
         let subjects = [
-            canonical.replacen("answered 134", "answered 135", 1),
+            canonical.replacen("answered 139", "answered 140", 1),
             format!("{canonical}surplus 1\n"),
             format!("{canonical}{first}\n"),
             format!("{canonical}diagnostic /caller/private\n"),
@@ -2520,6 +2525,86 @@ mod tests {
             assert_ne!(subject, canonical);
             assert!(matches!(
                 validate_maturity_safety_publication(control.report(), &PLAN, &subject),
+                Err(MaturityReportConsumerRefusal::PublicationDiffers(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn closure_category_publication_is_exact_and_refuses_each_changed_count() {
+        let control = validated();
+        let canonical = render_maturity_safety_report(&control);
+        assert_eq!(control.report().schema(), 3);
+        assert_eq!(
+            validate_maturity_safety_publication(control.report(), &PLAN, &canonical),
+            Ok(())
+        );
+        let sum = |keys: &[&str]| -> usize {
+            keys.iter()
+                .map(|key| {
+                    canonical
+                        .lines()
+                        .find_map(|line| {
+                            let (name, value) = line.split_once(' ')?;
+                            (name == *key).then(|| value.parse::<usize>().expect("rendered count"))
+                        })
+                        .expect("rendered bucket")
+                })
+                .sum()
+        };
+        assert_eq!(
+            sum(&[
+                "first_party_discharged",
+                "first_party_required",
+                "retired",
+                "native_acceptance_observed",
+                "native_refusal_observed",
+                "native_declared_boundary_observed",
+                "native_refusal_at_unexpected_boundary",
+                "native_run_required",
+                "constructor_continuity_observed",
+                "root_history_observed",
+                "public_recovery_observed",
+                "report_layer_observed",
+                "report_layer_required",
+                "outstanding_under_typed_non_answer",
+                "infrastructure_blocked",
+                "experimental",
+            ]),
+            206
+        );
+        assert_eq!(
+            sum(&[
+                "first_party_required",
+                "retired",
+                "native_refusal_at_unexpected_boundary",
+                "native_run_required",
+                "report_layer_required",
+                "outstanding_under_typed_non_answer",
+                "infrastructure_blocked",
+                "experimental",
+            ]),
+            67
+        );
+        for (key, figure) in [
+            ("retired", 2),
+            ("disposition_observed", 139),
+            ("disposition_final", 22),
+            ("disposition_retired", 2),
+            ("disposition_waiting", 43),
+        ] {
+            let line = format!("{key} {figure}\n");
+            assert_eq!(
+                canonical
+                    .lines()
+                    .filter(|value| value.starts_with(&format!("{key} ")))
+                    .count(),
+                1
+            );
+            assert!(canonical.contains(&line));
+            let changed = canonical.replacen(&line, &format!("{key} {}\n", figure + 1), 1);
+            assert!(matches!(
+                validate_maturity_safety_publication(control.report(), &PLAN, &changed),
                 Err(MaturityReportConsumerRefusal::PublicationDiffers(_))
             ));
         }
@@ -3128,10 +3213,20 @@ mod tests {
             let discharge = cases
                 .iter()
                 .find(|case| (case.section(), case.name()) == identity)
-                .and_then(MaturityFirstPartyCase::discharge)
-                .expect("a witnessed row carries a discharge");
-            assert_eq!(witness.class(), discharge.expected_class());
-            assert_eq!(witness.validator(), discharge.validator());
+                .and_then(MaturityFirstPartyCase::discharge);
+            if let Some(discharge) = discharge {
+                assert_eq!(witness.class(), discharge.expected_class());
+                assert_eq!(witness.validator(), discharge.validator());
+            } else {
+                let evidence = PLAN
+                    .discharged()
+                    .iter()
+                    .find(|entry| (entry.section(), entry.name()) == identity)
+                    .expect("supplementary comparison");
+                assert_eq!(Some(witness.class()), evidence.supplementary_class());
+                assert_eq!(witness.validator(), evidence.validator());
+                assert!(evidence.comparison().is_some());
+            }
         }
     }
 
@@ -3350,8 +3445,8 @@ mod tests {
 
     #[test]
     fn material_keys_are_exact_and_in_canonical_block_order() {
-        // Final and waiting typed-reason counts add two supplemental keys to the report.
-        assert_eq!(RENDERED_KEYS.len(), 41);
+        // Four disposition keys are separate from the detailed buckets and native waiting rows.
+        assert_eq!(RENDERED_KEYS.len(), 46);
         for plan in [&*PLAN, &*PRESENT_PLAN] {
             let bytes = rendered_from(plan);
             let keys: Vec<_> = bytes

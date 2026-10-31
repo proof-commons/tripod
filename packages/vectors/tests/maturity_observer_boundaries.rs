@@ -150,6 +150,7 @@ fn scan_acquisition_names(name: &str, source: &str) {
     let source = without_comments(source);
     refuse_grouped_process_imports(&source);
     for forbidden in [
+        "super::",
         "maturity_corpus",
         "run_of_record",
         "include_bytes!",
@@ -592,6 +593,8 @@ fn without_comments(source: &str) -> String {
 #[test]
 fn archive_helpers_cannot_enter_scanned_regions_or_bodies() {
     for subject in [
+        "fn injected() { super::sibling::helper(); }",
+        "use super::sibling::helper;",
         "fn injected() { outstanding_rows(); }",
         "fn injected() { derive_maturity_evidence_plan_with(); }",
         "fn injected() { derive_maturity_evidence_source(); }",

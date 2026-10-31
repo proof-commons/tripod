@@ -4392,6 +4392,268 @@ mod tests {
         crate::maturity_closure::announcement_plan().expect("the announcement plan derives")
     }
 
+    #[test]
+    fn observed_sponsored_compositions_bind_exact_operation_regions() {
+        use crate::maturity_corpus::maturity_sponsored_run_of_record;
+        use crate::maturity_native::sponsored::submission_row;
+        use target_elements_conformance::protocol::OperationSubject;
+        use transaction::bytes::TargetTransaction;
+        let corpus = maturity_sponsored_run_of_record().expect("admitted sponsored archive");
+        for (name, outputs, fee) in [
+            ("sponsored-without-change", 2, 128),
+            ("sponsored-with-change-where-supported", 3, 141),
+        ] {
+            let (step, response) = corpus
+                .evidence
+                .credited()
+                .into_iter()
+                .find(|(step, _)| submission_row(step) == Some((S::Positive, name)))
+                .expect("exact admitted sponsored control");
+            assert_eq!(response.observed_layer, ObservedOutcomeLayer::Accepted);
+            let OperationSubject::Submission(subject) = step.subject() else {
+                panic!("submission subject");
+            };
+            let readback = response.mined_readback.as_ref().expect("mined readback");
+            assert_eq!(readback.raw_transaction, subject.transaction_bytes);
+            let transaction =
+                TargetTransaction::decode(&subject.transaction_bytes).expect("admitted bytes");
+            assert_eq!(transaction.outputs().len(), outputs);
+            assert_eq!(
+                transaction.outputs().last().expect("fee").value(),
+                transaction::bytes::ValueField::Explicit(fee)
+            );
+            let control = observed_sponsored_region(&transaction, corpus);
+            assert_region_relations(&control);
+            let member = control.region.open_flows[0].sources[0];
+            let mut displaced = control.clone();
+            displaced.region.members.remove(&member);
+            displaced
+                .other_regions
+                .push(realization::ObservedOperationRegion {
+                    members: BTreeSet::from([member]),
+                    ..Default::default()
+                });
+            assert_eq!(
+                displaced.validate_and_normalize(),
+                Err(realization::RealizationError::UnknownObservedObject(member))
+            );
+            let mut foreign = control;
+            foreign
+                .objects
+                .iter_mut()
+                .find(|object| object.reference == member)
+                .expect("sponsor member")
+                .kind = realization::ObservedObjectKind::Declared(ObjectId::Ash);
+            assert_eq!(
+                observed_region_status(
+                    &foreign,
+                    RelationKind::AllowedObjectFamilies,
+                    RelationSubject::TransactionSide {
+                        side: realization::TransactionSide::Input
+                    }
+                ),
+                realization::RelationStatus::Failed {
+                    reason: realization::RelationFailure::UndeclaredObjectFamily
+                }
+            );
+        }
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "the exact input and output positions are projected together from one admitted transaction"
+    )]
+    fn observed_sponsored_region(
+        transaction: &transaction::bytes::TargetTransaction,
+        corpus: &crate::maturity_corpus::ValidatedSponsoredMaturityCorpus,
+    ) -> realization::OperationObservation {
+        use architecture::{AssetId, BoundId, OpenFlowKind, OperationId, ProjectionId, RootId};
+        use realization::{
+            ObservedAsset, ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedSide,
+            ObservedValue, OwnerId, ProtocolAmount, RepresentationMode,
+        };
+        use transaction::bytes::{AssetField, ValueField};
+        let fee = transaction.outputs().last().expect("fee output");
+        assert!(fee.is_fee());
+        let state = &transaction.outputs()[0];
+        assert_eq!(state.value(), ValueField::Explicit(1));
+        assert_ne!(state.asset(), fee.asset());
+        let mut objects = Vec::new();
+        let mut sources = Vec::new();
+        let mut signers = BTreeSet::new();
+        // Owner identifiers and sponsor signers below are labels assigned by this test.
+        // The isolation owner clause therefore passes by construction, backed only by
+        // asserted target acceptance of these exact bytes. The comparison establishes
+        // membership, family, asset and erasure, not an independent owner-clause check.
+        for (position, input) in transaction.inputs().iter().enumerate() {
+            let matches: Vec<_> = corpus
+                .evidence
+                .exchanges()
+                .iter()
+                .flat_map(|(_, response)| &response.funded_outputs)
+                .filter(|funded| {
+                    crate::live_owner_observation::outpoint_of(&funded.outpoint)
+                        == Some(input.outpoint())
+                })
+                .collect();
+            assert_eq!(
+                matches.len(),
+                1,
+                "exact retained funding for each observed input"
+            );
+            let funded = matches[0];
+            let asset = AssetField::Explicit(
+                crate::live_owner_observation::asset_of(&funded.asset).expect("funded asset"),
+            );
+            let reference = ObservedObjectRef {
+                side: ObservedSide::Input,
+                ordinal: u32::try_from(position).expect("input position"),
+            };
+            let sponsor = position != 0;
+            assert_eq!(asset, if sponsor { fee.asset() } else { state.asset() });
+            if !sponsor {
+                assert_eq!(funded.amount_satoshis, 1);
+            }
+            let owner =
+                sponsor.then(|| OwnerId([u8::try_from(position).expect("sponsor ordinal"); 32]));
+            if let Some(owner) = owner {
+                assert_ne!(transaction.witnesses()[position].stack().len(), 0);
+                sources.push(reference);
+                signers.insert(owner);
+            }
+            objects.push(ObservedObject {
+                reference,
+                kind: ObservedObjectKind::Declared(if sponsor {
+                    ObjectId::PlainLbtc
+                } else {
+                    ObjectId::State
+                }),
+                asset: ObservedAsset::Declared(if sponsor { AssetId::Lbtc } else { AssetId::Pid }),
+                value: if sponsor {
+                    ObservedValue::SponsorOpaque
+                } else {
+                    ObservedValue::Protocol(ProtocolAmount::ONE)
+                },
+                owner,
+                representation: RepresentationMode::Explicit,
+            });
+        }
+        assert_ne!(sources.len(), 0);
+        let mut destinations = Vec::new();
+        for (position, output) in transaction
+            .outputs()
+            .iter()
+            .enumerate()
+            .filter(|(_, output)| !output.is_fee())
+        {
+            let sponsor = position != 0;
+            let reference = ObservedObjectRef {
+                side: ObservedSide::Output,
+                ordinal: u32::try_from(position).expect("output position"),
+            };
+            if sponsor {
+                assert_eq!(output.asset(), fee.asset());
+                destinations.push(reference);
+            }
+            objects.push(ObservedObject {
+                reference,
+                kind: ObservedObjectKind::Declared(if sponsor {
+                    ObjectId::PlainLbtc
+                } else {
+                    ObjectId::State
+                }),
+                asset: ObservedAsset::Declared(if sponsor { AssetId::Lbtc } else { AssetId::Pid }),
+                value: if sponsor {
+                    ObservedValue::SponsorOpaque
+                } else {
+                    ObservedValue::Protocol(ProtocolAmount::ONE)
+                },
+                owner: sponsor.then_some(OwnerId([0x44; 32])),
+                representation: RepresentationMode::Explicit,
+            });
+        }
+        realization::OperationObservation {
+            operation: OperationId::AnnounceMaturity,
+            region: realization::ObservedOperationRegion {
+                members: objects.iter().map(|object| object.reference).collect(),
+                canonical_partition: realization::ObservedCanonicalPartition::default(),
+                open_flows: vec![realization::ObservedOpenFlow {
+                    kind: OpenFlowKind::FeeSponsor,
+                    sources,
+                    destinations,
+                    fee: ProtocolAmount::ZERO,
+                }],
+            },
+            objects,
+            protocol_signers: BTreeSet::new(),
+            sponsor_signers: signers,
+            other_regions: Vec::new(),
+            root_effects: vec![realization::ObservedRootEffect {
+                root: RootId::State,
+                effect: realization::ObservedRootEffectKind::Succession,
+            }],
+            projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
+            bounds: BTreeMap::from([(BoundId::FeeSponsorInputMax, realization::Count::new(16))]),
+        }
+    }
+
+    fn observed_region_status(
+        observed: &realization::OperationObservation,
+        kind: RelationKind,
+        subject: RelationSubject,
+    ) -> realization::RelationStatus {
+        let scope = realization::RealizationScope::from_operations([
+            architecture::OperationId::AnnounceMaturity,
+        ])
+        .expect("scope");
+        let model = realization::derive(&architecture::ARCHITECTURE, scope).expect("model");
+        let normalized = observed
+            .clone()
+            .validate_and_normalize()
+            .expect("normalized observation");
+        model
+            .evaluate_operation(&normalized)
+            .expect("evaluation")
+            .verdict(&RelationId::new(
+                architecture::OperationId::AnnounceMaturity,
+                kind,
+                subject,
+            ))
+            .expect("declared relation")
+            .status
+            .clone()
+    }
+
+    fn assert_region_relations(observed: &realization::OperationObservation) {
+        let mut relations = vec![
+            (RelationKind::SponsorIsolation, RelationSubject::Sponsor),
+            (
+                RelationKind::SponsorEnvelopeMultiplicity,
+                RelationSubject::Sponsor,
+            ),
+            (RelationKind::OpenFlowPolicy, RelationSubject::Operation),
+            (
+                RelationKind::CanonicalDeltaPolicy,
+                RelationSubject::Operation,
+            ),
+        ];
+        for side in [
+            realization::TransactionSide::Input,
+            realization::TransactionSide::Output,
+        ] {
+            relations.push((
+                RelationKind::AllowedObjectFamilies,
+                RelationSubject::TransactionSide { side },
+            ));
+        }
+        for (kind, subject) in relations {
+            assert_eq!(
+                observed_region_status(observed, kind, subject),
+                realization::RelationStatus::Passed
+            );
+        }
+    }
+
     /// Whether a relation exists only where a sponsor envelope does.
     ///
     /// The sponsor family's own relations, and not the relations subjected
@@ -5422,10 +5684,12 @@ mod tests {
                 BTreeSet::from([RelationMutation::SponsorEnvelopeMultiplicityExceeded]),
             ),
         ] {
-            let declaration = declarations
+            let matching: Vec<_> = declarations
                 .iter()
-                .find(|declaration| declaration.id.kind() == kind)
-                .expect("published sponsor declaration");
+                .filter(|declaration| declaration.id.kind() == kind)
+                .collect();
+            assert_eq!(matching.len(), 1, "one published sponsor declaration");
+            let declaration = matching[0];
             assert_eq!(declaration.id.subject(), &RelationSubject::Sponsor);
             match &declaration.relation {
                 Relation::SponsorIsolation => assert_eq!(kind, RelationKind::SponsorIsolation),
