@@ -4,7 +4,7 @@
 > **Phase:** [Phase 4](../phases/04-compact-ash.md) onward
 > **Package:** `tripod-transaction`
 > **Library:** `transaction`
-> **Direct dependencies:** `linker`, `realization`, `sha2`, `tapscript`, `target-elements`
+> **Direct dependencies:** `architecture`, `linker`, `realization`, `sha2`, `tapscript`, `target-elements`
 > **Decision:** [D006](../decisions/006-transaction-abi.md)
 
 ## Purpose · `sec:transaction:purpose`
@@ -34,6 +34,7 @@ It does not own private-key custody or network submission.
 Allowed direct dependencies:
 
 ```text
+architecture
 linker
 realization
 tapscript
@@ -52,6 +53,8 @@ artifacts
 
 A direct `realization` dependency is added only if linked construction recipes
 cannot provide formula evaluation without creating a parallel semantic table.
+
+The direct `architecture` dependency supplies the operation, object, projection and tag identifiers used by maturity ABI classification; the entry also reads the architecture's object table for each claimed family's asset. Transaction authenticates offered positions and reads realization verdicts by relation identity without defining a parallel family policy.
 
 The direct `tapscript` dependency lets `StateThreadAnchor` name constructor generation by `tapscript::StateConstructorGeneration`, so provenance cannot drift from the constructor's typed recipe identity; the direction transaction → linker → tapscript already holds, so this admission adds no crate to the dependency closure and leaves linked construction recipes authoritative, as required by ruling 27 at (`rule:phase6:wave4-rulings`).
 

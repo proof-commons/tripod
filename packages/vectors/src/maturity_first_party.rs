@@ -4931,9 +4931,48 @@ mod supplementary_tests {
             MaturitySafetySection::AbiLinkerFault,
             "candidate-outside-bounds",
         );
-        let MaturityEntrySubjects::Bounds { tree, caps, .. } = pair.subjects else {
+        let MaturityEntrySubjects::Bounds {
+            constructor,
+            tree,
+            caps,
+        } = pair.subjects
+        else {
             panic!("bounds pair")
         };
+        let retained = substrate().expect("substrate").bundle.static_subtree();
+        let leaves = constructor.static_subtree().leaves();
+        assert_eq!(leaves.len(), retained.leaves().len() + 1);
+        for original in retained.leaves() {
+            let preserved = leaves
+                .iter()
+                .find(|leaf| leaf.identity == original.identity)
+                .expect("retained identity");
+            assert_eq!(preserved.leaf, original.leaf);
+            assert_eq!(preserved.hash, original.hash);
+        }
+        let additional: Vec<_> = leaves
+            .iter()
+            .filter(|leaf| {
+                !retained
+                    .leaves()
+                    .iter()
+                    .any(|original| original.identity == leaf.identity)
+            })
+            .collect();
+        assert_eq!(additional.len(), 1);
+        let identity = retained
+            .leaves()
+            .iter()
+            .map(|leaf| leaf.identity)
+            .max()
+            .expect("retained leaf")
+            + 1;
+        assert_eq!(additional[0].identity, identity);
+        assert_eq!(additional[0].leaf.role, StateLeafRole::Support(identity));
+        assert_eq!(
+            tree.recipes().keys().copied().collect::<BTreeSet<_>>(),
+            leaves.iter().map(|leaf| leaf.leaf.role).collect()
+        );
         assert_eq!(caps.control.get(), tree.depth() + 1);
         assert_eq!(caps.malformed.get(), tree.depth());
         assert!(caps.malformed.get() > 0);

@@ -120,6 +120,548 @@ use crate::abi::{SequenceConstraint, TargetTransactionVersion};
 use crate::error::TransactionRefusal;
 use crate::state_view::ValidatedMaturityStateView;
 
+/// Bytes and positional claims offered to the classification boundary.
+///
+/// The spent census is supplied in input order. It is caller evidence,
+/// not a claim that the outputs remain unspent on any chain.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MaturityAbiOffer<'a> {
+    pub bytes: &'a [u8],
+    pub spent: &'a [crate::SpentOutputCensusEntry],
+    pub reserve_asset: crate::bytes::AssetId,
+    pub inputs: Vec<MaturityPositionClaim>,
+    pub outputs: Vec<MaturityPositionClaim>,
+    pub canonical: realization::ObservedCanonicalPartition,
+}
+
+/// An untrusted proposed classification of one concrete position.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MaturityPositionClaim {
+    State,
+    SponsorMember,
+    SponsorChange,
+    TargetFee,
+    Family(architecture::ObjectId),
+    Projection(architecture::ProjectionId),
+    Destruction,
+    DataOutput(Option<architecture::TagId>),
+}
+
+/// A refusal of offered maturity ABI classification, before construction admission.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MaturityAbiClassificationRefusal {
+    Decode(Box<TransactionRefusal>),
+    IssuanceOffered,
+    ContractMismatch,
+    SpentCensus {
+        inputs: usize,
+        entries: usize,
+    },
+    Unclassified {
+        side: realization::ObservedSide,
+        position: usize,
+    },
+    ClaimContradictsBytes {
+        side: realization::ObservedSide,
+        position: usize,
+    },
+    UnadmittedOutputRole {
+        position: usize,
+        claim: MaturityPositionClaim,
+    },
+    RelationVerdicts {
+        failed: BTreeMap<realization::RelationId, realization::RelationFailure>,
+    },
+    Realization(Box<realization::RealizationError>),
+    ClaimCensus {
+        side: realization::ObservedSide,
+        positions: usize,
+        claims: usize,
+    },
+}
+
+/// Classified bytes, their original claims and the whole realization report.
+///
+/// This is neither role validation nor admission to safe construction. The
+/// sponsor-input bound supplied to evaluation is the observed count,
+/// uncalibrated and never admission evidence. Sponsor objects are projected
+/// without owners: sponsor-input recognition fails, blocking both its
+/// cardinality and sponsor isolation. Cardinality never reads the bound. These
+/// retained verdicts are artifacts of that ownerless projection, not
+/// admission findings about the offered transaction. The role
+/// boundary must carry the uncalibrated maximum as a residual.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValidatedMaturityAbiClassification {
+    transaction: crate::bytes::TargetTransaction,
+    inputs: Vec<MaturityPositionClaim>,
+    outputs: Vec<MaturityPositionClaim>,
+    report: realization::ConformanceReport,
+    sponsor_input_bound_uncalibrated: Option<realization::Count>,
+}
+
+impl ValidatedMaturityAbiClassification {
+    /// The decoded transaction, without any witness-validity assertion.
+    #[must_use]
+    pub const fn transaction(&self) -> &crate::bytes::TargetTransaction {
+        &self.transaction
+    }
+
+    /// The offered input claims, authenticated where the ABI fixes their meaning.
+    #[must_use]
+    pub fn input_claims(&self) -> &[MaturityPositionClaim] {
+        &self.inputs
+    }
+
+    /// The offered output claims.
+    #[must_use]
+    pub fn output_claims(&self) -> &[MaturityPositionClaim] {
+        &self.outputs
+    }
+
+    /// Every evaluated verdict, including findings this boundary does not own.
+    #[must_use]
+    pub const fn report(&self) -> &realization::ConformanceReport {
+        &self.report
+    }
+
+    /// The evaluation-only sponsor-input bound; never calibrated policy.
+    ///
+    /// Absent when there are no sponsor inputs. Evaluation still receives
+    /// zero in that case, because the evaluator requires the bound even
+    /// for an empty sponsor family.
+    #[must_use]
+    pub const fn sponsor_input_bound_uncalibrated(&self) -> Option<realization::Count> {
+        self.sponsor_input_bound_uncalibrated
+    }
+}
+
+/// Authenticate and classify an offered announcement without admitting construction.
+///
+/// Only the two family closures, open-flow policy, canonical-delta policy
+/// and projection policy can refuse through their failed verdicts. Other
+/// verdicts are retained for their owning boundaries. Sponsor values are
+/// opaque; no owner authorization or proof finalization is asserted.
+/// Acceptance means no owned failure; the two control tests pin all five
+/// owned identities as passed, rather than assuming absent or blocked passes.
+///
+/// `FeeSponsorInputMax` is supplied as the observed sponsor-input count
+/// as an evaluation input. It is uncalibrated, never admission evidence,
+/// and is exposed explicitly on the validated result. Sponsor objects have
+/// no owners, so sponsor-input recognition fails, blocking sponsor-input
+/// cardinality and sponsor isolation without reading the bound. These
+/// retained verdicts are artifacts of the ownerless projection.
+///
+/// # Errors
+///
+/// Returns a typed decode, census, claim-authentication, unadmitted-role,
+/// realization or owned-relation refusal. Issuance is refused by decoding
+/// inside this entry, before a typed transaction can erase the offer.
+/// [`MaturityAbiClassificationRefusal::ContractMismatch`] guards a future
+/// second policy version. An end-to-end mismatch is unreachable today:
+/// `PublicMaturityStateView::validate` rejects a policy differing from the
+/// reviewed target, `derive_maturity_announcement_abi` repeats that check,
+/// and the derivation copies the bundle policy into the ABI's contract.
+pub fn validate_maturity_abi_classification(
+    abi: &CandidateMaturityAnnouncementAbi,
+    view: &ValidatedMaturityStateView,
+    realization: &realization::ScopedRealizationSpec,
+    offer: &MaturityAbiOffer<'_>,
+) -> Result<ValidatedMaturityAbiClassification, MaturityAbiClassificationRefusal> {
+    use MaturityAbiClassificationRefusal as Refusal;
+    use architecture::OperationId;
+    let transaction = crate::bytes::TargetTransaction::decode(offer.bytes).map_err(|error| {
+        if error == TransactionRefusal::IssuanceInputRefused {
+            Refusal::IssuanceOffered
+        } else {
+            Refusal::Decode(Box::new(error))
+        }
+    })?;
+    if transaction.inputs().len() != offer.spent.len() {
+        return Err(Refusal::SpentCensus {
+            inputs: transaction.inputs().len(),
+            entries: offer.spent.len(),
+        });
+    }
+    check_maturity_claim_census(
+        realization::ObservedSide::Input,
+        transaction.inputs().len(),
+        &offer.inputs,
+    )?;
+    check_maturity_claim_census(
+        realization::ObservedSide::Output,
+        transaction.outputs().len(),
+        &offer.outputs,
+    )?;
+    check_maturity_policy_pair(
+        abi.contract(),
+        view.view()
+            .accepted_linked_bundle()
+            .policy()
+            .target_policy(),
+    )?;
+    authenticate_maturity_claims(view, offer, &transaction)?;
+    if realization
+        .operation(OperationId::AnnounceMaturity)
+        .is_none()
+    {
+        return Err(maturity_realization_refusal(
+            realization::RealizationError::OperationOutsideScope(OperationId::AnnounceMaturity),
+        ));
+    }
+    let observation = maturity_classification_observation(offer)?;
+    let count = observation.bounds[&architecture::BoundId::FeeSponsorInputMax];
+    let report = realization
+        .evaluate_operation(&observation)
+        .map_err(maturity_realization_refusal)?;
+    let owned = maturity_classification_relations();
+    let failed = report
+        .verdicts
+        .iter()
+        .filter_map(|verdict| match &verdict.status {
+            realization::RelationStatus::Failed { reason } if owned.contains(&verdict.relation) => {
+                Some((verdict.relation.clone(), *reason))
+            }
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    if !failed.is_empty() {
+        return Err(Refusal::RelationVerdicts { failed });
+    }
+    Ok(ValidatedMaturityAbiClassification {
+        transaction,
+        inputs: offer.inputs.clone(),
+        outputs: offer.outputs.clone(),
+        report,
+        sponsor_input_bound_uncalibrated: (count.get() != 0).then_some(count),
+    })
+}
+
+fn maturity_realization_refusal(
+    error: realization::RealizationError,
+) -> MaturityAbiClassificationRefusal {
+    MaturityAbiClassificationRefusal::Realization(Box::new(error))
+}
+
+const fn check_maturity_claim_census(
+    side: realization::ObservedSide,
+    positions: usize,
+    claims: &[MaturityPositionClaim],
+) -> Result<(), MaturityAbiClassificationRefusal> {
+    use MaturityAbiClassificationRefusal as Refusal;
+    match claims.len() {
+        count if count < positions => Err(Refusal::Unclassified {
+            side,
+            position: count,
+        }),
+        count if count > positions => Err(Refusal::ClaimCensus {
+            side,
+            positions,
+            claims: count,
+        }),
+        _ => Ok(()),
+    }
+}
+
+pub(super) fn check_maturity_policy_pair(
+    abi: TargetContractVersion,
+    view: TargetContractVersion,
+) -> Result<(), MaturityAbiClassificationRefusal> {
+    if abi == view {
+        Ok(())
+    } else {
+        Err(MaturityAbiClassificationRefusal::ContractMismatch)
+    }
+}
+
+fn authenticate_maturity_claims(
+    view: &ValidatedMaturityStateView,
+    offer: &MaturityAbiOffer<'_>,
+    transaction: &crate::bytes::TargetTransaction,
+) -> Result<(), MaturityAbiClassificationRefusal> {
+    use realization::ObservedSide;
+    let inputs =
+        offer
+            .inputs
+            .iter()
+            .zip(offer.spent)
+            .enumerate()
+            .map(|(position, (claim, spent))| {
+                (
+                    ObservedSide::Input,
+                    position,
+                    *claim,
+                    spent.asset(),
+                    spent.value(),
+                    spent.program(),
+                )
+            });
+    let outputs = offer
+        .outputs
+        .iter()
+        .zip(transaction.outputs())
+        .enumerate()
+        .map(|(position, (claim, output))| {
+            (
+                ObservedSide::Output,
+                position,
+                *claim,
+                output.asset(),
+                output.value(),
+                output.program(),
+            )
+        });
+    for (side, position, claim, asset, value, program) in inputs.chain(outputs) {
+        if !maturity_claim_matches(
+            view,
+            offer.reserve_asset,
+            side,
+            claim,
+            (asset, value, program),
+        ) {
+            return Err(MaturityAbiClassificationRefusal::ClaimContradictsBytes { side, position });
+        }
+    }
+    for (position, claim) in offer.outputs.iter().enumerate() {
+        if matches!(
+            claim,
+            MaturityPositionClaim::Destruction | MaturityPositionClaim::DataOutput(_)
+        ) {
+            return Err(MaturityAbiClassificationRefusal::UnadmittedOutputRole {
+                position,
+                claim: *claim,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn maturity_claim_matches(
+    view: &ValidatedMaturityStateView,
+    reserve: crate::bytes::AssetId,
+    side: realization::ObservedSide,
+    claim: MaturityPositionClaim,
+    fields: (crate::bytes::AssetField, crate::bytes::ValueField, &[u8]),
+) -> bool {
+    use crate::bytes::{AssetField, ValueField};
+    use MaturityPositionClaim as Claim;
+    use architecture::{ObjectId, ProjectionId};
+    use realization::ObservedSide;
+    let (asset, value, program) = fields;
+    let sponsor = asset == AssetField::Explicit(reserve)
+        && asset != view.view().asset()
+        && maturity_program_matches(
+            match side {
+                ObservedSide::Input => MaturityProgramClass::SponsorMember,
+                ObservedSide::Output => MaturityProgramClass::SponsorChange,
+            },
+            program,
+        );
+    match claim {
+        Claim::State | Claim::Family(ObjectId::State) => {
+            maturity_state_fields_match(view, asset, value)
+                && maturity_program_matches(MaturityProgramClass::State, program)
+        }
+        Claim::SponsorMember => side == ObservedSide::Input && sponsor,
+        Claim::SponsorChange => side == ObservedSide::Output && sponsor,
+        Claim::Family(ObjectId::PlainLbtc) => sponsor,
+        Claim::TargetFee => {
+            side == ObservedSide::Output
+                && asset == AssetField::Explicit(reserve)
+                && asset != view.view().asset()
+                && program.is_empty()
+                && matches!(value, ValueField::Explicit(_))
+        }
+        Claim::Projection(ProjectionId::TransitionCertificate) => false,
+        Claim::Projection(_) | Claim::Destruction | Claim::DataOutput(_) => {
+            side == ObservedSide::Output
+        }
+        Claim::Family(_) => true,
+    }
+}
+
+// Member provenance: sponsor::WITNESS_V0_KEYHASH_PROGRAM_BYTES and its
+// version-zero key-hash class. STATE uses the taproot program contract.
+// Change is the image of state_construct::sponsor_change_output, which
+// encodes the capability's version and payload through witness_program_script.
+#[derive(Clone, Copy)]
+enum MaturityProgramClass {
+    SponsorMember,
+    SponsorChange,
+    State,
+}
+
+fn maturity_program_matches(class: MaturityProgramClass, program: &[u8]) -> bool {
+    static TARGET: std::sync::LazyLock<
+        Result<ReviewedElementsTapscriptDefinition, Vec<target_elements::TargetError>>,
+    > = std::sync::LazyLock::new(target_elements::reviewed_elements_tapscript);
+    let Ok(target) = TARGET.as_ref() else {
+        return false;
+    };
+    // The reviewed encoder emits the version opcode, direct-push width,
+    // then payload. Compare its output rather than transcribing opcodes.
+    let Some(payload) = program.get(2..) else {
+        return false;
+    };
+    let encoded_matches = |version| {
+        crate::taproot::witness_program_script(target, version, payload)
+            .is_ok_and(|encoded| encoded == program)
+    };
+    match class {
+        MaturityProgramClass::SponsorMember => {
+            payload.len() == crate::sponsor::WITNESS_V0_KEYHASH_PROGRAM_BYTES && encoded_matches(0)
+        }
+        MaturityProgramClass::State => {
+            payload.len() == crate::taproot::TAPROOT_PROGRAM_BYTES
+                && encoded_matches(crate::taproot::TAPROOT_WITNESS_VERSION)
+        }
+        MaturityProgramClass::SponsorChange => (0..=u8::MAX).any(encoded_matches),
+    }
+}
+
+fn maturity_state_fields_match(
+    view: &ValidatedMaturityStateView,
+    asset: crate::bytes::AssetField,
+    value: crate::bytes::ValueField,
+) -> bool {
+    use crate::bytes::{AssetField, ValueField};
+    use linker::{StateLinkSymbol, StateSymbolValue};
+    let public = view.view();
+    let entries = public.deployment_symbols().entries();
+    let Some(StateSymbolValue::Asset(defined_asset)) = entries
+        .get(&StateLinkSymbol::StateAsset)
+        .map(|entry| entry.definition().value())
+    else {
+        return false;
+    };
+    let Some(StateSymbolValue::ExplicitAmount(defined_amount)) = entries
+        .get(&StateLinkSymbol::StateAmount)
+        .map(|entry| entry.definition().value())
+    else {
+        return false;
+    };
+    let AssetField::Explicit(identifier) = asset else {
+        return false;
+    };
+    let singleton = realization::ProtocolAmount::ONE.get();
+    asset == public.asset()
+        && value == public.value()
+        && value == ValueField::Explicit(singleton)
+        && identifier.internal().as_slice() == defined_asset.bytes()
+        && defined_amount.bytes() == singleton.to_le_bytes()
+}
+
+fn maturity_classification_relations() -> BTreeSet<realization::RelationId> {
+    use realization::{RelationId, RelationKind, RelationSubject, TransactionSide};
+    let operation = architecture::OperationId::AnnounceMaturity;
+    let mut ids = [
+        RelationKind::OpenFlowPolicy,
+        RelationKind::CanonicalDeltaPolicy,
+        RelationKind::ProjectionPolicy,
+    ]
+    .into_iter()
+    .map(|kind| RelationId::new(operation, kind, RelationSubject::Operation))
+    .collect::<BTreeSet<_>>();
+    for side in [TransactionSide::Input, TransactionSide::Output] {
+        ids.insert(RelationId::new(
+            operation,
+            RelationKind::AllowedObjectFamilies,
+            RelationSubject::TransactionSide { side },
+        ));
+    }
+    ids
+}
+
+fn maturity_classification_observation(
+    offer: &MaturityAbiOffer<'_>,
+) -> Result<realization::OperationObservation, MaturityAbiClassificationRefusal> {
+    use MaturityPositionClaim as Claim;
+    use architecture::{BoundId, ObjectId, OpenFlowKind, OperationId, ProjectionId};
+    use realization::{
+        ObservedAsset, ObservedObject, ObservedObjectKind, ObservedObjectRef, ObservedSide,
+        ObservedValue, ProtocolAmount, RepresentationMode,
+    };
+    let mut objects = Vec::new();
+    let mut sources = Vec::new();
+    let mut destinations = Vec::new();
+    let mut projections = BTreeSet::from([ProjectionId::TransitionCertificate]);
+    for (side, claims) in [
+        (ObservedSide::Input, &offer.inputs),
+        (ObservedSide::Output, &offer.outputs),
+    ] {
+        for (position, claim) in claims.iter().enumerate() {
+            let ordinal = u32::try_from(position).map_err(|_| {
+                maturity_realization_refusal(realization::RealizationError::CountOverflow)
+            })?;
+            let reference = ObservedObjectRef { side, ordinal };
+            let family = match claim {
+                Claim::State => ObjectId::State,
+                Claim::SponsorMember | Claim::SponsorChange => ObjectId::PlainLbtc,
+                Claim::Family(family) => *family,
+                Claim::Projection(projection) => {
+                    projections.insert(*projection);
+                    continue;
+                }
+                Claim::TargetFee | Claim::Destruction | Claim::DataOutput(_) => continue,
+            };
+            let sponsor = family == ObjectId::PlainLbtc;
+            if sponsor {
+                match side {
+                    ObservedSide::Input => sources.push(reference),
+                    ObservedSide::Output => destinations.push(reference),
+                }
+            }
+            objects.push(ObservedObject {
+                reference,
+                kind: ObservedObjectKind::Declared(family),
+                asset: architecture::ARCHITECTURE
+                    .object(family)
+                    .map_or(ObservedAsset::Foreign(ordinal), |definition| {
+                        ObservedAsset::Declared(definition.asset)
+                    }),
+                value: if sponsor {
+                    ObservedValue::SponsorOpaque
+                } else {
+                    ObservedValue::Protocol(ProtocolAmount::ONE)
+                },
+                owner: None,
+                representation: RepresentationMode::Explicit,
+            });
+        }
+    }
+    let count =
+        realization::Count::new(u64::try_from(sources.len()).map_err(|_| {
+            maturity_realization_refusal(realization::RealizationError::CountOverflow)
+        })?);
+    let open_flows = if sources.is_empty()
+        && destinations.is_empty()
+        && !offer.outputs.contains(&Claim::TargetFee)
+    {
+        Vec::new()
+    } else {
+        vec![realization::ObservedOpenFlow {
+            kind: OpenFlowKind::FeeSponsor,
+            sources,
+            destinations,
+            fee: ProtocolAmount::ZERO,
+        }]
+    };
+    Ok(realization::OperationObservation {
+        operation: OperationId::AnnounceMaturity,
+        region: realization::ObservedOperationRegion {
+            members: objects.iter().map(|object| object.reference).collect(),
+            canonical_partition: offer.canonical.clone(),
+            open_flows,
+        },
+        objects,
+        projections,
+        protocol_signers: BTreeSet::new(),
+        sponsor_signers: BTreeSet::new(),
+        other_regions: Vec::new(),
+        root_effects: Vec::new(),
+        bounds: BTreeMap::from([(BoundId::FeeSponsorInputMax, count)]),
+    })
+}
+
 /// The status vocabulary a derived announcement ABI is distinguished by
 /// (§12.9).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

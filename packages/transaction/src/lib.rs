@@ -120,11 +120,13 @@ pub use sponsor::{
     SponsorSigningRequest,
 };
 pub use state_abi::{
-    CandidateMaturityAnnouncementAbi, InheritedStateLinkObligations, MaturityAbiObligation,
-    MaturityAbiStatus, MaturityCoordinatorRule, MaturityInputLayout, MaturityOutputLayout,
-    MaturityOutputPlacementRule, MaturityOutputRole, MaturityRelayVerdict,
+    CandidateMaturityAnnouncementAbi, InheritedStateLinkObligations,
+    MaturityAbiClassificationRefusal, MaturityAbiObligation, MaturityAbiOffer, MaturityAbiStatus,
+    MaturityCoordinatorRule, MaturityInputLayout, MaturityOutputLayout,
+    MaturityOutputPlacementRule, MaturityOutputRole, MaturityPositionClaim, MaturityRelayVerdict,
     MaturitySponsorSuffixRule, MaturityWitnessRole, MaturityWitnessSource,
-    OutstandingMaturityAbiObligations, WitnessClassification, derive_maturity_announcement_abi,
+    OutstandingMaturityAbiObligations, ValidatedMaturityAbiClassification, WitnessClassification,
+    derive_maturity_announcement_abi, validate_maturity_abi_classification,
 };
 pub use state_construct::{
     MATURITY_ANNOUNCEMENT_LOCK_TIME, MaturityConstruction, MaturitySponsorContext,

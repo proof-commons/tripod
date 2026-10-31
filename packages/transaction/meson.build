@@ -55,6 +55,7 @@ transaction_source_files = files(
   'src/tests/operator_signing_tests.rs',
   'src/tests/refusal_census_tests.rs',
   'src/tests/state_abi_tests.rs',
+  'src/tests/state_abi_validation_tests.rs',
   'src/tests/state_construct_tests.rs',
   'src/tests/state_finalize_tests.rs',
   'src/tests/state_request_tests.rs',
