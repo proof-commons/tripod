@@ -1,4 +1,4 @@
-//! Classification offers are rebuilt from constructed transactions, never
+//! Classification and role offers are rebuilt from constructed transactions, never
 //! from hand-assembled bundles or ABIs. The S1 control uses encoded witness
 //! programs here: the shared sponsor fixture carries raw payload bytes,
 //! which are not programs of the admitted witness class.
@@ -90,12 +90,17 @@ impl Offer {
     }
 
     fn append_input(&mut self, spent: SpentOutputCensusEntry, claim: Claim) {
+        self.append_input_at(
+            Outpoint::new(Txid::from_internal([0xe9; 32]), 1).unwrap(),
+            spent,
+            claim,
+        );
+    }
+
+    fn append_input_at(&mut self, outpoint: Outpoint, spent: SpentOutputCensusEntry, claim: Claim) {
         let transaction = self.transaction();
         let mut inputs = transaction.inputs().to_vec();
-        inputs.push(TargetInput::new(
-            Outpoint::new(Txid::from_internal([0xe9; 32]), 1).unwrap(),
-            u32::MAX,
-        ));
+        inputs.push(TargetInput::new(outpoint, u32::MAX));
         let mut witnesses = transaction.witnesses().to_vec();
         witnesses.push(InputWitness::default());
         self.bytes = TargetTransaction::with_output_witnesses(
@@ -110,6 +115,72 @@ impl Offer {
         .encode();
         self.spent.push(spent);
         self.inputs.push(claim);
+    }
+
+    fn replace_input(
+        &mut self,
+        position: usize,
+        input: TargetInput,
+        witness: InputWitness,
+        spent: SpentOutputCensusEntry,
+        claim: Claim,
+    ) {
+        let transaction = self.transaction();
+        let mut inputs = transaction.inputs().to_vec();
+        let mut witnesses = transaction.witnesses().to_vec();
+        inputs[position] = input;
+        witnesses[position] = witness;
+        self.bytes = TargetTransaction::with_output_witnesses(
+            transaction.version(),
+            inputs,
+            transaction.outputs().to_vec(),
+            transaction.lock_time(),
+            witnesses,
+            transaction.output_witnesses().to_vec(),
+        )
+        .unwrap()
+        .encode();
+        self.spent[position] = spent;
+        self.inputs[position] = claim;
+    }
+
+    fn swap_inputs(&mut self, first: usize, second: usize) {
+        let transaction = self.transaction();
+        let mut inputs = transaction.inputs().to_vec();
+        let mut witnesses = transaction.witnesses().to_vec();
+        inputs.swap(first, second);
+        witnesses.swap(first, second);
+        self.bytes = TargetTransaction::with_output_witnesses(
+            transaction.version(),
+            inputs,
+            transaction.outputs().to_vec(),
+            transaction.lock_time(),
+            witnesses,
+            transaction.output_witnesses().to_vec(),
+        )
+        .unwrap()
+        .encode();
+        self.spent.swap(first, second);
+        self.inputs.swap(first, second);
+    }
+
+    fn swap_outputs(&mut self, first: usize, second: usize) {
+        let transaction = self.transaction();
+        let mut outputs = transaction.outputs().to_vec();
+        let mut witnesses = transaction.output_witnesses().to_vec();
+        outputs.swap(first, second);
+        witnesses.swap(first, second);
+        self.bytes = TargetTransaction::with_output_witnesses(
+            transaction.version(),
+            transaction.inputs().to_vec(),
+            outputs,
+            transaction.lock_time(),
+            transaction.witnesses().to_vec(),
+            witnesses,
+        )
+        .unwrap()
+        .encode();
+        self.outputs.swap(first, second);
     }
 
     fn replace_output(&mut self, position: usize, output: TargetOutput) {
@@ -957,6 +1028,10 @@ fn sponsor_change_accepts_an_encoded_program_and_an_opaque_value() {
 
 #[test]
 fn constructed_sponsor_change_accepts_the_constructors_program_class() {
+    constructed_change_offer().validate().unwrap();
+}
+
+fn constructed_change_offer() -> Offer {
     let target = super::reviewed_target();
     let (mut sponsor, raw) = maturity_sponsor(true);
     // Exercise a nonzero witness version, as permitted by the constructor.
@@ -997,7 +1072,16 @@ fn constructed_sponsor_change_accepts_the_constructors_program_class() {
         ));
     }
     offer.outputs = vec![Claim::State, Claim::SponsorChange, Claim::TargetFee];
-    offer.validate().unwrap();
+    assert_eq!(
+        construction.transaction().outputs()[1].program(),
+        crate::taproot::witness_program_script(
+            &target,
+            crate::taproot::TAPROOT_WITNESS_VERSION,
+            &[0xb4; crate::taproot::TAPROOT_PROGRAM_BYTES],
+        )
+        .unwrap(),
+    );
+    offer
 }
 
 #[test]
@@ -1117,4 +1201,434 @@ fn every_classification_refusal_is_censused(refusal: &Refusal) {
 #[test]
 fn the_classification_refusal_vocabulary_has_no_wildcard_guard() {
     every_classification_refusal_is_censused(&Refusal::IssuanceOffered);
+}
+
+struct RoleSubject {
+    name: &'static str,
+    offer: Offer,
+    positions: Vec<(ObservedSide, usize)>,
+    expected: crate::MaturityAbiRoleRefusal,
+    cardinalities: [RelationStatus; 2],
+}
+
+fn state_cardinality(side: TransactionSide) -> RelationId {
+    relation(
+        RelationKind::Cardinality,
+        RelationSubject::ObjectFamily {
+            side,
+            object: ObjectId::State,
+        },
+    )
+}
+
+fn role_subjects() -> Vec<RoleSubject> {
+    use crate::MaturityAbiRoleRefusal as RoleRefusal;
+    let fixture = fixture();
+    let control = &fixture.sponsorless;
+    let predecessor = fixture.view.view().current_state_outpoint();
+    let other = Outpoint::new(Txid::from_internal([0xe9; 32]), 1).unwrap();
+    assert_ne!(other, predecessor);
+    let mut wrong = control.clone();
+    wrong.replace_input(
+        0,
+        TargetInput::new(other, u32::MAX),
+        control.transaction().witnesses()[0].clone(),
+        control.spent[0].clone(),
+        Claim::State,
+    );
+    let mut duplicate = control.clone();
+    duplicate.append_input_at(predecessor, control.spent[0].clone(), Claim::State);
+    let mut missing = control.clone();
+    let sponsored = fixture.sponsored.transaction();
+    missing.replace_input(
+        0,
+        sponsored.inputs()[1].clone(),
+        sponsored.witnesses()[1].clone(),
+        fixture.sponsored.spent[1].clone(),
+        Claim::SponsorMember,
+    );
+    // The matrix's sponsorless control has no sponsor position to exchange.
+    // S1 is this row's per-row control; the matrix control remains unchanged.
+    let mut exchanged = fixture.sponsored.clone();
+    exchanged.swap_inputs(0, 1);
+    let mut surplus_input = control.clone();
+    surplus_input.append_input_at(other, control.spent[0].clone(), Claim::State);
+    let mut surplus_output = control.clone();
+    surplus_output.append_output(control.transaction().outputs()[0].clone(), Claim::State);
+    let passed = RelationStatus::Passed;
+    let above = RelationStatus::Failed {
+        reason: RelationFailure::CardinalityAboveMaximum,
+    };
+    let below = RelationStatus::Failed {
+        reason: RelationFailure::CardinalityBelowMinimum,
+    };
+    vec![
+        RoleSubject {
+            name: "wrong-coordinator",
+            offer: wrong,
+            positions: vec![(ObservedSide::Input, 0)],
+            expected: RoleRefusal::CoordinatorIsNotTheValidatedPredecessor {
+                expected: predecessor,
+                offered: other,
+            },
+            cardinalities: [passed.clone(), passed.clone()],
+        },
+        RoleSubject {
+            name: "duplicate-coordinator",
+            offer: duplicate,
+            positions: vec![(ObservedSide::Input, 1)],
+            expected: RoleRefusal::CoordinatorRepeated {
+                positions: vec![0, 1],
+            },
+            cardinalities: [above.clone(), passed.clone()],
+        },
+        RoleSubject {
+            name: "no-coordinator",
+            offer: missing,
+            positions: vec![(ObservedSide::Input, 0)],
+            expected: RoleRefusal::CoordinatorMissing,
+            cardinalities: [below, passed.clone()],
+        },
+        RoleSubject {
+            name: "state-and-sponsor-positions-exchanged",
+            offer: exchanged,
+            positions: vec![(ObservedSide::Input, 0), (ObservedSide::Input, 1)],
+            expected: RoleRefusal::StateAndSponsorPositionsExchanged {
+                state: 1,
+                sponsor: 0,
+            },
+            cardinalities: [passed.clone(), passed.clone()],
+        },
+        RoleSubject {
+            name: "wrong-input-count",
+            offer: surplus_input,
+            positions: vec![(ObservedSide::Input, 1)],
+            expected: RoleRefusal::Cardinality {
+                relation: state_cardinality(TransactionSide::Input),
+                failure: RelationFailure::CardinalityAboveMaximum,
+            },
+            cardinalities: [above.clone(), passed.clone()],
+        },
+        RoleSubject {
+            name: "wrong-output-count",
+            offer: surplus_output,
+            positions: vec![(ObservedSide::Output, 1)],
+            expected: RoleRefusal::Cardinality {
+                relation: state_cardinality(TransactionSide::Output),
+                failure: RelationFailure::CardinalityAboveMaximum,
+            },
+            cardinalities: [passed, above],
+        },
+    ]
+}
+
+#[test]
+fn all_six_role_subjects_classify_before_their_exact_role_refusal() {
+    let fixture = fixture();
+    let subjects = role_subjects();
+    assert_eq!(subjects.len(), 6);
+    for subject in subjects {
+        let classified = subject.offer.validate().expect(subject.name);
+        for (side, expected) in [TransactionSide::Input, TransactionSide::Output]
+            .into_iter()
+            .zip(subject.cardinalities)
+        {
+            // STATE projection has declared PID, singleton value and no owner.
+            // Recognition passes, vacuously for an empty family, and releases
+            // cardinality: zero is below one, two above one, one passes.
+            let recognition = relation(
+                RelationKind::Recognition,
+                RelationSubject::ObjectFamily {
+                    side,
+                    object: ObjectId::State,
+                },
+            );
+            assert_eq!(
+                classified.report().verdict(&recognition).unwrap().status,
+                RelationStatus::Passed
+            );
+            assert_eq!(
+                classified
+                    .report()
+                    .verdict(&state_cardinality(side))
+                    .unwrap()
+                    .status,
+                expected,
+                "{}",
+                subject.name
+            );
+        }
+        // FeeSponsor is an admitted kind even with a lone source and no
+        // destination; open-flow policy does not require owner recognition.
+        assert_eq!(
+            classified
+                .report()
+                .verdict(&relation(
+                    RelationKind::OpenFlowPolicy,
+                    RelationSubject::Operation
+                ))
+                .unwrap()
+                .status,
+            RelationStatus::Passed
+        );
+        assert_eq!(
+            crate::validate_maturity_abi_roles(&fixture.abi, &fixture.view, &classified),
+            Err(subject.expected),
+            "{}",
+            subject.name
+        );
+    }
+}
+
+#[test]
+fn roles_borrow_classified_controls_and_preserve_uncalibrated_residuals() {
+    let fixture = fixture();
+    for offer in [
+        fixture.sponsorless.clone(),
+        fixture.sponsored.clone(),
+        constructed_change_offer(),
+    ] {
+        let classified = offer.validate().unwrap();
+        let roles =
+            crate::validate_maturity_abi_roles(&fixture.abi, &fixture.view, &classified).unwrap();
+        assert!(std::ptr::eq(roles.classification(), &raw const classified));
+        assert!(std::ptr::eq(roles.transaction(), classified.transaction()));
+        assert!(std::ptr::eq(roles.report(), classified.report()));
+        assert_eq!(roles.input_claims(), classified.input_claims());
+        assert_eq!(roles.output_claims(), classified.output_claims());
+        assert_eq!(
+            roles.sponsor_input_bound_uncalibrated(),
+            classified.sponsor_input_bound_uncalibrated()
+        );
+        for side in [TransactionSide::Input, TransactionSide::Output] {
+            // Singleton ownerless STATE objects recognize before cardinality.
+            assert_eq!(
+                roles
+                    .report()
+                    .verdict(&state_cardinality(side))
+                    .unwrap()
+                    .status,
+                RelationStatus::Passed
+            );
+        }
+        assert_sponsor_projection_statuses(&classified);
+    }
+}
+
+#[test]
+fn sponsor_change_without_sponsor_inputs_retains_the_presence_residual() {
+    let fixture = fixture();
+    let mut offer = fixture.sponsorless.clone();
+    let change = constructed_change_offer();
+    offer.append_output(
+        change.transaction().outputs()[1].clone(),
+        Claim::SponsorChange,
+    );
+    let classified = offer.validate().unwrap();
+    // Placement passes; the presence half remains a residual for the
+    // comparisons-and-record step, rather than admission evidence.
+    let roles =
+        crate::validate_maturity_abi_roles(&fixture.abi, &fixture.view, &classified).unwrap();
+    assert_eq!(roles.input_claims(), &[Claim::State]);
+    assert_eq!(roles.output_claims(), &[Claim::State, Claim::SponsorChange]);
+    assert_eq!(roles.sponsor_input_bound_uncalibrated(), None);
+}
+
+fn assert_sponsor_projection_statuses(classified: &ValidatedMaturityAbiClassification) {
+    let mut blockers = Vec::new();
+    for (side, claims) in [
+        (TransactionSide::Input, classified.input_claims()),
+        (TransactionSide::Output, classified.output_claims()),
+    ] {
+        let subject = RelationSubject::ObjectFamily {
+            side,
+            object: ObjectId::PlainLbtc,
+        };
+        let recognition = relation(RelationKind::Recognition, subject.clone());
+        let cardinality = relation(RelationKind::Cardinality, subject);
+        let present = claims
+            .iter()
+            .any(|claim| matches!(claim, Claim::SponsorMember | Claim::SponsorChange));
+        // PlainLbtc requires an owner. Present sponsor objects lack one;
+        // empty families recognize vacuously and satisfy the zero minimum.
+        let (recognized, counted) = if present {
+            blockers.push(recognition.clone());
+            (
+                RelationStatus::Failed {
+                    reason: RelationFailure::ObjectRecognition,
+                },
+                RelationStatus::Blocked {
+                    prerequisites: vec![recognition.clone()],
+                },
+            )
+        } else {
+            (RelationStatus::Passed, RelationStatus::Passed)
+        };
+        assert_eq!(
+            classified.report().verdict(&recognition).unwrap().status,
+            recognized
+        );
+        assert_eq!(
+            classified.report().verdict(&cardinality).unwrap().status,
+            counted
+        );
+    }
+    if !blockers.is_empty() {
+        blockers.sort();
+        // Open-flow policy and multiplicity pass; only failed recognition
+        // on the present sponsor sides blocks sponsor isolation.
+        assert_eq!(
+            classified
+                .report()
+                .verdict(&relation(
+                    RelationKind::SponsorIsolation,
+                    RelationSubject::Sponsor
+                ))
+                .unwrap()
+                .status,
+            RelationStatus::Blocked {
+                prerequisites: blockers
+            }
+        );
+    }
+}
+
+#[test]
+fn role_refusals_are_independent_of_changed_position_claims() {
+    use std::io::Write as _;
+    let fixture = fixture();
+    let alternatives = claims();
+    let started = Instant::now();
+    let mut classification_calls = 0;
+    let mut role_calls = 0;
+    for subject in role_subjects() {
+        let before = role_calls;
+        for first in &alternatives {
+            let seconds = if subject.positions.len() == 2 {
+                alternatives.as_slice()
+            } else {
+                &alternatives[..1]
+            };
+            for second in seconds {
+                let mut offer = subject.offer.clone();
+                if let Some(position) = subject.positions.get(1) {
+                    replace_claim(&mut offer, *position, *second);
+                }
+                // Replace the later position before an omitted earlier claim
+                // truncates the same side's claim census.
+                replace_claim(&mut offer, subject.positions[0], *first);
+                classification_calls += 1;
+                match offer.validate() {
+                    Err(refusal) => {
+                        // This refusal proves alternative-claim independence,
+                        // never the honest subject's role-boundary evidence.
+                        every_classification_refusal_is_censused(&refusal);
+                    }
+                    Ok(classified) => {
+                        role_calls += 1;
+                        let refusal = crate::validate_maturity_abi_roles(
+                            &fixture.abi,
+                            &fixture.view,
+                            &classified,
+                        )
+                        .expect_err(subject.name);
+                        assert_eq!(refusal, subject.expected, "{}", subject.name);
+                    }
+                }
+            }
+        }
+        // Each position's honest claim and its family alias survive classification;
+        // every other claim refuses at authentication, a family closure or the
+        // projection policy. The exchange has their product.
+        assert_eq!(
+            role_calls - before,
+            if subject.positions.len() == 2 { 4 } else { 2 },
+            "{}",
+            subject.name
+        );
+    }
+    assert_eq!(classification_calls, 1116);
+    assert_eq!(role_calls, 14);
+    for control in [&fixture.sponsorless, &fixture.sponsored] {
+        let classified = control.validate().unwrap();
+        classification_calls += 1;
+        crate::validate_maturity_abi_roles(&fixture.abi, &fixture.view, &classified).unwrap();
+        role_calls += 1;
+    }
+    assert_eq!(classification_calls, 1118);
+    assert_eq!(role_calls, 16);
+    writeln!(std::io::stdout().lock(), "census roles: {classification_calls} classification calls; {role_calls} role calls; {} entry calls; table wall {:?}",
+        classification_calls + role_calls, started.elapsed()).unwrap();
+}
+
+#[test]
+fn output_placements_refuse_through_the_role_entry() {
+    use crate::MaturityAbiRoleRefusal as RoleRefusal;
+    let fixture = fixture();
+    let mut successor = fixture.sponsored.clone();
+    successor.swap_outputs(0, 1);
+    let mut change = constructed_change_offer();
+    change.swap_outputs(1, 2);
+    let mut fee = fixture.sponsored.clone();
+    fee.append_output(fee.transaction().outputs()[1].clone(), Claim::TargetFee);
+    for (offer, expected) in [
+        (
+            successor,
+            RoleRefusal::SuccessorDisplaced {
+                expected: fixture.abi.outputs().successor_position(),
+                offered: 1,
+            },
+        ),
+        (change, RoleRefusal::SponsorChangeDisplaced { offered: 2 }),
+        (fee, RoleRefusal::FeeNotFinal { offered: 1 }),
+    ] {
+        let classified = offer.validate().unwrap();
+        assert_eq!(
+            crate::validate_maturity_abi_roles(&fixture.abi, &fixture.view, &classified),
+            Err(expected)
+        );
+    }
+}
+
+#[test]
+fn sponsor_suffix_guard_is_tested_without_forging_an_abi() {
+    use crate::state_abi::check_maturity_sponsor_suffix;
+    let rule = fixture().abi.inputs().sponsor_suffix();
+    // The full entry cannot reach this guard's refusal: coordinator at zero,
+    // exactly one STATE input, suffix beginning at one. Earlier checks own
+    // the exchange. Exercise the placement guard against the real rule.
+    assert_eq!(
+        check_maturity_sponsor_suffix(rule, &fixture().sponsored.inputs),
+        Ok(())
+    );
+    for sponsor in [Claim::SponsorMember, Claim::Family(ObjectId::PlainLbtc)] {
+        assert_eq!(
+            check_maturity_sponsor_suffix(rule, &[sponsor, Claim::State]),
+            Err(crate::MaturityAbiRoleRefusal::SponsorSuffixDisplaced {
+                first: rule.first(),
+                offered: 0
+            })
+        );
+    }
+}
+
+fn every_role_refusal_is_censused(refusal: &crate::MaturityAbiRoleRefusal) {
+    use crate::MaturityAbiRoleRefusal;
+    match refusal {
+        MaturityAbiRoleRefusal::CoordinatorMissing
+        | MaturityAbiRoleRefusal::CoordinatorIsNotTheValidatedPredecessor { .. }
+        | MaturityAbiRoleRefusal::CoordinatorRepeated { .. }
+        | MaturityAbiRoleRefusal::StateAndSponsorPositionsExchanged { .. }
+        | MaturityAbiRoleRefusal::Cardinality { .. }
+        | MaturityAbiRoleRefusal::CardinalityUnavailable { .. }
+        | MaturityAbiRoleRefusal::SuccessorDisplaced { .. }
+        | MaturityAbiRoleRefusal::SponsorSuffixDisplaced { .. }
+        | MaturityAbiRoleRefusal::SponsorChangeDisplaced { .. }
+        | MaturityAbiRoleRefusal::FeeNotFinal { .. } => {}
+    }
+}
+
+#[test]
+fn the_role_refusal_vocabulary_has_no_wildcard_guard() {
+    every_role_refusal_is_censused(&crate::MaturityAbiRoleRefusal::CoordinatorMissing);
 }

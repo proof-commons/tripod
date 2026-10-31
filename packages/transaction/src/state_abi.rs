@@ -184,12 +184,15 @@ pub enum MaturityAbiClassificationRefusal {
 ///
 /// This is neither role validation nor admission to safe construction. The
 /// sponsor-input bound supplied to evaluation is the observed count,
-/// uncalibrated and never admission evidence. Sponsor objects are projected
-/// without owners: sponsor-input recognition fails, blocking both its
-/// cardinality and sponsor isolation. Cardinality never reads the bound. These
-/// retained verdicts are artifacts of that ownerless projection, not
-/// admission findings about the offered transaction. The role
-/// boundary must carry the uncalibrated maximum as a residual.
+/// uncalibrated and never admission evidence. When sponsor inputs are present,
+/// their ownerless projection fails sponsor-input recognition and blocks
+/// sponsor-input cardinality before it reads the supplied bound. A sponsor
+/// change output likewise fails sponsor-output recognition and blocks
+/// sponsor-output cardinality. Sponsor isolation depends on both recognition
+/// identities and is blocked by either failure. With no sponsor inputs, the
+/// empty input family recognizes and its cardinality evaluates against zero.
+/// These retained findings describe the projection, not construction admission.
+/// The role boundary must carry the uncalibrated maximum as a residual.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatedMaturityAbiClassification {
     transaction: crate::bytes::TargetTransaction,
@@ -246,10 +249,14 @@ impl ValidatedMaturityAbiClassification {
 ///
 /// `FeeSponsorInputMax` is supplied as the observed sponsor-input count
 /// as an evaluation input. It is uncalibrated, never admission evidence,
-/// and is exposed explicitly on the validated result. Sponsor objects have
-/// no owners, so sponsor-input recognition fails, blocking sponsor-input
-/// cardinality and sponsor isolation without reading the bound. These
-/// retained verdicts are artifacts of the ownerless projection.
+/// and is exposed explicitly on the validated result. When sponsor inputs are
+/// present, their ownerless projection fails sponsor-input recognition and
+/// blocks sponsor-input cardinality before it reads the supplied bound. A
+/// sponsor change output likewise fails sponsor-output recognition and blocks
+/// sponsor-output cardinality. Sponsor isolation depends on both recognition
+/// identities and is blocked by either failure. With no sponsor inputs, the
+/// empty input family recognizes and its cardinality evaluates against zero.
+/// These retained findings describe the projection, not construction admission.
 ///
 /// # Errors
 ///
@@ -334,6 +341,272 @@ pub fn validate_maturity_abi_classification(
         report,
         sponsor_input_bound_uncalibrated: (count.get() != 0).then_some(count),
     })
+}
+
+/// A refusal of coordinator, STATE cardinality or placement at the role boundary.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MaturityAbiRoleRefusal {
+    CoordinatorMissing,
+    CoordinatorIsNotTheValidatedPredecessor {
+        expected: crate::bytes::Outpoint,
+        offered: crate::bytes::Outpoint,
+    },
+    CoordinatorRepeated {
+        positions: Vec<usize>,
+    },
+    StateAndSponsorPositionsExchanged {
+        state: usize,
+        sponsor: usize,
+    },
+    Cardinality {
+        relation: realization::RelationId,
+        failure: realization::RelationFailure,
+    },
+    /// An owned verdict is missing or unevaluated. Unreachable under the
+    /// announcement declarations: authenticated STATE objects recognize, and
+    /// recognition releases both declared STATE cardinalities for evaluation.
+    CardinalityUnavailable {
+        relation: realization::RelationId,
+        status: Option<realization::RelationStatus>,
+    },
+    SuccessorDisplaced {
+        expected: u16,
+        offered: usize,
+    },
+    SponsorSuffixDisplaced {
+        first: u16,
+        offered: usize,
+    },
+    SponsorChangeDisplaced {
+        offered: usize,
+    },
+    FeeNotFinal {
+        offered: usize,
+    },
+}
+
+/// Role-validated positions borrowing their classification and retained report.
+///
+/// This is not construction admission or witness validation. The delegated
+/// `sponsor_input_bound_uncalibrated` accessor carries the observed sponsor
+/// count as an uncalibrated residual, never admission evidence. No replacement
+/// maximum can be applied to the report already evaluated by classification.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValidatedMaturityAbiRoles<'a> {
+    classified: &'a ValidatedMaturityAbiClassification,
+}
+
+impl<'a> ValidatedMaturityAbiRoles<'a> {
+    /// The classification whose report this entry read without reevaluation.
+    #[must_use]
+    pub const fn classification(&self) -> &'a ValidatedMaturityAbiClassification {
+        self.classified
+    }
+
+    /// The classified transaction, without a witness-validity assertion.
+    #[must_use]
+    pub const fn transaction(&self) -> &crate::bytes::TargetTransaction {
+        self.classified.transaction()
+    }
+
+    /// The original authenticated input claims, including family aliases.
+    #[must_use]
+    pub fn input_claims(&self) -> &[MaturityPositionClaim] {
+        self.classified.input_claims()
+    }
+
+    /// The original authenticated output claims, including family aliases.
+    #[must_use]
+    pub fn output_claims(&self) -> &[MaturityPositionClaim] {
+        self.classified.output_claims()
+    }
+
+    /// All retained verdicts; roles own only the two STATE cardinalities.
+    #[must_use]
+    pub const fn report(&self) -> &realization::ConformanceReport {
+        self.classified.report()
+    }
+
+    /// The observed sponsor-input count, uncalibrated and never admission evidence.
+    ///
+    /// Absent when there are no sponsor inputs; otherwise retained unchanged from classification.
+    #[must_use]
+    pub const fn sponsor_input_bound_uncalibrated(&self) -> Option<realization::Count> {
+        self.classified.sponsor_input_bound_uncalibrated()
+    }
+}
+
+/// Validate coordinator, STATE cardinalities and positions of classified bytes.
+///
+/// Reads the retained report rather than evaluating again. Coordinator checks
+/// precede input and output STATE cardinality checks, then placements. Every
+/// other verdict remains evidence for its owning boundary, including sponsor
+/// cardinalities, recognition, isolation and multiplicity. Family aliases have
+/// the same role as their authenticated STATE or sponsor claims.
+///
+/// Classification authentication refuses other fixed-role claims and its owned
+/// input closure refuses other families, so the coordinator check needs only
+/// the sponsor test to distinguish the remaining non-STATE claims.
+///
+/// The presence rules for sponsor change only with a sponsor region and fees
+/// where required remain unchecked; the comparisons-and-record step records
+/// this residual.
+///
+/// # Errors
+///
+/// Returns the first typed coordinator, STATE cardinality or placement refusal.
+/// An absent or unevaluated STATE cardinality fails closed, although the
+/// announcement declarations and authenticated STATE shape rule preclude it.
+pub fn validate_maturity_abi_roles<'a>(
+    abi: &CandidateMaturityAnnouncementAbi,
+    view: &ValidatedMaturityStateView,
+    classified: &'a ValidatedMaturityAbiClassification,
+) -> Result<ValidatedMaturityAbiRoles<'a>, MaturityAbiRoleRefusal> {
+    check_maturity_coordinator(abi.inputs(), view, classified)?;
+    for side in [
+        realization::TransactionSide::Input,
+        realization::TransactionSide::Output,
+    ] {
+        check_maturity_state_cardinality(classified.report(), side)?;
+    }
+    check_maturity_positions(abi, classified)?;
+    Ok(ValidatedMaturityAbiRoles { classified })
+}
+
+const fn is_maturity_state(claim: MaturityPositionClaim) -> bool {
+    matches!(
+        claim,
+        MaturityPositionClaim::State | MaturityPositionClaim::Family(architecture::ObjectId::State)
+    )
+}
+
+const fn is_maturity_sponsor(claim: MaturityPositionClaim) -> bool {
+    matches!(
+        claim,
+        MaturityPositionClaim::SponsorMember
+            | MaturityPositionClaim::SponsorChange
+            | MaturityPositionClaim::Family(architecture::ObjectId::PlainLbtc)
+    )
+}
+
+fn check_maturity_coordinator(
+    layout: MaturityInputLayout,
+    view: &ValidatedMaturityStateView,
+    classified: &ValidatedMaturityAbiClassification,
+) -> Result<(), MaturityAbiRoleRefusal> {
+    use MaturityAbiRoleRefusal as Refusal;
+    let claims = classified.input_claims();
+    let Some(state) = claims.iter().position(|claim| is_maturity_state(*claim)) else {
+        return Err(Refusal::CoordinatorMissing);
+    };
+    let index = usize::from(layout.coordinator().index());
+    let Some(claim) = claims.get(index) else {
+        return Err(Refusal::CoordinatorMissing);
+    };
+    if is_maturity_sponsor(*claim) {
+        return Err(Refusal::StateAndSponsorPositionsExchanged {
+            state,
+            sponsor: index,
+        });
+    }
+    let expected = view.view().current_state_outpoint();
+    let offered = classified.transaction().inputs()[index].outpoint();
+    if offered != expected {
+        return Err(Refusal::CoordinatorIsNotTheValidatedPredecessor { expected, offered });
+    }
+    let positions = classified
+        .transaction()
+        .inputs()
+        .iter()
+        .enumerate()
+        .filter_map(|(position, input)| (input.outpoint() == expected).then_some(position))
+        .collect::<Vec<_>>();
+    if positions.len() > 1 {
+        return Err(Refusal::CoordinatorRepeated { positions });
+    }
+    Ok(())
+}
+
+fn check_maturity_state_cardinality(
+    report: &realization::ConformanceReport,
+    side: realization::TransactionSide,
+) -> Result<(), MaturityAbiRoleRefusal> {
+    use realization::{RelationId, RelationKind, RelationStatus, RelationSubject};
+    let relation = RelationId::new(
+        architecture::OperationId::AnnounceMaturity,
+        RelationKind::Cardinality,
+        RelationSubject::ObjectFamily {
+            side,
+            object: architecture::ObjectId::State,
+        },
+    );
+    match report.verdict(&relation).map(|verdict| &verdict.status) {
+        Some(RelationStatus::Passed) => Ok(()),
+        Some(RelationStatus::Failed { reason }) => Err(MaturityAbiRoleRefusal::Cardinality {
+            relation,
+            failure: *reason,
+        }),
+        status => Err(MaturityAbiRoleRefusal::CardinalityUnavailable {
+            relation,
+            status: status.cloned(),
+        }),
+    }
+}
+
+fn check_maturity_positions(
+    abi: &CandidateMaturityAnnouncementAbi,
+    classified: &ValidatedMaturityAbiClassification,
+) -> Result<(), MaturityAbiRoleRefusal> {
+    let successor = abi.outputs().successor_position();
+    let claims = classified.output_claims();
+    let expected_position = |role: MaturityOutputRole| match role.placement() {
+        MaturityOutputPlacementRule::OutputZero => usize::from(successor),
+        MaturityOutputPlacementRule::NextOptionalOutput => usize::from(successor) + 1,
+        MaturityOutputPlacementRule::FinalOutputWhereRequired => claims.len() - 1,
+    };
+    for (offered, claim) in claims.iter().enumerate() {
+        if is_maturity_state(*claim) && offered != usize::from(successor) {
+            return Err(MaturityAbiRoleRefusal::SuccessorDisplaced {
+                expected: successor,
+                offered,
+            });
+        }
+    }
+    check_maturity_sponsor_suffix(abi.inputs().sponsor_suffix(), classified.input_claims())?;
+    for (offered, claim) in claims.iter().enumerate() {
+        if is_maturity_sponsor(*claim)
+            && offered != expected_position(MaturityOutputRole::SponsorChange)
+        {
+            return Err(MaturityAbiRoleRefusal::SponsorChangeDisplaced { offered });
+        }
+    }
+    for (offered, claim) in claims.iter().enumerate() {
+        if *claim == MaturityPositionClaim::TargetFee
+            && offered != expected_position(MaturityOutputRole::TargetFee)
+        {
+            return Err(MaturityAbiRoleRefusal::FeeNotFinal { offered });
+        }
+    }
+    Ok(())
+}
+
+// The full entry cannot reach this refusal with the stated layout: coordinator
+// at input zero, exactly one STATE input, and the sponsor suffix beginning at
+// one leave every remaining admitted input in the suffix. Keep the placement
+// guard independently testable without assembling an ABI.
+pub(super) fn check_maturity_sponsor_suffix(
+    rule: MaturitySponsorSuffixRule,
+    claims: &[MaturityPositionClaim],
+) -> Result<(), MaturityAbiRoleRefusal> {
+    for (offered, claim) in claims.iter().enumerate() {
+        if is_maturity_sponsor(*claim) && offered < usize::from(rule.first()) {
+            return Err(MaturityAbiRoleRefusal::SponsorSuffixDisplaced {
+                first: rule.first(),
+                offered,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn maturity_realization_refusal(
@@ -479,8 +752,8 @@ fn maturity_claim_matches(
     }
 }
 
-// Member provenance: sponsor::WITNESS_V0_KEYHASH_PROGRAM_BYTES and its
-// version-zero key-hash class. STATE uses the taproot program contract.
+// Member provenance: construct::admitted_sponsor_program reads the target's
+// SponsorProgramClass census. STATE uses the taproot program contract.
 // Change is the image of state_construct::sponsor_change_output, which
 // encodes the capability's version and payload through witness_program_script.
 #[derive(Clone, Copy)]
@@ -491,6 +764,12 @@ enum MaturityProgramClass {
 }
 
 fn maturity_program_matches(class: MaturityProgramClass, program: &[u8]) -> bool {
+    // This derives a fixed private reviewed declaration, with no offered bytes
+    // or caller policy. Failure requires a defective built-in declaration and
+    // is unreachable for the reviewed contract checked by target-elements'
+    // the_reviewed_contract_is_the_second_revision test. The false arm is a
+    // defensive refusal, not an offer-dependent derivation outcome. A future
+    // configurable derivation must propagate a typed error instead.
     static TARGET: std::sync::LazyLock<
         Result<ReviewedElementsTapscriptDefinition, Vec<target_elements::TargetError>>,
     > = std::sync::LazyLock::new(target_elements::reviewed_elements_tapscript);
@@ -508,7 +787,7 @@ fn maturity_program_matches(class: MaturityProgramClass, program: &[u8]) -> bool
     };
     match class {
         MaturityProgramClass::SponsorMember => {
-            payload.len() == crate::sponsor::WITNESS_V0_KEYHASH_PROGRAM_BYTES && encoded_matches(0)
+            crate::construct::admitted_sponsor_program(target, program)
         }
         MaturityProgramClass::State => {
             payload.len() == crate::taproot::TAPROOT_PROGRAM_BYTES

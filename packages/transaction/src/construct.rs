@@ -527,7 +527,11 @@ const fn is_known_zero(value: ValueField) -> bool {
 }
 
 /// Whether a program is one the reviewed sponsor profile admits.
-fn admitted_sponsor_program(target: &ReviewedElementsTapscriptDefinition, program: &[u8]) -> bool {
+/// Shared by construction and maturity classification so both read the census.
+pub(crate) fn admitted_sponsor_program(
+    target: &ReviewedElementsTapscriptDefinition,
+    program: &[u8],
+) -> bool {
     SponsorProgramClass::ALL.iter().any(|class| match class {
         SponsorProgramClass::WitnessV0KeyHash => {
             program.len() == WITNESS_V0_KEYHASH_PROGRAM_BYTES + 2

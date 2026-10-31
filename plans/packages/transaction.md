@@ -282,6 +282,8 @@ bytes are identical.
 
 ## Assurance boundary · `sec:transaction:assurance`
 
+The maturity ABI classification and role entries authenticate offered positions, validate the coordinator and placements against the ABI layouts and read the STATE cardinalities from the retained realization report; their acceptance admits nothing to safe construction and calibrates no sponsor-input maximum.
+
 The package establishes ABI-consistent construction and witness materialization; `abi::validate_compact_abi_fields` separately classifies compact input-count, version and sequence disagreements before submission, without admitting raw input to safe construction or asserting witness validity.
 
 It does not establish:
