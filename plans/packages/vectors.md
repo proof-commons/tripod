@@ -191,6 +191,8 @@ Target-negative coverage requires intended violation, target execution, and expe
 
 Supplemental ABI requirements are indexed separately from compiler-derived coverage and use explicitly named test staging against the transaction-owned field validator; constructor pinning alone is not a malformed-input refusal.
 
+Existing-entry STATE comparisons retain both offers in `packages/vectors/src/maturity_first_party.rs` and dispatch through the declared transaction, linker or conformance entry. Scripted protocol comparisons establish first-party evidence only. Missing typed contracts and Python request-admission routes remain required at (`rec:backlog:wave0-first-party-entries`).
+
 Focused mutations list collateral relations honestly.
 
 ## Representation reports · `rule:vectors:representation`

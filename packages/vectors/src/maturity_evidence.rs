@@ -3214,10 +3214,10 @@ pub(crate) mod tests {
             }
         }
         assert_eq!([accepted_departures, positives, native_claims], [3, 8, 28]);
-        // Fifteen report pairs and five supplementary comparisons add answers.
-        assert_eq!(PLAN.census().answered(), 139);
-        // Report pairs remove fifteen obligations; five comparisons answer five more.
-        assert_eq!(PLAN.census().outstanding(), 67);
+        // Fifteen report pairs and thirteen supplementary comparisons add answers.
+        assert_eq!(PLAN.census().answered(), 147);
+        // Report pairs remove fifteen obligations; thirteen comparisons answer thirteen more.
+        assert_eq!(PLAN.census().outstanding(), 59);
     }
 
     #[test]
@@ -4171,10 +4171,10 @@ pub(crate) mod tests {
                 census.retired(),
                 census.waiting()
             ),
-            (139, 22, 2, 43)
+            (147, 22, 2, 35)
         );
         assert_eq!(census.observed(), census.answered());
-        assert_eq!(census.outstanding(), 67);
+        assert_eq!(census.outstanding(), 59);
         assert_eq!(
             census.observed() + census.final_dispositions() + census.retired() + census.waiting(),
             206
@@ -4192,7 +4192,7 @@ pub(crate) mod tests {
             .expect("waiting row");
         waiting.standing = MaturityRowStanding::InfrastructureBlocked;
         let blocked_census = super::census_from_rows(&blocked.rows);
-        assert_eq!(blocked_census.waiting(), 43);
+        assert_eq!(blocked_census.waiting(), 35);
         assert_eq!(blocked_census.infrastructure_blocked(), 1);
         assert!(!blocked_census.every_required_row_is_answered());
         let mut experimental = PLAN.clone();
@@ -4204,7 +4204,7 @@ pub(crate) mod tests {
             .standing = MaturityRowStanding::Experimental;
         let experimental_census = super::census_from_rows(&experimental.rows);
         assert_eq!(experimental_census.experimental(), 1);
-        assert_eq!(experimental_census.waiting(), 43);
+        assert_eq!(experimental_census.waiting(), 35);
         assert_eq!(
             experimental_census.observed()
                 + experimental_census.final_dispositions()
@@ -4687,10 +4687,10 @@ pub(crate) mod tests {
         // The observer archive is admitted beside the census and links no row.
         let census = PLAN.census();
         assert_eq!(census.rows(), 206);
-        // Five retained comparisons join the forty historical discharges.
-        assert_eq!(census.first_party_discharged(), 45);
-        // Five comparisons and two normalization proofs leave required standing.
-        assert_eq!(census.first_party_required(), 36);
+        // Thirteen retained comparisons join the forty historical discharges.
+        assert_eq!(census.first_party_discharged(), 53);
+        // Thirteen comparisons and two normalization proofs leave required standing.
+        assert_eq!(census.first_party_required(), 28);
         assert_eq!(census.retired(), 2);
         assert_eq!(census.native_run_required(), 0);
         // Every declared report row now has its exact consumer pair.
@@ -4701,8 +4701,8 @@ pub(crate) mod tests {
         assert_eq!(census.outstanding_under_typed_non_answer(), 29);
         // The eight semantic positives, twenty-seven native refusal rows and
         // balanced-state-corruption add thirty-six answers to the prior eighty-three.
-        // Fifteen exact report pairs add report-only answers to the native census.
-        assert_eq!(census.answered(), 139);
+        // Fifteen report pairs and thirteen first-party comparisons add answers to the native census.
+        assert_eq!(census.answered(), 147);
         assert_eq!(census.root_history_observed(), 16);
         assert_eq!(census.public_recovery_observed(), 14);
         assert_eq!(census.native_declared_boundary_observed(), 0);
@@ -4748,10 +4748,11 @@ pub(crate) mod tests {
     fn supplementary_dispositions_join_required_keys_without_promoting_historical_answers() {
         use crate::maturity_first_party::{
             MaturitySupplementaryDisposition, MaturitySupplementaryRow,
-            maturity_first_party_dispositions,
+            derive_close_safety_dispositions,
         };
         use std::collections::BTreeSet;
-        let ledger = maturity_first_party_dispositions().expect("supplementary dispositions");
+        let admitted = derive_close_safety_dispositions().expect("bounded consolidation");
+        let ledger = admitted.rows().to_vec();
         let keys: std::collections::BTreeSet<_> =
             ledger.iter().map(MaturitySupplementaryRow::key).collect();
         let before = super::derive_maturity_evidence_before_closure(
@@ -4785,12 +4786,15 @@ pub(crate) mod tests {
                 .count(),
             5
         );
-        assert_admitted_supplementary_census();
+        let mut closed = before.clone();
+        super::apply_supplementary_dispositions(&mut closed, &admitted)
+            .expect("bounded consolidation");
+        assert_admitted_supplementary_census(&closed);
         let expected_changes = BTreeSet::from(closure_movement_keys());
         let mut actual_changes = std::collections::BTreeSet::new();
         assert_eq!(before.rows().len(), 206);
-        assert_eq!(PLAN.rows().len(), 206);
-        for (old, new) in before.rows().iter().zip(PLAN.rows()) {
+        assert_eq!(closed.rows().len(), 206);
+        for (old, new) in before.rows().iter().zip(closed.rows()) {
             assert_eq!(
                 old.row(),
                 new.row(),
@@ -4811,7 +4815,7 @@ pub(crate) mod tests {
                 assert_eq!(entries.len(), 1, "one ledger entry per movement");
                 match entries[0].disposition() {
                     MaturitySupplementaryDisposition::Discharged(evidence) => {
-                        assert!(PLAN.discharged().contains(evidence.as_ref()));
+                        assert!(closed.discharged().contains(evidence.as_ref()));
                         assert_eq!(
                             new.standing(),
                             &MaturityRowStanding::FirstPartyDischarged {
@@ -4837,25 +4841,278 @@ pub(crate) mod tests {
             }
         }
         assert_eq!(actual_changes, expected_changes);
-        assert_closure_record(&actual_changes, &ledger);
+        assert_closure_record(&actual_changes, &ledger, &closed);
         for old in before.discharged() {
-            assert!(PLAN.discharged().contains(old));
+            assert!(closed.discharged().contains(old));
         }
-        assert_historical_partition(&before, &PLAN);
+        assert_historical_partition(&before, &closed);
     }
 
-    fn assert_admitted_supplementary_census() {
-        assert_eq!(PLAN.census().rows(), 206);
+    fn entry_movement_keys() -> std::collections::BTreeSet<(&'static str, &'static str)> {
+        std::collections::BTreeSet::from([
+            ("16.2", "request-cycle-differs-from-successor"),
+            ("16.5", "metadata-leaf-missing"),
+            ("16.11", "conflicting-leaf-weight"),
+            ("16.11", "candidate-outside-bounds"),
+            ("16.12", "wrong-schema"),
+            ("16.12", "wrong-environment"),
+            ("16.12", "wrong-provenance"),
+            ("16.12", "signing-response-bound-to-other-bytes"),
+        ])
+    }
+
+    fn bounded_consolidation_plan() -> MaturityAnnouncementEvidencePlan {
+        let mut before = super::derive_maturity_evidence_before_closure(
+            MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            absent_material(),
+        )
+        .expect("pre-closure plan");
+        let ledger = crate::maturity_first_party::derive_close_safety_dispositions()
+            .expect("original seven movements");
+        super::apply_supplementary_dispositions(&mut before, &ledger)
+            .expect("bounded consolidation");
+        assert_admitted_supplementary_census(&before);
+        let census = before.census();
+        assert_eq!(
+            (
+                census.observed(),
+                census.final_dispositions(),
+                census.retired(),
+                census.waiting()
+            ),
+            (139, 22, 2, 43)
+        );
+        assert_eq!(census.outstanding(), 67);
+        before
+    }
+
+    #[test]
+    fn entry_movements_preserve_every_other_row_and_historical_answer() {
+        use crate::maturity_first_party::{
+            MaturitySupplementaryDisposition, maturity_first_party_dispositions,
+        };
+        let before = bounded_consolidation_plan();
+        let ledger = maturity_first_party_dispositions().expect("current ledger");
+        let mut changed = std::collections::BTreeSet::new();
+        let mut unchanged = 0;
+        assert_eq!(before.rows().len(), PLAN.rows().len());
+        for (old, new) in before.rows().iter().zip(PLAN.rows()) {
+            assert_eq!(old.row(), new.row(), "same row, boundary and relation");
+            let key = (old.row().section().section(), old.row().name());
+            if old.standing() == new.standing() {
+                assert_eq!(old, new, "unchanged evidence identity: {key:?}");
+                unchanged += 1;
+                continue;
+            }
+            assert!(changed.insert(key));
+            let MaturityRowStanding::FirstPartyRequired(previous) = old.standing() else {
+                panic!("entry movement must start required");
+            };
+            let entries: Vec<_> = ledger
+                .iter()
+                .filter(|entry| entry.key() == (old.row().section(), old.row().name()))
+                .collect();
+            assert_eq!(entries.len(), 1);
+            assert_eq!(&entries[0].previous(), previous);
+            let MaturitySupplementaryDisposition::Discharged(evidence) = entries[0].disposition()
+            else {
+                panic!("movement needs performed comparison");
+            };
+            assert!(PLAN.discharged().contains(evidence.as_ref()));
+            assert_eq!(
+                new.standing(),
+                &MaturityRowStanding::FirstPartyDischarged {
+                    validator: evidence.validator(),
+                    class: evidence.supplementary_class().expect("class"),
+                }
+            );
+        }
+        assert_eq!(changed, entry_movement_keys());
+        assert_eq!(unchanged, 198);
+        for evidence in before.discharged() {
+            assert!(
+                PLAN.discharged().contains(evidence),
+                "preserve original comparisons"
+            );
+        }
+        assert_historical_partition(&before, &PLAN);
+        let old = before.census();
+        let new = PLAN.census();
+        assert_eq!(new.answered(), old.answered() + changed.len());
+        assert_eq!(new.outstanding() + changed.len(), old.outstanding());
+        assert_eq!(
+            new.first_party_discharged(),
+            old.first_party_discharged() + changed.len()
+        );
+        assert_eq!(
+            new.first_party_required() + changed.len(),
+            old.first_party_required()
+        );
+        assert_eq!(
+            (
+                new.observed(),
+                new.final_dispositions(),
+                new.retired(),
+                new.waiting()
+            ),
+            (147, 22, 2, 35)
+        );
+        assert_eq!(new.outstanding_under_typed_non_answer(), 29);
+        assert_eq!(
+            (new.typed_non_answer_final(), new.typed_non_answer_waiting()),
+            (22, 7)
+        );
+        assert_eq!(
+            (
+                new.native_acceptance_observed(),
+                new.native_refusal_observed()
+            ),
+            (11, 38)
+        );
+        assert_eq!(
+            (new.report_layer_required(), new.report_layer_observed()),
+            (0, 15)
+        );
+    }
+
+    #[test]
+    fn first_party_entry_record_matches_all_fourteen_considered_keys() {
+        use crate::maturity_first_party::{
+            MaturitySupplementaryDisposition, maturity_first_party_dispositions,
+        };
+        let ledger = maturity_first_party_dispositions().expect("ledger");
+        let before = bounded_consolidation_plan();
+        let mut expected = entry_movement_keys();
+        expected.extend([
+            (
+                "16.3",
+                "correct-semantic-metadata-with-noncanonical-representation-nonce",
+            ),
+            ("16.12", "blank-request"),
+            ("16.12", "oversized-request"),
+            ("16.12", "unterminated-request"),
+            ("16.12", "malformed-json"),
+            ("16.12", "unknown-request-field"),
+        ]);
+        let record = include_str!("../../../plans/backlog.md");
+        let section = record
+            .split("### First-party entries ·")
+            .nth(1)
+            .expect("entries section")
+            .split("### Test performance ·")
+            .next()
+            .expect("section end");
+        let mut recorded = std::collections::BTreeSet::new();
+        let mut movements = std::collections::BTreeSet::new();
+        for line in section.lines().filter(|line| line.starts_with("| `16.")) {
+            let cells: Vec<_> = line.split('|').map(str::trim).collect();
+            assert_eq!(cells.len(), 9, "seven columns");
+            let key = cells[1]
+                .trim_matches('`')
+                .split_once(" / ")
+                .expect("section and name");
+            assert!(recorded.insert(key), "unique key");
+            assert_eq!(cells[2], "FirstPartyRequired");
+            assert_ne!(cells[4], "");
+            assert_eq!(cells[7].trim_matches('`'), entry_record_pin(key));
+            let prior = before
+                .rows()
+                .iter()
+                .find(|row| (row.row().section().section(), row.row().name()) == key)
+                .expect("prior key");
+            assert!(matches!(
+                prior.standing(),
+                MaturityRowStanding::FirstPartyRequired(_)
+            ));
+            let item = ledger
+                .iter()
+                .find(|item| (item.key().0.section(), item.key().1) == key)
+                .expect("ledger key");
+            match item.disposition() {
+                MaturitySupplementaryDisposition::Discharged(evidence) => {
+                    assert_eq!(
+                        cells[3].trim_matches('`'),
+                        evidence.validator().entry_point()
+                    );
+                    assert_eq!(
+                        Some(cells[5].trim_matches('`')),
+                        evidence.supplementary_class()
+                    );
+                    assert_eq!(cells[6], "observed");
+                    assert!(movements.insert(key));
+                }
+                MaturitySupplementaryDisposition::Retained {
+                    boundary,
+                    attempted,
+                    ..
+                } => {
+                    assert_eq!(cells[3].trim_matches('`'), boundary.entry_point());
+                    assert!(attempted.is_none());
+                    assert_eq!(cells[5], retained_entry_record_refusal(key));
+                    assert_eq!(
+                        cells[6],
+                        if key.0 == "16.3" {
+                            "retained: canonical-offer contract required"
+                        } else {
+                            "retained: cross-language admission required"
+                        }
+                    );
+                }
+                MaturitySupplementaryDisposition::OutOfContract { .. } => {
+                    panic!("no entry retirement")
+                }
+            }
+        }
+        assert_eq!(recorded, expected);
+        assert_eq!(recorded.len(), 14);
+        assert_eq!(movements, entry_movement_keys());
+    }
+
+    fn entry_record_pin(key: (&str, &str)) -> &'static str {
+        match key {
+            ("16.2", "request-cycle-differs-from-successor") => "entry_pair_successor_cycle",
+            ("16.5", "metadata-leaf-missing") => "entry_pair_metadata_omission",
+            ("16.11", "candidate-outside-bounds") => "entry_pair_depth_cap",
+            ("16.11", "conflicting-leaf-weight") => "entry_pair_conflicting_weight",
+            ("16.12", "wrong-schema") => "entry_pair_schema",
+            ("16.12", "wrong-environment") => "entry_pair_environment",
+            ("16.12", "wrong-provenance") => "entry_pair_provenance",
+            ("16.12", "signing-response-bound-to-other-bytes") => "entry_pair_signature_binding",
+            _ => {
+                retained_entry_record_refusal(key);
+                "retained_obligations_have_valid_subjects_and_named_boundaries"
+            }
+        }
+    }
+
+    fn retained_entry_record_refusal(key: (&str, &str)) -> &'static str {
+        match key {
+            ("16.3", "correct-semantic-metadata-with-noncanonical-representation-nonce") => {
+                "No performed refusal"
+            }
+            ("16.12", "blank-request") => "Not admitted: blank_record",
+            ("16.12", "malformed-json") => "Not admitted: malformed_record",
+            ("16.12", "oversized-request") => "Not admitted: oversized_record",
+            ("16.12", "unknown-request-field") => {
+                "Not admitted: EXECUTION_REQUEST_FIELD_CENSUS_FAILED"
+            }
+            ("16.12", "unterminated-request") => "Not admitted: unterminated_record",
+            _ => panic!("unexpected retained entry key: {key:?}"),
+        }
+    }
+
+    fn assert_admitted_supplementary_census(closed: &MaturityAnnouncementEvidencePlan) {
+        assert_eq!(closed.census().rows(), 206);
         // Five retained comparisons add answers; the two retirements add none.
-        assert_eq!(PLAN.census().answered(), 139);
-        assert_eq!(PLAN.census().outstanding(), 67);
-        assert_eq!(PLAN.census().first_party_discharged(), 45);
-        assert_eq!(PLAN.census().first_party_required(), 36);
-        assert_eq!(PLAN.census().retired(), 2);
+        assert_eq!(closed.census().answered(), 139);
+        assert_eq!(closed.census().outstanding(), 67);
+        assert_eq!(closed.census().first_party_discharged(), 45);
+        assert_eq!(closed.census().first_party_required(), 36);
+        assert_eq!(closed.census().retired(), 2);
         // Native, report and typed-reason evidence remains unchanged.
-        assert_eq!(PLAN.census().native_run_required(), 0);
-        assert_eq!(PLAN.census().report_layer_required(), 0);
-        assert_eq!(PLAN.census().outstanding_under_typed_non_answer(), 29);
+        assert_eq!(closed.census().native_run_required(), 0);
+        assert_eq!(closed.census().report_layer_required(), 0);
+        assert_eq!(closed.census().outstanding_under_typed_non_answer(), 29);
     }
 
     #[test]
@@ -4864,7 +5121,7 @@ pub(crate) mod tests {
         let ledger = crate::maturity_first_party::derive_maturity_first_party_dispositions()
             .expect("admitted ledger");
         let mut closed = PLAN.clone();
-        assert_eq!(closed.census().first_party_required(), 36);
+        assert_eq!(closed.census().first_party_required(), 28);
         assert_eq!(ledger.rows().len(), 43);
         assert_eq!(
             super::apply_supplementary_dispositions(&mut closed, &ledger),
@@ -4896,13 +5153,14 @@ pub(crate) mod tests {
     fn assert_closure_record(
         changed: &std::collections::BTreeSet<(&str, &str)>,
         ledger: &[crate::maturity_first_party::MaturitySupplementaryRow],
+        closed: &MaturityAnnouncementEvidencePlan,
     ) {
         let record = include_str!("../../../plans/backlog.md");
         let section = record
             .split("### Safety closure ledger ·")
             .nth(1)
             .expect("closure ledger")
-            .split("### Test performance ·")
+            .split("### First-party entries ·")
             .next()
             .expect("scoped ledger");
         let mut recorded = std::collections::BTreeSet::new();
@@ -4922,7 +5180,7 @@ pub(crate) mod tests {
                 closure_previous_wording(prior.previous()),
                 "recorded prior reason agrees with the carried reason"
             );
-            let entry = PLAN
+            let entry = closed
                 .rows()
                 .iter()
                 .find(|entry| {

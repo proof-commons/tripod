@@ -1594,11 +1594,17 @@ fn captured_refusal<T>(
 
 /// The protocol exchange itself.
 ///
-/// Crate-visible so the boundary suites can drive one exchange against a
+/// Public so boundary comparisons can drive one exchange against a
 /// written script rather than a spawned process: what those tests are
 /// about is which record this side sends and what it refuses, and a real
 /// child would answer that through scheduling that is not the property.
-pub(crate) fn run_protocol(
+/// Scripted streams establish first-party protocol comparisons, not native observations.
+/// The transcript's declared trust comes from the caller's configuration; scripted
+/// streams do not force Mock trust. The first-party entry pairs pass Mock explicitly.
+///
+/// # Errors
+/// Returns the protocol, framing, environment or response defect of the exchange.
+pub fn run_protocol(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
     configuration: &ExecutorConfiguration,
@@ -2144,7 +2150,14 @@ fn run_operation_steps<W: Write, R: BufRead>(
 }
 
 /// Bind an accepted script-path answer before any consumer receives it.
-fn bind_script_path_response(
+///
+/// Shape validation must precede this public context comparison.
+/// Returns success without comparison for a subject other than script-path signing
+/// or a response whose observed layer is not accepted.
+///
+/// # Errors
+/// Returns the exact genesis, signer, profile or transaction binding defect.
+pub fn bind_script_path_response(
     subject: &OperationSubject,
     response: &NativeOperationResponse,
     environment: &ExecutorEnvironmentObservation,
@@ -2210,7 +2223,8 @@ fn bind_script_path_response(
 /// disagreeing genesis, and
 /// [`NativeConformanceError::ActivationObservationMismatch`] where the
 /// reviewed domain or leaf version is not active.
-pub(crate) fn compare_environment(
+/// [`NativeConformanceError::UnsupportedProtocolSchema`] for a different schema.
+pub fn compare_environment(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
     observation: &ExecutorEnvironmentObservation,

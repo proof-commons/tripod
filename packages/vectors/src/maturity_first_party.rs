@@ -71,6 +71,7 @@
 //! material from a caller.
 
 use std::collections::BTreeSet;
+use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::LazyLock;
 
 use architecture::ARCHITECTURE;
@@ -99,6 +100,8 @@ use target_elements_conformance::protocol::{
     NativeResourceObservation, NativeVerdict, ObservedOutcomeLayer, OperationCaseId,
     OperationStepKind, ResponseShapeDefect, validate_response_shape,
 };
+use target_elements_conformance::provenance::{ExpectedExecutorProvenance, ProvenanceDefect};
+use target_elements_conformance::{executor as native_executor, protocol as native_protocol};
 use transaction::bytes::{
     AssetField, AssetId, Outpoint, TargetOutput, TargetTransaction, Txid, ValueField,
 };
@@ -181,6 +184,20 @@ const AUXILIARY: [u8; 32] = [0; 32];
 /// member has to say.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityFirstPartyValidator {
+    /// Compare the offered successor with the authorized one.
+    AuthorizedSuccessor,
+    /// Reconstruct the complete offered STATE program.
+    CompleteStateView,
+    /// Check unique weighted STATE declarations.
+    WeightedStateDeclarations,
+    /// Bind the complete STATE tree under its depth cap.
+    CompleteStateBounds,
+    /// Compare the observed protocol environment with its binding.
+    ProtocolEnvironment,
+    /// Compare a transcript's provenance with its retained expectation.
+    TranscriptProvenance,
+    /// Bind the signing response to the requested bytes.
+    ScriptPathBinding,
     /// Constructor continuity against a retained constructor.
     ConstructorContinuity,
     /// Consumed symbols against offered definitions.
@@ -240,6 +257,13 @@ impl MaturityFirstPartyValidator {
     #[must_use]
     pub const fn entry_point(self) -> &'static str {
         match self {
+            Self::AuthorizedSuccessor => "OperatorAuthorizedMaturityAnnouncement::check_offered",
+            Self::CompleteStateView => "PublicMaturityStateView::validate",
+            Self::WeightedStateDeclarations => "TaptreeInput<StateLeafRole>::new",
+            Self::CompleteStateBounds => "StateLinkedTaptree::bind",
+            Self::ProtocolEnvironment => "compare_environment",
+            Self::TranscriptProvenance => "ExecutionTranscript::provenance_agreement",
+            Self::ScriptPathBinding => "bind_script_path_response",
             Self::ConstructorContinuity => "CandidateStateConstructor::continuity",
             Self::SymbolResolution => "resolve_state_census",
             Self::SemanticConstruction => "construct_maturity_announcement",
@@ -264,6 +288,8 @@ impl MaturityFirstPartyValidator {
     pub const fn owning_package(self) -> &'static str {
         match self {
             Self::SemanticConstruction
+            | Self::AuthorizedSuccessor
+            | Self::CompleteStateView
             | Self::OperatorAuthorization
             | Self::OfferedTransactionCheck => "transaction",
             Self::ConstructorContinuity
@@ -273,10 +299,15 @@ impl MaturityFirstPartyValidator {
             | Self::MetadataLeafPattern
             | Self::StaticSubtreeValidation
             | Self::CanonicalBranchSide => "tapscript",
-            Self::SymbolResolution | Self::StateCandidateLink | Self::LinkedProgramCheck => {
-                "linker"
-            }
+            Self::SymbolResolution
+            | Self::StateCandidateLink
+            | Self::LinkedProgramCheck
+            | Self::WeightedStateDeclarations
+            | Self::CompleteStateBounds => "linker",
             Self::ResponseShapeValidation
+            | Self::ProtocolEnvironment
+            | Self::TranscriptProvenance
+            | Self::ScriptPathBinding
             | Self::OperationResponseShape
             | Self::ConservationResponseShape => "target-elements-conformance",
         }
@@ -299,6 +330,22 @@ impl MaturityFirstPartyValidator {
 /// else.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityFirstPartyChange {
+    /// Change only the offered announced cycle after authorization.
+    ChangeAuthorizedSuccessorCycle,
+    /// Commit the static subtree alone instead of the complete outer pair.
+    OmitMetadataCommitmentBranch,
+    /// Add a second declaration of one role with a conflicting weight.
+    AddConflictingWeightedDeclaration,
+    /// Lower the positive cap below the complete tree depth.
+    LowerCompleteTreeDepthCap,
+    /// Change only the observed protocol schema.
+    ChangeObservedSchema,
+    /// Change only the observed network identifier.
+    ChangeObservedNetwork,
+    /// Add one reported topic absent from the independent expectation.
+    AddUnexpectedProvenanceTopic,
+    /// Change only the transaction bytes echoed by a signing response.
+    ChangeSignatureBoundBytes,
     /// Change one static leaf against the retained constructor.
     ChangeRetainedStaticLeaf,
     /// Add a static leaf against the retained constructor.
@@ -419,6 +466,15 @@ pub enum MaturityFirstPartyChange {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum MaturityFirstPartyObservation {
+    /// Exact unsupported schema returned by environment binding.
+    UnsupportedProtocolSchema {
+        /// The schema on the refused observation.
+        offered: u32,
+    },
+    /// The environment binding returned its typed mismatch.
+    EnvironmentBindingMismatch,
+    /// The transcript's own typed provenance defect.
+    Provenance(target_elements_conformance::provenance::ProvenanceDefect),
     /// The transaction crate's own refusal root.
     Transaction(TransactionRefusal),
     /// The approved-key encoding's shape refusal.
@@ -3195,16 +3251,19 @@ pub fn validate_maturity_first_party(
         MaturityFirstPartyDisposition::Discharge(discharge) => discharge,
     };
     let substrate = substrate()?;
-    if matches!(
-        discharge.validator,
-        MaturityFirstPartyValidator::ConstructorContinuity
-            | MaturityFirstPartyValidator::SymbolResolution
-    ) {
+    if supplemental_discharge(case.section, case.name).is_some() {
         return validate_supplementary_comparison(case, row, discharge);
     }
     let observed = match discharge.validator {
         MaturityFirstPartyValidator::ConstructorContinuity
-        | MaturityFirstPartyValidator::SymbolResolution => {
+        | MaturityFirstPartyValidator::SymbolResolution
+        | MaturityFirstPartyValidator::AuthorizedSuccessor
+        | MaturityFirstPartyValidator::CompleteStateView
+        | MaturityFirstPartyValidator::WeightedStateDeclarations
+        | MaturityFirstPartyValidator::CompleteStateBounds
+        | MaturityFirstPartyValidator::ProtocolEnvironment
+        | MaturityFirstPartyValidator::TranscriptProvenance
+        | MaturityFirstPartyValidator::ScriptPathBinding => {
             return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
         }
         MaturityFirstPartyValidator::SemanticConstruction => {
@@ -3494,9 +3553,553 @@ impl MaturitySymbolResolutionTestStaging {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct EntryPair<T> {
+    control: T,
+    malformed: T,
+}
+
+impl<T: Eq> EntryPair<T> {
+    fn differs(&self) -> Result<(), MaturityFirstPartyRefusal> {
+        if self.control == self.malformed {
+            Err(MaturityFirstPartyRefusal::ChangeChangedNothing)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum MaturityEntrySubjects {
+    Successor {
+        finalized: Box<FinalizedMaturityAnnouncement>,
+        responses: Vec<OperatorSigningResponse>,
+        offers: Box<EntryPair<StateMetadata>>,
+    },
+    CompleteProgram {
+        offers: Box<EntryPair<PublicMaturityStateView>>,
+        static_root: [u8; 32],
+        static_program: Vec<u8>,
+    },
+    Weights(Box<EntryPair<Vec<linker::TapLeafInput<StateLeafRole>>>>),
+    Bounds {
+        constructor: Box<CandidateStateConstructor>,
+        tree: Box<linker::DeterministicTaptree<StateLeafRole>>,
+        caps: EntryPair<NonZeroU32>,
+    },
+    Environment {
+        binding: Box<target_elements::ReviewedDevelopmentBinding>,
+        offers: Box<EntryPair<native_protocol::ExecutorEnvironmentObservation>>,
+    },
+    Provenance {
+        binding: Box<target_elements::ReviewedDevelopmentBinding>,
+        environment: Box<native_protocol::ExecutorEnvironmentObservation>,
+        configuration: Box<native_executor::ExecutorConfiguration>,
+        offers: Box<EntryPair<native_protocol::ExecutorHandshake>>,
+    },
+    Signing {
+        subject: Box<native_protocol::OperationSubject>,
+        environment: Box<native_protocol::ExecutorEnvironmentObservation>,
+        offers: Box<EntryPair<NativeOperationResponse>>,
+    },
+}
+
+/// Retained control and changed offers at an existing first-party entry.
+/// Construction uses public typed inputs; observations are recomputed from both offers.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaturityEntryComparisonTestStaging {
+    change: MaturityFirstPartyChange,
+    subjects: MaturityEntrySubjects,
+}
+
+impl MaturityEntryComparisonTestStaging {
+    /// The single coordinate changed by this pair.
+    #[must_use]
+    pub const fn change(&self) -> MaturityFirstPartyChange {
+        self.change
+    }
+
+    fn new(change: MaturityFirstPartyChange) -> Result<Self, MaturityFirstPartyRefusal> {
+        use MaturityFirstPartyChange as Change;
+        let subjects = match change {
+            Change::ChangeAuthorizedSuccessorCycle => successor_entry_pair()?,
+            Change::OmitMetadataCommitmentBranch => complete_program_pair()?,
+            Change::AddConflictingWeightedDeclaration => {
+                let leaf = linker::TapLeafInput::new(StateLeafRole::Announcement, NonZeroU64::MIN);
+                MaturityEntrySubjects::Weights(Box::new(EntryPair {
+                    control: vec![leaf],
+                    malformed: vec![
+                        leaf,
+                        linker::TapLeafInput::new(leaf.leaf(), leaf.weight().saturating_add(1)),
+                    ],
+                }))
+            }
+            Change::LowerCompleteTreeDepthCap => complete_bounds_pair()?,
+            Change::ChangeObservedSchema | Change::ChangeObservedNetwork => {
+                let (binding, control) = entry_environment()?;
+                let mut malformed = control.clone();
+                if change == Change::ChangeObservedSchema {
+                    malformed.schema = NATIVE_PROTOCOL_SCHEMA + 1;
+                } else {
+                    malformed.network_id[0] ^= 1;
+                }
+                MaturityEntrySubjects::Environment {
+                    binding: Box::new(binding),
+                    offers: Box::new(EntryPair { control, malformed }),
+                }
+            }
+            Change::AddUnexpectedProvenanceTopic => provenance_entry_pair()?,
+            Change::ChangeSignatureBoundBytes => signing_entry_pair()?,
+            _ => return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible),
+        };
+        Ok(Self { change, subjects })
+    }
+
+    fn observe(&self) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+        use MaturityEntrySubjects as Subjects;
+        let target = &substrate()?.target;
+        let observed = match &self.subjects {
+            Subjects::Successor {
+                finalized,
+                responses,
+                offers,
+            } => observe_successor_entry(finalized, responses, offers),
+            Subjects::CompleteProgram { offers, .. } => {
+                offers.differs()?;
+                entry_outcome(
+                    offers
+                        .control
+                        .validate(target, &OracleStateCurve)
+                        .map(|_| ()),
+                    offers
+                        .malformed
+                        .validate(target, &OracleStateCurve)
+                        .map(|_| ()),
+                    MaturityFirstPartyObservation::Transaction,
+                )
+            }
+            Subjects::Weights(offers) => {
+                offers.differs()?;
+                let call = |leaves: &[linker::TapLeafInput<StateLeafRole>]| {
+                    linker::TaptreeInput::new(
+                        leaves.iter().copied(),
+                        target.definition().leaf_version(),
+                        linker::TreeObjective::MinimumTotalWeightedDepth,
+                        NonZeroU32::MIN.saturating_add(127),
+                    )
+                    .map(|_| ())
+                };
+                entry_outcome(call(&offers.control), call(&offers.malformed), |error| {
+                    MaturityFirstPartyObservation::Link(Box::new(error))
+                })
+            }
+            Subjects::Bounds {
+                constructor,
+                tree,
+                caps,
+            } => {
+                caps.differs()?;
+                let call = |cap| {
+                    linker::StateLinkedTaptree::bind(
+                        target,
+                        tree.as_ref().clone(),
+                        constructor,
+                        cap,
+                    )
+                    .map(|_| ())
+                };
+                entry_outcome(call(caps.control), call(caps.malformed), |error| {
+                    MaturityFirstPartyObservation::Link(Box::new(error))
+                })
+            }
+            Subjects::Environment { binding, offers } => {
+                offers.differs()?;
+                let call = |offer| {
+                    environment_entry_outcome(&native_executor::compare_environment(
+                        target, binding, offer,
+                    ))
+                };
+                entry_outcome(call(&offers.control)?, call(&offers.malformed)?, |error| {
+                    error
+                })
+            }
+            Subjects::Provenance {
+                binding,
+                environment,
+                configuration,
+                offers,
+            } => {
+                offers.differs()?;
+                let call =
+                    |offer| provenance_entry_outcome(binding, environment, configuration, offer);
+                entry_outcome(
+                    call(&offers.control)?,
+                    call(&offers.malformed)?,
+                    MaturityFirstPartyObservation::Provenance,
+                )
+            }
+            Subjects::Signing {
+                subject,
+                environment,
+                offers,
+            } => observe_signing_entry(subject, environment, offers),
+        }?;
+        if !entry_refusal_matches(self.change, &observed) {
+            return Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
+                observed,
+            ));
+        }
+        Ok(observed)
+    }
+}
+
+fn observe_successor_entry(
+    finalized: &FinalizedMaturityAnnouncement,
+    responses: &[OperatorSigningResponse],
+    offers: &EntryPair<StateMetadata>,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    offers.differs()?;
+    let state = open_signing(substrate()?, finalized)?;
+    let mut registry = OperatorRightRegistry::default();
+    let right = registry
+        .issue(state.construction_right_scope(), state.protected_bytes())
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    let authorized = state
+        .authorize(&mut registry, right, responses.to_vec(), &OperatorVerifier)
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    entry_outcome(
+        authorized.check_offered(finalized.protected(), offers.control),
+        authorized.check_offered(finalized.protected(), offers.malformed),
+        MaturityFirstPartyObservation::Transaction,
+    )
+}
+
+fn observe_signing_entry(
+    subject: &native_protocol::OperationSubject,
+    environment: &native_protocol::ExecutorEnvironmentObservation,
+    offers: &EntryPair<NativeOperationResponse>,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    offers.differs()?;
+    for offer in [&offers.control, &offers.malformed] {
+        offer
+            .validate_shape()
+            .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    }
+    entry_outcome(
+        native_executor::bind_script_path_response(subject, &offers.control, environment),
+        native_executor::bind_script_path_response(subject, &offers.malformed, environment),
+        MaturityFirstPartyObservation::ResponseShape,
+    )
+}
+
+fn entry_outcome<E>(
+    control: Result<(), E>,
+    malformed: Result<(), E>,
+    observation: impl Fn(E) -> MaturityFirstPartyObservation,
+) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+    control.map_err(|error| MaturityFirstPartyRefusal::ControlWasRefused(observation(error)))?;
+    malformed
+        .err()
+        .map(observation)
+        .ok_or(MaturityFirstPartyRefusal::ChangedInputWasAccepted)
+}
+
+fn successor_entry_pair() -> Result<MaturityEntrySubjects, MaturityFirstPartyRefusal> {
+    let finalized = honest_finalized(substrate()?)?;
+    let state = open_signing(substrate()?, &finalized)?;
+    let responses = vec![honest_response(&state)?];
+    let control = finalized.construction().successor_metadata();
+    let mut malformed = control;
+    let Maturity::Announced { cycle } = control.maturity else {
+        return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
+    };
+    malformed.maturity = Maturity::Announced {
+        cycle: Cycle::new(
+            cycle
+                .get()
+                .checked_add(1)
+                .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?,
+        ),
+    };
+    Ok(MaturityEntrySubjects::Successor {
+        finalized: Box::new(finalized),
+        responses,
+        offers: Box::new(EntryPair { control, malformed }),
+    })
+}
+
+fn static_only_program(root: &[u8; 32]) -> Result<Vec<u8>, MaturityFirstPartyRefusal> {
+    use tapscript::{StateCurveCapability, StateTweakOutcome};
+    let key = substrate()?.bundle.policy().internal_key();
+    let StateTweakOutcome::OutputKey { key, .. } = OracleStateCurve.output_key(key.key(), root)
+    else {
+        return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
+    };
+    let mut program = vec![0x51, 0x20];
+    program.extend_from_slice(&key);
+    Ok(program)
+}
+
+fn complete_program_pair() -> Result<MaturityEntrySubjects, MaturityFirstPartyRefusal> {
+    let substrate = substrate()?;
+    let control = PublicMaturityStateView::new(statements(substrate, &substrate.honest)?)
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    let static_root = *substrate.bundle.static_subtree().root();
+    let static_program = static_only_program(&static_root)?;
+    let world = MaturityWorld {
+        program: static_program.clone(),
+        ..substrate.honest.clone()
+    };
+    let malformed = PublicMaturityStateView::new(statements(substrate, &world)?)
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    Ok(MaturityEntrySubjects::CompleteProgram {
+        offers: Box::new(EntryPair { control, malformed }),
+        static_root,
+        static_program,
+    })
+}
+
+fn complete_bounds_pair() -> Result<MaturityEntrySubjects, MaturityFirstPartyRefusal> {
+    let staged = MaturityConstructorComparisonTestStaging::new(
+        MaturityFirstPartyChange::AddRetainedStaticLeaf,
+    )?;
+    let constructor = staged.malformed;
+    let target = &substrate()?.target;
+    let input = linker::state_static_taptree_input(
+        constructor
+            .static_subtree()
+            .leaves()
+            .iter()
+            .map(|entry| entry.leaf.role),
+        target.definition().leaf_version(),
+        NonZeroU32::MIN.saturating_add(127),
+    )
+    .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    let tree = linker::assemble_state_static(&input)
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    let control = NonZeroU32::new(
+        tree.depth()
+            .checked_add(1)
+            .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?,
+    )
+    .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    let malformed =
+        NonZeroU32::new(tree.depth()).ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    Ok(MaturityEntrySubjects::Bounds {
+        constructor: Box::new(constructor),
+        tree: Box::new(tree),
+        caps: EntryPair { control, malformed },
+    })
+}
+
+fn entry_environment() -> Result<
+    (
+        target_elements::ReviewedDevelopmentBinding,
+        native_protocol::ExecutorEnvironmentObservation,
+    ),
+    MaturityFirstPartyRefusal,
+> {
+    use target_elements::{
+        ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding,
+        validate_reviewed_development_binding,
+    };
+    let target = &substrate()?.target;
+    let definition = target.definition();
+    let binding = validate_reviewed_development_binding(
+        target,
+        DevelopmentDeploymentBinding::new(
+            definition.version(),
+            DeploymentEnvironment::Development,
+            [0x11; 32],
+            [0x22; 32],
+            ActivationDeclaration::new(true, definition.leaf_version(), []),
+            None,
+        ),
+    )
+    .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    let observation = native_protocol::ExecutorEnvironmentObservation {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        environment: native_protocol::WireEnvironment::Development,
+        chain_name: "elementsregtest".to_owned(),
+        network_id: [0x11; 32],
+        genesis_id: [0x22; 32],
+        active_domains: BTreeSet::from([native_protocol::WireExecutionDomain::Tapscript]),
+        active_leaf_versions: BTreeSet::from([definition.leaf_version().get()]),
+    };
+    Ok((binding, observation))
+}
+
+const fn environment_entry_outcome(
+    result: &Result<(), target_elements_conformance::NativeConformanceError>,
+) -> Result<Result<(), MaturityFirstPartyObservation>, MaturityFirstPartyRefusal> {
+    use target_elements_conformance::NativeConformanceError as Error;
+    match result {
+        Ok(()) => Ok(Ok(())),
+        Err(Error::UnsupportedProtocolSchema { offered }) => Ok(Err(
+            MaturityFirstPartyObservation::UnsupportedProtocolSchema { offered: *offered },
+        )),
+        Err(Error::EnvironmentBindingMismatch) => Ok(Err(
+            MaturityFirstPartyObservation::EnvironmentBindingMismatch,
+        )),
+        Err(_) => Err(MaturityFirstPartyRefusal::ScenarioNotConstructible),
+    }
+}
+
+fn provenance_entry_pair() -> Result<MaturityEntrySubjects, MaturityFirstPartyRefusal> {
+    use std::{path::Path, time::Duration};
+    let (binding, environment) = entry_environment()?;
+    // Synthetic source provenance for a scripted comparison, never a repository citation.
+    let tip = "ab".repeat(20);
+    let base = "cd".repeat(20);
+    let expected = ExpectedExecutorProvenance::new(&tip, &base, ["fix/control"])
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    let configuration = native_executor::ExecutorConfiguration::new(
+        Path::new("unused-scripted-executor"),
+        native_executor::ExecutorTrust::Mock,
+        Duration::from_secs(1),
+        native_executor::ExecutorDiagnostics::in_directory(Path::new(
+            "unused-scripted-diagnostics",
+        )),
+    )
+    .with_expected_provenance(expected);
+    let control = native_protocol::ExecutorHandshake {
+        protocol_schema: NATIVE_PROTOCOL_SCHEMA,
+        adapter_name: "scripted-control".to_owned(),
+        adapter_version: "1".to_owned(),
+        framework_revision: None,
+        node_name: "scripted-node".to_owned(),
+        node_version: "1".to_owned(),
+        binary_reported_revision: Some(tip.clone()),
+        intended_executed_tip: Some(tip),
+        upstream_base: Some(base),
+        included_local_topics: BTreeSet::from(["fix/control".to_owned()]),
+        supported_domains: environment.active_domains.clone(),
+        supported_leaf_versions: environment.active_leaf_versions.clone(),
+        capabilities: BTreeSet::new(),
+        confidential_funding: None,
+    };
+    let mut malformed = control.clone();
+    malformed
+        .included_local_topics
+        .insert("fix/unexpected".to_owned());
+    Ok(MaturityEntrySubjects::Provenance {
+        binding: Box::new(binding),
+        environment: Box::new(environment),
+        configuration: Box::new(configuration),
+        offers: Box::new(EntryPair { control, malformed }),
+    })
+}
+
+struct EmptyEntryPlan;
+
+impl native_executor::TargetOperationPlanner for EmptyEntryPlan {
+    fn next_step(
+        &mut self,
+        _: Option<(&OperationCaseId, &NativeOperationResponse)>,
+    ) -> Result<Option<native_executor::OperationStep>, native_executor::PlanRefused> {
+        Ok(None)
+    }
+}
+
+fn provenance_entry_outcome(
+    binding: &target_elements::ReviewedDevelopmentBinding,
+    environment: &native_protocol::ExecutorEnvironmentObservation,
+    configuration: &native_executor::ExecutorConfiguration,
+    handshake: &native_protocol::ExecutorHandshake,
+) -> Result<Result<(), ProvenanceDefect>, MaturityFirstPartyRefusal> {
+    let mut bytes = serde_json::to_vec(handshake)
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    bytes.push(b'\n');
+    serde_json::to_writer(&mut bytes, environment)
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    bytes.push(b'\n');
+    let transcript = native_executor::run_protocol(
+        &substrate()?.target,
+        binding,
+        configuration,
+        native_executor::NativeWorkload::Operations(&mut EmptyEntryPlan),
+        Vec::new(),
+        &mut std::io::Cursor::new(bytes),
+    )
+    .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    transcript
+        .provenance_agreement()
+        .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)
+        .map(|result| result.map(|_| ()))
+}
+
+fn signing_entry_pair() -> Result<MaturityEntrySubjects, MaturityFirstPartyRefusal> {
+    use native_protocol::{
+        OperationSubject, TargetScriptPathSigningSubject, WireSighashProfile, WireSpentOutput,
+        WireTapleaf,
+    };
+    let finalized = honest_finalized(substrate()?)?;
+    let state = open_signing(substrate()?, &finalized)?;
+    let signature = honest_response(&state)?;
+    let leaf = finalized.executing_leaf(&substrate()?.target);
+    let spent = finalized.spent_output();
+    let (AssetField::Explicit(asset), ValueField::Explicit(amount)) =
+        (spent.asset(), spent.value())
+    else {
+        return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
+    };
+    let mut asset_field = vec![1];
+    asset_field.extend_from_slice(asset.internal());
+    let mut value_field = vec![1];
+    value_field.extend_from_slice(&amount.to_be_bytes());
+    let subject = TargetScriptPathSigningSubject {
+        finalized_transaction: finalized.protected_bytes().to_vec(),
+        input_index: 0,
+        spent_outputs: vec![WireSpentOutput {
+            asset_field,
+            value_field,
+            program: spent.program().to_vec(),
+        }],
+        executing_leaf: WireTapleaf {
+            leaf_version: leaf.leaf_version().get(),
+            script: leaf.leaf_script().to_vec(),
+            control_block: leaf.control_block().to_vec(),
+        },
+        sighash_profile: WireSighashProfile::AllInputsAllOutputs,
+        signer: OPERATOR_HANDLE,
+    };
+    let (_, environment) = entry_environment()?;
+    let mut control = operation_response(
+        OperationStepKind::SignScriptPath,
+        "first-party-binding",
+        ObservedOutcomeLayer::Accepted,
+    );
+    control.script_path_witness = vec![signature.signature().to_vec()];
+    control.signer_public_key = Some(
+        subject
+            .signer
+            .x_only_public_key()
+            .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?,
+    );
+    control.signed_profile = Some(subject.sighash_profile);
+    control.signing_genesis = Some(environment.genesis_id);
+    control.signature_bound_to = Some(subject.finalized_transaction.clone());
+    let mut malformed = control.clone();
+    let bytes = malformed
+        .signature_bound_to
+        .as_mut()
+        .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    let byte = bytes
+        .first_mut()
+        .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    *byte ^= 1;
+    Ok(MaturityEntrySubjects::Signing {
+        subject: Box::new(OperationSubject::ScriptPathSigning(Box::new(subject))),
+        environment: Box::new(environment),
+        offers: Box::new(EntryPair { control, malformed }),
+    })
+}
+
 /// Actual paired subjects, retained beside the checked refusal rather than a success flag.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MaturityRetainedComparison {
+    /// Exact offers through the existing entry points added after bounded consolidation.
+    Entries(Box<MaturityEntryComparisonTestStaging>),
     /// Static-root continuity over normally derived constructors.
     Constructor(Box<MaturityConstructorComparisonTestStaging>),
     /// Completeness of definitions against the same consumed symbols.
@@ -3506,6 +4109,7 @@ pub enum MaturityRetainedComparison {
 impl MaturityRetainedComparison {
     fn observe(&self) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
         match self {
+            Self::Entries(pair) => pair.observe(),
             Self::Constructor(pair) => pair.observe(),
             Self::Symbols(pair) => pair.observe(),
         }
@@ -3519,6 +4123,9 @@ fn supplemental_discharge(
     use MaturityFirstPartyChange as Change;
     use MaturityFirstPartyValidator as Validator;
     use MaturitySafetySection as Section;
+    if let Some((validator, change, expected_name)) = entry_discharge(section, name) {
+        return Some(discharge(validator, change, entry_refusal, expected_name));
+    }
     let (validator, change, expected_name) = match (section, name) {
         (Section::PredecessorConstructorFault, "wrong-static-subtree") => (
             Validator::ConstructorContinuity,
@@ -3555,6 +4162,123 @@ fn supplemental_discharge(
     ))
 }
 
+fn entry_discharge(
+    section: MaturitySafetySection,
+    name: &str,
+) -> Option<(
+    MaturityFirstPartyValidator,
+    MaturityFirstPartyChange,
+    &'static str,
+)> {
+    use MaturityFirstPartyChange as Change;
+    use MaturityFirstPartyValidator as Validator;
+    use MaturitySafetySection as Section;
+    Some(match (section, name) {
+        (Section::WindowFault, "request-cycle-differs-from-successor") => (
+            Validator::AuthorizedSuccessor,
+            Change::ChangeAuthorizedSuccessorCycle,
+            "MaturitySuccessorMetadataChangedAfterSigning",
+        ),
+        (Section::PredecessorConstructorFault, "metadata-leaf-missing") => (
+            Validator::CompleteStateView,
+            Change::OmitMetadataCommitmentBranch,
+            "MaturityViewProgramNotReconstructed",
+        ),
+        (Section::AbiLinkerFault, "conflicting-leaf-weight") => (
+            Validator::WeightedStateDeclarations,
+            Change::AddConflictingWeightedDeclaration,
+            "DuplicateStateTreeLeaf(Announcement)",
+        ),
+        (Section::AbiLinkerFault, "candidate-outside-bounds") => (
+            Validator::CompleteStateBounds,
+            Change::LowerCompleteTreeDepthCap,
+            "StateTreeDepthExceeded",
+        ),
+        (Section::ProtocolReportFault, "wrong-schema") => (
+            Validator::ProtocolEnvironment,
+            Change::ChangeObservedSchema,
+            "UnsupportedProtocolSchema",
+        ),
+        (Section::ProtocolReportFault, "wrong-environment") => (
+            Validator::ProtocolEnvironment,
+            Change::ChangeObservedNetwork,
+            "EnvironmentBindingMismatch",
+        ),
+        (Section::ProtocolReportFault, "wrong-provenance") => (
+            Validator::TranscriptProvenance,
+            Change::AddUnexpectedProvenanceTopic,
+            "TopicCensusIsNotTheExpectedCensus",
+        ),
+        (Section::ProtocolReportFault, "signing-response-bound-to-other-bytes") => (
+            Validator::ScriptPathBinding,
+            Change::ChangeSignatureBoundBytes,
+            "ScriptPathTransactionMismatch",
+        ),
+        _ => return None,
+    })
+}
+
+fn entry_refusal(observation: &MaturityFirstPartyObservation) -> bool {
+    use MaturityFirstPartyObservation as Observation;
+    matches!(
+        observation,
+        Observation::Transaction(
+            TransactionRefusal::MaturitySuccessorMetadataChangedAfterSigning
+                | TransactionRefusal::MaturityViewProgramNotReconstructed { .. }
+        ) | Observation::UnsupportedProtocolSchema { .. }
+            | Observation::EnvironmentBindingMismatch
+            | Observation::Provenance(ProvenanceDefect::TopicCensusIsNotTheExpectedCensus)
+            | Observation::ResponseShape(ResponseShapeDefect::ScriptPathTransactionMismatch)
+    ) || matches!(observation, Observation::Link(error) if matches!(error.as_ref(),
+        LinkRefusal::DuplicateStateTreeLeaf(StateLeafRole::Announcement)
+        | LinkRefusal::StateTreeDepthExceeded { .. }))
+}
+
+fn entry_refusal_matches(
+    change: MaturityFirstPartyChange,
+    observed: &MaturityFirstPartyObservation,
+) -> bool {
+    use MaturityFirstPartyChange as Change;
+    use MaturityFirstPartyObservation as Observation;
+    match (change, observed) {
+        (
+            Change::ChangeAuthorizedSuccessorCycle,
+            Observation::Transaction(
+                TransactionRefusal::MaturitySuccessorMetadataChangedAfterSigning,
+            ),
+        )
+        | (
+            Change::OmitMetadataCommitmentBranch,
+            Observation::Transaction(TransactionRefusal::MaturityViewProgramNotReconstructed {
+                ..
+            }),
+        )
+        | (Change::ChangeObservedNetwork, Observation::EnvironmentBindingMismatch)
+        | (
+            Change::AddUnexpectedProvenanceTopic,
+            Observation::Provenance(ProvenanceDefect::TopicCensusIsNotTheExpectedCensus),
+        )
+        | (
+            Change::ChangeSignatureBoundBytes,
+            Observation::ResponseShape(ResponseShapeDefect::ScriptPathTransactionMismatch),
+        ) => true,
+        (Change::ChangeObservedSchema, Observation::UnsupportedProtocolSchema { offered }) => {
+            *offered == NATIVE_PROTOCOL_SCHEMA + 1
+        }
+        (Change::AddConflictingWeightedDeclaration, Observation::Link(error)) => {
+            matches!(
+                error.as_ref(),
+                LinkRefusal::DuplicateStateTreeLeaf(StateLeafRole::Announcement)
+            )
+        }
+        (Change::LowerCompleteTreeDepthCap, Observation::Link(error)) => {
+            matches!(error.as_ref(), LinkRefusal::StateTreeDepthExceeded { depth, maximum, .. }
+                if *maximum > 0 && depth.checked_sub(1) == Some(*maximum))
+        }
+        _ => false,
+    }
+}
+
 fn supplemental_refusal(observation: &MaturityFirstPartyObservation) -> bool {
     matches!(
         observation,
@@ -3575,22 +4299,28 @@ fn validate_supplementary_comparison(
     if supplemental_discharge(case.section, case.name) != Some(discharge) {
         return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
     }
-    let comparison = match discharge.change {
-        Change::ChangeRetainedStaticLeaf | Change::AddRetainedStaticLeaf => {
-            MaturityRetainedComparison::Constructor(Box::new(
-                MaturityConstructorComparisonTestStaging::new(discharge.change)?,
-            ))
-        }
-        change => {
-            let symbol = match change {
-                Change::OmitConsumedMetadataSchema => Symbol::MetadataSchema,
-                Change::OmitConsumedMinimumLead => Symbol::MaturityLeadMin,
-                Change::OmitConsumedOperator => Symbol::CommittedOperatorKey,
-                _ => return Err(MaturityFirstPartyRefusal::ChangeChangedNothing),
-            };
-            MaturityRetainedComparison::Symbols(Box::new(MaturitySymbolResolutionTestStaging::new(
-                symbol,
-            )?))
+    let comparison = if entry_discharge(case.section, case.name).is_some() {
+        MaturityRetainedComparison::Entries(Box::new(MaturityEntryComparisonTestStaging::new(
+            discharge.change,
+        )?))
+    } else {
+        match discharge.change {
+            Change::ChangeRetainedStaticLeaf | Change::AddRetainedStaticLeaf => {
+                MaturityRetainedComparison::Constructor(Box::new(
+                    MaturityConstructorComparisonTestStaging::new(discharge.change)?,
+                ))
+            }
+            change => {
+                let symbol = match change {
+                    Change::OmitConsumedMetadataSchema => Symbol::MetadataSchema,
+                    Change::OmitConsumedMinimumLead => Symbol::MaturityLeadMin,
+                    Change::OmitConsumedOperator => Symbol::CommittedOperatorKey,
+                    _ => return Err(MaturityFirstPartyRefusal::ChangeChangedNothing),
+                };
+                MaturityRetainedComparison::Symbols(Box::new(
+                    MaturitySymbolResolutionTestStaging::new(symbol)?,
+                ))
+            }
         }
     };
     let observed = comparison.observe()?;
@@ -3889,7 +4619,8 @@ fn retained_boundary(case: &MaturityFirstPartyCase) -> MaturityRetainedBoundary 
 /// Derive dispositions for exactly the inherited first-party-required keys.
 ///
 /// Comparison discharges remain distinct from the historical 78 admitted answers.
-/// The evidence fold admits this ledger through its complete keyed comparison.
+/// Production derives the validated ledger once. The evidence fold checks its
+/// required keys and previous reasons before applying the retained evidence.
 ///
 /// # Errors
 /// Returns failure to retain a valid subject or validate a normalization argument.
@@ -3900,6 +4631,12 @@ fn retained_boundary(case: &MaturityFirstPartyCase) -> MaturityRetainedBoundary 
 /// [`validate_maturity_first_party`], which a linked bundle cannot violate.
 pub fn maturity_first_party_dispositions()
 -> Result<Vec<MaturitySupplementaryRow>, MaturityFirstPartyRefusal> {
+    derive_first_party_dispositions(true)
+}
+
+fn derive_first_party_dispositions(
+    include_entries: bool,
+) -> Result<Vec<MaturitySupplementaryRow>, MaturityFirstPartyRefusal> {
     let subject = MaturityRetainedSubject {
         announcement: Box::new(honest_finalized(substrate()?)?),
         opening: target_elements_conformance::protocol::HandshakeRequest::default(),
@@ -3917,33 +4654,35 @@ pub fn maturity_first_party_dispositions()
                 subject: Box::new(subject.clone()),
                 attempted,
             };
-            let disposition =
-                if let Some(discharge) = supplemental_discharge(case.section, case.name) {
-                    let offered = MaturityFirstPartyCase {
-                        disposition: MaturityFirstPartyDisposition::Discharge(discharge),
-                        ..case
-                    };
-                    match validate_maturity_first_party(&offered) {
-                        Ok(evidence) => {
-                            MaturitySupplementaryDisposition::Discharged(Box::new(evidence))
-                        }
-                        Err(refusal) => retain(Some(Box::new(refusal))),
-                    }
-                } else if case.section == MaturitySafetySection::TotalityFault {
-                    let reason = match case.name {
-                        "caller-supplied-branch-order" => MaturityAbsenceOfCoordinate::BranchOrder,
-                        "source-order-dependent-tree" => {
-                            MaturityAbsenceOfCoordinate::SourceDeclarationOrder
-                        }
-                        _ => return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible),
-                    };
-                    MaturitySupplementaryDisposition::OutOfContract {
-                        reason,
-                        proof: Box::new(normalization.clone()),
-                    }
-                } else {
-                    retain(None)
+            let disposition = if let Some(discharge) =
+                supplemental_discharge(case.section, case.name).filter(|_| {
+                    include_entries || entry_discharge(case.section, case.name).is_none()
+                }) {
+                let offered = MaturityFirstPartyCase {
+                    disposition: MaturityFirstPartyDisposition::Discharge(discharge),
+                    ..case
                 };
+                match validate_maturity_first_party(&offered) {
+                    Ok(evidence) => {
+                        MaturitySupplementaryDisposition::Discharged(Box::new(evidence))
+                    }
+                    Err(refusal) => retain(Some(Box::new(refusal))),
+                }
+            } else if case.section == MaturitySafetySection::TotalityFault {
+                let reason = match case.name {
+                    "caller-supplied-branch-order" => MaturityAbsenceOfCoordinate::BranchOrder,
+                    "source-order-dependent-tree" => {
+                        MaturityAbsenceOfCoordinate::SourceDeclarationOrder
+                    }
+                    _ => return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible),
+                };
+                MaturitySupplementaryDisposition::OutOfContract {
+                    reason,
+                    proof: Box::new(normalization.clone()),
+                }
+            } else {
+                retain(None)
+            };
             Ok(MaturitySupplementaryRow {
                 section: case.section,
                 name: case.name,
@@ -3971,14 +4710,15 @@ pub(crate) fn derive_maturity_first_party_dispositions()
     maturity_first_party_dispositions().map(ValidatedMaturitySupplementaryLedger)
 }
 
-/// Compare every offered key and its complete retained evidence in both directions.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "production derives its ledger; offered ledgers retain their separate admission"
-    )
-)]
+/// Reconstruct the bounded consolidation before existing-entry admission.
+#[cfg(test)]
+pub(crate) fn derive_close_safety_dispositions()
+-> Result<ValidatedMaturitySupplementaryLedger, MaturityFirstPartyRefusal> {
+    derive_first_party_dispositions(false).map(ValidatedMaturitySupplementaryLedger)
+}
+
+/// Test-held reference check of every offered key and complete retained evidence.
+#[cfg(test)]
 pub(crate) fn admit_maturity_first_party_dispositions(
     offered: Vec<MaturitySupplementaryRow>,
 ) -> Result<ValidatedMaturitySupplementaryLedger, MaturityFirstPartyRefusal> {
@@ -4046,6 +4786,321 @@ mod supplementary_tests {
 
     fn ledger() -> Vec<MaturitySupplementaryRow> {
         maturity_first_party_dispositions().expect("valid retained subjects")
+    }
+
+    fn entry_pair(
+        section: MaturitySafetySection,
+        name: &str,
+    ) -> MaturityEntryComparisonTestStaging {
+        let (validator, change, class) = entry_discharge(section, name).expect("named entry");
+        let pair = MaturityEntryComparisonTestStaging::new(change).expect("staged offers");
+        let observed = pair
+            .observe()
+            .expect("control accepted and changed offer refused");
+        assert!(entry_refusal_matches(change, &observed));
+        let row = ledger()
+            .into_iter()
+            .find(|row| row.key() == (section, name))
+            .expect("row");
+        let MaturitySupplementaryDisposition::Discharged(evidence) = row.disposition() else {
+            panic!("pair was not admitted: {:?}", row.disposition());
+        };
+        assert_eq!(evidence.validator(), validator);
+        assert_eq!(evidence.observed(), &observed);
+        assert_eq!(evidence.supplementary_class(), Some(class));
+        assert_eq!(
+            evidence.comparison(),
+            Some(&MaturityRetainedComparison::Entries(Box::new(pair.clone())))
+        );
+        pair
+    }
+
+    #[test]
+    fn entry_pair_successor_cycle() {
+        let pair = entry_pair(
+            MaturitySafetySection::WindowFault,
+            "request-cycle-differs-from-successor",
+        );
+        let MaturityEntrySubjects::Successor {
+            finalized, offers, ..
+        } = pair.subjects
+        else {
+            panic!("successor pair")
+        };
+        assert_eq!(
+            offers.control,
+            finalized.construction().successor_metadata()
+        );
+        let mut restored = offers.malformed;
+        assert_ne!(restored.maturity, offers.control.maturity);
+        restored.maturity = offers.control.maturity;
+        assert_eq!(restored, offers.control);
+    }
+
+    #[test]
+    fn entry_pair_metadata_omission() {
+        let pair = entry_pair(
+            MaturitySafetySection::PredecessorConstructorFault,
+            "metadata-leaf-missing",
+        );
+        let MaturityEntrySubjects::CompleteProgram {
+            offers,
+            static_root,
+            static_program,
+        } = pair.subjects
+        else {
+            panic!("program pair")
+        };
+        assert_eq!(
+            static_root,
+            *substrate()
+                .expect("substrate")
+                .bundle
+                .static_subtree()
+                .root()
+        );
+        assert_eq!(
+            static_program,
+            static_only_program(&static_root).expect("static-only commitment")
+        );
+        assert_eq!(offers.malformed.predecessor_program(), static_program);
+        let world = MaturityWorld {
+            program: offers.control.predecessor_program().to_vec(),
+            ..substrate().expect("substrate").honest.clone()
+        };
+        assert_eq!(
+            offers.control,
+            PublicMaturityStateView::new(
+                statements(substrate().expect("substrate"), &world).expect("view statements"),
+            )
+            .expect("control view")
+        );
+        assert_eq!(
+            offers.control.predecessor_metadata(),
+            offers.malformed.predecessor_metadata()
+        );
+        assert_eq!(
+            offers.control.predecessor_representation_nonce(),
+            offers.malformed.predecessor_representation_nonce()
+        );
+        assert_eq!(
+            offers.control.accepted_linked_bundle(),
+            offers.malformed.accepted_linked_bundle()
+        );
+        assert_eq!(
+            offers.control.current_state_outpoint(),
+            offers.malformed.current_state_outpoint()
+        );
+        assert_eq!(
+            offers.control.current_root_binding(),
+            offers.malformed.current_root_binding()
+        );
+        assert_eq!(offers.control.asset(), offers.malformed.asset());
+        assert_eq!(offers.control.value(), offers.malformed.value());
+    }
+
+    #[test]
+    fn entry_pair_conflicting_weight() {
+        let pair = entry_pair(
+            MaturitySafetySection::AbiLinkerFault,
+            "conflicting-leaf-weight",
+        );
+        let MaturityEntrySubjects::Weights(offers) = pair.subjects else {
+            panic!("weight pair")
+        };
+        assert_eq!(offers.control, offers.malformed[..1]);
+        assert_eq!(offers.malformed.len(), 2);
+        assert_eq!(offers.malformed[0].leaf(), offers.malformed[1].leaf());
+        assert_ne!(offers.malformed[0].weight(), offers.malformed[1].weight());
+        let accepted_change = MaturityEntryComparisonTestStaging {
+            change: MaturityFirstPartyChange::AddConflictingWeightedDeclaration,
+            subjects: MaturityEntrySubjects::Weights(Box::new(EntryPair {
+                control: offers.control,
+                malformed: vec![offers.malformed[1]],
+            })),
+        };
+        assert_eq!(
+            accepted_change.observe(),
+            Err(MaturityFirstPartyRefusal::ChangedInputWasAccepted)
+        );
+    }
+
+    #[test]
+    fn entry_pair_depth_cap() {
+        let pair = entry_pair(
+            MaturitySafetySection::AbiLinkerFault,
+            "candidate-outside-bounds",
+        );
+        let MaturityEntrySubjects::Bounds { tree, caps, .. } = pair.subjects else {
+            panic!("bounds pair")
+        };
+        assert_eq!(caps.control.get(), tree.depth() + 1);
+        assert_eq!(caps.malformed.get(), tree.depth());
+        assert!(caps.malformed.get() > 0);
+    }
+
+    #[test]
+    fn entry_pair_schema() {
+        let pair = entry_pair(MaturitySafetySection::ProtocolReportFault, "wrong-schema");
+        let MaturityEntrySubjects::Environment { offers, .. } = pair.subjects else {
+            panic!("environment pair")
+        };
+        let mut restored = offers.malformed.clone();
+        assert_ne!(restored.schema, offers.control.schema);
+        restored.schema = offers.control.schema;
+        assert_eq!(restored, offers.control);
+    }
+
+    #[test]
+    fn entry_pair_environment() {
+        let pair = entry_pair(
+            MaturitySafetySection::ProtocolReportFault,
+            "wrong-environment",
+        );
+        let MaturityEntrySubjects::Environment { offers, .. } = pair.subjects else {
+            panic!("environment pair")
+        };
+        let mut restored = offers.malformed.clone();
+        assert_ne!(restored.network_id, offers.control.network_id);
+        restored.network_id = offers.control.network_id;
+        assert_eq!(restored, offers.control);
+    }
+
+    #[test]
+    fn entry_pair_provenance() {
+        let pair = entry_pair(
+            MaturitySafetySection::ProtocolReportFault,
+            "wrong-provenance",
+        );
+        let MaturityEntrySubjects::Provenance {
+            configuration,
+            offers,
+            ..
+        } = pair.subjects
+        else {
+            panic!("provenance pair")
+        };
+        assert!(configuration.expected_provenance().is_some());
+        let mut restored = offers.malformed.clone();
+        assert!(restored.included_local_topics.remove("fix/unexpected"));
+        assert_eq!(restored, offers.control);
+    }
+
+    #[test]
+    fn entry_pair_signature_binding() {
+        let pair = entry_pair(
+            MaturitySafetySection::ProtocolReportFault,
+            "signing-response-bound-to-other-bytes",
+        );
+        let MaturityEntrySubjects::Signing {
+            subject, offers, ..
+        } = pair.subjects
+        else {
+            panic!("signing pair")
+        };
+        let native_protocol::OperationSubject::ScriptPathSigning(subject) = subject.as_ref() else {
+            panic!("script-path subject")
+        };
+        assert_eq!(
+            offers.control.signature_bound_to.as_deref(),
+            Some(subject.finalized_transaction.as_slice())
+        );
+        let mut restored = offers.malformed.clone();
+        let before = offers
+            .control
+            .signature_bound_to
+            .as_ref()
+            .expect("control bytes");
+        let after = restored.signature_bound_to.as_ref().expect("changed bytes");
+        assert_eq!(before.len(), after.len());
+        assert_eq!(
+            before
+                .iter()
+                .zip(after)
+                .filter(|(left, right)| left != right)
+                .count(),
+            1
+        );
+        restored
+            .signature_bound_to
+            .clone_from(&offers.control.signature_bound_to);
+        assert_eq!(restored, offers.control);
+    }
+
+    fn change_pair<T: Clone>(pair: &mut EntryPair<T>, reverse: bool) {
+        if reverse {
+            std::mem::swap(&mut pair.control, &mut pair.malformed);
+        } else {
+            pair.malformed.clone_from(&pair.control);
+        }
+    }
+
+    #[test]
+    fn entry_pairs_refuse_copied_objects_invalid_controls_and_wrong_classes() {
+        let pairs: Vec<_> = ledger()
+            .into_iter()
+            .filter_map(|row| {
+                let MaturitySupplementaryDisposition::Discharged(evidence) = row.disposition else {
+                    return None;
+                };
+                let Some(MaturityRetainedComparison::Entries(pair)) = evidence.comparison else {
+                    return None;
+                };
+                Some(*pair)
+            })
+            .collect();
+        assert_eq!(pairs.len(), 8);
+        for original in pairs {
+            for reverse in [false, true] {
+                let mut changed = original.clone();
+                match &mut changed.subjects {
+                    MaturityEntrySubjects::Successor { offers, .. } => change_pair(offers, reverse),
+                    MaturityEntrySubjects::CompleteProgram { offers, .. } => {
+                        change_pair(offers, reverse);
+                    }
+                    MaturityEntrySubjects::Weights(offers) => change_pair(offers, reverse),
+                    MaturityEntrySubjects::Bounds { caps, .. } => change_pair(caps, reverse),
+                    MaturityEntrySubjects::Environment { offers, .. } => {
+                        change_pair(offers, reverse);
+                    }
+                    MaturityEntrySubjects::Provenance { offers, .. } => {
+                        change_pair(offers, reverse);
+                    }
+                    MaturityEntrySubjects::Signing { offers, .. } => change_pair(offers, reverse),
+                }
+                let result = changed.observe();
+                if reverse {
+                    assert!(
+                        matches!(result, Err(MaturityFirstPartyRefusal::ControlWasRefused(_))),
+                        "{result:?}"
+                    );
+                } else {
+                    assert_eq!(result, Err(MaturityFirstPartyRefusal::ChangeChangedNothing));
+                }
+            }
+            let other_environment_change = match original.change {
+                MaturityFirstPartyChange::ChangeObservedSchema => {
+                    Some(MaturityFirstPartyChange::ChangeObservedNetwork)
+                }
+                MaturityFirstPartyChange::ChangeObservedNetwork => {
+                    Some(MaturityFirstPartyChange::ChangeObservedSchema)
+                }
+                _ => None,
+            };
+            let mut changed = original;
+            if let Some(change) = other_environment_change {
+                changed.change = change;
+                assert!(matches!(
+                    changed.observe(),
+                    Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_))
+                ));
+            }
+            changed.change = MaturityFirstPartyChange::OmitConsumedOperator;
+            assert!(matches!(
+                changed.observe(),
+                Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_))
+            ));
+        }
     }
 
     #[test]
@@ -4131,7 +5186,7 @@ mod supplementary_tests {
                 MaturitySupplementaryDisposition::Retained { .. } => census[2] += 1,
             }
         }
-        assert_eq!(census, [5, 2, 36]);
+        assert_eq!(census, [13, 2, 28]);
         assert_eq!(census.iter().sum::<usize>(), 43);
         assert_eq!(
             inherited
@@ -4171,6 +5226,10 @@ mod supplementary_tests {
                 evidence.observed()
             );
             match comparison {
+                MaturityRetainedComparison::Entries(pair) => {
+                    assert_eq!(pair.change(), evidence.change());
+                    assert!(entry_refusal_matches(pair.change(), evidence.observed()));
+                }
                 MaturityRetainedComparison::Constructor(pair) => {
                     constructors += 1;
                     assert_ne!(pair.control(), pair.malformed());
@@ -4417,7 +5476,7 @@ mod supplementary_tests {
                 _ => {}
             }
         }
-        assert_eq!(retained, 36);
+        assert_eq!(retained, 28);
         assert_eq!(classification, 15);
         assert_eq!(roles, 6);
     }
