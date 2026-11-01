@@ -14,6 +14,52 @@ use target_elements_conformance::protocol::{
 };
 use vectors::live_report::{LiveMutantKind, LiveMutationLocator, LiveWitnessPathRole};
 
+use linker::CandidateDeploymentIdentity;
+use std::time::Duration;
+use target_elements::{
+    ActivationDeclaration, DevelopmentDeploymentBinding, LeafVersion, reviewed_elements_tapscript,
+    validate_reviewed_development_binding,
+};
+use target_elements_conformance::executor::{
+    ExecutionTranscript, ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust,
+    TargetOperationPlanner, execute_operations_captured,
+};
+
+/// Executes a planner with the shared reviewed deployment and bounded diagnostics.
+/// # Errors
+/// Preserves executor transport, protocol and planner failures.
+/// # Panics
+/// Panics only if the reviewed target or supplied development binding is invalid.
+pub fn execute(
+    adapter: &Path,
+    directory: &Path,
+    deployment: &CandidateDeploymentIdentity,
+    trust: ExecutorTrust,
+    planner: &mut dyn TargetOperationPlanner,
+    capture: &mut NativeOperationCapture,
+) -> Result<ExecutionTranscript, target_elements_conformance::error::NativeConformanceError> {
+    let target = reviewed_elements_tapscript().expect("reviewed target");
+    let binding = validate_reviewed_development_binding(
+        &target,
+        DevelopmentDeploymentBinding::new(
+            target.definition().version(),
+            DeploymentEnvironment::Development,
+            *deployment.network_id(),
+            *deployment.genesis_id(),
+            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
+            None,
+        ),
+    )
+    .expect("development binding");
+    let configuration = ExecutorConfiguration::new(
+        adapter,
+        trust,
+        Duration::from_secs(300),
+        ExecutorDiagnostics::in_directory(&directory.join("diagnostics")),
+    );
+    execute_operations_captured(&target, &binding, &configuration, planner, capture)
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum CeremonyId {
     ConservationNegatives,

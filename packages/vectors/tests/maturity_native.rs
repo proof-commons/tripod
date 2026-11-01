@@ -7,16 +7,10 @@ pub mod common;
 
 use std::fmt::Write as _;
 use std::path::Path;
-use std::time::Duration;
 
 use linker::CandidateDeploymentIdentity;
-use target_elements::{
-    ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
-    reviewed_elements_tapscript, validate_reviewed_development_binding,
-};
 use target_elements_conformance::executor::{
-    ExecutionTranscript, ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust,
-    NativeOperationCapture, OperationStep, TargetOperationPlanner, execute_operations_captured,
+    ExecutorTrust, NativeOperationCapture, OperationStep, TargetOperationPlanner,
 };
 use target_elements_conformance::protocol::{
     FundedOutput, MinedFundingReadback, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse,
@@ -38,36 +32,6 @@ const RUN_TEST_NAME: &str = "the_maturity_announcement_runs_against_a_real_targe
 
 fn branch() -> BranchContext {
     BranchContext::new(RUN_BRANCH.0, RUN_BRANCH.1).expect("nonzero caller branch")
-}
-
-fn execute(
-    adapter: &Path,
-    directory: &Path,
-    deployment: &CandidateDeploymentIdentity,
-    trust: ExecutorTrust,
-    planner: &mut dyn TargetOperationPlanner,
-    capture: &mut NativeOperationCapture,
-) -> Result<ExecutionTranscript, target_elements_conformance::error::NativeConformanceError> {
-    let target = reviewed_elements_tapscript().expect("reviewed target");
-    let binding = validate_reviewed_development_binding(
-        &target,
-        DevelopmentDeploymentBinding::new(
-            target.definition().version(),
-            DeploymentEnvironment::Development,
-            *deployment.network_id(),
-            *deployment.genesis_id(),
-            ActivationDeclaration::new(true, LeafVersion::TAPSCRIPT, []),
-            None,
-        ),
-    )
-    .expect("development binding");
-    let configuration = ExecutorConfiguration::new(
-        adapter,
-        trust,
-        Duration::from_secs(300),
-        ExecutorDiagnostics::in_directory(&directory.join("diagnostics")),
-    );
-    execute_operations_captured(&target, &binding, &configuration, planner, capture)
 }
 
 fn evidence_payload(
@@ -186,7 +150,7 @@ fn the_maturity_announcement_runs_against_a_real_target() {
             vectors::maturity_native::native::Planner::new(deployment.clone(), context)
                 .expect("native planner");
         let mut capture = NativeOperationCapture::default();
-        let outcome = execute(
+        let outcome = common::execute(
             Path::new(&executor),
             Path::new(&directory),
             &deployment,
@@ -248,7 +212,7 @@ fn the_maturity_announcement_runs_against_a_real_target() {
             vectors::maturity_native::sponsored::Planner::new(deployment.clone(), context)
                 .expect("sponsored planner");
         let mut capture = NativeOperationCapture::default();
-        let outcome = execute(
+        let outcome = common::execute(
             Path::new(&executor),
             Path::new(&directory),
             &deployment,
@@ -314,7 +278,7 @@ fn the_maturity_announcement_runs_against_a_real_target() {
     )
     .expect("public announcement planner");
     let mut capture = NativeOperationCapture::default();
-    let outcome = execute(
+    let outcome = common::execute(
         Path::new(&executor),
         Path::new(&directory),
         &deployment,
@@ -781,7 +745,7 @@ fn scripted_capture_retains_replay_operands_before_gates() {
     )
     .expect("planner");
     let mut capture = NativeOperationCapture::default();
-    let transcript = execute(
+    let transcript = common::execute(
         &adapter,
         &directory,
         &identity(),

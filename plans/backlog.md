@@ -2330,6 +2330,35 @@ The retained-routes planner and `replay_retained_routes` form a separate schedul
 
 Construction leaves the census at 206 / 171 / 35 and categories 171 / 25 / 2 / 8, with typed non-answers 25 final plus three waiting. Native acceptance/refusal stays 12 / 38, first-party 76 / 5, relations 14 / 108 / 84, supplementary [36, 2, 5] and report schema 3. Both Safety rows retain `NativeSubjectAwaitsConstructionRoute`. No archive, fixture, production validator or final reason changes. Capture still owes the manifest, accepted live controls, exact subjects, node-default policy measurements and four retained files; separate admission binds observations to their declared boundaries before any standing moves (`alg:wave0:campaign-manifest`); (`proto:wave0:native-admission`). Sharing with diagnostic recapture requires its executor change and every partition to be ready, otherwise capture runs separately (`spec:w0route:native-capture`).
 
+**Record (Retained native capture driver)** · `rec:backlog:wave0-native-route-capture-driver`
+
+The `maturity_retained` target selects the ignored test `the_retained_maturity_routes_run_against_a_real_target` through `scripts/live-native-maturity-retained-capture.sh`, checked by `scripts/test-live-native-maturity-retained-capture.sh`. Its wrapper binds two `campaign-row` records inside the evidence payload and RUN-REPORT: typed claims, candidate and ABI, deployment, policy, constructor, mutation, declared boundary, control, funded outpoints, native fold and reverse observation-to-claim mapping under (`alg:wave0:campaign-manifest`); the unchanged retained schedule supplies the exchanges. The wrapper freezes intent before execution and binds funding before submission. Eligibility establishes structural completion and replay consistency, including contradictory outcomes and stopped-control diagnostics; admission decides credit separately for each family under (`pre:wave0:accepted-control`) and (`proto:wave0:native-admission`). Capture and admission remain owed; no Safety standing, census, construction pin or admitted archive changes. The retained parser consumes the following closed grammar; encoded fields use byte length and lower hexadecimal, JSON records have closed keys, and the four-file archive binds capture and timing through MANIFEST.sha256 and that manifest through RUN-REPORT. Items 16 to 21 bind an eligible report; an ineligible report carries the `missing` sentinel for an absent or duplicated retained field and every `campaign-row` the evidence record held.
+
+1. `run-report-schema native-maturity-run-report 1`.
+2. `capture-format-schema native-maturity-capture 1`.
+3. `suite-commit`, `suite-tree`, `suite-clean yes`.
+4. `rust-test-target maturity_retained`.
+5. Encoded `rust-test-name` naming the retained test.
+6. Encoded `cargo-argv`: pinned cargo, `test -p tripod-vectors --test maturity_retained -- --ignored --exact the_retained_maturity_routes_run_against_a_real_target --test-threads=1`.
+7. Expected/observed test and ceremony counts one; setup counts zero.
+8. `diagnostics-present yes`; passed/failed/ignored counts one/zero/zero; cargo exit zero.
+9. Expected Elements tip, binary-reported revision, intended executed tip.
+10. Adapter name/version and node name/version; adapter version `2.1.0`.
+11. `protocol-revision 8`, `fixture-digest-algorithm forward-v2`.
+12. Deployment environment, network, genesis and target contract.
+13. `capture-profile retained`.
+14. Four `phase-wall-ms` lines: preflight, cargo, census, manifest, each unsigned.
+15. Unsigned `elapsed-wall-ms`.
+16. Encoded `retained-policy`: object keys `relay`, `mempool`, `block`, `unit`, `block_identifier`, `relay_provenance`, `block_provenance`, `start_arguments`.
+17. Encoded `retained-families`: semantic family then two-successor family; each record has keys `family`, `claim`, `control`, `subject`, `stopped`, `expectation`, `control_accepted`. Each claim has `section`, `name`; each non-null control or subject has `step`, `layer`, `route`, `readback`.
+18. Encoded `retained-stopped`: ordered subset of the two families.
+19. `campaign-manifest-schema 1`.
+20. `campaign-manifest-count 2`.
+21. Two encoded `campaign-row` records in family order, validated against typed intent and exchanges at admission; each row has keys `claim`, `operation`, `family`, `candidate`, `abi`, `target`, `deployment`, `branch`, `policy_requirement`, `policy`, `constructor`, `mutation`, `declared_boundary`, `expected_layer`, `control_id`, `compatibility`, `control`, `observation`, `expected_consumer`. Each claim has `section`, `name`; candidate has `schedule`, `subject_pin`; deployment has `network`, `genesis`; branch has `identifier`, `checkpoint`; each non-null control or observation has `step`, `digest`, `funded_outpoints`, `claims`; each funded-outpoint entry has `funding_step`, `output`, with the protocol's funded-output keys; policy uses the validated policy object from item 16.
+22. `ceremony-roster begin`, one `ceremony report` digest, `ceremony-roster end`.
+23. `manifest-sha256` digest.
+24. `eligible yes` or `eligible no`, then end of file; eligibility assigns no row credit.
+
 ### Conjunct dispositions · `sec:backlog:conjunct-dispositions`
 
 **Table (Bounded conjunct dispositions by part)** · `tab:backlog:conjunct-dispositions`

@@ -1196,6 +1196,58 @@ pub mod native {
             &self.exchanges
         }
 
+        /// The common policy is retained only after a response validates it.
+        #[must_use]
+        pub const fn policy(&self) -> Option<&sponsored::Policy> {
+            self.policy.as_ref()
+        }
+
+        /// Refused controls stop their own families without discarding observations.
+        #[must_use]
+        pub fn stopped(&self) -> &[&'static str] {
+            &self.stopped
+        }
+
+        /// Each family retains its control, departure and expectation independently.
+        /// Missing exchanges remain null because an absent response establishes nothing.
+        #[must_use]
+        pub fn families_json(&self) -> Vec<serde_json::Value> {
+            RETAINED_FAMILIES.iter().zip(RETAINED_SUBJECTS).map(|(family, subject)| {
+                let row = NATIVE_ROWS.iter().find(|row| row.standing().subject() == Some(subject));
+                let find = |control: bool| self.exchanges.iter().find(|(step, _)| {
+                    let mut parts = step.case().step.split(':');
+                    parts.next() == Some(*family)
+                        && parts.next() == if control { Some("control") } else { row.map(crate::maturity_mutants::native_staging::NativeRow::name) }
+                });
+                let control = find(true);
+                let departure = find(false);
+                let expected = row.map(|row| {
+                    use crate::maturity_mutants::native_staging::{NativeBoundary, NativeStanding};
+                    if matches!(row.standing(), NativeStanding::StagedAcceptanceExpected { .. }) {
+                        ObservedOutcomeLayer::Accepted
+                    } else {
+                        match row.boundary() {
+                            NativeBoundary::ScriptPathRejection => ObservedOutcomeLayer::ScriptPathRejection,
+                            NativeBoundary::ConsensusRejectionBeforeScript => ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
+                        }
+                    }
+                });
+                serde_json::json!({
+                    "family": family,
+                    "claim": row.map(|row| serde_json::json!({"section":row.section().section(), "name":row.name()})),
+                    "control": control.map(retained_observation),
+                    "subject": departure.map(retained_observation),
+                    "stopped": self.stopped.contains(family),
+                    "expectation": departure.map_or("absent", |(_, response)| if Some(response.observed_layer) == expected { "agreement" } else { "contradiction" }),
+                    "control_accepted": control.is_some_and(|(step, response)| {
+                        matches!(step.subject(), OperationSubject::Submission(bytes)
+                            if response.observed_layer == ObservedOutcomeLayer::Accepted
+                                && sponsored::check_readback(&bytes.transaction_bytes, response).is_ok())
+                    }),
+                })
+            }).collect()
+        }
+
         /// A terminal refusal remains available without inventing an observation.
         #[must_use]
         pub const fn refusal(&self) -> Option<&Refusal> {
@@ -1503,6 +1555,28 @@ pub mod native {
                 PlanRefused
             })
         }
+    }
+
+    fn retained_observation(
+        (step, response): &(OperationStep, NativeOperationResponse),
+    ) -> serde_json::Value {
+        let readback = if response.observed_layer != ObservedOutcomeLayer::Accepted {
+            "not-applicable"
+        } else if response.mined_readback.is_none() {
+            "absent"
+        } else if matches!(step.subject(), OperationSubject::Submission(subject)
+            if sponsored::check_readback(&subject.transaction_bytes, response).is_ok())
+        {
+            "matched"
+        } else {
+            "mismatch"
+        };
+        let route = sponsored::detail(response).ok().and_then(|_| {
+            serde_json::from_str::<serde_json::Value>(response.observed_detail.as_deref()?)
+                .ok()?["route"].as_str().map(str::to_owned)
+        });
+        serde_json::json!({"step":step.case().step, "layer":response.observed_layer,
+            "route":route, "readback":readback})
     }
 
     /// Replay only the retained-route schedule, preserving historical archive replay.
@@ -4313,6 +4387,54 @@ pub(crate) mod tests {
         });
         response.validate_shape().expect("funding shape");
         response
+    }
+
+    #[test]
+    fn retained_outcomes_bind_each_control_subject_and_readback() {
+        let plan = retained_routes_script();
+        let families = plan.families_json();
+        assert_eq!(families.len(), 2);
+        assert!(plan.policy().is_some());
+        assert_eq!(plan.stopped().len(), 0);
+        for family in &families {
+            assert_eq!(family["claim"]["section"], "16.6");
+            assert_eq!(family["control"]["readback"], "matched");
+            assert_eq!(family["control"]["route"], "direct-block");
+            assert_eq!(family["control_accepted"], true);
+            assert_eq!(family["expectation"], "agreement");
+        }
+        assert_eq!(families[0]["subject"]["route"], "refused");
+        assert_eq!(families[0]["subject"]["readback"], "not-applicable");
+        assert_eq!(families[1]["subject"]["readback"], "matched");
+    }
+
+    #[test]
+    fn retained_outcomes_keep_stopped_family_separate_from_accepted_control() {
+        let plan = retained_routes_script_with_refused_control(true);
+        let families = plan.families_json();
+        assert_eq!(plan.stopped(), ["wrong-semantic-metadata"]);
+        assert_eq!(families[0]["stopped"], true);
+        assert_eq!(families[0]["control_accepted"], false);
+        assert_eq!(families[0]["control"]["route"], "refused");
+        assert_eq!(families[1]["stopped"], false);
+        assert_eq!(families[1]["control_accepted"], true);
+    }
+
+    #[test]
+    fn retained_outcomes_leave_unobserved_claims_absent() {
+        let seed = crate::maturity_corpus::maturity_variable_run_of_record().expect("archive");
+        let plan = native::RetainedRoutesPlanner::new(
+            seed.evidence().identity().clone(),
+            seed.evidence().branch(),
+        )
+        .expect("planner");
+        assert!(plan.policy().is_none());
+        for family in plan.families_json() {
+            assert!(family["control"].is_null());
+            assert!(family["subject"].is_null());
+            assert_eq!(family["expectation"], "absent");
+            assert_eq!(family["control_accepted"], false);
+        }
     }
 
     fn retained_routes_script() -> native::RetainedRoutesPlanner {
