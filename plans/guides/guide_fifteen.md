@@ -309,7 +309,7 @@ The accepted Phase-6 exit narrows bypass, wrong-code-subtree, resource, and rela
 
 **Data (Safety census and outstanding partition)** · `data:guide15-exec:safety-census`
 
-The Safety census is 206 rows, 78 answered and 128 outstanding: 43 first-party required, 35 native-run required, 15 report-layer required, and 35 typed non-answers, pinned by `the_census_figures_are_unmoved_by_the_binding_readers` in `packages/vectors/src/maturity_evidence.rs` and carried by (`sec:phase6:exit-assessment`).
+At charter, the Safety census was 206 rows, 78 answered and 128 outstanding: 43 first-party required, 35 native-run required, 15 report-layer required, and 35 typed non-answers, then pinned by `the_census_figures_are_unmoved_by_the_binding_readers` in `packages/vectors/src/maturity_evidence.rs` and carried by (`sec:phase6:exit-assessment`). The current census is read at (`result:backlog:close-safety-reconciliation`).
 
 **Data (Admitted answer classes)** · `data:guide15-exec:admitted-answers`
 
@@ -337,7 +337,7 @@ Finality is a typed property of a reason: a final non-answer states why no obser
 
 **Data (Final and waiting non-answer rows)** · `data:guide15-exec:non-answer-census`
 
-Of the five reason classes in `packages/vectors/src/maturity_safety.rs`, TotalityAnsweredByLandedNonceEvidence has eleven final rows and PropertyOfTheBuildRatherThanAFixture one, because their answers are held by other admitted evidence; AcceptanceAwaitsRelayAdmissibility has nine waiting rows, SponsoredControlRefusedAtConstruction eleven, and SponsorArmAwaitsRegionScoping three. Wave 0 must discharge those twenty-three waiting rows through the observable route; the census reports finality beside bucket counts (`rule:phase6:wave11-rulings`); (`sec:phase6:gate-record`).
+At charter, of the five reason classes in `packages/vectors/src/maturity_safety.rs`, TotalityAnsweredByLandedNonceEvidence had eleven final rows and PropertyOfTheBuildRatherThanAFixture one, because their answers were held by other admitted evidence; AcceptanceAwaitsRelayAdmissibility had nine waiting rows, SponsoredControlRefusedAtConstruction eleven, and SponsorArmAwaitsRegionScoping three. Wave 0 must discharge those twenty-three waiting rows through the observable route; the census reports finality beside bucket counts (`rule:phase6:wave11-rulings`); (`sec:phase6:gate-record`). The current census and the keyed charter reconciliation are read at (`result:backlog:close-safety-reconciliation`).
 
 **Definition (Retirement of an unobservable conjunct residual)** · `def:guide15-exec:retired-residual`
 
