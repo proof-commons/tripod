@@ -1432,6 +1432,7 @@ fn sponsor_change_without_sponsor_inputs_retains_the_presence_residual() {
     assert_eq!(roles.input_claims(), &[Claim::State]);
     assert_eq!(roles.output_claims(), &[Claim::State, Claim::SponsorChange]);
     assert_eq!(roles.sponsor_input_bound_uncalibrated(), None);
+    assert_sponsor_projection_statuses(&classified);
 }
 
 fn assert_sponsor_projection_statuses(classified: &ValidatedMaturityAbiClassification) {
@@ -1557,8 +1558,13 @@ fn role_refusals_are_independent_of_changed_position_claims() {
     }
     assert_eq!(classification_calls, 1118);
     assert_eq!(role_calls, 16);
-    writeln!(std::io::stdout().lock(), "census roles: {classification_calls} classification calls; {role_calls} role calls; {} entry calls; table wall {:?}",
-        classification_calls + role_calls, started.elapsed()).unwrap();
+    let entry_calls = classification_calls + role_calls;
+    let wall = started.elapsed();
+    writeln!(
+        std::io::stdout().lock(),
+        "census roles: {classification_calls} classification calls; {role_calls} role calls; {entry_calls} entry calls; table wall {wall:?}"
+    )
+    .unwrap();
 }
 
 #[test]

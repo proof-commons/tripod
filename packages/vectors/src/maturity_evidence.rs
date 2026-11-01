@@ -3214,10 +3214,10 @@ pub(crate) mod tests {
             }
         }
         assert_eq!([accepted_departures, positives, native_claims], [3, 8, 28]);
-        // Fifteen report pairs and thirteen supplementary comparisons add answers.
-        assert_eq!(PLAN.census().answered(), 147);
-        // Report pairs remove fifteen obligations; thirteen comparisons answer thirteen more.
-        assert_eq!(PLAN.census().outstanding(), 59);
+        // Fifteen report pairs and thirty-six supplementary comparisons add answers.
+        assert_eq!(PLAN.census().answered(), 170);
+        // Report pairs remove fifteen obligations; thirty-six comparisons answer thirty-six more.
+        assert_eq!(PLAN.census().outstanding(), 36);
     }
 
     #[test]
@@ -4171,10 +4171,10 @@ pub(crate) mod tests {
                 census.retired(),
                 census.waiting()
             ),
-            (147, 22, 2, 35)
+            (170, 22, 2, 12)
         );
         assert_eq!(census.observed(), census.answered());
-        assert_eq!(census.outstanding(), 59);
+        assert_eq!(census.outstanding(), 36);
         assert_eq!(
             census.observed() + census.final_dispositions() + census.retired() + census.waiting(),
             206
@@ -4192,7 +4192,7 @@ pub(crate) mod tests {
             .expect("waiting row");
         waiting.standing = MaturityRowStanding::InfrastructureBlocked;
         let blocked_census = super::census_from_rows(&blocked.rows);
-        assert_eq!(blocked_census.waiting(), 35);
+        assert_eq!(blocked_census.waiting(), 12);
         assert_eq!(blocked_census.infrastructure_blocked(), 1);
         assert!(!blocked_census.every_required_row_is_answered());
         let mut experimental = PLAN.clone();
@@ -4204,7 +4204,7 @@ pub(crate) mod tests {
             .standing = MaturityRowStanding::Experimental;
         let experimental_census = super::census_from_rows(&experimental.rows);
         assert_eq!(experimental_census.experimental(), 1);
-        assert_eq!(experimental_census.waiting(), 35);
+        assert_eq!(experimental_census.waiting(), 12);
         assert_eq!(
             experimental_census.observed()
                 + experimental_census.final_dispositions()
@@ -4687,10 +4687,10 @@ pub(crate) mod tests {
         // The observer archive is admitted beside the census and links no row.
         let census = PLAN.census();
         assert_eq!(census.rows(), 206);
-        // Thirteen retained comparisons join the forty historical discharges.
-        assert_eq!(census.first_party_discharged(), 53);
-        // Thirteen comparisons and two normalization proofs leave required standing.
-        assert_eq!(census.first_party_required(), 28);
+        // Thirty-six retained comparisons join the forty historical discharges.
+        assert_eq!(census.first_party_discharged(), 76);
+        // Thirty-six comparisons and two normalization proofs leave required standing.
+        assert_eq!(census.first_party_required(), 5);
         assert_eq!(census.retired(), 2);
         assert_eq!(census.native_run_required(), 0);
         // Every declared report row now has its exact consumer pair.
@@ -4701,8 +4701,8 @@ pub(crate) mod tests {
         assert_eq!(census.outstanding_under_typed_non_answer(), 29);
         // The eight semantic positives, twenty-seven native refusal rows and
         // balanced-state-corruption add thirty-six answers to the prior eighty-three.
-        // Fifteen report pairs and thirteen first-party comparisons add answers to the native census.
-        assert_eq!(census.answered(), 147);
+        // Fifteen report pairs and thirty-six first-party comparisons add answers to the native census.
+        assert_eq!(census.answered(), 170);
         assert_eq!(census.root_history_observed(), 16);
         assert_eq!(census.public_recovery_observed(), 14);
         assert_eq!(census.native_declared_boundary_observed(), 0);
@@ -4861,6 +4861,23 @@ pub(crate) mod tests {
         ])
     }
 
+    fn abi_entry_movement_keys() -> std::collections::BTreeSet<(&'static str, &'static str)> {
+        crate::maturity_first_party::MATURITY_ABI_ENTRY_KEYS
+            .iter()
+            .map(|(section, name, _)| (section.section(), *name))
+            .collect()
+    }
+
+    fn cumulative_entry_movement_keys() -> std::collections::BTreeSet<(&'static str, &'static str)>
+    {
+        let original = entry_movement_keys();
+        let abi = abi_entry_movement_keys();
+        assert_eq!(original.len(), 8);
+        assert_eq!(abi.len(), 23);
+        assert!(original.is_disjoint(&abi));
+        original.union(&abi).copied().collect()
+    }
+
     fn bounded_consolidation_plan() -> MaturityAnnouncementEvidencePlan {
         let mut before = super::derive_maturity_evidence_before_closure(
             MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
@@ -4927,8 +4944,9 @@ pub(crate) mod tests {
                 }
             );
         }
-        assert_eq!(changed, entry_movement_keys());
-        assert_eq!(unchanged, 198);
+        assert_eq!(changed, cumulative_entry_movement_keys());
+        assert_eq!(changed.len(), 31);
+        assert_eq!(unchanged, 175);
         for evidence in before.discharged() {
             assert!(
                 PLAN.discharged().contains(evidence),
@@ -4955,7 +4973,7 @@ pub(crate) mod tests {
                 new.retired(),
                 new.waiting()
             ),
-            (147, 22, 2, 35)
+            (170, 22, 2, 12)
         );
         assert_eq!(new.outstanding_under_typed_non_answer(), 29);
         assert_eq!(
@@ -5049,14 +5067,7 @@ pub(crate) mod tests {
                     assert_eq!(cells[3].trim_matches('`'), boundary.entry_point());
                     assert!(attempted.is_none());
                     assert_eq!(cells[5], retained_entry_record_refusal(key));
-                    assert_eq!(
-                        cells[6],
-                        if key.0 == "16.3" {
-                            "retained: canonical-offer contract required"
-                        } else {
-                            "retained: cross-language admission required"
-                        }
-                    );
+                    assert_eq!(cells[6], "retained: cross-language admission required");
                 }
                 MaturitySupplementaryDisposition::OutOfContract { .. } => {
                     panic!("no entry retirement")
@@ -5065,11 +5076,19 @@ pub(crate) mod tests {
         }
         assert_eq!(recorded, expected);
         assert_eq!(recorded.len(), 14);
-        assert_eq!(movements, entry_movement_keys());
+        let cumulative = cumulative_entry_movement_keys();
+        assert_eq!(
+            movements,
+            expected.intersection(&cumulative).copied().collect()
+        );
+        assert_eq!(movements.len(), 9);
     }
 
     fn entry_record_pin(key: (&str, &str)) -> &'static str {
         match key {
+            ("16.3", "correct-semantic-metadata-with-noncanonical-representation-nonce") => {
+                "entry_pair_nonce_comparison"
+            }
             ("16.2", "request-cycle-differs-from-successor") => "entry_pair_successor_cycle",
             ("16.5", "metadata-leaf-missing") => "entry_pair_metadata_omission",
             ("16.11", "candidate-outside-bounds") => "entry_pair_depth_cap",
@@ -5087,9 +5106,6 @@ pub(crate) mod tests {
 
     fn retained_entry_record_refusal(key: (&str, &str)) -> &'static str {
         match key {
-            ("16.3", "correct-semantic-metadata-with-noncanonical-representation-nonce") => {
-                "No performed refusal"
-            }
             ("16.12", "blank-request") => "Not admitted: blank_record",
             ("16.12", "malformed-json") => "Not admitted: malformed_record",
             ("16.12", "oversized-request") => "Not admitted: oversized_record",
@@ -5121,7 +5137,7 @@ pub(crate) mod tests {
         let ledger = crate::maturity_first_party::derive_maturity_first_party_dispositions()
             .expect("admitted ledger");
         let mut closed = PLAN.clone();
-        assert_eq!(closed.census().first_party_required(), 28);
+        assert_eq!(closed.census().first_party_required(), 5);
         assert_eq!(ledger.rows().len(), 43);
         assert_eq!(
             super::apply_supplementary_dispositions(&mut closed, &ledger),

@@ -70,11 +70,11 @@
 //! than by any property of the chain. No interface here accepts signing
 //! material from a caller.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::num::{NonZeroU32, NonZeroU64};
 use std::sync::LazyLock;
 
-use architecture::ARCHITECTURE;
+use architecture::{ARCHITECTURE, ObjectId, OperationId, ProjectionId, TagId};
 use linker::{
     CandidateLinkedMaturityBundle, LinkRefusal, LinkedStateLeafProgram, StateConsumerCensus,
     StateLinkRefusal, StateLinkSources, StateSingletonAsset, check_linked_state_program,
@@ -114,9 +114,14 @@ use transaction::operator_signing::{
 };
 use transaction::script_path_signing::LiveDeployment;
 use transaction::state_abi::derive_maturity_announcement_abi;
+use transaction::state_abi::{
+    MaturityAbiClassificationRefusal, MaturityAbiRoleRefusal, MaturityPositionClaim,
+    validate_maturity_abi_classification, validate_maturity_abi_roles,
+};
 use transaction::state_construct::construct_maturity_announcement;
 use transaction::state_finalize::{FinalizedMaturityAnnouncement, finalize_maturity_announcement};
 use transaction::state_request::MaturityAnnouncementRequest;
+use transaction::state_request::MaturityRequestDecodingRefusal;
 use transaction::state_signing::OperatorSigningStarted;
 use transaction::state_view::{
     MaturityViewStatement, PublicMaturityStateView, ValidatedMaturityStateView,
@@ -184,6 +189,14 @@ const AUXILIARY: [u8; 32] = [0; 32];
 /// member has to say.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityFirstPartyValidator {
+    /// Classify offers with `transaction::validate_maturity_abi_classification`.
+    AbiClassification,
+    /// Validate roles with `transaction::validate_maturity_abi_roles`.
+    AbiRoleValidation,
+    /// Decode cycle bytes with `MaturityAnnouncementRequest::decode_announced_cycle`.
+    RequestCycleDecoding,
+    /// Compare nonces with `CandidateStateConstructor::compare_offered_representation`.
+    NonceComparison,
     /// Compare the offered successor with the authorized one.
     AuthorizedSuccessor,
     /// Reconstruct the complete offered STATE program.
@@ -257,6 +270,10 @@ impl MaturityFirstPartyValidator {
     #[must_use]
     pub const fn entry_point(self) -> &'static str {
         match self {
+            Self::AbiClassification => "transaction::validate_maturity_abi_classification",
+            Self::AbiRoleValidation => "transaction::validate_maturity_abi_roles",
+            Self::RequestCycleDecoding => "MaturityAnnouncementRequest::decode_announced_cycle",
+            Self::NonceComparison => "CandidateStateConstructor::compare_offered_representation",
             Self::AuthorizedSuccessor => "OperatorAuthorizedMaturityAnnouncement::check_offered",
             Self::CompleteStateView => "PublicMaturityStateView::validate",
             Self::WeightedStateDeclarations => "TaptreeInput<StateLeafRole>::new",
@@ -287,12 +304,16 @@ impl MaturityFirstPartyValidator {
     #[must_use]
     pub const fn owning_package(self) -> &'static str {
         match self {
-            Self::SemanticConstruction
+            Self::AbiClassification
+            | Self::AbiRoleValidation
+            | Self::RequestCycleDecoding
+            | Self::SemanticConstruction
             | Self::AuthorizedSuccessor
             | Self::CompleteStateView
             | Self::OperatorAuthorization
             | Self::OfferedTransactionCheck => "transaction",
-            Self::ConstructorContinuity
+            Self::NonceComparison
+            | Self::ConstructorContinuity
             | Self::OperatorKeyEncoding
             | Self::OperatorRequestFreeze
             | Self::MetadataPatternDecode
@@ -330,6 +351,52 @@ impl MaturityFirstPartyValidator {
 /// else.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityFirstPartyChange {
+    /// Add a live receipt at either side of the announcement.
+    AddLiveReceiptInputOrOutput,
+    /// Add a time-locked receipt output beside the announcement.
+    AddTimeLockedReceipt,
+    /// Add an ASH output beside the announcement.
+    AddAsh,
+    /// Add an entitlement output beside the announcement.
+    AddEntitlement,
+    /// Add a request output beside the announcement.
+    AddRequest,
+    /// Add a distribution control or vault output beside the announcement.
+    AddDistributionControlOrVault,
+    /// Add a RESV input or output beside the announcement.
+    AddResvInputOrOutput,
+    /// Add a PACE output beside the announcement.
+    AddPace,
+    /// Add an entitlement or distribution authority output beside the announcement.
+    AddAuthorityObject,
+    /// Insert an issuance body into the coordinator input's encoding.
+    AddIssuance,
+    /// Add a nonzero STATE-asset destruction output.
+    AddDestruction,
+    /// Add a zero-value output carrying the burn tag.
+    AddBurnRecord,
+    /// Add a zero-value output carrying the clear tag.
+    AddClearEvent,
+    /// Add an output carrying the distribution-residue projection tag.
+    AddResidueProjection,
+    /// Add a lateral canonical flow of U, ENT or `DIST_CTL` beside the announcement.
+    IntroduceCanonicalUEntOrDistCtlFlow,
+    /// Replace the coordinator outpoint with an invented one.
+    ChangeCoordinatorOutpoint,
+    /// Repeat the predecessor outpoint in a second STATE input.
+    RepeatCoordinator,
+    /// Replace the coordinator input with a reserve sponsor member.
+    OmitCoordinator,
+    /// Exchange the STATE and first sponsor input positions.
+    ExchangeStateAndSponsorPositions,
+    /// Add a distinct surplus STATE input.
+    AddStateInput,
+    /// Add a surplus STATE output.
+    AddStateOutput,
+    /// Remove the final byte from the signing writer's requested-cycle item.
+    TruncateRequestedCycleEncoding,
+    /// Offer the retained semantic metadata at a later admissible nonce.
+    OfferLaterAdmissibleRepresentationNonce,
     /// Change only the offered announced cycle after authorization.
     ChangeAuthorizedSuccessorCycle,
     /// Commit the static subtree alone instead of the complete outer pair.
@@ -466,6 +533,12 @@ pub enum MaturityFirstPartyChange {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum MaturityFirstPartyObservation {
+    /// Classification's complete typed refusal.
+    AbiClassification(MaturityAbiClassificationRefusal),
+    /// Coordinator, cardinality or placement refusal.
+    AbiRole(MaturityAbiRoleRefusal),
+    /// The requested cycle's width refusal.
+    RequestDecoding(MaturityRequestDecodingRefusal),
     /// Exact unsupported schema returned by environment binding.
     UnsupportedProtocolSchema {
         /// The schema on the refused observation.
@@ -3255,7 +3328,11 @@ pub fn validate_maturity_first_party(
         return validate_supplementary_comparison(case, row, discharge);
     }
     let observed = match discharge.validator {
-        MaturityFirstPartyValidator::ConstructorContinuity
+        MaturityFirstPartyValidator::AbiClassification
+        | MaturityFirstPartyValidator::AbiRoleValidation
+        | MaturityFirstPartyValidator::RequestCycleDecoding
+        | MaturityFirstPartyValidator::NonceComparison
+        | MaturityFirstPartyValidator::ConstructorContinuity
         | MaturityFirstPartyValidator::SymbolResolution
         | MaturityFirstPartyValidator::AuthorizedSuccessor
         | MaturityFirstPartyValidator::CompleteStateView
@@ -3569,8 +3646,962 @@ impl<T: Eq> EntryPair<T> {
     }
 }
 
+// The reserve mapping is independent of family claims and shared by S1 and the offers.
+const ABI_RESERVE_ASSET: [u8; 32] = [0x4c; 32];
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MaturityAbiTestOffer {
+    bytes: Vec<u8>,
+    spent: Vec<transaction::live_census::SpentOutputCensusEntry>,
+    inputs: Vec<MaturityPositionClaim>,
+    outputs: Vec<MaturityPositionClaim>,
+    canonical: realization::ObservedCanonicalPartition,
+}
+
+impl MaturityAbiTestOffer {
+    fn classify(
+        &self,
+        context: &MaturityAbiEntryContext,
+    ) -> Result<transaction::ValidatedMaturityAbiClassification, MaturityFirstPartyObservation>
+    {
+        validate_maturity_abi_classification(
+            &context.abi,
+            &context.view,
+            &context.spec,
+            &transaction::state_abi::MaturityAbiOffer {
+                bytes: &self.bytes,
+                spent: &self.spent,
+                reserve_asset: AssetId::from_internal(ABI_RESERVE_ASSET),
+                inputs: self.inputs.clone(),
+                outputs: self.outputs.clone(),
+                canonical: self.canonical.clone(),
+            },
+        )
+        .map_err(MaturityFirstPartyObservation::AbiClassification)
+    }
+
+    fn transaction(&self) -> Result<TargetTransaction, MaturityFirstPartyRefusal> {
+        TargetTransaction::decode(&self.bytes)
+            .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)
+    }
+
+    fn edit(
+        &mut self,
+        edit: impl FnOnce(
+            &mut Vec<transaction::bytes::TargetInput>,
+            &mut Vec<TargetOutput>,
+            &mut Vec<transaction::bytes::InputWitness>,
+            &mut Vec<transaction::bytes::OutputWitness>,
+        ),
+    ) -> Result<(), MaturityFirstPartyRefusal> {
+        let transaction = self.transaction()?;
+        let mut inputs = transaction.inputs().to_vec();
+        let mut outputs = transaction.outputs().to_vec();
+        let mut witnesses = transaction.witnesses().to_vec();
+        let mut output_witnesses = transaction.output_witnesses().to_vec();
+        edit(
+            &mut inputs,
+            &mut outputs,
+            &mut witnesses,
+            &mut output_witnesses,
+        );
+        self.bytes = TargetTransaction::with_output_witnesses(
+            transaction.version(),
+            inputs,
+            outputs,
+            transaction.lock_time(),
+            witnesses,
+            output_witnesses,
+        )
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?
+        .encode();
+        Ok(())
+    }
+
+    fn append_input(
+        &mut self,
+        outpoint: Outpoint,
+        spent: transaction::live_census::SpentOutputCensusEntry,
+        claim: MaturityPositionClaim,
+    ) -> Result<(), MaturityFirstPartyRefusal> {
+        self.edit(|inputs, _, witnesses, _| {
+            inputs.push(transaction::bytes::TargetInput::new(outpoint, u32::MAX));
+            witnesses.push(transaction::bytes::InputWitness::default());
+        })?;
+        self.spent.push(spent);
+        self.inputs.push(claim);
+        Ok(())
+    }
+
+    fn append_output(
+        &mut self,
+        output: TargetOutput,
+        claim: MaturityPositionClaim,
+    ) -> Result<(), MaturityFirstPartyRefusal> {
+        self.edit(|_, outputs, _, witnesses| {
+            outputs.push(output);
+            witnesses.push(transaction::bytes::OutputWitness::empty());
+        })?;
+        self.outputs.push(claim);
+        Ok(())
+    }
+}
+
+struct MaturityAbiEntryContext {
+    abi: transaction::CandidateMaturityAnnouncementAbi,
+    view: ValidatedMaturityStateView,
+    spec: realization::ScopedRealizationSpec,
+    sponsorless: MaturityAbiTestOffer,
+    sponsored: MaturityAbiTestOffer,
+}
+
+/// Funding only: ABI comparisons neither request nor claim sponsor signing.
+struct MaturityAbiTestSponsor(transaction::SponsorOffer);
+
+impl transaction::SponsorCapability for MaturityAbiTestSponsor {
+    fn offer(&self) -> transaction::SponsorOffer {
+        self.0.clone()
+    }
+    fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
+        None
+    }
+    fn sign(
+        &self,
+        _: &transaction::SponsorSigningRequest,
+    ) -> Option<transaction::SponsorSignature> {
+        None
+    }
+}
+
+fn abi_entry_context() -> Result<&'static MaturityAbiEntryContext, MaturityFirstPartyRefusal> {
+    static CONTEXT: LazyLock<Result<MaturityAbiEntryContext, MaturityFirstPartyRefusal>> =
+        LazyLock::new(build_abi_entry_context);
+    CONTEXT.as_ref().map_err(Clone::clone)
+}
+
+fn build_abi_entry_context() -> Result<MaturityAbiEntryContext, MaturityFirstPartyRefusal> {
+    use transaction::live_census::SpentOutputCensusEntry;
+    use transaction::{PublicConstructionView, PublicOutputView, SponsorOffer};
+    let substrate = substrate()?;
+    let view = validated_view(substrate, &substrate.honest)?;
+    let fail = |_| MaturityFirstPartyRefusal::ScenarioNotConstructible;
+    let abi = derive_maturity_announcement_abi(&substrate.target, &view).map_err(fail)?;
+    let spec = realization::derive(
+        &ARCHITECTURE,
+        realization::RealizationScope::from_operations([OperationId::AnnounceMaturity])
+            .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?,
+    )
+    .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    let finalized = honest_finalized(substrate)?;
+    let predecessor = SpentOutputCensusEntry::new(
+        view.view().asset(),
+        view.view().value(),
+        view.view().predecessor_program().to_vec(),
+    );
+    let sponsorless = MaturityAbiTestOffer {
+        bytes: finalized.construction().transaction().encode(),
+        spent: vec![predecessor.clone()],
+        inputs: vec![MaturityPositionClaim::State],
+        outputs: vec![MaturityPositionClaim::State],
+        canonical: realization::ObservedCanonicalPartition::default(),
+    };
+    let outpoints = [abi_other_outpoint(1)?, abi_other_outpoint(2)?];
+    let reserve = AssetId::from_internal(ABI_RESERVE_ASSET);
+    let program = transaction::taproot::witness_program_script(&substrate.target, 0, &[0xb4; 20])
+        .map_err(fail)?;
+    let public = PublicConstructionView::new(outpoints.into_iter().map(|outpoint| {
+        PublicOutputView::new(
+            outpoint,
+            AssetField::Explicit(reserve),
+            ValueField::Explicit(75),
+            program.clone(),
+        )
+    }))
+    .map_err(fail)?;
+    let sponsor = MaturityAbiTestSponsor(SponsorOffer::new(outpoints, 150, None).map_err(fail)?);
+    let request = MaturityAnnouncementRequest::new(
+        substrate.honest.announced,
+        RequestedForm::Sponsored,
+        SponsorChangeRequest::NotRequested,
+    )
+    .map_err(fail)?;
+    let construction = transaction::state_construct::construct_maturity_announcement_with_sponsor(
+        &substrate.target,
+        &abi,
+        &view,
+        &request,
+        &OracleStateCurve,
+        Some(&transaction::state_construct::MaturitySponsorContext {
+            reserve_asset: reserve,
+            view: &public,
+            capability: &sponsor,
+        }),
+    )
+    .map_err(fail)?;
+    let mut spent = vec![predecessor];
+    spent.extend(construction.sponsor_spent().iter().map(|output| {
+        SpentOutputCensusEntry::new(output.asset(), output.value(), output.program().to_vec())
+    }));
+    let sponsored = MaturityAbiTestOffer {
+        bytes: construction.transaction().encode(),
+        spent,
+        inputs: vec![
+            MaturityPositionClaim::State,
+            MaturityPositionClaim::SponsorMember,
+            MaturityPositionClaim::SponsorMember,
+        ],
+        outputs: vec![
+            MaturityPositionClaim::State,
+            MaturityPositionClaim::TargetFee,
+        ],
+        canonical: realization::ObservedCanonicalPartition::default(),
+    };
+    Ok(MaturityAbiEntryContext {
+        abi,
+        view,
+        spec,
+        sponsorless,
+        sponsored,
+    })
+}
+
+fn abi_other_outpoint(index: u32) -> Result<Outpoint, MaturityFirstPartyRefusal> {
+    Outpoint::new(Txid::from_internal([0xe9; 32]), index)
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)
+}
+
+const fn abi_relation(
+    kind: realization::RelationKind,
+    subject: realization::RelationSubject,
+) -> realization::RelationId {
+    realization::RelationId::new(OperationId::AnnounceMaturity, kind, subject)
+}
+
+const fn abi_closure(side: realization::ObservedSide) -> realization::RelationId {
+    abi_relation(
+        realization::RelationKind::AllowedObjectFamilies,
+        realization::RelationSubject::TransactionSide {
+            side: match side {
+                realization::ObservedSide::Input => realization::TransactionSide::Input,
+                realization::ObservedSide::Output => realization::TransactionSide::Output,
+            },
+        },
+    )
+}
+
+const fn abi_state_cardinality(side: realization::TransactionSide) -> realization::RelationId {
+    abi_relation(
+        realization::RelationKind::Cardinality,
+        realization::RelationSubject::ObjectFamily {
+            side,
+            object: ObjectId::State,
+        },
+    )
+}
+
+fn abi_family_asset(family: ObjectId) -> Result<AssetField, MaturityFirstPartyRefusal> {
+    let asset = ARCHITECTURE
+        .object(family)
+        .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?
+        .asset;
+    let bytes = if asset == architecture::AssetId::Lbtc {
+        ABI_RESERVE_ASSET
+    } else {
+        [u8::try_from(asset.code())
+            .ok()
+            .and_then(|code| code.checked_add(0x80))
+            .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?; 32]
+    };
+    Ok(AssetField::Explicit(AssetId::from_internal(bytes)))
+}
+
+const fn abi_test_output(asset: AssetField, value: u64, program: Vec<u8>) -> TargetOutput {
+    TargetOutput::new(
+        asset,
+        ValueField::Explicit(value),
+        transaction::bytes::NonceField::Null,
+        program,
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MaturityClassificationSubjectKind {
+    Family(ObjectId, realization::ObservedSide, bool),
+    Issuance,
+    Destruction,
+    Tag(TagId),
+    Residue,
+    Canonical(ObjectId),
+}
+
+const fn classification_inventory(
+    change: MaturityFirstPartyChange,
+) -> &'static [(&'static str, MaturityClassificationSubjectKind)] {
+    use MaturityClassificationSubjectKind as Kind;
+    use MaturityFirstPartyChange as Change;
+    use realization::ObservedSide::{Input, Output};
+    match change {
+        Change::AddLiveReceiptInputOrOutput => &[
+            (
+                "live-receipt-input",
+                Kind::Family(ObjectId::ReceiptLive, Input, true),
+            ),
+            (
+                "live-receipt-output",
+                Kind::Family(ObjectId::ReceiptLive, Output, true),
+            ),
+        ],
+        Change::AddTimeLockedReceipt => &[(
+            "time-locked-receipt",
+            Kind::Family(ObjectId::ReceiptTimeLocked, Output, true),
+        )],
+        Change::AddAsh => &[("ash", Kind::Family(ObjectId::Ash, Output, true))],
+        Change::AddEntitlement => &[(
+            "entitlement",
+            Kind::Family(ObjectId::DepositEntitlement, Output, true),
+        )],
+        Change::AddRequest => &[(
+            "request",
+            Kind::Family(ObjectId::DepositRequest, Output, false),
+        )],
+        Change::AddDistributionControlOrVault => &[
+            (
+                "distribution-control",
+                Kind::Family(ObjectId::DistributionControl, Output, true),
+            ),
+            (
+                "distribution-vault",
+                Kind::Family(ObjectId::DistributionVault, Output, true),
+            ),
+        ],
+        Change::AddResvInputOrOutput => &[
+            ("resv-input", Kind::Family(ObjectId::Resv, Input, false)),
+            ("resv-output", Kind::Family(ObjectId::Resv, Output, false)),
+        ],
+        Change::AddPace => &[("pace", Kind::Family(ObjectId::Pace, Output, false))],
+        Change::AddAuthorityObject => &[
+            (
+                "entitlement-authority",
+                Kind::Family(ObjectId::EntitlementAuthority, Output, false),
+            ),
+            (
+                "distribution-authority",
+                Kind::Family(ObjectId::DistributionAuthority, Output, false),
+            ),
+        ],
+        Change::AddIssuance => &[("add-issuance", Kind::Issuance)],
+        Change::AddDestruction => &[("destruction", Kind::Destruction)],
+        Change::AddBurnRecord => &[("burn-record", Kind::Tag(TagId::Burn))],
+        Change::AddClearEvent => &[("clear-event", Kind::Tag(TagId::Recon))],
+        Change::AddResidueProjection => &[("residue-projection", Kind::Residue)],
+        Change::IntroduceCanonicalUEntOrDistCtlFlow => &[
+            ("canonical-u", Kind::Canonical(ObjectId::ReceiptLive)),
+            (
+                "canonical-ent",
+                Kind::Canonical(ObjectId::DepositEntitlement),
+            ),
+            (
+                "canonical-dist-ctl",
+                Kind::Canonical(ObjectId::DistributionControl),
+            ),
+        ],
+        _ => &[],
+    }
+}
+
+fn classification_expected(
+    kind: MaturityClassificationSubjectKind,
+) -> MaturityAbiClassificationRefusal {
+    use MaturityClassificationSubjectKind as Kind;
+    use realization::{ObservedSide, RelationFailure, RelationKind, RelationSubject};
+    let mut failed = BTreeMap::new();
+    match kind {
+        Kind::Family(_, side, collateral) => {
+            failed.insert(abi_closure(side), RelationFailure::UndeclaredObjectFamily);
+            if collateral {
+                failed.insert(
+                    abi_relation(
+                        RelationKind::CanonicalDeltaPolicy,
+                        RelationSubject::Operation,
+                    ),
+                    RelationFailure::CanonicalDeltaPolicy,
+                );
+            }
+        }
+        Kind::Canonical(_) => {
+            for side in [ObservedSide::Input, ObservedSide::Output] {
+                failed.insert(abi_closure(side), RelationFailure::UndeclaredObjectFamily);
+            }
+            failed.insert(
+                abi_relation(
+                    RelationKind::CanonicalDeltaPolicy,
+                    RelationSubject::Operation,
+                ),
+                RelationFailure::CanonicalDeltaPolicy,
+            );
+        }
+        Kind::Residue => {
+            failed.insert(
+                abi_relation(RelationKind::ProjectionPolicy, RelationSubject::Operation),
+                RelationFailure::ProjectionPolicy,
+            );
+        }
+        Kind::Issuance => return MaturityAbiClassificationRefusal::IssuanceOffered,
+        Kind::Destruction => {
+            return MaturityAbiClassificationRefusal::UnadmittedOutputRole {
+                position: 1,
+                claim: MaturityPositionClaim::Destruction,
+            };
+        }
+        Kind::Tag(tag) => {
+            return MaturityAbiClassificationRefusal::UnadmittedOutputRole {
+                position: 1,
+                claim: MaturityPositionClaim::DataOutput(Some(tag)),
+            };
+        }
+    }
+    MaturityAbiClassificationRefusal::RelationVerdicts { failed }
+}
+
+fn append_abi_family(
+    offer: &mut MaturityAbiTestOffer,
+    family: ObjectId,
+    side: realization::ObservedSide,
+) -> Result<(), MaturityFirstPartyRefusal> {
+    let asset = abi_family_asset(family)?;
+    let claim = MaturityPositionClaim::Family(family);
+    match side {
+        realization::ObservedSide::Input => offer.append_input(
+            abi_other_outpoint(1)?,
+            transaction::live_census::SpentOutputCensusEntry::new(
+                asset,
+                ValueField::Explicit(1),
+                vec![0x51],
+            ),
+            claim,
+        ),
+        realization::ObservedSide::Output => {
+            offer.append_output(abi_test_output(asset, 1, vec![0x51]), claim)
+        }
+    }
+}
+
+fn abi_tag_program(tag: TagId) -> Result<Vec<u8>, MaturityFirstPartyRefusal> {
+    let payload = tag.as_str().as_bytes();
+    let mut program = vec![
+        0x6a,
+        u8::try_from(payload.len())
+            .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?,
+    ];
+    program.extend_from_slice(payload);
+    Ok(program)
+}
+
+/// Test-only serialization surgery: typed decoding refuses issuance before it
+/// can produce a transaction. Check the complete body and its insertion boundary.
+fn stage_abi_issuance(offer: &mut MaturityAbiTestOffer) -> Result<(), MaturityFirstPartyRefusal> {
+    let control = offer.transaction()?.encode_without_witness();
+    if control != offer.bytes
+        || control.get(4..6) != Some(&[0, 1])
+        || control.get(42) != Some(&0)
+        || control.get(43..47) != Some(u32::MAX.to_le_bytes().as_slice())
+        || control.get(47) != Some(&1)
+    {
+        return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
+    }
+    let mut body = vec![0; 32];
+    body.extend_from_slice(&[0x77; 32]);
+    body.push(1);
+    body.extend_from_slice(&1_u64.to_be_bytes());
+    body.push(0);
+    if body.len() != 74 {
+        return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
+    }
+    offer.bytes = control[..47].to_vec();
+    offer.bytes[41] |= 0x80;
+    offer.bytes.extend_from_slice(&body);
+    offer.bytes.extend_from_slice(&control[47..]);
+    if offer.bytes[47..121] != body
+        || offer.bytes[121..] != control[47..]
+        || offer.bytes.len() != control.len() + 74
+    {
+        return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MaturityClassificationSubject {
+    name: &'static str,
+    offer: MaturityAbiTestOffer,
+    expected: MaturityAbiClassificationRefusal,
+}
+
+/// One classification row's constructed control and complete subject inventory.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaturityAbiClassificationTestStaging {
+    change: MaturityFirstPartyChange,
+    control: MaturityAbiTestOffer,
+    subjects: Vec<MaturityClassificationSubject>,
+}
+
+impl MaturityAbiClassificationTestStaging {
+    fn new(change: MaturityFirstPartyChange) -> Result<Self, MaturityFirstPartyRefusal> {
+        use MaturityClassificationSubjectKind as Kind;
+        use realization::{ObservedObjectRef, ObservedSide};
+        let control = abi_entry_context()?.sponsorless.clone();
+        let mut subjects = Vec::new();
+        for &(name, kind) in classification_inventory(change) {
+            let mut offer = control.clone();
+            match kind {
+                Kind::Family(family, side, _) => append_abi_family(&mut offer, family, side)?,
+                Kind::Canonical(family) => {
+                    append_abi_family(&mut offer, family, ObservedSide::Input)?;
+                    append_abi_family(&mut offer, family, ObservedSide::Output)?;
+                    offer
+                        .canonical
+                        .flows
+                        .push(realization::ObservedCanonicalFlow {
+                            asset: ARCHITECTURE
+                                .object(family)
+                                .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?
+                                .asset,
+                            sources: vec![ObservedObjectRef {
+                                side: ObservedSide::Input,
+                                ordinal: 1,
+                            }],
+                            destinations: vec![ObservedObjectRef {
+                                side: ObservedSide::Output,
+                                ordinal: 1,
+                            }],
+                            movement_kind: Some(architecture::DeltaKind::Lateral),
+                            destructions: Vec::new(),
+                        });
+                }
+                Kind::Issuance => stage_abi_issuance(&mut offer)?,
+                Kind::Destruction => offer.append_output(
+                    abi_test_output(abi_entry_context()?.view.view().asset(), 1, vec![0x6a]),
+                    MaturityPositionClaim::Destruction,
+                )?,
+                Kind::Tag(tag) => offer.append_output(
+                    abi_test_output(
+                        AssetField::Explicit(AssetId::from_internal(ABI_RESERVE_ASSET)),
+                        0,
+                        abi_tag_program(tag)?,
+                    ),
+                    MaturityPositionClaim::DataOutput(Some(tag)),
+                )?,
+                Kind::Residue => offer.append_output(
+                    abi_test_output(
+                        AssetField::Explicit(AssetId::from_internal(ABI_RESERVE_ASSET)),
+                        0,
+                        abi_tag_program(TagId::DistributionResidue)?,
+                    ),
+                    MaturityPositionClaim::Projection(ProjectionId::DistributionResidue),
+                )?,
+            }
+            subjects.push(MaturityClassificationSubject {
+                name,
+                offer,
+                expected: classification_expected(kind),
+            });
+        }
+        if subjects.is_empty() {
+            return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
+        }
+        Ok(Self {
+            change,
+            control,
+            subjects,
+        })
+    }
+
+    fn observe(&self) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+        let inventory = classification_inventory(self.change);
+        let context = abi_entry_context()?;
+        if inventory.is_empty() || inventory.len() != self.subjects.len() {
+            return Err(MaturityFirstPartyRefusal::SupplementaryLedgerMismatch);
+        }
+        let mut first = None;
+        for (position, (subject, &(name, kind))) in self.subjects.iter().zip(inventory).enumerate()
+        {
+            if subject.name != name || subject.expected != classification_expected(kind) {
+                return Err(MaturityFirstPartyRefusal::SupplementaryLedgerMismatch);
+            }
+            if self.subjects[..position]
+                .iter()
+                .any(|prior| prior.offer == subject.offer)
+            {
+                return Err(MaturityFirstPartyRefusal::SupplementaryLedgerMismatch);
+            }
+            if self.control == subject.offer {
+                return Err(MaturityFirstPartyRefusal::ChangeChangedNothing);
+            }
+            let observed = entry_outcome(
+                self.control.classify(context).map(|_| ()),
+                subject.offer.classify(context).map(|_| ()),
+                |error| error,
+            )?;
+            let expected =
+                MaturityFirstPartyObservation::AbiClassification(subject.expected.clone());
+            if observed != expected {
+                return Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
+                    observed,
+                ));
+            }
+            first.get_or_insert(observed);
+        }
+        first.ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)
+    }
+}
+
+/// One role subject and its independently reclassified control, including S1.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaturityAbiRoleTestStaging {
+    change: MaturityFirstPartyChange,
+    offers: EntryPair<MaturityAbiTestOffer>,
+    expected: MaturityAbiRoleRefusal,
+    cardinalities: [realization::RelationStatus; 2],
+}
+
+impl MaturityAbiRoleTestStaging {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep each of the six role offers beside its exact refusal and cardinality evidence"
+    )]
+    fn new(change: MaturityFirstPartyChange) -> Result<Self, MaturityFirstPartyRefusal> {
+        use MaturityAbiRoleRefusal as Refusal;
+        use MaturityFirstPartyChange as Change;
+        use realization::{RelationFailure, RelationStatus, TransactionSide};
+        let context = abi_entry_context()?;
+        let control = if change == Change::ExchangeStateAndSponsorPositions {
+            context.sponsored.clone()
+        } else {
+            context.sponsorless.clone()
+        };
+        let mut malformed = control.clone();
+        let predecessor = context.view.view().current_state_outpoint();
+        let other = abi_other_outpoint(1)?;
+        if other == predecessor {
+            return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
+        }
+        let passed = RelationStatus::Passed;
+        let above = RelationStatus::Failed {
+            reason: RelationFailure::CardinalityAboveMaximum,
+        };
+        let below = RelationStatus::Failed {
+            reason: RelationFailure::CardinalityBelowMinimum,
+        };
+        let (expected, cardinalities) = match change {
+            Change::ChangeCoordinatorOutpoint => {
+                malformed.edit(|inputs, _, _, _| {
+                    inputs[0] = transaction::bytes::TargetInput::new(other, u32::MAX);
+                })?;
+                (
+                    Refusal::CoordinatorIsNotTheValidatedPredecessor {
+                        expected: predecessor,
+                        offered: other,
+                    },
+                    [passed.clone(), passed],
+                )
+            }
+            Change::RepeatCoordinator => {
+                malformed.append_input(
+                    predecessor,
+                    control.spent[0].clone(),
+                    MaturityPositionClaim::State,
+                )?;
+                (
+                    Refusal::CoordinatorRepeated {
+                        positions: vec![0, 1],
+                    },
+                    [above, passed],
+                )
+            }
+            Change::OmitCoordinator => {
+                let sponsored = context.sponsored.transaction()?;
+                malformed.edit(|inputs, _, witnesses, _| {
+                    inputs[0] = sponsored.inputs()[1].clone();
+                    witnesses[0] = sponsored.witnesses()[1].clone();
+                })?;
+                malformed.spent[0] = context.sponsored.spent[1].clone();
+                malformed.inputs[0] = MaturityPositionClaim::SponsorMember;
+                (Refusal::CoordinatorMissing, [below, passed])
+            }
+            Change::ExchangeStateAndSponsorPositions => {
+                malformed.edit(|inputs, _, witnesses, _| {
+                    inputs.swap(0, 1);
+                    witnesses.swap(0, 1);
+                })?;
+                malformed.inputs.swap(0, 1);
+                malformed.spent.swap(0, 1);
+                (
+                    Refusal::StateAndSponsorPositionsExchanged {
+                        state: 1,
+                        sponsor: 0,
+                    },
+                    [passed.clone(), passed],
+                )
+            }
+            Change::AddStateInput => {
+                malformed.append_input(
+                    other,
+                    control.spent[0].clone(),
+                    MaturityPositionClaim::State,
+                )?;
+                (
+                    Refusal::Cardinality {
+                        relation: abi_state_cardinality(TransactionSide::Input),
+                        failure: RelationFailure::CardinalityAboveMaximum,
+                    },
+                    [above, passed],
+                )
+            }
+            Change::AddStateOutput => {
+                malformed.append_output(
+                    control.transaction()?.outputs()[0].clone(),
+                    MaturityPositionClaim::State,
+                )?;
+                (
+                    Refusal::Cardinality {
+                        relation: abi_state_cardinality(TransactionSide::Output),
+                        failure: RelationFailure::CardinalityAboveMaximum,
+                    },
+                    [passed, above],
+                )
+            }
+            _ => return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible),
+        };
+        Ok(Self {
+            change,
+            offers: EntryPair { control, malformed },
+            expected,
+            cardinalities,
+        })
+    }
+
+    fn observe(&self) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+        self.offers.differs()?;
+        let context = abi_entry_context()?;
+        let control = self
+            .offers
+            .control
+            .classify(context)
+            .map_err(MaturityFirstPartyRefusal::ControlWasRefused)?;
+        let subject = self
+            .offers
+            .malformed
+            .classify(context)
+            .map_err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass)?;
+        for (side, expected) in [
+            realization::TransactionSide::Input,
+            realization::TransactionSide::Output,
+        ]
+        .into_iter()
+        .zip(&self.cardinalities)
+        {
+            if subject
+                .report()
+                .verdict(&abi_state_cardinality(side))
+                .map(|verdict| &verdict.status)
+                != Some(expected)
+            {
+                return Err(MaturityFirstPartyRefusal::SupplementaryLedgerMismatch);
+            }
+        }
+        let observed = entry_outcome(
+            validate_maturity_abi_roles(&context.abi, &context.view, &control).map(|_| ()),
+            validate_maturity_abi_roles(&context.abi, &context.view, &subject).map(|_| ()),
+            MaturityFirstPartyObservation::AbiRole,
+        )?;
+        if observed != MaturityFirstPartyObservation::AbiRole(self.expected.clone())
+            || !entry_refusal_matches(self.change, &observed)
+        {
+            return Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
+                observed,
+            ));
+        }
+        Ok(observed)
+    }
+}
+
+/// The signing stage's requested-cycle item and that same item truncated by one byte.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaturityCycleDecodingTestStaging {
+    offers: EntryPair<Vec<u8>>,
+    announced: Cycle,
+}
+
+impl MaturityCycleDecodingTestStaging {
+    fn new() -> Result<Self, MaturityFirstPartyRefusal> {
+        let substrate = substrate()?;
+        let finalized = honest_finalized(substrate)?;
+        let state = open_signing(substrate, &finalized)?;
+        let response = honest_response(&state)?;
+        let mut registry = OperatorRightRegistry::default();
+        let right = registry
+            .issue(state.construction_right_scope(), state.protected_bytes())
+            .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        let authorized = state
+            .authorize(&mut registry, right, [response], &OperatorVerifier)
+            .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        let ready = authorized
+            .bind_for_submission(&substrate.target)
+            .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        let role = finalized
+            .construction()
+            .abi()
+            .witness_roles()
+            .iter()
+            .find(|role| role.role() == tapscript::StateProgramWitness::RequestedCycle)
+            .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        let control = ready
+            .witness()
+            .stack()
+            .get(role.position())
+            .cloned()
+            .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        let mut malformed = control.clone();
+        malformed
+            .pop()
+            .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        Ok(Self {
+            offers: EntryPair { control, malformed },
+            announced: finalized.construction().request().announced_cycle(),
+        })
+    }
+
+    fn observe(&self) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+        self.offers.differs()?;
+        let abi = &abi_entry_context()?.abi;
+        let control =
+            MaturityAnnouncementRequest::decode_announced_cycle(abi, &self.offers.control);
+        if control.as_ref().is_ok_and(|cycle| *cycle != self.announced) {
+            return Err(MaturityFirstPartyRefusal::SupplementaryLedgerMismatch);
+        }
+        let observed = entry_outcome(
+            control.map(|_| ()),
+            MaturityAnnouncementRequest::decode_announced_cycle(abi, &self.offers.malformed)
+                .map(|_| ()),
+            MaturityFirstPartyObservation::RequestDecoding,
+        )?;
+        if !entry_refusal_matches(
+            MaturityFirstPartyChange::TruncateRequestedCycleEncoding,
+            &observed,
+        ) {
+            return Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
+                observed,
+            ));
+        }
+        Ok(observed)
+    }
+}
+
+/// A retained semantic instance at its selected and next admitted representation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MaturityNonceComparisonTestStaging {
+    offers: EntryPair<realization::EncodedStateMetadata>,
+}
+
+impl MaturityNonceComparisonTestStaging {
+    fn new() -> Result<Self, MaturityFirstPartyRefusal> {
+        let substrate = substrate()?;
+        let control = realization::EncodedStateMetadata {
+            semantic: substrate.honest.metadata,
+            representation: substrate.honest.nonce,
+        };
+        let start = control
+            .representation
+            .get()
+            .checked_add(1)
+            .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        for attempt in start..StateNonceBudget::default().attempts() {
+            let malformed = realization::EncodedStateMetadata {
+                representation: StateRepresentationNonce::new(attempt),
+                ..control
+            };
+            match tapscript::state_output_program_at_nonce(
+                &substrate.target,
+                &malformed,
+                substrate.bundle.static_subtree(),
+                substrate.bundle.policy().internal_key(),
+                &OracleStateCurve,
+            ) {
+                Ok(_) => {
+                    return Ok(Self {
+                        offers: EntryPair { control, malformed },
+                    });
+                }
+                Err(refusal) if refusal.retryable() => {}
+                Err(_) => return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible),
+            }
+        }
+        Err(MaturityFirstPartyRefusal::ScenarioNotConstructible)
+    }
+
+    fn observe(&self) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
+        self.offers.differs()?;
+        let substrate = substrate()?;
+        if self.offers.control.semantic != self.offers.malformed.semantic
+            || self.offers.control.semantic != substrate.honest.metadata
+            || self.offers.control.representation != substrate.honest.nonce
+            || self.offers.malformed.representation.get() >= StateNonceBudget::default().attempts()
+        {
+            return Err(MaturityFirstPartyRefusal::SupplementaryLedgerMismatch);
+        }
+        let call = |offer| {
+            CandidateStateConstructor::compare_offered_representation(
+                &substrate.target,
+                offer,
+                substrate.bundle.static_subtree(),
+                substrate.bundle.policy().internal_key(),
+                StateNonceBudget::default(),
+                &OracleStateCurve,
+            )
+        };
+        let control = call(&self.offers.control).map_err(|error| {
+            MaturityFirstPartyRefusal::ControlWasRefused(
+                MaturityFirstPartyObservation::Constructor(error),
+            )
+        })?;
+        let searched = CandidateStateConstructor::derive(
+            &substrate.target,
+            &self.offers.control.semantic,
+            substrate.bundle.static_subtree(),
+            substrate.bundle.policy().internal_key(),
+            StateNonceBudget::default(),
+            &OracleStateCurve,
+        )
+        .map_err(|_| MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+        if &control != searched.evidence() {
+            return Err(MaturityFirstPartyRefusal::SupplementaryLedgerMismatch);
+        }
+        let observed = entry_outcome(
+            Ok(()),
+            call(&self.offers.malformed).map(|_| ()),
+            MaturityFirstPartyObservation::Constructor,
+        )?;
+        let expected = MaturityFirstPartyObservation::Constructor(
+            StateConstructorRefusal::NoncanonicalRepresentationNonce {
+                offered: self.offers.malformed.representation,
+                least: substrate.honest.nonce,
+            },
+        );
+        if observed != expected {
+            return Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
+                observed,
+            ));
+        }
+        Ok(observed)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum MaturityEntrySubjects {
+    AbiClassification(Box<MaturityAbiClassificationTestStaging>),
+    AbiRoles(Box<MaturityAbiRoleTestStaging>),
+    CycleDecoding(Box<MaturityCycleDecodingTestStaging>),
+    NonceComparison(Box<MaturityNonceComparisonTestStaging>),
     Successor {
         finalized: Box<FinalizedMaturityAnnouncement>,
         responses: Vec<OperatorSigningResponse>,
@@ -3622,6 +4653,27 @@ impl MaturityEntryComparisonTestStaging {
     fn new(change: MaturityFirstPartyChange) -> Result<Self, MaturityFirstPartyRefusal> {
         use MaturityFirstPartyChange as Change;
         let subjects = match change {
+            change if !classification_inventory(change).is_empty() => {
+                MaturityEntrySubjects::AbiClassification(Box::new(
+                    MaturityAbiClassificationTestStaging::new(change)?,
+                ))
+            }
+            Change::ChangeCoordinatorOutpoint
+            | Change::RepeatCoordinator
+            | Change::OmitCoordinator
+            | Change::ExchangeStateAndSponsorPositions
+            | Change::AddStateInput
+            | Change::AddStateOutput => {
+                MaturityEntrySubjects::AbiRoles(Box::new(MaturityAbiRoleTestStaging::new(change)?))
+            }
+            Change::TruncateRequestedCycleEncoding => MaturityEntrySubjects::CycleDecoding(
+                Box::new(MaturityCycleDecodingTestStaging::new()?),
+            ),
+            Change::OfferLaterAdmissibleRepresentationNonce => {
+                MaturityEntrySubjects::NonceComparison(Box::new(
+                    MaturityNonceComparisonTestStaging::new()?,
+                ))
+            }
             Change::ChangeAuthorizedSuccessorCycle => successor_entry_pair()?,
             Change::OmitMetadataCommitmentBranch => complete_program_pair()?,
             Change::AddConflictingWeightedDeclaration => {
@@ -3659,6 +4711,10 @@ impl MaturityEntryComparisonTestStaging {
         use MaturityEntrySubjects as Subjects;
         let target = &substrate()?.target;
         let observed = match &self.subjects {
+            Subjects::AbiClassification(pair) => pair.observe(),
+            Subjects::AbiRoles(pair) => pair.observe(),
+            Subjects::CycleDecoding(pair) => pair.observe(),
+            Subjects::NonceComparison(pair) => pair.observe(),
             Subjects::Successor {
                 finalized,
                 responses,
@@ -4162,6 +5218,93 @@ fn supplemental_discharge(
     ))
 }
 
+/// The exact ABI-entry row inventory, independent of historical entry movements.
+pub(crate) const MATURITY_ABI_ENTRY_KEYS: &[(MaturitySafetySection, &str, usize)] = &[
+    (
+        MaturitySafetySection::AbsenceFault,
+        "add-live-receipt-input-or-output",
+        2,
+    ),
+    (
+        MaturitySafetySection::AbsenceFault,
+        "add-time-locked-receipt",
+        1,
+    ),
+    (MaturitySafetySection::AbsenceFault, "add-ash", 1),
+    (MaturitySafetySection::AbsenceFault, "add-entitlement", 1),
+    (MaturitySafetySection::AbsenceFault, "add-request", 1),
+    (
+        MaturitySafetySection::AbsenceFault,
+        "add-distribution-control-or-vault",
+        2,
+    ),
+    (
+        MaturitySafetySection::AbsenceFault,
+        "add-resv-input-or-output",
+        2,
+    ),
+    (MaturitySafetySection::AbsenceFault, "add-pace", 1),
+    (
+        MaturitySafetySection::AbsenceFault,
+        "add-authority-object",
+        2,
+    ),
+    (MaturitySafetySection::AbsenceFault, "add-issuance", 1),
+    (MaturitySafetySection::AbsenceFault, "add-destruction", 1),
+    (MaturitySafetySection::AbsenceFault, "add-burn-record", 1),
+    (MaturitySafetySection::AbsenceFault, "add-clear-event", 1),
+    (
+        MaturitySafetySection::AbsenceFault,
+        "add-residue-projection",
+        1,
+    ),
+    (
+        MaturitySafetySection::AbsenceFault,
+        "introduce-canonical-u-ent-or-dist-ctl-flow",
+        3,
+    ),
+    (
+        MaturitySafetySection::AbiLinkerFault,
+        "wrong-coordinator",
+        1,
+    ),
+    (
+        MaturitySafetySection::AbiLinkerFault,
+        "duplicate-coordinator",
+        1,
+    ),
+    (MaturitySafetySection::AbiLinkerFault, "no-coordinator", 1),
+    (
+        MaturitySafetySection::AbiLinkerFault,
+        "state-and-sponsor-positions-exchanged",
+        1,
+    ),
+    (
+        MaturitySafetySection::AbiLinkerFault,
+        "wrong-input-count",
+        1,
+    ),
+    (
+        MaturitySafetySection::AbiLinkerFault,
+        "wrong-output-count",
+        1,
+    ),
+    (
+        MaturitySafetySection::WindowFault,
+        "malformed-cycle-encoding",
+        1,
+    ),
+    (
+        MaturitySafetySection::MetadataFault,
+        "correct-semantic-metadata-with-noncanonical-representation-nonce",
+        1,
+    ),
+];
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "The complete row-to-entry join remains auditable in one exhaustive mapping"
+)]
 fn entry_discharge(
     section: MaturitySafetySection,
     name: &str,
@@ -4174,6 +5317,124 @@ fn entry_discharge(
     use MaturityFirstPartyValidator as Validator;
     use MaturitySafetySection as Section;
     Some(match (section, name) {
+        (Section::AbsenceFault, "add-live-receipt-input-or-output") => (
+            Validator::AbiClassification,
+            Change::AddLiveReceiptInputOrOutput,
+            "RelationVerdicts(UndeclaredObjectFamily)",
+        ),
+        (Section::AbsenceFault, "add-time-locked-receipt") => (
+            Validator::AbiClassification,
+            Change::AddTimeLockedReceipt,
+            "RelationVerdicts(UndeclaredObjectFamily)",
+        ),
+        (Section::AbsenceFault, "add-ash") => (
+            Validator::AbiClassification,
+            Change::AddAsh,
+            "RelationVerdicts(UndeclaredObjectFamily)",
+        ),
+        (Section::AbsenceFault, "add-entitlement") => (
+            Validator::AbiClassification,
+            Change::AddEntitlement,
+            "RelationVerdicts(UndeclaredObjectFamily)",
+        ),
+        (Section::AbsenceFault, "add-request") => (
+            Validator::AbiClassification,
+            Change::AddRequest,
+            "RelationVerdicts(UndeclaredObjectFamily)",
+        ),
+        (Section::AbsenceFault, "add-distribution-control-or-vault") => (
+            Validator::AbiClassification,
+            Change::AddDistributionControlOrVault,
+            "RelationVerdicts(UndeclaredObjectFamily)",
+        ),
+        (Section::AbsenceFault, "add-resv-input-or-output") => (
+            Validator::AbiClassification,
+            Change::AddResvInputOrOutput,
+            "RelationVerdicts(UndeclaredObjectFamily)",
+        ),
+        (Section::AbsenceFault, "add-pace") => (
+            Validator::AbiClassification,
+            Change::AddPace,
+            "RelationVerdicts(UndeclaredObjectFamily)",
+        ),
+        (Section::AbsenceFault, "add-authority-object") => (
+            Validator::AbiClassification,
+            Change::AddAuthorityObject,
+            "RelationVerdicts(UndeclaredObjectFamily)",
+        ),
+        (Section::AbsenceFault, "add-issuance") => (
+            Validator::AbiClassification,
+            Change::AddIssuance,
+            "IssuanceOffered",
+        ),
+        (Section::AbsenceFault, "add-destruction") => (
+            Validator::AbiClassification,
+            Change::AddDestruction,
+            "UnadmittedOutputRole(Destruction)",
+        ),
+        (Section::AbsenceFault, "add-burn-record") => (
+            Validator::AbiClassification,
+            Change::AddBurnRecord,
+            "UnadmittedOutputRole(Burn)",
+        ),
+        (Section::AbsenceFault, "add-clear-event") => (
+            Validator::AbiClassification,
+            Change::AddClearEvent,
+            "UnadmittedOutputRole(Recon)",
+        ),
+        (Section::AbsenceFault, "add-residue-projection") => (
+            Validator::AbiClassification,
+            Change::AddResidueProjection,
+            "RelationVerdicts(ProjectionPolicy)",
+        ),
+        (Section::AbsenceFault, "introduce-canonical-u-ent-or-dist-ctl-flow") => (
+            Validator::AbiClassification,
+            Change::IntroduceCanonicalUEntOrDistCtlFlow,
+            "RelationVerdicts(CanonicalDeltaPolicy)",
+        ),
+        (Section::AbiLinkerFault, "wrong-coordinator") => (
+            Validator::AbiRoleValidation,
+            Change::ChangeCoordinatorOutpoint,
+            "CoordinatorIsNotTheValidatedPredecessor",
+        ),
+        (Section::AbiLinkerFault, "duplicate-coordinator") => (
+            Validator::AbiRoleValidation,
+            Change::RepeatCoordinator,
+            "CoordinatorRepeated",
+        ),
+        (Section::AbiLinkerFault, "no-coordinator") => (
+            Validator::AbiRoleValidation,
+            Change::OmitCoordinator,
+            "CoordinatorMissing",
+        ),
+        (Section::AbiLinkerFault, "state-and-sponsor-positions-exchanged") => (
+            Validator::AbiRoleValidation,
+            Change::ExchangeStateAndSponsorPositions,
+            "StateAndSponsorPositionsExchanged",
+        ),
+        (Section::AbiLinkerFault, "wrong-input-count") => (
+            Validator::AbiRoleValidation,
+            Change::AddStateInput,
+            "Cardinality(Input)",
+        ),
+        (Section::AbiLinkerFault, "wrong-output-count") => (
+            Validator::AbiRoleValidation,
+            Change::AddStateOutput,
+            "Cardinality(Output)",
+        ),
+        (Section::WindowFault, "malformed-cycle-encoding") => (
+            Validator::RequestCycleDecoding,
+            Change::TruncateRequestedCycleEncoding,
+            "CycleWidth",
+        ),
+        (
+            Section::MetadataFault,
+            "correct-semantic-metadata-with-noncanonical-representation-nonce",
+        ) => (
+            Validator::NonceComparison,
+            Change::OfferLaterAdmissibleRepresentationNonce,
+            "NoncanonicalRepresentationNonce",
+        ),
         (Section::WindowFault, "request-cycle-differs-from-successor") => (
             Validator::AuthorizedSuccessor,
             Change::ChangeAuthorizedSuccessorCycle,
@@ -4218,11 +5479,49 @@ fn entry_discharge(
     })
 }
 
+pub(crate) fn maturity_abi_entry_outcome(
+    section: MaturitySafetySection,
+    name: &str,
+) -> Result<crate::abi_validation::AbiValidationOutcome, MaturityFirstPartyRefusal> {
+    let (_, change, _) = entry_discharge(section, name)
+        .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+    let pair = MaturityEntryComparisonTestStaging::new(change)?;
+    abi_observation_outcome(pair.observe())
+}
+
+fn abi_observation_outcome(
+    observed: Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal>,
+) -> Result<crate::abi_validation::AbiValidationOutcome, MaturityFirstPartyRefusal> {
+    use crate::abi_validation::AbiValidationOutcome;
+    match observed {
+        Ok(_) => Ok(AbiValidationOutcome::AbiFieldRefused),
+        Err(MaturityFirstPartyRefusal::ChangedInputWasAccepted) => {
+            Ok(AbiValidationOutcome::UnsafeRawMutationExists)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 fn entry_refusal(observation: &MaturityFirstPartyObservation) -> bool {
     use MaturityFirstPartyObservation as Observation;
     matches!(
         observation,
-        Observation::Transaction(
+        Observation::AbiClassification(
+            MaturityAbiClassificationRefusal::RelationVerdicts { .. }
+                | MaturityAbiClassificationRefusal::IssuanceOffered
+                | MaturityAbiClassificationRefusal::UnadmittedOutputRole { .. }
+        ) | Observation::AbiRole(
+            MaturityAbiRoleRefusal::CoordinatorMissing
+                | MaturityAbiRoleRefusal::CoordinatorIsNotTheValidatedPredecessor { .. }
+                | MaturityAbiRoleRefusal::CoordinatorRepeated { .. }
+                | MaturityAbiRoleRefusal::StateAndSponsorPositionsExchanged { .. }
+                | MaturityAbiRoleRefusal::Cardinality { .. }
+        ) | Observation::RequestDecoding(MaturityRequestDecodingRefusal::CycleWidth {
+            declared: 8,
+            offered: 7
+        }) | Observation::Constructor(
+            StateConstructorRefusal::NoncanonicalRepresentationNonce { .. }
+        ) | Observation::Transaction(
             TransactionRefusal::MaturitySuccessorMetadataChangedAfterSigning
                 | TransactionRefusal::MaturityViewProgramNotReconstructed { .. }
         ) | Observation::UnsupportedProtocolSchema { .. }
@@ -4241,7 +5540,62 @@ fn entry_refusal_matches(
     use MaturityFirstPartyChange as Change;
     use MaturityFirstPartyObservation as Observation;
     match (change, observed) {
+        (change, Observation::AbiClassification(refusal))
+            if !classification_inventory(change).is_empty() =>
+        {
+            classification_inventory(change)
+                .first()
+                .is_some_and(|(_, kind)| *refusal == classification_expected(*kind))
+        }
         (
+            Change::ChangeCoordinatorOutpoint,
+            Observation::AbiRole(MaturityAbiRoleRefusal::CoordinatorIsNotTheValidatedPredecessor {
+                expected,
+                offered,
+            }),
+        ) => expected != offered,
+        (
+            Change::RepeatCoordinator,
+            Observation::AbiRole(MaturityAbiRoleRefusal::CoordinatorRepeated { positions }),
+        ) => positions == &[0, 1],
+        (
+            Change::AddStateInput | Change::AddStateOutput,
+            Observation::AbiRole(MaturityAbiRoleRefusal::Cardinality { relation, failure }),
+        ) => {
+            *failure == realization::RelationFailure::CardinalityAboveMaximum
+                && *relation
+                    == abi_state_cardinality(if change == Change::AddStateInput {
+                        realization::TransactionSide::Input
+                    } else {
+                        realization::TransactionSide::Output
+                    })
+        }
+        (
+            Change::OfferLaterAdmissibleRepresentationNonce,
+            Observation::Constructor(StateConstructorRefusal::NoncanonicalRepresentationNonce {
+                offered,
+                least,
+            }),
+        ) => offered > least && offered.get() < StateNonceBudget::default().attempts(),
+        (
+            Change::OmitCoordinator,
+            Observation::AbiRole(MaturityAbiRoleRefusal::CoordinatorMissing),
+        )
+        | (
+            Change::ExchangeStateAndSponsorPositions,
+            Observation::AbiRole(MaturityAbiRoleRefusal::StateAndSponsorPositionsExchanged {
+                state: 1,
+                sponsor: 0,
+            }),
+        )
+        | (
+            Change::TruncateRequestedCycleEncoding,
+            Observation::RequestDecoding(MaturityRequestDecodingRefusal::CycleWidth {
+                declared: 8,
+                offered: 7,
+            }),
+        )
+        | (
             Change::ChangeAuthorizedSuccessorCycle,
             Observation::Transaction(
                 TransactionRefusal::MaturitySuccessorMetadataChangedAfterSigning,
@@ -4384,17 +5738,19 @@ impl MaturityRetainedBoundary {
     #[must_use]
     pub const fn entry_point(self) -> &'static str {
         match self {
-            Self::RequestDecoding => "request decoding: required typed cycle decoder",
+            Self::RequestDecoding => {
+                "request decoding: MaturityAnnouncementRequest::decode_announced_cycle"
+            }
             Self::SuccessorComparison => "OperatorAuthorizedMaturityAnnouncement::check_offered",
-            Self::NonceSearch => "CandidateStateConstructor::derive: canonical search comparison",
+            Self::NonceSearch => "CandidateStateConstructor::compare_offered_representation",
             Self::CompleteTree => {
                 "PublicMaturityStateView::validate: complete program reconstruction"
             }
             Self::AbiClassification => {
-                "ABI classification: required transaction::validate_maturity_abi_classification"
+                "ABI classification: transaction::validate_maturity_abi_classification"
             }
             Self::AbiRoleValidation => {
-                "ABI role validation: required transaction::validate_maturity_abi_roles"
+                "ABI role validation: transaction::validate_maturity_abi_roles"
             }
             Self::WeightedTreeInput => "TaptreeInput<StateLeafRole>::new",
             Self::LinkedBounds => "StateLinkedTaptree::bind: complete tree and resource bounds",
@@ -5085,6 +6441,12 @@ mod supplementary_tests {
                 let Some(MaturityRetainedComparison::Entries(pair)) = evidence.comparison else {
                     return None;
                 };
+                if MATURITY_ABI_ENTRY_KEYS
+                    .iter()
+                    .any(|(section, name, _)| (*section, *name) == (row.section, row.name))
+                {
+                    return None;
+                }
                 Some(*pair)
             })
             .collect();
@@ -5106,6 +6468,12 @@ mod supplementary_tests {
                         change_pair(offers, reverse);
                     }
                     MaturityEntrySubjects::Signing { offers, .. } => change_pair(offers, reverse),
+                    MaturityEntrySubjects::AbiClassification(_)
+                    | MaturityEntrySubjects::AbiRoles(_)
+                    | MaturityEntrySubjects::CycleDecoding(_)
+                    | MaturityEntrySubjects::NonceComparison(_) => {
+                        panic!("ABI entries have their own staging checks")
+                    }
                 }
                 let result = changed.observe();
                 if reverse {
@@ -5140,6 +6508,230 @@ mod supplementary_tests {
                 Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_))
             ));
         }
+    }
+
+    #[test]
+    fn abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects() {
+        let ledger = ledger();
+        let mut subjects = 0;
+        let mut families = [0; 4];
+        for &(section, name, count) in MATURITY_ABI_ENTRY_KEYS {
+            let (validator, change, class) = entry_discharge(section, name).expect("entry");
+            let pair = MaturityEntryComparisonTestStaging::new(change).expect("offers");
+            let observed = pair.observe().expect(name);
+            let row = ledger
+                .iter()
+                .find(|row| row.key() == (section, name))
+                .expect("ledger key");
+            let MaturitySupplementaryDisposition::Discharged(evidence) = row.disposition() else {
+                panic!("{name}: {:?}", row.disposition());
+            };
+            assert_eq!(evidence.validator(), validator);
+            assert_eq!(evidence.observed(), &observed);
+            assert_eq!(evidence.supplementary_class(), Some(class));
+            assert_eq!(
+                evidence.comparison(),
+                Some(&MaturityRetainedComparison::Entries(Box::new(pair.clone())))
+            );
+            let actual = match &pair.subjects {
+                MaturityEntrySubjects::AbiClassification(staging) => {
+                    families[0] += 1;
+                    staging.subjects.len()
+                }
+                MaturityEntrySubjects::AbiRoles(_) => {
+                    families[1] += 1;
+                    1
+                }
+                MaturityEntrySubjects::CycleDecoding(_) => {
+                    families[2] += 1;
+                    1
+                }
+                MaturityEntrySubjects::NonceComparison(_) => {
+                    families[3] += 1;
+                    1
+                }
+                _ => panic!("wrong staging family"),
+            };
+            assert_eq!(actual, count, "{name}");
+            subjects += actual;
+            let matrix = matrix_row(section, name).expect("matrix key");
+            assert_eq!(
+                matrix.control(),
+                MaturityCanonicalControl::SponsorlessAnnouncement
+            );
+            if matches!(
+                section,
+                MaturitySafetySection::AbsenceFault | MaturitySafetySection::AbiLinkerFault
+            ) {
+                assert_eq!(
+                    matrix.refusing_layer(),
+                    Some(EvidenceBoundary::AbiConstructionRejection)
+                );
+                assert_eq!(
+                    matrix.carrier(),
+                    MaturityIntendedCarrier::CoordinatorStructure
+                );
+            }
+        }
+        assert_eq!(families, [15, 6, 1, 1]);
+        assert_eq!(subjects, 29);
+    }
+
+    #[test]
+    fn classification_rows_require_every_subject_and_its_exact_refusal() {
+        use crate::abi_validation::AbiValidationOutcome;
+        for &(section, name, count) in MATURITY_ABI_ENTRY_KEYS {
+            if section != MaturitySafetySection::AbsenceFault {
+                continue;
+            }
+            let (_, change, _) = entry_discharge(section, name).unwrap();
+            let original = MaturityAbiClassificationTestStaging::new(change).unwrap();
+            assert_eq!(original.subjects.len(), count);
+            original.observe().unwrap();
+            for position in 1..count {
+                let mut duplicated = original.clone();
+                duplicated.subjects[position].offer = duplicated.subjects[0].offer.clone();
+                assert_eq!(
+                    duplicated.observe(),
+                    Err(MaturityFirstPartyRefusal::SupplementaryLedgerMismatch),
+                    "{name} duplicated subject {position}"
+                );
+            }
+            let mut missing = original.clone();
+            missing.subjects.pop();
+            assert_eq!(
+                missing.observe(),
+                Err(MaturityFirstPartyRefusal::SupplementaryLedgerMismatch)
+            );
+            let mut invalid_control = original.clone();
+            invalid_control.control.bytes.clear();
+            assert!(matches!(
+                invalid_control.observe(),
+                Err(MaturityFirstPartyRefusal::ControlWasRefused(_))
+            ));
+            for position in 0..count {
+                let mut copied = original.clone();
+                copied.subjects[position].offer = copied.control.clone();
+                assert_eq!(
+                    copied.observe(),
+                    Err(MaturityFirstPartyRefusal::ChangeChangedNothing)
+                );
+                let mut accepted = original.clone();
+                let mut offer = original.control.clone();
+                offer
+                    .append_output(
+                        offer.transaction().unwrap().outputs()[0].clone(),
+                        MaturityPositionClaim::State,
+                    )
+                    .unwrap();
+                accepted.subjects[position].offer = offer;
+                assert_eq!(
+                    accepted.observe(),
+                    Err(MaturityFirstPartyRefusal::ChangedInputWasAccepted)
+                );
+                assert_eq!(
+                    abi_observation_outcome(accepted.observe()),
+                    Ok(AbiValidationOutcome::UnsafeRawMutationExists)
+                );
+                let mut wrong = original.clone();
+                let mut offer = original.control.clone();
+                if change == MaturityFirstPartyChange::AddIssuance {
+                    append_abi_family(
+                        &mut offer,
+                        ObjectId::Pace,
+                        realization::ObservedSide::Output,
+                    )
+                    .unwrap();
+                } else {
+                    stage_abi_issuance(&mut offer).unwrap();
+                }
+                wrong.subjects[position].offer = offer;
+                assert!(
+                    matches!(
+                        wrong.observe(),
+                        Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_))
+                    ),
+                    "{name} subject {position}"
+                );
+                assert!(abi_observation_outcome(wrong.observe()).is_err());
+                let mut wrong_expected = original.clone();
+                wrong_expected.subjects[position].expected =
+                    MaturityAbiClassificationRefusal::ContractMismatch;
+                assert_eq!(
+                    wrong_expected.observe(),
+                    Err(MaturityFirstPartyRefusal::SupplementaryLedgerMismatch)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn role_entry_pairs_preserve_classification_and_reject_copied_offers() {
+        for &(section, name, _) in MATURITY_ABI_ENTRY_KEYS {
+            if section != MaturitySafetySection::AbiLinkerFault {
+                continue;
+            }
+            let (_, change, _) = entry_discharge(section, name).unwrap();
+            let mut pair = MaturityAbiRoleTestStaging::new(change).unwrap();
+            pair.observe().expect(name);
+            pair.offers.malformed = pair.offers.control.clone();
+            assert_eq!(
+                pair.observe(),
+                Err(MaturityFirstPartyRefusal::ChangeChangedNothing)
+            );
+            let mut pair = MaturityAbiRoleTestStaging::new(change).unwrap();
+            pair.expected = MaturityAbiRoleRefusal::FeeNotFinal { offered: 0 };
+            assert!(matches!(
+                pair.observe(),
+                Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn entry_pair_cycle_decoding_reads_the_bound_writer_item() {
+        let pair = entry_pair(
+            MaturitySafetySection::WindowFault,
+            "malformed-cycle-encoding",
+        );
+        let MaturityEntrySubjects::CycleDecoding(mut pair) = pair.subjects else {
+            panic!("cycle staging");
+        };
+        assert_eq!(pair.offers.control.len(), 8);
+        assert_eq!(pair.offers.malformed, pair.offers.control[..7]);
+        assert_eq!(pair.offers.control, pair.announced.get().to_be_bytes());
+        pair.offers.malformed = pair.offers.control.clone();
+        assert_eq!(
+            pair.observe(),
+            Err(MaturityFirstPartyRefusal::ChangeChangedNothing)
+        );
+    }
+
+    #[test]
+    fn entry_pair_nonce_comparison() {
+        use std::io::Write as _;
+        let pair = entry_pair(
+            MaturitySafetySection::MetadataFault,
+            "correct-semantic-metadata-with-noncanonical-representation-nonce",
+        );
+        let MaturityEntrySubjects::NonceComparison(mut pair) = pair.subjects else {
+            panic!("nonce staging");
+        };
+        let least = pair.offers.control.representation.get();
+        let next = pair.offers.malformed.representation.get();
+        let budget = StateNonceBudget::default().attempts();
+        assert!(least < next && next < budget);
+        assert_eq!(pair.offers.control.semantic, pair.offers.malformed.semantic);
+        writeln!(
+            std::io::stdout().lock(),
+            "census ABI nonce: least {least}, next admitted {next}, budget {budget}"
+        )
+        .unwrap();
+        pair.offers.malformed = pair.offers.control;
+        assert_eq!(
+            pair.observe(),
+            Err(MaturityFirstPartyRefusal::ChangeChangedNothing)
+        );
     }
 
     #[test]
@@ -5225,7 +6817,7 @@ mod supplementary_tests {
                 MaturitySupplementaryDisposition::Retained { .. } => census[2] += 1,
             }
         }
-        assert_eq!(census, [13, 2, 28]);
+        assert_eq!(census, [36, 2, 5]);
         assert_eq!(census.iter().sum::<usize>(), 43);
         assert_eq!(
             inherited
@@ -5479,6 +7071,13 @@ mod supplementary_tests {
         let mut classification = 0;
         let mut roles = 0;
         for row in &rows {
+            if let MaturitySupplementaryDisposition::Discharged(evidence) = row.disposition() {
+                match evidence.validator() {
+                    MaturityFirstPartyValidator::AbiClassification => classification += 1,
+                    MaturityFirstPartyValidator::AbiRoleValidation => roles += 1,
+                    _ => {}
+                }
+            }
             let MaturitySupplementaryDisposition::Retained {
                 boundary,
                 subject,
@@ -5496,26 +7095,18 @@ mod supplementary_tests {
                 .expect("valid retained construction");
             assert_ne!(subject.announcement().protected_bytes().len(), 0);
             assert_eq!(subject.opening().schema, NATIVE_PROTOCOL_SCHEMA);
-            match row.section {
-                MaturitySafetySection::AbsenceFault => {
-                    classification += 1;
-                    assert_eq!(*boundary, MaturityRetainedBoundary::AbiClassification);
-                    assert!(boundary.entry_point().contains("required transaction::"));
+            assert_eq!(row.section, MaturitySafetySection::ProtocolReportFault);
+            let expected = match row.name {
+                "blank-request" | "oversized-request" | "unterminated-request" => {
+                    MaturityRetainedBoundary::RequestFraming
                 }
-                MaturitySafetySection::AbiLinkerFault
-                    if matches!(
-                        row.previous,
-                        MaturityCarriedReason::LayoutIsNotAcceptedFromACaller
-                    ) =>
-                {
-                    roles += 1;
-                    assert_eq!(*boundary, MaturityRetainedBoundary::AbiRoleValidation);
-                    assert!(boundary.entry_point().contains("required transaction::"));
-                }
-                _ => {}
-            }
+                "malformed-json" => MaturityRetainedBoundary::RequestJson,
+                "unknown-request-field" => MaturityRetainedBoundary::RequestFields,
+                _ => panic!("unexpected retained row"),
+            };
+            assert_eq!(*boundary, expected);
         }
-        assert_eq!(retained, 28);
+        assert_eq!(retained, 5);
         assert_eq!(classification, 15);
         assert_eq!(roles, 6);
     }

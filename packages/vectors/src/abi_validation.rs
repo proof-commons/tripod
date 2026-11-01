@@ -195,6 +195,152 @@ pub enum AbiValidationOutcome {
     TargetWasNotAsked,
 }
 
+/// One maturity row's performed entry comparison, separate from compact mutation keys.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MaturityAbiValidationRow {
+    section: crate::maturity_safety::MaturitySafetySection,
+    name: &'static str,
+    outcome: AbiValidationOutcome,
+    subject_count: usize,
+    constructions_observed: usize,
+}
+
+impl MaturityAbiValidationRow {
+    /// The exact Safety section and row name.
+    #[must_use]
+    pub const fn key(&self) -> (crate::maturity_safety::MaturitySafetySection, &'static str) {
+        (self.section, self.name)
+    }
+
+    /// What the entry established; this does not assert target execution.
+    #[must_use]
+    pub const fn outcome(&self) -> AbiValidationOutcome {
+        self.outcome
+    }
+
+    /// Changed offers evaluated for this row, including every named alternative.
+    #[must_use]
+    pub const fn subject_count(&self) -> usize {
+        self.subject_count
+    }
+
+    /// Constructed controls checked at the entry, counted once per row.
+    #[must_use]
+    pub const fn constructions_observed(&self) -> usize {
+        self.constructions_observed
+    }
+}
+
+/// Recompute the twenty-three ABI-entry readings and retain five unasked adapter rows.
+///
+/// # Errors
+/// Returns invalid controls, missing subjects or wrong refusal classes unchanged.
+/// An accepted changed offer is a raw-mutation finding, never a discharged row.
+pub fn index_maturity_abi_validation()
+-> Result<Vec<MaturityAbiValidationRow>, crate::maturity_first_party::MaturityFirstPartyRefusal> {
+    use crate::maturity_first_party::{MATURITY_ABI_ENTRY_KEYS, maturity_abi_entry_outcome};
+    use crate::maturity_safety::MaturitySafetySection;
+    let mut rows = Vec::new();
+    for &(section, name, subject_count) in MATURITY_ABI_ENTRY_KEYS {
+        rows.push(MaturityAbiValidationRow {
+            section,
+            name,
+            subject_count,
+            constructions_observed: 1,
+            outcome: maturity_abi_entry_outcome(section, name)?,
+        });
+    }
+    rows.extend(
+        [
+            "blank-request",
+            "malformed-json",
+            "oversized-request",
+            "unknown-request-field",
+            "unterminated-request",
+        ]
+        .into_iter()
+        .map(|name| MaturityAbiValidationRow {
+            section: MaturitySafetySection::ProtocolReportFault,
+            name,
+            outcome: AbiValidationOutcome::TargetWasNotAsked,
+            subject_count: 0,
+            constructions_observed: 0,
+        }),
+    );
+    Ok(rows)
+}
+
+#[cfg(test)]
+mod maturity_index_tests {
+    use super::*;
+    use crate::maturity_first_party::{
+        MATURITY_ABI_ENTRY_KEYS, MaturitySupplementaryDisposition,
+        maturity_first_party_dispositions,
+    };
+
+    #[test]
+    fn maturity_index_pins_every_key_subject_and_ledger_reading() {
+        use std::io::Write as _;
+        let rows = index_maturity_abi_validation().expect("performed entry comparisons");
+        let ledger = maturity_first_party_dispositions().expect("ledger");
+        let mut keys = std::collections::BTreeSet::new();
+        let mut counts = [0; 2];
+        let mut subjects = 0;
+        for row in &rows {
+            assert!(keys.insert(row.key()));
+            let entry = ledger
+                .iter()
+                .find(|entry| entry.key() == row.key())
+                .expect("ledger key");
+            if let Some((_, _, count)) = MATURITY_ABI_ENTRY_KEYS
+                .iter()
+                .find(|(section, name, _)| (*section, *name) == row.key())
+            {
+                assert_eq!(row.outcome(), AbiValidationOutcome::AbiFieldRefused);
+                assert_eq!(row.subject_count(), *count);
+                assert_eq!(row.constructions_observed(), 1);
+                assert!(matches!(
+                    entry.disposition(),
+                    MaturitySupplementaryDisposition::Discharged(_)
+                ));
+                counts[0] += 1;
+            } else {
+                assert!(
+                    [
+                        "blank-request",
+                        "malformed-json",
+                        "oversized-request",
+                        "unknown-request-field",
+                        "unterminated-request"
+                    ]
+                    .contains(&row.name)
+                );
+                assert_eq!(row.outcome(), AbiValidationOutcome::TargetWasNotAsked);
+                assert_eq!((row.subject_count(), row.constructions_observed()), (0, 0));
+                assert!(matches!(
+                    entry.disposition(),
+                    MaturitySupplementaryDisposition::Retained {
+                        attempted: None,
+                        ..
+                    }
+                ));
+                counts[1] += 1;
+            }
+            subjects += row.subject_count();
+        }
+        assert_eq!(keys.len(), 28);
+        assert_eq!(counts, [23, 5]);
+        assert_eq!(subjects, 29);
+        writeln!(
+            std::io::stdout().lock(),
+            "census ABI index: {} refused / {} unasked; {subjects} subjects",
+            counts[0],
+            counts[1]
+        )
+        .unwrap();
+    }
+}
+
 /// One withheld class, and what the ABI boundary made of it.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AbiValidationRow {

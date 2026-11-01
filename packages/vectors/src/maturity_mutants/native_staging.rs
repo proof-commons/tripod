@@ -2400,10 +2400,10 @@ mod tests {
         )
         .expect("the evidence plan derives");
         assert_eq!(plan.census().rows(), 206);
-        // Thirteen supplementary comparisons add answers after the report campaign.
-        assert_eq!(plan.census().answered(), 147);
-        // Two ordering claims retire without becoming answered; thirteen comparisons answer.
-        assert_eq!(plan.census().outstanding(), 59);
+        // Thirty-six supplementary comparisons add answers after the report campaign.
+        assert_eq!(plan.census().answered(), 170);
+        // Two ordering claims retire without becoming answered; thirty-six comparisons answer.
+        assert_eq!(plan.census().outstanding(), 36);
         assert_eq!(plan.census().native_run_required(), 0);
         assert_eq!(row_count(), 206);
 
@@ -2416,7 +2416,7 @@ mod tests {
                 MaturitySupplementaryDisposition::Retained { .. } => partition[2] += 1,
             }
         }
-        assert_eq!(partition, [13, 2, 28]);
+        assert_eq!(partition, [36, 2, 5]);
         assert_eq!(partition.iter().sum::<usize>(), 43);
     }
 }

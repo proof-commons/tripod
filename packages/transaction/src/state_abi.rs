@@ -438,11 +438,13 @@ impl<'a> ValidatedMaturityAbiRoles<'a> {
 
 /// Validate coordinator, STATE cardinalities and positions of classified bytes.
 ///
-/// Reads the retained report rather than evaluating again. Coordinator checks
-/// precede input and output STATE cardinality checks, then placements. Every
-/// other verdict remains evidence for its owning boundary, including sponsor
-/// cardinalities, recognition, isolation and multiplicity. Family aliases have
-/// the same role as their authenticated STATE or sponsor claims.
+/// Reads the retained report rather than evaluating again. Classification must
+/// come from the same ABI and validated view supplied here.
+/// That premise belongs to the caller; this entry does not bind those identities.
+/// Coordinator checks precede input and output STATE cardinality checks, then
+/// placements. Every other verdict remains evidence for its owning boundary,
+/// including sponsor cardinalities, recognition, isolation and multiplicity.
+/// Family aliases have the same role as their authenticated STATE or sponsor claims.
 ///
 /// Classification authentication refuses other fixed-role claims and its owned
 /// input closure refuses other families, so the coordinator check needs only
