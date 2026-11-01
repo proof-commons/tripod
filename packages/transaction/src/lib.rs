@@ -24,6 +24,7 @@ pub mod request;
 pub mod script_path_signing;
 pub mod sponsor;
 pub mod state_abi;
+pub mod state_confidential;
 pub mod state_construct;
 pub mod state_finalize;
 pub mod state_request;
@@ -128,6 +129,11 @@ pub use state_abi::{
     OutstandingMaturityAbiObligations, ValidatedMaturityAbiClassification,
     ValidatedMaturityAbiRoles, WitnessClassification, derive_maturity_announcement_abi,
     validate_maturity_abi_classification, validate_maturity_abi_roles,
+};
+pub use state_confidential::{
+    MaturityConfidentialCommitment, MaturityConfidentialConstructionInputs,
+    MaturityConfidentialRefusal, MaturityConfidentialSponsorMaterial,
+    construct_confidential_maturity_announcement,
 };
 pub use state_construct::{
     MATURITY_ANNOUNCEMENT_LOCK_TIME, MaturityConstruction, MaturitySponsorContext,

@@ -634,3 +634,76 @@ fn sponsor_change_does_not_compensate_state_asset_corruption() {
         Err(TransactionRefusal::OutputMutatedAfterSigning { position: 0 })
     );
 }
+
+#[test]
+fn explicit_protected_bytes_keep_the_previous_witnessless_encoding() {
+    for construction in [
+        super::state_support::sponsored_construction(false),
+        super::state_support::sponsored_construction(true),
+    ] {
+        let previous = construction.transaction().encode_without_witness();
+        assert_eq!(
+            finalize_maturity_announcement(construction).protected_bytes(),
+            previous
+        );
+    }
+    let sponsorless = demonstration();
+    assert_eq!(
+        sponsorless.protected_bytes(),
+        sponsorless.protected().encode_without_witness()
+    );
+}
+
+#[test]
+fn confidential_finalization_protects_proofs_and_allows_input_witnesses() {
+    use super::state_confidential_tests::{changed_proof, finalized};
+    use crate::bytes::InputWitness;
+    let control = finalized();
+    let candidate = control.protected();
+    assert_eq!(control.protected_bytes(), candidate.encode());
+    assert_ne!(
+        control.protected_bytes(),
+        candidate.encode_without_witness()
+    );
+    assert_eq!(control.check_offered(candidate), Ok(()));
+    let mut outputs = candidate.outputs().to_vec();
+    let change = &outputs[1];
+    let crate::bytes::ValueField::Commitment(mut commitment) = change.value() else {
+        panic!("committed sponsor change");
+    };
+    commitment[1] ^= 1;
+    outputs[1] = crate::bytes::TargetOutput::new(
+        change.asset(),
+        crate::bytes::ValueField::Commitment(commitment),
+        change.nonce(),
+        change.program().to_vec(),
+    );
+    let changed_output = TargetTransaction::with_output_witnesses(
+        candidate.version(),
+        candidate.inputs().to_vec(),
+        outputs,
+        candidate.lock_time(),
+        candidate.witnesses().to_vec(),
+        candidate.output_witnesses().to_vec(),
+    )
+    .unwrap();
+    assert_eq!(
+        control.check_offered(&changed_output),
+        Err(TransactionRefusal::OutputMutatedAfterSigning { position: 1 })
+    );
+    assert_eq!(
+        control.check_offered(&changed_proof(candidate)),
+        Err(TransactionRefusal::MaturityOutputWitnessChangedAfterFinalization)
+    );
+    let populated = TargetTransaction::with_output_witnesses(
+        candidate.version(),
+        candidate.inputs().to_vec(),
+        candidate.outputs().to_vec(),
+        candidate.lock_time(),
+        vec![InputWitness::new(vec![vec![1]]); candidate.inputs().len()],
+        candidate.output_witnesses().to_vec(),
+    )
+    .unwrap();
+    assert_eq!(control.check_offered(&populated), Ok(()));
+    assert_eq!(control.settled().len(), 11);
+}

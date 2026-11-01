@@ -21,6 +21,11 @@
 //! extension of it: the operator remains a single authorization, while
 //! sponsor input authorization stays behind the sponsor capability. The
 //! explicit construction route carries no confidential proofs.
+//! In the confidential form, the operator signature and the request's
+//! frozen bytes cover the output-witness proofs. The sponsor signature
+//! under the inherited profile covers the outputs' commitments, not the
+//! proofs' bytes, so proof integrity after sponsor completion rests on
+//! the operator binding and the finalized comparison.
 //!
 //! # Every state borrows one finalized candidate
 //!
@@ -46,8 +51,8 @@
 //! arrives without an entry. This census can be walked by a test.
 //!
 //! It is neither of the two censuses already in the crate. The live
-//! freeze's is eight members and carries confidential nonce fields,
-//! which have no STATE subject; the finalized form's is eleven and
+//! freeze's is eight members and names confidential nonce fields
+//! separately; this census protects them within Outputs. The finalized form's is eleven and
 //! answers a different question — what a finalized value fixed, which
 //! excludes the executing leaf data because these bytes do not carry it.
 //!
@@ -876,12 +881,13 @@ impl<'finalized> OperatorAuthorizedMaturityAnnouncement<'finalized> {
             }
             witnesses.push(InputWitness::new(signature.stack().to_vec()));
         }
-        let candidate = TargetTransaction::new(
+        let candidate = TargetTransaction::with_output_witnesses(
             protected.version(),
             protected.inputs().to_vec(),
             protected.outputs().to_vec(),
             protected.lock_time(),
             witnesses,
+            protected.output_witnesses().to_vec(),
         )?;
         let bytes = candidate.encode();
 
@@ -951,8 +957,8 @@ impl<'finalized> SubmitReadyMaturityAnnouncement<'finalized> {
     /// The exact protected bytes, unchanged since the freeze.
     ///
     /// Read off the finalized candidate rather than recomputed from
-    /// these bytes, which now carry a witness section the protected
-    /// encoding does not.
+    /// these bytes, which now carry authorization witnesses while the
+    /// protected encoding carries only the settled output witnesses.
     #[must_use]
     pub fn protected_bytes(&self) -> &[u8] {
         self.finalized.protected_bytes()

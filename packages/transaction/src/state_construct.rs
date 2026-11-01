@@ -37,8 +37,8 @@
 //!
 //! # The prohibition is structural
 //!
-//! §12.5 says a caller cannot provide a nonce result or an arbitrary
-//! output program. That is not enforced by a check, because a check
+//! §12.5 says a caller cannot provide the successor's nonce result or an arbitrary
+//! successor output program. That is not enforced by a check, because a check
 //! implies a field: there is no parameter, no constructor argument and
 //! no setter through which either could arrive, and the type's own
 //! documentation carries the compile failures that say so. The nonce is
@@ -59,8 +59,8 @@ use tapscript::{CandidateStateConstructor, StateCurveCapability};
 use target_elements::ReviewedElementsTapscriptDefinition;
 
 use crate::bytes::{
-    AssetField, AssetId, InputWitness, NonceField, Outpoint, TargetInput, TargetOutput,
-    TargetTransaction, ValueField,
+    AssetField, AssetId, InputWitness, NonceField, Outpoint, OutputWitness, TargetInput,
+    TargetOutput, TargetTransaction, ValueField,
 };
 use crate::error::TransactionRefusal;
 use crate::sponsor::{SponsorCapability, SponsorOffer};
@@ -123,6 +123,28 @@ pub struct MaturityConstruction {
 }
 
 impl MaturityConstruction {
+    /// Settle only sponsor change and output witnesses, retaining the STATE layout.
+    pub(crate) fn with_confidential_change(
+        mut self,
+        change: TargetOutput,
+        witnesses: Vec<OutputWitness>,
+    ) -> Result<Self, TransactionRefusal> {
+        let position = self
+            .sponsor_change_position
+            .ok_or(TransactionRefusal::SponsorChangeRequestedWithoutDestination)?;
+        let mut outputs = self.transaction.outputs().to_vec();
+        outputs[usize::from(position)] = change;
+        self.transaction = TargetTransaction::with_output_witnesses(
+            self.transaction.version(),
+            self.transaction.inputs().to_vec(),
+            outputs,
+            self.transaction.lock_time(),
+            self.transaction.witnesses().to_vec(),
+            witnesses,
+        )?;
+        Ok(self)
+    }
+
     /// Sponsor spent outputs in canonical suffix order.
     #[must_use]
     pub fn sponsor_spent(&self) -> &[PublicOutputView] {
@@ -264,6 +286,22 @@ pub fn construct_maturity_announcement_with_sponsor(
     curve: &impl StateCurveCapability,
     sponsor: Option<&MaturitySponsorContext<'_>>,
 ) -> Result<MaturityConstruction, TransactionRefusal> {
+    construct_maturity_candidate(target, abi, validated, request, curve, sponsor, false)
+}
+
+/// Shared layout construction; only the confidential stage admits committed sponsor fields.
+///
+/// # Panics
+/// Panics only if a linked bundle lost its retained constructor, which a link cannot arrange.
+pub(crate) fn construct_maturity_candidate(
+    target: &ReviewedElementsTapscriptDefinition,
+    abi: &CandidateMaturityAnnouncementAbi,
+    validated: &ValidatedMaturityStateView,
+    request: &MaturityAnnouncementRequest,
+    curve: &impl StateCurveCapability,
+    sponsor: Option<&MaturitySponsorContext<'_>>,
+    confidential: bool,
+) -> Result<MaturityConstruction, TransactionRefusal> {
     // Step 1: hold the form and offer together before constructing outputs.
     let offer = sponsor_offer(request, sponsor)?;
     let bundle = validated.view().accepted_linked_bundle();
@@ -353,6 +391,7 @@ pub fn construct_maturity_announcement_with_sponsor(
             validated.view().current_state_outpoint(),
             abi.inputs().sponsor_suffix().first(),
             asset,
+            confidential,
         )?;
         inputs.extend(
             sponsor_spent
@@ -360,7 +399,7 @@ pub fn construct_maturity_announcement_with_sponsor(
                 .map(|spent| TargetInput::new(spent.outpoint(), abi.sequence().sequence())),
         );
         let next_output = abi.outputs().successor_position() + 1;
-        if let Some(change) = sponsor_change_output(target, context, &offer)? {
+        if let Some(change) = sponsor_change_output(target, context, &offer, confidential)? {
             sponsor_change_position = Some(next_output);
             outputs.push(change);
         }
@@ -400,6 +439,7 @@ fn sponsor_spent_outputs(
     coordinator: Outpoint,
     first: u16,
     state_asset: AssetField,
+    confidential: bool,
 ) -> Result<Vec<PublicOutputView>, TransactionRefusal> {
     if AssetField::Explicit(context.reserve_asset) == state_asset {
         return Err(TransactionRefusal::MaturitySponsorReserveAliasesStateAsset);
@@ -423,7 +463,7 @@ fn sponsor_spent_outputs(
                     *outpoint,
                 ));
             }
-            if !matches!(spent.value(), ValueField::Explicit(_)) {
+            if !confidential && !matches!(spent.value(), ValueField::Explicit(_)) {
                 return Err(TransactionRefusal::MaturitySponsorValueRequiresProofFinalization);
             }
             Ok(spent.clone())
@@ -435,14 +475,15 @@ fn sponsor_change_output(
     target: &ReviewedElementsTapscriptDefinition,
     context: &MaturitySponsorContext<'_>,
     offer: &SponsorOffer,
+    confidential: bool,
 ) -> Result<Option<TargetOutput>, TransactionRefusal> {
     let Some(value) = offer.change() else {
         return Ok(None);
     };
-    let ValueField::Explicit(amount) = value else {
+    if !confidential && !matches!(value, ValueField::Explicit(_)) {
         return Err(TransactionRefusal::MaturitySponsorValueRequiresProofFinalization);
-    };
-    if amount == 0 {
+    }
+    if value == ValueField::Explicit(0) {
         return Ok(None);
     }
     let (version, payload) = context

@@ -45,8 +45,8 @@ pub enum SighashProfile {
     /// Commits to every input and every output of the transaction.
     ///
     /// Provenance: the default `SIGHASH_ALL` behaviour of the target's
-    /// signature checkers, whose all-outputs mode commits every output
-    /// and every output witness.
+    /// version-zero key-hash signature checker: type 1 commits every output,
+    /// including a committed value, but not output witnesses' proof bytes.
     AllInputsAllOutputs,
 }
 

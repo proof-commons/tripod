@@ -61,6 +61,218 @@ use vectors::confidential_materializer::{
     FirstPartyCommitmentCheck, ReferenceConfidentialMaterializer,
 };
 
+/// A public disposable sponsor capability; construction does not ask it to sign.
+struct StateSponsor {
+    coin: Outpoint,
+    change: u64,
+}
+
+impl transaction::sponsor::SponsorCapability for StateSponsor {
+    fn offer(&self) -> transaction::sponsor::SponsorOffer {
+        transaction::sponsor::SponsorOffer::new(
+            [self.coin],
+            50,
+            Some(ValueField::Explicit(self.change)),
+        )
+        .expect("one sponsor coin")
+    }
+
+    fn change_destination(&self) -> Option<(u8, Vec<u8>)> {
+        Some((0, vec![0x22; 20]))
+    }
+
+    fn sign(
+        &self,
+        _: &transaction::sponsor::SponsorSigningRequest,
+    ) -> Option<transaction::sponsor::SponsorSignature> {
+        None
+    }
+}
+
+fn confidential_state_view() -> (transaction::ValidatedMaturityStateView, realization::Cycle) {
+    use transaction::operator_right::BranchContext;
+    use transaction::state_view::{MaturityViewStatement, PublicMaturityStateView};
+    use vectors::maturity_closure::{
+        MaturityDeployment, MaturityWitnessSelection, OracleStateCurve, closure_target,
+        linked_maturity_bundle,
+    };
+
+    let target = closure_target().expect("reviewed target");
+    let deployment = MaturityDeployment::PublishedSignerHeld;
+    let bundle = linked_maturity_bundle(
+        deployment,
+        MaturityWitnessSelection::Retained(tapscript::StateWitnessSchedule::VariableMetadata),
+    )
+    .expect("linked STATE bundle");
+    let predecessor = &bundle.instances()[0];
+    let metadata = predecessor.metadata();
+    let (cycle, _) = bundle
+        .deployment()
+        .lead_bounds()
+        .bounds()
+        .window(metadata.semantic.cycle)
+        .expect("lead window");
+    let validated = PublicMaturityStateView::new([
+        MaturityViewStatement::CurrentStateOutpoint(
+            Outpoint::new(Txid::from_internal([0x61; 32]), 0).unwrap(),
+        ),
+        MaturityViewStatement::AssetAndAmount(
+            AssetField::Explicit(AssetId::from_internal(
+                *deployment.parameters().unwrap().singleton(),
+            )),
+            ValueField::Explicit(1),
+        ),
+        MaturityViewStatement::PredecessorMetadata(metadata.semantic),
+        MaturityViewStatement::PredecessorRepresentationNonce(metadata.representation),
+        MaturityViewStatement::CurrentRootBinding(BranchContext::new([0x41; 32], 7).unwrap()),
+        MaturityViewStatement::PredecessorProgram(predecessor.constructor().output_program()),
+        MaturityViewStatement::AcceptedLinkedBundle(Box::new(bundle)),
+    ])
+    .expect("public predecessor view")
+    .validate(&target, &OracleStateCurve)
+    .expect("validated predecessor");
+    (validated, cycle)
+}
+
+// The STATE stage consumes the reserve's derived coin, not its funding input sum.
+fn confidential_state() -> transaction::FinalizedMaturityAnnouncement {
+    use target_elements_conformance::confidential_fixture::sponsor_reserve_handle;
+    use vectors::confidential_sponsor_reserve::{
+        SPONSOR_RESERVE_AMOUNTS, frozen_sponsor_reserve_registry,
+    };
+    use vectors::maturity_closure::{OracleStateCurve, closure_target};
+
+    let target = closure_target().expect("reviewed target");
+    let (validated, cycle) = confidential_state_view();
+    let abi = transaction::derive_maturity_announcement_abi(&target, &validated).unwrap();
+    let request = transaction::MaturityAnnouncementRequest::new(
+        cycle,
+        transaction::RequestedForm::Sponsored,
+        transaction::SponsorChangeRequest::Requested,
+    )
+    .unwrap();
+    let mut program = vec![0, 20];
+    program.extend([0x22; 20]);
+    let registry = frozen_sponsor_reserve_registry(ASSET, &program).unwrap();
+    let handle = sponsor_reserve_handle();
+    let resolved = registry
+        .resolve(&handle, registry.registered_digest(&handle).unwrap())
+        .unwrap();
+    let derived = openings(resolved);
+    let first = derived[0];
+    assert_eq!(SPONSOR_RESERVE_AMOUNTS[0], 1_250);
+    assert_ne!(first.value_blinder, [0; 32]);
+    let sponsor = StateSponsor {
+        coin: Outpoint::new(Txid::from_internal([0x62; 32]), 0).unwrap(),
+        change: SPONSOR_RESERVE_AMOUNTS[0] - 50,
+    };
+    let material = transaction::MaturityConfidentialSponsorMaterial {
+        outpoint: sponsor.coin,
+        semantic_input_amount: SPONSOR_RESERVE_AMOUNTS[0],
+        input_blinder_sum: first.value_blinder,
+        // Tagged hashes separate change material from the consumed coin; the
+        // transcript is the coin's corresponding material followed by output 1 as u16 BE.
+        nonce_input: change_material("STATE-change/nonce", &first.nonce_input),
+        rangeproof_seed: change_material("STATE-change/rangeproof", &first.rangeproof_seed),
+    };
+    assert_ne!(material.nonce_input, first.nonce_input);
+    assert_ne!(material.rangeproof_seed, first.rangeproof_seed);
+    let public =
+        transaction::view::PublicConstructionView::new([transaction::view::PublicOutputView::new(
+            sponsor.coin,
+            AssetField::Explicit(AssetId::from_internal(ASSET)),
+            ValueField::Commitment(first.value_commitment),
+            program,
+        )])
+        .unwrap();
+    let context = transaction::MaturitySponsorContext {
+        reserve_asset: AssetId::from_internal(ASSET),
+        view: &public,
+        capability: &sponsor,
+    };
+    let finalized = transaction::construct_confidential_maturity_announcement(
+        transaction::MaturityConfidentialConstructionInputs {
+            target: &target,
+            abi: &abi,
+            validated: &validated,
+            request: &request,
+            curve: &OracleStateCurve,
+            sponsor: &context,
+            material: &material,
+        },
+        &ReferenceConfidentialMaterializer::new(),
+        &FirstPartyCommitmentCheck::new(),
+    )
+    .expect("balanced confidential STATE construction");
+    let expected = FirstPartyCommitmentCheck::new()
+        .recompute(
+            AssetId::from_internal(ASSET),
+            sponsor.change,
+            &first.value_blinder,
+        )
+        .unwrap();
+    assert_eq!(
+        finalized.protected().outputs()[1].value(),
+        ValueField::Commitment(*expected.bytes())
+    );
+    finalized
+}
+
+fn change_material(domain: &str, coin_material: &[u8; 32]) -> [u8; 32] {
+    let mut transcript = coin_material.to_vec();
+    transcript.extend(1_u16.to_be_bytes());
+    transaction::taproot::tagged_hash(domain, &transcript)
+}
+
+#[test]
+fn real_adapters_construct_the_balanced_confidential_state_form() {
+    let finalized = confidential_state();
+    let candidate = finalized.protected();
+    assert_eq!(candidate.inputs().len(), 2);
+    assert_eq!(candidate.outputs().len(), 3);
+    assert_eq!(candidate.outputs()[2].value(), ValueField::Explicit(50));
+    assert!(candidate.output_witnesses()[0].is_empty());
+    assert!(candidate.output_witnesses()[2].is_empty());
+    assert_eq!(finalized.protected_bytes(), candidate.encode());
+    assert_eq!(
+        transaction::bytes::TargetTransaction::decode(finalized.protected_bytes()).unwrap(),
+        *candidate
+    );
+    let ValueField::Commitment(commitment) = candidate.outputs()[1].value() else {
+        panic!("committed change");
+    };
+    let witness = &candidate.output_witnesses()[1];
+    assert_eq!(witness.surjection_proof(), &[0_u8; 0]);
+    // Reference proof verification establishes conformance; the separate
+    // first-party recomputation establishes independent commitment arithmetic.
+    assert!(ReferenceRangeproofVerifier::new().verifies(
+        witness.range_proof(),
+        &commitment,
+        &printed_asset(),
+        candidate.outputs()[1].program()
+    ));
+}
+
+#[test]
+fn the_real_state_change_proof_refuses_a_different_program() {
+    let finalized = confidential_state();
+    let candidate = finalized.protected();
+    let ValueField::Commitment(commitment) = candidate.outputs()[1].value() else {
+        panic!("committed change");
+    };
+    let proof = candidate.output_witnesses()[1].range_proof();
+    let verifier = ReferenceRangeproofVerifier::new();
+    assert!(verifier.verifies(
+        proof,
+        &commitment,
+        &printed_asset(),
+        candidate.outputs()[1].program()
+    ));
+    let mut program = candidate.outputs()[1].program().to_vec();
+    program[2] ^= 1;
+    assert!(!verifier.verifies(proof, &commitment, &printed_asset(), &program));
+}
+
 /// The published disposable protocol asset, in commit order.
 const ASSET: [u8; 32] = [0x3b; 32];
 

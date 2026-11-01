@@ -1281,6 +1281,134 @@ fn sponsored_output_witness_mutation_refuses_at_both_boundaries() {
 }
 
 #[test]
+fn confidential_operator_signing_binds_the_output_proofs() {
+    use super::state_confidential_tests::{changed_proof, finalized};
+    let control = finalized();
+    let state = started(&control);
+    assert_eq!(state.protected_bytes(), control.protected_bytes());
+    let changed = changed_proof(control.protected());
+    let subject = finalize_maturity_announcement(
+        control
+            .construction()
+            .clone()
+            .with_confidential_change(
+                changed.outputs()[1].clone(),
+                changed.output_witnesses().to_vec(),
+            )
+            .unwrap(),
+    );
+    let subject_state = started(&subject);
+    assert_ne!(
+        state.request().message().with_vector_grown(),
+        subject_state.request().message().with_vector_grown()
+    );
+    assert_eq!(
+        authorized_over(&control)
+            .check_offered(&changed, control.construction().successor_metadata()),
+        Err(TransactionRefusal::MaturityOutputWitnessChangedAfterFinalization)
+    );
+    assert_eq!(
+        region_of(started(&control).set_output_witness(&OutputWitness::empty())),
+        MaturityProtectedRegion::OutputWitnesses
+    );
+
+    let mut answer = parts(&state);
+    answer.echo = changed.encode();
+    let mut registry = OperatorRightRegistry::default();
+    let right = issue(&mut registry, &state);
+    let failure = state
+        .authorize(
+            &mut registry,
+            right,
+            [answer.response()],
+            &FixtureScriptPathVerifier,
+        )
+        .unwrap_err();
+    assert_eq!(
+        operator_fault(failure.refusal),
+        OperatorSigningRefusal::BoundToOtherBytes { input_index: 0 }
+    );
+
+    let mut answer = parts(&subject_state);
+    answer.signature = operator_signature(&control);
+    let mut registry = OperatorRightRegistry::default();
+    let right = issue(&mut registry, &subject_state);
+    let failure = subject_state
+        .authorize(
+            &mut registry,
+            right,
+            [answer.response()],
+            &FixtureScriptPathVerifier,
+        )
+        .unwrap_err();
+    assert!(matches!(
+        operator_fault(failure.refusal),
+        OperatorSigningRefusal::SignatureDoesNotVerifyForFrozenMessage { input_index: 0, .. }
+    ));
+}
+
+#[test]
+fn confidential_sponsor_completion_preserves_proofs_and_request_binding() {
+    use super::state_confidential_tests::{Fault, construct, fixture};
+    let (mut sponsor, public, material) = fixture();
+    let finalized = construct(&sponsor, &public, &material, Fault::None, Fault::None).unwrap();
+    let ready = authorized_over(&finalized)
+        .bind_for_submission_with_sponsor(&reviewed_target(), Some(&sponsor))
+        .unwrap();
+    assert_eq!(
+        ready.candidate().output_witnesses(),
+        finalized.protected().output_witnesses()
+    );
+    assert_eq!(finalized.check_offered(ready.candidate()), Ok(()));
+    assert_eq!(
+        TargetTransaction::decode(ready.bytes()).unwrap(),
+        *ready.candidate()
+    );
+    {
+        let requests = sponsor.requests.borrow();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].input(), 1);
+        assert_eq!(
+            requests[0].profile(),
+            crate::sponsor::SighashProfile::AllInputsAllOutputs
+        );
+        assert_eq!(requests[0].transaction(), finalized.protected_bytes());
+        assert_eq!(requests[0].protected(), finalized.protected().outputs());
+        assert!(matches!(
+            requests[0].protected()[1].value(),
+            crate::bytes::ValueField::Commitment(_)
+        ));
+    }
+    sponsor.fault = super::state_support::SponsorAnswerFault::WrongBytes(1);
+    assert_eq!(
+        authorized_over(&finalized)
+            .bind_for_submission_with_sponsor(&reviewed_target(), Some(&sponsor))
+            .unwrap_err(),
+        TransactionRefusal::SponsorSignatureBindingMismatch(material.outpoint)
+    );
+}
+
+#[test]
+fn confidential_material_stays_out_of_signing_values_and_requests() {
+    use super::state_confidential_tests::{Fault, assert_material_absent, construct, fixture};
+    let (sponsor, public, material) = fixture();
+    let finalized = construct(&sponsor, &public, &material, Fault::None, Fault::None).unwrap();
+    assert_material_absent(&material, finalized.protected_bytes(), &finalized);
+    let state = started(&finalized);
+    assert_material_absent(&material, state.protected_bytes(), &state);
+    assert_material_absent(&material, state.protected_bytes(), state.request());
+    let authorized = authorized_over(&finalized);
+    assert_material_absent(&material, finalized.protected_bytes(), &authorized);
+    let ready = authorized
+        .bind_for_submission_with_sponsor(&reviewed_target(), Some(&sponsor))
+        .unwrap();
+    assert_material_absent(&material, ready.bytes(), &ready);
+    for request in sponsor.requests.borrow().iter() {
+        assert_material_absent(&material, request.transaction(), request);
+    }
+}
+
+#[test]
 fn sponsored_protected_regions_remain_frozen() {
     use super::state_support::sponsored_construction;
     let finalized = finalize_maturity_announcement(sponsored_construction(true));

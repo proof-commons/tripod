@@ -74,22 +74,21 @@
 //! compared by outpoint, and a sequence can move without the census
 //! changing size.
 //!
-//! The comparison is over the witnessless encoding rather than the full
-//! one. For this explicit candidate the two are the same byte string — every
-//! input witness is null and every output witness empty, so the
-//! encoder writes no witness section at all, which is why the finalized
-//! bytes are simultaneously what a signer echoes and what the strict
-//! decoder round-trips. They stop being the same string as soon as the
-//! next state inserts the authorization witnesses, and a check that refused
-//! the candidate it had just authorized would be refusing the one thing
-//! §12.7 admits moving.
+//! The protected encoding is the full wire encoding with empty input
+//! witnesses and every output witness retained. For the explicit form
+//! it equals the witnessless encoding because every output witness is
+//! empty too. For the confidential form it includes the change proof.
+//! Offered comparisons normalize only input witnesses, admitting the
+//! authorization insertion that §12.7 permits while protecting the proofs.
 
 use std::collections::BTreeSet;
 
 use tapscript::{CandidateStateConstructor, StateLeafRole};
 use target_elements::{LeafVersion, ReviewedElementsTapscriptDefinition};
 
-use crate::bytes::{AssetField, Outpoint, TargetOutput, TargetTransaction, ValueField};
+use crate::bytes::{
+    AssetField, InputWitness, Outpoint, TargetOutput, TargetTransaction, ValueField,
+};
 use crate::error::TransactionRefusal;
 use crate::live_taproot::LiveCurveCapability;
 use crate::operator_signing::{OperatorSigningInput, OperatorSigningRequest};
@@ -389,10 +388,9 @@ impl FinalizedMaturityAnnouncement {
     /// to.
     ///
     /// Taken once, here, and compared rather than recomputed wherever
-    /// it is read back. For this candidate it is also the full
-    /// encoding: every input witness is null and every output
-    /// witness empty, so the encoder writes no witness section, which
-    /// is why these same bytes are what the strict decoder round-trips.
+    /// it is read back. Input witnesses are empty; output witnesses retain
+    /// any finalized proofs. These bytes are a full wire encoding and
+    /// therefore round-trip through the strict decoder in either form.
     #[must_use]
     pub fn protected_bytes(&self) -> &[u8] {
         &self.protected_bytes
@@ -632,7 +630,15 @@ impl FinalizedMaturityAnnouncement {
         if offered.output_witnesses() != protected.output_witnesses() {
             return Err(TransactionRefusal::MaturityOutputWitnessChangedAfterFinalization);
         }
-        let encoding = offered.encode_without_witness();
+        let encoding = TargetTransaction::with_output_witnesses(
+            offered.version(),
+            offered.inputs().to_vec(),
+            offered.outputs().to_vec(),
+            offered.lock_time(),
+            vec![InputWitness::default(); offered.inputs().len()],
+            offered.output_witnesses().to_vec(),
+        )?
+        .encode();
         if encoding == self.protected_bytes {
             Ok(())
         } else {
@@ -674,7 +680,7 @@ impl FinalizedMaturityAnnouncement {
 pub fn finalize_maturity_announcement(
     construction: MaturityConstruction,
 ) -> FinalizedMaturityAnnouncement {
-    let protected_bytes = construction.transaction().encode_without_witness();
+    let protected_bytes = construction.transaction().encode();
     let outputs = MaturityFinalizedOutputCensus {
         outputs: construction.transaction().outputs().to_vec(),
         successor_position: SUCCESSOR_OUTPUT_POSITION,
