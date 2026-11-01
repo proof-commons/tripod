@@ -3382,6 +3382,7 @@ fn native_declaration(
         .subject()?;
     let (site, carrier) = match subject {
         Subject::SuccessorUnannounced
+        | Subject::SuccessorFromWrongSemanticMetadata
         | Subject::SuccessorComplete
         | Subject::WrongAnnouncementCycle => (SuccessorMetadataField, AnnouncementLeaf),
         Subject::MetadataFromAnotherStateObject
@@ -3408,7 +3409,7 @@ fn native_declaration(
         Subject::SuccessorLeafVersion
         | Subject::ControlBlockFromAnotherProgram
         | Subject::LeafVersionControlByte => (ControlBlock, LinkedConstructor),
-        Subject::NoStateSuccessor | Subject::ExtraStateLikeOutput => {
+        Subject::NoStateSuccessor | Subject::ExtraStateLikeOutput | Subject::TwoStateSuccessors => {
             (TransactionOutput, CoordinatorStructure)
         }
         Subject::WrongSequence

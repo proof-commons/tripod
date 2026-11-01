@@ -10,9 +10,11 @@
 //! # What this module stages, and what it does not
 //!
 //! The native planner restages subjects over live funded coins and submits
-//! them before their consuming controls. Exact replay checks those live
-//! requests. Archived-context digests remain the staging baseline: each
-//! deterministic one-coordinate departure is pinned by its spend-time
+//! refusals before their consuming controls on the same coin. The retained
+//! two-successor acceptance follows its control on an equivalent reserve coin;
+//! the retained planner's refused control stops only its own family. Exact replay
+//! checks those live requests. Archived-context digests remain the staging
+//! baseline: each deterministic one-coordinate departure is pinned by its spend-time
 //! serialization, so a changed baseline byte fails a test. A staging pin
 //! alone supplies no observation or refusal credit.
 //!
@@ -30,11 +32,11 @@
 //!   output field and the spent outpoint with it, because a coin's asset,
 //!   amount or program is one change read on both sides of the spend, and
 //!   the predecessor control block is re-committed under a changed program;
-//! - the one two-input subject funds a state-like output of another asset
-//!   from a key-path coin, with a stand-in outpoint in the baseline and a
+//! - the two-input subjects fund a successor-shaped output from a key-path
+//!   coin, with a stand-in outpoint in the baseline and a
 //!   funded outpoint in the live request, because the extra output must
-//!   balance; two state-asset successors await a construction that preserves
-//!   singleton conservation and the retained issuance reserves.
+//!   balance; the second STATE successor uses the same issued asset at amount
+//!   one, funded from the retained issuance reserve.
 
 use linker::CandidateLinkedMaturityBundle;
 use realization::{
@@ -86,12 +88,12 @@ pub enum NativeBoundary {
     ConsensusRejectionBeforeScript,
 }
 
-/// Why a native-run-required row cannot be staged on this candidate.
+/// Present and historical reasons a native-run-required row was not staged.
 ///
-/// Each member names a fact about the candidate or the covenant, not a
-/// gap a later stager could close here: a run against this candidate
-/// would establish something other than the row's own fault, or no bytes
-/// the public constructors emit carry the change at all.
+/// Three members retain the present absent-coordinate final reasons under
+/// rulings 131–133 (`rule:phase7:wave0-rulings`). The semantic-census and
+/// singleton-conservation members are historical reasons read only by the
+/// keyed snapshot after construction supplied their subjects.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum NativeUnstageable {
     /// No superseded key exists; any other key is the wrong-operator
@@ -106,11 +108,13 @@ pub enum NativeUnstageable {
     /// the two metadata witnesses changes a position the candidate does
     /// not carry.
     SuccessorMetadataIsNeverWitnessed,
-    /// The deployments share one semantic census, so another object's
-    /// semantic reconstructs byte-equal to the control and stages nothing.
+    /// Historically the fixture deployments shared one semantic census.
+    /// A distinct census now supplies the subject at
+    /// (`rec:backlog:wave0-native-route-construction`).
     DeploymentsShareOneSemanticCensus,
-    /// Singleton conservation precludes a second state-asset coin, so a
-    /// second state successor has no coin to fund it.
+    /// Historically the singleton constructor supplied no second STATE coin.
+    /// Reserve funding now supplies the balanced subject below that constructor
+    /// (`rec:backlog:wave0-native-route-construction`).
     SingletonConservationPrecludesASecondCoin,
 }
 
@@ -278,6 +282,7 @@ use NativeUnstageable as U;
 const GENERIC: &str = "staged; generic verdict expected";
 /// A specific script-path refusal of the row's own fault is expected.
 const SPECIFIC: &str = "staged; script-path refusal of the row's fault";
+const FOREIGN_SEMANTIC: &str = "foreign successor from q + 1; honest predecessor metadata and request retained; successor reconstruction refusal expected";
 
 /// Every historically native-run-required §16 row and its staging standing.
 ///
@@ -411,11 +416,12 @@ pub const NATIVE_ROWS: &[NativeRow] = &[
         GENERIC,
     ),
     // §16.6 — the successor-constructor faults.
-    unstageable(
+    staged(
         S::SuccessorConstructorFault,
         "successor-from-wrong-semantic-metadata",
         ScriptPath,
-        U::DeploymentsShareOneSemanticCensus,
+        N::SuccessorFromWrongSemanticMetadata,
+        FOREIGN_SEMANTIC,
     ),
     staged(
         S::SuccessorConstructorFault,
@@ -472,11 +478,12 @@ pub const NATIVE_ROWS: &[NativeRow] = &[
         N::NoStateSuccessor,
         SPECIFIC,
     ),
-    unstageable(
+    accepted(
         S::SuccessorConstructorFault,
         "two-state-successors",
         ScriptPath,
-        U::SingletonConservationPrecludesASecondCoin,
+        N::TwoStateSuccessors,
+        D::OutputCountUnread,
     ),
     accepted(
         S::SuccessorConstructorFault,
@@ -531,7 +538,7 @@ pub const NATIVE_ROWS: &[NativeRow] = &[
 
 /// One distinct staged subject.
 ///
-/// Twenty-six members over twenty-eight staged keys: two pairs share a
+/// Twenty-eight members over thirty staged keys: two pairs share a
 /// subject because the two keys change the same bytes. Each member names a
 /// digest constant, pinned by the test below.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -599,11 +606,15 @@ pub enum NativeSubject {
     /// A stand-in key-path coin of another asset funds an extra
     /// state-like output of that asset.
     ExtraStateLikeOutput,
+    /// Output zero commits a successor whose copied-through q is one greater.
+    SuccessorFromWrongSemanticMetadata,
+    /// A second same-asset coin funds a second STATE successor at amount one.
+    TwoStateSuccessors,
 }
 
 impl NativeSubject {
     /// Every distinct subject, in the matrix's order.
-    pub const ALL: [Self; 26] = [
+    pub const ALL: [Self; 28] = [
         Self::SuccessorUnannounced,
         Self::SuccessorComplete,
         Self::MetadataFromAnotherStateObject,
@@ -630,6 +641,8 @@ impl NativeSubject {
         Self::LaterAdmissibleNonce,
         Self::WrongTransactionVersion,
         Self::ExtraStateLikeOutput,
+        Self::SuccessorFromWrongSemanticMetadata,
+        Self::TwoStateSuccessors,
     ];
 
     /// The pinned digest of this subject's spend-time serialization, as
@@ -663,6 +676,8 @@ impl NativeSubject {
             Self::LaterAdmissibleNonce => PIN_LATER_NONCE,
             Self::WrongTransactionVersion => PIN_WRONG_TX_VER,
             Self::ExtraStateLikeOutput => PIN_EXTRA_OUTPUT,
+            Self::SuccessorFromWrongSemanticMetadata => PIN_WRONG_SEMANTIC_METADATA,
+            Self::TwoStateSuccessors => PIN_TWO_STATE_SUCCESSORS,
         }
     }
 
@@ -721,6 +736,7 @@ impl NativeSubject {
             Self::SuccessorUnannounced
             | Self::SuccessorComplete
             | Self::WrongAnnouncementCycle
+            | Self::SuccessorFromWrongSemanticMetadata
             | Self::LaterAdmissibleNonce => successor_output(&[0, 1, 6]),
             Self::SuccessorMetadataChangedAfterSigning => successor_output(&[0, 1, 2]),
             Self::SuccessorProgramChangedAfterSigning => successor_output(&[0, 1]),
@@ -756,7 +772,7 @@ impl NativeSubject {
                 outpoint: true,
                 ..witness(&[], &[])
             },
-            Self::ExtraStateLikeOutput => two_output,
+            Self::ExtraStateLikeOutput | Self::TwoStateSuccessors => two_output,
         }
     }
 }
@@ -790,7 +806,8 @@ struct Expectation {
 /// Each value is the lowercase hexadecimal of the SHA-256 of the subject's
 /// serialization, recomputed from the admitted variable control by the
 /// staging test; a value the audit reads is bound to its subject by the
-/// `PIN_` constant name on its own line.
+/// `PIN_` constant name. The two retained-route values wrap beneath their names;
+/// each other value shares its name's line.
 const PIN_UNANNOUNCED: &str = "b4c5620c2da6809cb0d40065304b9297c44185d380d5c40fdfdb8d994c20eac3";
 const PIN_COMPLETE: &str = "18b9dde1d23b68e933d88330937b2b8ea5e555b8365750fc042cf4f847773e71";
 const PIN_META_OTHER: &str = "9b972f42e57ce71e6c24c58cbda58cacd0d9605e7c38f0c49322563122cef388";
@@ -818,6 +835,11 @@ const PIN_LATER_NONCE: &str = "a89446dd9631c42cd6e58657f45483d057e006b05ac3bd328
 const PIN_WRONG_TX_VER: &str = "0c2949906902c5baa0018b78536b429a458a1d0e05919e44fe436dd43103a6fa";
 const PIN_EXTRA_OUTPUT: &str = "27e529cb72f6f4de9ca02774c227af421dbacbb7f415de1de283473c7f8a8749";
 
+const PIN_WRONG_SEMANTIC_METADATA: &str =
+    "dcd3869a1d5d022c525fa58523c5d695dafaefb7933e801f06ea1eb972726e98";
+const PIN_TWO_STATE_SUCCESSORS: &str =
+    "eedc8989b9c79d9f87e4ae4f123c21a84dc7432e0a35a3fd4cf2687831211378";
+
 /// A stage refusal for the native subjects.
 ///
 /// The typed refusals the lower layers raise are retained as boxed values;
@@ -837,6 +859,10 @@ pub enum NativeStageError {
     Constructor(Box<StateConstructorRefusal>),
     /// A maturity source or link refused.
     Closure(Box<MaturityClosureRefusal>),
+    /// A copied-through quantity exceeded its checked domain.
+    Realization(Box<realization::RealizationError>),
+    /// The semantic announcement transition refused.
+    Transition(Box<realization::MaturityTransitionRefusal>),
     /// The published signer could not sign.
     Signing(TestSigningDefect),
     /// The latest-lead planner refused at construction.
@@ -942,6 +968,43 @@ fn set_successor(
     );
     stack[0] = vec![prefix(projection.parity())];
     stack[1] = projection.nonce().get().to_be_bytes().to_vec();
+}
+
+fn foreign_semantic_successor(
+    context: &MaturityMutantContext<'_>,
+) -> Result<
+    (
+        CandidateLinkedMaturityBundle,
+        tapscript::CandidateStateConstructor,
+    ),
+    NativeStageError,
+> {
+    let mut metadata = context.bundle.instances()[0].metadata().semantic;
+    metadata.q = metadata
+        .q
+        .checked_add(realization::ProtocolAmount::ONE)
+        .map_err(|error| NativeStageError::Realization(Box::new(error)))?;
+    let (bundle, _) = crate::maturity_native::link_for_metadata(
+        context.identity,
+        context.funded.asset,
+        MaturityWitnessSelection::Retained(context.bundle.record().schedule()),
+        Some(metadata),
+    )
+    .map_err(|error| NativeStageError::NativePlan(Box::new(error)))?;
+    let successor = realization::announce_maturity(
+        &metadata,
+        context.finalized.construction().request().announced_cycle(),
+        bundle.deployment().lead_bounds().bounds(),
+    )
+    .map_err(|error| NativeStageError::Transition(Box::new(error)))?;
+    let constructor = bundle
+        .apply_constructor(context.target, &successor, &OracleStateCurve)
+        .map_err(|error| {
+            NativeStageError::Closure(Box::new(MaturityClosureRefusal::LinkRefused(
+                linker::LinkRefusal::StateLink(error),
+            )))
+        })?;
+    Ok((bundle, constructor))
 }
 
 fn lead_submission(
@@ -1165,6 +1228,7 @@ fn key_path_coin(
     ))
 }
 
+#[cfg(test)]
 fn key_path_coin_census(
     context: &MaturityMutantContext<'_>,
 ) -> Result<SpentOutputCensusEntry, NativeStageError> {
@@ -1180,6 +1244,7 @@ fn stage_extra_output(
     context: &MaturityMutantContext<'_>,
     original: &TargetTransaction,
     live: Option<&MaturityFundedPredecessor>,
+    same_asset: bool,
 ) -> Result<Vec<u8>, NativeStageError> {
     let state_stack = witness(original, context.bundle.record().schedule())
         .map_err(|refusal| NativeStageError::Continuity(Box::new(refusal)))?
@@ -1202,10 +1267,24 @@ fn stage_extra_output(
         .first()
         .ok_or(NativeStageError::Shape)?
         .clone();
-    let (coin_asset, coin_amount, _coin_program) = match live {
-        Some(coin) => (coin.asset, coin.amount, coin.program.clone()),
-        None => key_path_coin(context)?,
+    let (coin_asset, coin_amount, coin_program) = if let Some(coin) = live {
+        (coin.asset, coin.amount, coin.program.clone())
+    } else {
+        let (asset, amount, program) = key_path_coin(context)?;
+        if same_asset {
+            (context.funded.asset, 1, program)
+        } else {
+            (asset, amount, program)
+        }
     };
+    if same_asset
+        && (coin_asset != context.funded.asset
+            || coin_amount != 1
+            || standin == context.funded.outpoint
+            || coin_program != key_path_coin(context)?.2)
+    {
+        return Err(NativeStageError::Shape);
+    }
     let extra = TargetOutput::new(
         AssetField::Explicit(coin_asset),
         ValueField::Explicit(coin_amount),
@@ -1213,10 +1292,16 @@ fn stage_extra_output(
         output.program().to_vec(),
     );
     let outputs = vec![output, extra];
-    let extra_census = match live {
-        Some(coin) => census_of(coin),
-        None => key_path_coin_census(context)?,
-    };
+    let extra_census = live.map_or_else(
+        || {
+            SpentOutputCensusEntry::new(
+                AssetField::Explicit(coin_asset),
+                ValueField::Explicit(coin_amount),
+                coin_program,
+            )
+        },
+        census_of,
+    );
     let census = vec![census_of(context.funded), extra_census];
     let control_block = state_stack[8].clone();
     let candidate = assemble_two(
@@ -1337,9 +1422,16 @@ pub(crate) fn live_funding_shape(
             let (coin, _) = wrong_predecessor_funded(context)?;
             Ok((coin.amount, coin.program))
         }
-        NativeSubject::ExtraStateLikeOutput => {
+        NativeSubject::ExtraStateLikeOutput | NativeSubject::TwoStateSuccessors => {
             let (_, amount, program) = key_path_coin(context)?;
-            Ok((amount, program))
+            Ok((
+                if subject == NativeSubject::TwoStateSuccessors {
+                    1
+                } else {
+                    amount
+                },
+                program,
+            ))
         }
         _ => Err(NativeStageError::Shape),
     }
@@ -1363,6 +1455,20 @@ fn stage_native_subject_inner(
     let mut outputs = original.outputs().to_vec();
     let lock = original.lock_time();
     match subject {
+        NativeSubject::SuccessorFromWrongSemanticMetadata => {
+            let (_, successor) = foreign_semantic_successor(context)?;
+            let output = &outputs[0];
+            outputs[0] = TargetOutput::new(
+                output.asset(),
+                output.value(),
+                output.nonce(),
+                successor.output_program(),
+            );
+            stack[0] = vec![prefix(successor.parity())];
+            stack[1] = successor.nonce().get().to_be_bytes().to_vec();
+            resign(context, &original, inputs, outputs, stack, context.funded)
+        }
+        NativeSubject::TwoStateSuccessors => stage_extra_output(context, &original, live, true),
         NativeSubject::EmptySignature => {
             stack[6] = Vec::new();
             Ok(assemble(&original, inputs, outputs, stack, lock)?.encode())
@@ -1625,7 +1731,7 @@ fn stage_native_subject_inner(
             *byte ^= 0x02;
             Ok(assemble(&original, inputs, outputs, stack, lock)?.encode())
         }
-        NativeSubject::ExtraStateLikeOutput => stage_extra_output(context, &original, live),
+        NativeSubject::ExtraStateLikeOutput => stage_extra_output(context, &original, live, false),
     }
 }
 
@@ -1826,6 +1932,7 @@ mod tests {
             NativeSubject::SuccessorUnannounced
             | NativeSubject::SuccessorComplete
             | NativeSubject::WrongAnnouncementCycle
+            | NativeSubject::SuccessorFromWrongSemanticMetadata
             | NativeSubject::SuccessorLeafVersion
             | NativeSubject::ArbitraryCallerSuppliedOutputProgram
             | NativeSubject::NoStateSuccessor
@@ -1844,6 +1951,14 @@ mod tests {
             NativeSubject::ExtraStateLikeOutput => Some(vec![
                 census_of(context.funded),
                 key_path_coin_census(context).ok()?,
+            ]),
+            NativeSubject::TwoStateSuccessors => Some(vec![
+                census_of(context.funded),
+                SpentOutputCensusEntry::new(
+                    AssetField::Explicit(context.funded.asset),
+                    ValueField::Explicit(1),
+                    key_path_coin(context).ok()?.2,
+                ),
             ]),
             _ => None,
         }
@@ -1999,9 +2114,245 @@ mod tests {
         assert_eq!(seen.len(), NativeSubject::ALL.len());
     }
 
+    #[test]
+    fn foreign_quantity_changes_only_the_successor_semantic_commitment() {
+        let fixture = Fixture::new();
+        let context = fixture.context();
+        let (foreign, successor) = foreign_semantic_successor(&context).expect("foreign census");
+        let honest_metadata = context.bundle.instances()[0].metadata().semantic;
+        let foreign_metadata = foreign.instances()[0].metadata().semantic;
+        assert_ne!(foreign_metadata, honest_metadata);
+        assert_eq!(
+            foreign_metadata.q,
+            honest_metadata
+                .q
+                .checked_add(realization::ProtocolAmount::ONE)
+                .expect("one more")
+        );
+        assert_eq!(
+            StateMetadata {
+                q: honest_metadata.q,
+                ..foreign_metadata
+            },
+            honest_metadata
+        );
+        assert_eq!(foreign.policy(), context.bundle.policy());
+        assert_eq!(foreign.static_subtree(), context.bundle.static_subtree());
+        assert_eq!(foreign.record(), context.bundle.record());
+        let honest = context.finalized.construction().successor_constructor();
+        assert_ne!(
+            successor.encoded_metadata().semantic,
+            honest.encoded_metadata().semantic
+        );
+        assert_eq!(
+            StateMetadata {
+                q: honest_metadata.q,
+                ..successor.encoded_metadata().semantic
+            },
+            honest.encoded_metadata().semantic
+        );
+        assert_ne!(successor.output_program(), honest.output_program());
+        let evidence = successor.evidence();
+        assert_eq!(evidence.selected, successor.nonce());
+        assert_eq!(
+            evidence
+                .rejected
+                .iter()
+                .map(|(nonce, _)| nonce.get())
+                .collect::<Vec<_>>(),
+            (0..successor.nonce().get()).collect::<Vec<_>>()
+        );
+        for (nonce, reason) in &evidence.rejected {
+            assert!(reason.retryable());
+            assert!(
+                fixed_projection(
+                    context.target,
+                    EncodedStateMetadata {
+                        semantic: successor.encoded_metadata().semantic,
+                        representation: *nonce,
+                    },
+                    &foreign,
+                    TransactionSide::Output
+                )
+                .is_err()
+            );
+        }
+        let bytes = stage_native_subject(N::SuccessorFromWrongSemanticMetadata, &context)
+            .expect("semantic subject");
+        let staged = decode(&bytes).expect("decode");
+        let control = decode(context.submitted_bytes).expect("control");
+        for position in [2, 3, 4, 5, 7, 8] {
+            assert_eq!(
+                staged.witnesses()[0].stack()[position],
+                control.witnesses()[0].stack()[position]
+            );
+        }
+        assert_eq!(staged.outputs()[0].program(), successor.output_program());
+        assert_eq!(
+            staged.witnesses()[0].stack()[0],
+            vec![prefix(successor.parity())]
+        );
+        assert_eq!(
+            staged.witnesses()[0].stack()[1],
+            successor.nonce().get().to_be_bytes()
+        );
+        for subject in [
+            N::MetadataFromAnotherStateObject,
+            N::PredecessorMetadataReconstructsAnotherProgram,
+        ] {
+            let other =
+                decode(&stage_native_subject(subject, &context).expect("item-four subject"))
+                    .expect("decode");
+            assert_ne!(other.encode(), bytes);
+            assert_eq!(other.outputs(), control.outputs());
+            assert_ne!(
+                other.witnesses()[0].stack()[4],
+                staged.witnesses()[0].stack()[4]
+            );
+        }
+    }
+
+    #[test]
+    fn retained_routes_differ_from_every_inherited_admission() {
+        let fixture = Fixture::new();
+        let context = fixture.context();
+        for subject in [N::SuccessorFromWrongSemanticMetadata, N::TwoStateSuccessors] {
+            let bytes = stage_native_subject(subject, &context).expect("new subject");
+            for row in MaturityMutantRow::ALL {
+                let inherited =
+                    super::super::stage_maturity_mutant(row, &context).expect("inherited subject");
+                assert_ne!(bytes, inherited.bytes(), "{subject:?} versus {row:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn two_state_successors_balance_and_authorize_the_complete_census() {
+        let fixture = Fixture::new();
+        let context = fixture.context();
+        let bytes = stage_native_subject(N::TwoStateSuccessors, &context).expect("two successors");
+        let candidate = decode(&bytes).expect("decode");
+        let control = decode(context.submitted_bytes).expect("control");
+        let other_bytes =
+            stage_native_subject(N::ExtraStateLikeOutput, &context).expect("other asset");
+        assert_eq!(digest_hex(&other_bytes), PIN_EXTRA_OUTPUT);
+        let other = decode(&other_bytes).expect("decode");
+        assert_ne!(bytes, other_bytes);
+        assert_eq!(candidate.inputs().len(), 2);
+        assert_eq!(candidate.outputs().len(), 2);
+        assert_eq!(candidate.inputs()[0], control.inputs()[0]);
+        assert_eq!(candidate.outputs()[0], control.outputs()[0]);
+        assert_ne!(
+            candidate.inputs()[0].outpoint(),
+            candidate.inputs()[1].outpoint()
+        );
+        for output in candidate.outputs() {
+            assert_eq!(output.asset(), AssetField::Explicit(context.funded.asset));
+            assert_eq!(output.value(), ValueField::Explicit(1));
+            assert_eq!(output.program(), control.outputs()[0].program());
+        }
+        assert_ne!(other.outputs()[1].asset(), candidate.outputs()[1].asset());
+        let census = operator_census(N::TwoStateSuccessors, &context).expect("two coins");
+        let other_census = operator_census(N::ExtraStateLikeOutput, &context).expect("other coins");
+        assert_eq!(census.len(), 2);
+        assert_ne!(census[1], other_census[1]);
+        let stack = candidate.witnesses()[0].stack();
+        let second = &candidate.witnesses()[1].stack()[0];
+        let messages = |coins| {
+            super::super::operator_and_key_path_messages(
+                &context,
+                candidate.clone(),
+                coins,
+                stack[8].clone(),
+                1,
+            )
+        };
+        let (operator, key_path) = messages(census).expect("complete census");
+        let first_key = PublicTestSignerHandle::First
+            .x_only_public_key()
+            .expect("first key");
+        OperatorVerifier
+            .verify(
+                context.bundle.deployment().operator().key().bytes(),
+                &operator,
+                &stack[6],
+            )
+            .expect("operator");
+        OperatorVerifier
+            .verify(&first_key, &key_path, second)
+            .expect("key path");
+        let (wrong_operator, wrong_key_path) =
+            messages(other_census).expect("different asset census");
+        assert!(
+            OperatorVerifier
+                .verify(
+                    context.bundle.deployment().operator().key().bytes(),
+                    &wrong_operator,
+                    &stack[6]
+                )
+                .is_err()
+        );
+        assert!(
+            OperatorVerifier
+                .verify(&first_key, &wrong_key_path, second)
+                .is_err()
+        );
+        assert!(messages(vec![census_of(context.funded)]).is_err());
+        let (amount, program) =
+            live_funding_shape(N::TwoStateSuccessors, &context).expect("funding shape");
+        assert_eq!(amount, 1);
+        assert_eq!(program, key_path_coin(&context).expect("key path").2);
+        let live = MaturityFundedPredecessor {
+            outpoint: candidate.inputs()[1].outpoint(),
+            asset: context.funded.asset,
+            amount,
+            program,
+        };
+        assert_eq!(
+            stage_live_subject(N::TwoStateSuccessors, &context, Some(&live)).expect("live"),
+            bytes
+        );
+        let mut wrong = live.clone();
+        wrong.outpoint = context.funded.outpoint;
+        assert!(stage_live_subject(N::TwoStateSuccessors, &context, Some(&wrong)).is_err());
+        wrong = live.clone();
+        wrong.amount = 2;
+        assert!(stage_live_subject(N::TwoStateSuccessors, &context, Some(&wrong)).is_err());
+        wrong = live.clone();
+        wrong.asset = key_path_coin(&context).expect("other asset").0;
+        assert_ne!(wrong.asset, live.asset);
+        assert!(stage_live_subject(N::TwoStateSuccessors, &context, Some(&wrong)).is_err());
+        wrong = live;
+        wrong.program = vec![0x51];
+        assert!(stage_live_subject(N::TwoStateSuccessors, &context, Some(&wrong)).is_err());
+    }
+
+    #[test]
+    fn retained_route_construction_measurements() {
+        use std::io::Write as _;
+        let fixture = Fixture::new();
+        let context = fixture.context();
+        let control = decode(context.submitted_bytes).expect("control");
+        assert_eq!(
+            (context.submitted_bytes.len(), control.weight()),
+            (1701, 2091)
+        );
+        for subject in [N::SuccessorFromWrongSemanticMetadata, N::TwoStateSuccessors] {
+            let bytes = stage_native_subject(subject, &context).expect("subject");
+            let candidate = decode(&bytes).expect("decode");
+            let expected = if subject == N::TwoStateSuccessors {
+                (1891, 2638)
+            } else {
+                (1701, 2091)
+            };
+            assert_eq!((bytes.len(), candidate.weight()), expected);
+            writeln!(std::io::stdout(), "weight {subject:?}: control bytes={} weight={}; subject bytes={} weight={}; pin={}", context.submitted_bytes.len(), control.weight(), bytes.len(), candidate.weight(), digest_hex(&bytes)).expect("measurement");
+        }
+    }
+
     /// Each re-signed subject's operator signature verifies under the
-    /// published operator key against its own spent-output census, and the
-    /// one key-path second input verifies under the first published
+    /// published operator key against its own spent-output census, and
+    /// each key-path second input verifies under the first published
     /// signer's key against the same frozen census at input index 1.
     #[test]
     fn re_signed_subjects_verify_under_the_published_operator_key() {
@@ -2018,7 +2369,10 @@ mod tests {
             let staged = TargetTransaction::decode(&bytes).expect("staged subject decodes");
             let input0 = staged.witnesses()[0].stack().to_vec();
             let control_block = input0[8].clone();
-            if subject == NativeSubject::ExtraStateLikeOutput {
+            if matches!(
+                subject,
+                NativeSubject::ExtraStateLikeOutput | NativeSubject::TwoStateSuccessors
+            ) {
                 let input1 = staged.witnesses()[1].stack().to_vec();
                 let (operator, key_path) = super::super::operator_and_key_path_messages(
                     &context,
@@ -2050,10 +2404,13 @@ mod tests {
             }
         }
         assert_eq!(
-            operator_verified, 13,
+            operator_verified, 15,
             "every operator-re-signed subject is checked"
         );
-        assert_eq!(key_path_verified, 1, "the key-path second input is checked");
+        assert_eq!(
+            key_path_verified, 2,
+            "both key-path second inputs are checked"
+        );
     }
 
     /// The two shared keys each map to a single subject.
@@ -2096,7 +2453,7 @@ mod tests {
                 NativeStanding::Unstageable(_) => unstageable += 1,
             }
         }
-        assert_eq!([refusal, acceptance, waiting, unstageable], [25, 3, 2, 5]);
+        assert_eq!([refusal, acceptance, waiting, unstageable], [26, 4, 2, 3]);
 
         let classified: BTreeSet<(MaturitySafetySection, &str)> = NATIVE_ROWS
             .iter()
@@ -2224,7 +2581,7 @@ mod tests {
             (
                 S::SuccessorConstructorFault,
                 "successor-from-wrong-semantic-metadata",
-                NativeStanding::Unstageable(U::DeploymentsShareOneSemanticCensus),
+                staged(N::SuccessorFromWrongSemanticMetadata, FOREIGN_SEMANTIC),
             ),
             (
                 S::SuccessorConstructorFault,
@@ -2269,7 +2626,7 @@ mod tests {
             (
                 S::SuccessorConstructorFault,
                 "two-state-successors",
-                NativeStanding::Unstageable(U::SingletonConservationPrecludesASecondCoin),
+                accepted(N::TwoStateSuccessors, D::OutputCountUnread),
             ),
             (
                 S::SuccessorConstructorFault,
@@ -2638,10 +2995,45 @@ mod tests {
             ),
         )
         .expect("current evidence");
+        let historical = [
+            (S::OperatorFault, "stale-operator", U::NoSupersededKeyExists),
+            (
+                S::SuccessorConstructorFault,
+                "successor-from-wrong-semantic-metadata",
+                U::DeploymentsShareOneSemanticCensus,
+            ),
+            (
+                S::SuccessorConstructorFault,
+                "wrong-control-recipe",
+                U::NoOfferablePosition,
+            ),
+            (
+                S::SuccessorConstructorFault,
+                "two-state-successors",
+                U::SingletonConservationPrecludesASecondCoin,
+            ),
+            (
+                S::AbiLinkerFault,
+                "predecessor-and-successor-metadata-witnesses-exchanged",
+                U::SuccessorMetadataIsNeverWitnessed,
+            ),
+        ];
+        let snapshot: Vec<_> = NATIVE_ROWS
+            .iter()
+            .map(|row| {
+                historical
+                    .iter()
+                    .find(|(section, name, _)| (*section, *name) == (row.section, row.name))
+                    .map_or(row.standing, |(_, _, reason)| {
+                        NativeStanding::Unstageable(*reason)
+                    })
+            })
+            .collect();
         let mut partition = [0; 4];
         let mut final_absent = 0;
-        for staged in NATIVE_ROWS {
-            match staged.standing {
+        let mut constructed_waits = 0;
+        for (staged, standing) in NATIVE_ROWS.iter().zip(snapshot) {
+            match standing {
                 NativeStanding::Staged { .. } => partition[0] += 1,
                 NativeStanding::StagedAcceptanceExpected { .. } => partition[1] += 1,
                 NativeStanding::WaitingOnSponsoredForm => partition[2] += 1,
@@ -2658,8 +3050,11 @@ mod tests {
                             | "predecessor-and-successor-metadata-witnesses-exchanged"
                     );
                     let boundary = if absent {
+                        assert!(matches!(staged.standing, NativeStanding::Unstageable(_)));
                         MaturityRowBoundary::NativeCoordinateAbsentFromCandidate
                     } else {
+                        assert!(staged.standing.subject().is_some());
+                        constructed_waits += 1;
                         MaturityRowBoundary::NativeSubjectAwaitsConstructionRoute
                     };
                     assert_eq!(row.boundary(), boundary);
@@ -2686,6 +3081,69 @@ mod tests {
         }
         assert_eq!(partition, [25, 3, 2, 5]);
         assert_eq!(final_absent, 3);
+        assert_eq!(constructed_waits, 2);
+    }
+
+    #[test]
+    fn native_staging_leaves_the_historical_census_unchanged() {
+        use crate::maturity_first_party::{
+            derive_close_safety_dispositions, maturity_first_party_cases,
+        };
+        use crate::maturity_safety::rows_of;
+        let cases = maturity_first_party_cases();
+        let carried = cases
+            .iter()
+            .filter(|case| case.carried_reason().is_some())
+            .count();
+        let discharged: BTreeSet<_> = cases
+            .iter()
+            .filter(|case| case.carried_reason().is_none())
+            .map(|case| (case.section().section(), case.name()))
+            .collect();
+        assert_eq!((discharged.len(), carried), (40, 43));
+        // The historical answers comprise pre-target comparisons, inherited native
+        // subjects, root-history rows, recovery rows and their two positive controls.
+        let groups = [
+            discharged,
+            MaturityMutantRow::ALL
+                .into_iter()
+                .map(|row| (row.section().section(), row.row()))
+                .collect(),
+            rows_of(S::RootHistoryFault)
+                .map(|row| (row.section().section(), row.name()))
+                .collect(),
+            rows_of(S::RecoveryFault)
+                .map(|row| (row.section().section(), row.name()))
+                .collect(),
+            BTreeSet::from([
+                (S::Positive.section(), "sponsorless"),
+                (S::Positive.section(), "public-successor-recovery"),
+            ]),
+        ];
+        let mut union = BTreeSet::new();
+        for (index, group) in groups.iter().enumerate() {
+            for other in &groups[..index] {
+                assert!(group.is_disjoint(other));
+            }
+            union.extend(group.iter().copied());
+        }
+        let answers = union.len();
+        assert_eq!(
+            (row_count(), answers, row_count() - answers),
+            (206, 78, 128)
+        );
+        assert_eq!(NATIVE_STAGING_HISTORY.len(), 35);
+        let ledger = derive_close_safety_dispositions().expect("historical dispositions");
+        let mut counts = [0; 3];
+        for row in ledger.rows() {
+            match row.disposition() {
+                MaturitySupplementaryDisposition::Discharged(_) => counts[0] += 1,
+                MaturitySupplementaryDisposition::OutOfContract { .. } => counts[1] += 1,
+                MaturitySupplementaryDisposition::Retained { .. } => counts[2] += 1,
+            }
+        }
+        assert_eq!(counts, [5, 2, 36]);
+        assert_eq!(counts.iter().sum::<usize>(), carried);
     }
 
     /// The observation fold preserves the denominator and historical staging keys.
