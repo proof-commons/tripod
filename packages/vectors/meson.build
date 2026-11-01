@@ -58,6 +58,7 @@ vectors_source_files = files(
   'src/live_sponsored_private.rs',
   'src/materialize.rs',
   'src/matrix.rs',
+  'src/maturity_adapter.rs',
   'src/maturity_branch.rs',
   'src/maturity_closure.rs',
   'src/maturity_continuity.rs',
@@ -106,6 +107,7 @@ vectors_doc_files = files('README.md')
 # `include_bytes!`; timing sidecars and the predecessor setup transcript
 # remain audit-only bytes.
 vectors_fixture_files = files(
+  'fixtures/adapter-request-comparisons/COMPARISONS',
   'fixtures/closure-compact-live.golden',
   'fixtures/historical-candidate-0.7.15-dev-operator-successor.leaves',
   'fixtures/compact-run-of-record/4cbb74eb49e745d262f5e5087ea544e3c63317988efc616e280bb4d350f7dee0.report.capture',

@@ -3918,10 +3918,10 @@ pub(crate) mod tests {
             }
         }
         assert_eq!([accepted_departures, positives, native_claims], [3, 8, 28]);
-        // Fifteen report pairs and thirty-six supplementary comparisons add answers.
-        assert_eq!(PLAN.census().answered(), 172);
-        // Report pairs remove fifteen obligations; thirty-six comparisons answer thirty-six more.
-        assert_eq!(PLAN.census().outstanding(), 34);
+        // Fifteen report pairs and forty-one supplementary comparisons add answers.
+        assert_eq!(PLAN.census().answered(), 177);
+        // Report pairs remove fifteen obligations; forty-one comparisons answer forty-one more.
+        assert_eq!(PLAN.census().outstanding(), 29);
     }
 
     #[test]
@@ -4885,10 +4885,10 @@ pub(crate) mod tests {
                 census.retired(),
                 census.waiting()
             ),
-            (172, 26, 2, 6)
+            (177, 26, 2, 1)
         );
         assert_eq!(census.observed(), census.answered());
-        assert_eq!(census.outstanding(), 34);
+        assert_eq!(census.outstanding(), 29);
         assert_eq!(
             census.observed() + census.final_dispositions() + census.retired() + census.waiting(),
             206
@@ -4902,23 +4902,29 @@ pub(crate) mod tests {
         let waiting = blocked
             .rows
             .iter_mut()
-            .find(|entry| matches!(entry.standing, MaturityRowStanding::FirstPartyRequired(_)))
+            .find(|entry| {
+                entry.row().name()
+                    == "confidential-sponsor-value-where-the-selected-target-policy-claims-support"
+            })
             .expect("waiting row");
         waiting.standing = MaturityRowStanding::InfrastructureBlocked;
         let blocked_census = super::census_from_rows(&blocked.rows);
-        assert_eq!(blocked_census.waiting(), 6);
+        assert_eq!(blocked_census.waiting(), 1);
         assert_eq!(blocked_census.infrastructure_blocked(), 1);
         assert!(!blocked_census.every_required_row_is_answered());
         let mut experimental = PLAN.clone();
         experimental
             .rows
             .iter_mut()
-            .find(|entry| matches!(entry.standing, MaturityRowStanding::FirstPartyRequired(_)))
+            .find(|entry| {
+                entry.row().name()
+                    == "confidential-sponsor-value-where-the-selected-target-policy-claims-support"
+            })
             .expect("waiting row")
             .standing = MaturityRowStanding::Experimental;
         let experimental_census = super::census_from_rows(&experimental.rows);
         assert_eq!(experimental_census.experimental(), 1);
-        assert_eq!(experimental_census.waiting(), 6);
+        assert_eq!(experimental_census.waiting(), 1);
         assert_eq!(
             experimental_census.observed()
                 + experimental_census.final_dispositions()
@@ -5402,10 +5408,10 @@ pub(crate) mod tests {
         // The observer archive is admitted beside the census and links no row.
         let census = PLAN.census();
         assert_eq!(census.rows(), 206);
-        // Thirty-six retained comparisons join the forty historical discharges.
-        assert_eq!(census.first_party_discharged(), 76);
-        // Thirty-six comparisons and two normalization proofs leave required standing.
-        assert_eq!(census.first_party_required(), 5);
+        // Forty-one retained comparisons join the forty historical discharges.
+        assert_eq!(census.first_party_discharged(), 81);
+        // Forty-one comparisons and two normalization proofs leave required standing.
+        assert_eq!(census.first_party_required(), 0);
         assert_eq!(census.retired(), 2);
         assert_eq!(census.native_run_required(), 0);
         // Every declared report row now has its exact consumer pair.
@@ -5416,8 +5422,8 @@ pub(crate) mod tests {
         assert_eq!(census.outstanding_under_typed_non_answer(), 27);
         // The eight semantic positives, twenty-seven native refusal rows and
         // balanced-state-corruption add thirty-six answers to the prior eighty-three.
-        // Fifteen report pairs and thirty-six first-party comparisons add answers to the native census.
-        assert_eq!(census.answered(), 172);
+        // Fifteen report pairs and forty-one first-party comparisons add answers to the native census.
+        assert_eq!(census.answered(), 177);
         assert_eq!(census.root_history_observed(), 16);
         assert_eq!(census.public_recovery_observed(), 14);
         assert_eq!(census.native_declared_boundary_observed(), 0);
@@ -5591,7 +5597,11 @@ pub(crate) mod tests {
         assert_eq!(original.len(), 8);
         assert_eq!(abi.len(), 23);
         assert!(original.is_disjoint(&abi));
-        original.union(&abi).copied().collect()
+        let mut result: std::collections::BTreeSet<_> = original.union(&abi).copied().collect();
+        for case in crate::maturity_adapter::MaturityAdapterCase::ALL {
+            assert!(result.insert(("16.12", case.name())));
+        }
+        result
     }
 
     fn bounded_consolidation_plan() -> MaturityAnnouncementEvidencePlan {
@@ -5661,8 +5671,8 @@ pub(crate) mod tests {
             );
         }
         assert_eq!(changed, cumulative_entry_movement_keys());
-        assert_eq!(changed.len(), 31);
-        assert_eq!(unchanged, 175);
+        assert_eq!(changed.len(), 36);
+        assert_eq!(unchanged, 170);
         for evidence in before.discharged() {
             assert!(
                 PLAN.discharged().contains(evidence),
@@ -5689,7 +5699,7 @@ pub(crate) mod tests {
                 new.retired(),
                 new.waiting()
             ),
-            (172, 26, 2, 6)
+            (177, 26, 2, 1)
         );
         assert_eq!(new.outstanding_under_typed_non_answer(), 27);
         assert_eq!(
@@ -5762,33 +5772,19 @@ pub(crate) mod tests {
                 .iter()
                 .find(|item| (item.key().0.section(), item.key().1) == key)
                 .expect("ledger key");
-            match item.disposition() {
-                MaturitySupplementaryDisposition::Discharged(evidence) => {
-                    assert_eq!(
-                        cells[3].trim_matches('`'),
-                        evidence.validator().entry_point()
-                    );
-                    assert_eq!(
-                        Some(cells[5].trim_matches('`')),
-                        evidence.supplementary_class()
-                    );
-                    assert_eq!(cells[6], "observed");
-                    assert!(movements.insert(key));
-                }
-                MaturitySupplementaryDisposition::Retained {
-                    boundary,
-                    attempted,
-                    ..
-                } => {
-                    assert_eq!(cells[3].trim_matches('`'), boundary.entry_point());
-                    assert!(attempted.is_none());
-                    assert_eq!(cells[5], retained_entry_record_refusal(key));
-                    assert_eq!(cells[6], "retained: cross-language admission required");
-                }
-                MaturitySupplementaryDisposition::OutOfContract { .. } => {
-                    panic!("no entry retirement")
-                }
-            }
+            let MaturitySupplementaryDisposition::Discharged(evidence) = item.disposition() else {
+                panic!("every considered entry has an admitted comparison");
+            };
+            assert_eq!(
+                cells[3].trim_matches('`'),
+                evidence.validator().entry_point()
+            );
+            assert_eq!(
+                Some(cells[5].trim_matches('`')),
+                evidence.supplementary_class()
+            );
+            assert_eq!(cells[6], "observed");
+            assert!(movements.insert(key));
         }
         assert_eq!(recorded, expected);
         assert_eq!(recorded.len(), 14);
@@ -5797,7 +5793,7 @@ pub(crate) mod tests {
             movements,
             expected.intersection(&cumulative).copied().collect()
         );
-        assert_eq!(movements.len(), 9);
+        assert_eq!(movements.len(), 14);
     }
 
     fn entry_record_pin(key: (&str, &str)) -> &'static str {
@@ -5813,23 +5809,15 @@ pub(crate) mod tests {
             ("16.12", "wrong-environment") => "entry_pair_environment",
             ("16.12", "wrong-provenance") => "entry_pair_provenance",
             ("16.12", "signing-response-bound-to-other-bytes") => "entry_pair_signature_binding",
-            _ => {
-                retained_entry_record_refusal(key);
-                "retained_obligations_have_valid_subjects_and_named_boundaries"
-            }
-        }
-    }
-
-    fn retained_entry_record_refusal(key: (&str, &str)) -> &'static str {
-        match key {
-            ("16.12", "blank-request") => "Not admitted: blank_record",
-            ("16.12", "malformed-json") => "Not admitted: malformed_record",
-            ("16.12", "oversized-request") => "Not admitted: oversized_record",
-            ("16.12", "unknown-request-field") => {
-                "Not admitted: EXECUTION_REQUEST_FIELD_CENSUS_FAILED"
-            }
-            ("16.12", "unterminated-request") => "Not admitted: unterminated_record",
-            _ => panic!("unexpected retained entry key: {key:?}"),
+            (
+                "16.12",
+                "blank-request"
+                | "malformed-json"
+                | "oversized-request"
+                | "unknown-request-field"
+                | "unterminated-request",
+            ) => "adapter_request_comparisons_bind_exact_pairs",
+            _ => panic!("unexpected entry key: {key:?}"),
         }
     }
 
@@ -5853,7 +5841,7 @@ pub(crate) mod tests {
         let ledger = crate::maturity_first_party::derive_maturity_first_party_dispositions()
             .expect("admitted ledger");
         let mut closed = PLAN.clone();
-        assert_eq!(closed.census().first_party_required(), 5);
+        assert_eq!(closed.census().first_party_required(), 0);
         assert_eq!(ledger.rows().len(), 43);
         assert_eq!(
             super::apply_supplementary_dispositions(&mut closed, &ledger),
@@ -5892,7 +5880,7 @@ pub(crate) mod tests {
             .split("### Safety closure ledger ·")
             .nth(1)
             .expect("closure ledger")
-            .split("### First-party entries ·")
+            .split("### Adapter request comparisons ·")
             .next()
             .expect("scoped ledger");
         let mut recorded = std::collections::BTreeSet::new();

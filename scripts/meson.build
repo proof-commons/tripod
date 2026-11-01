@@ -16,6 +16,7 @@ script_source_files = files(
   'test-elements-observer-contract.py',
   'test-executor-boundaries.py',
   'test-executor-classification.py',
+  'test-executor-request-comparisons.py',
 )
 
 test(

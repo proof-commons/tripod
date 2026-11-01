@@ -1076,6 +1076,18 @@ test(
   timeout: 120,
 )
 
+# Exact request-entry comparisons against the admitted fixture, without a node.
+# Byte-for-byte equality includes the interpreter reading; interpreter changes
+# require a fresh --emit and fixture re-admission, as do adapter source re-pins.
+# Budget: 0:01, tolerance 0:05. One adapter import and five paired comparisons.
+test(
+  'executor-request-comparisons',
+  python3,
+  args: [meson.project_source_root() / 'scripts' / 'test-executor-request-comparisons.py'],
+  suite: 'lint',
+  timeout: 120,
+)
+
 # The adapter's two boundaries -- what it writes where, and what it refuses to
 # read -- driven with the adapter running as a real child process. Node-free
 # like the lane above, and for a reason rather than by luck: the diagnostic

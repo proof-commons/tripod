@@ -2515,7 +2515,7 @@ mod tests {
         let canonical = render_maturity_safety_report(&control);
         let first = canonical.lines().next().expect("canonical line");
         let subjects = [
-            canonical.replacen("answered 172", "answered 173", 1),
+            canonical.replacen("answered 177", "answered 178", 1),
             format!("{canonical}surplus 1\n"),
             format!("{canonical}{first}\n"),
             format!("{canonical}diagnostic /caller/private\n"),
@@ -2584,14 +2584,14 @@ mod tests {
                 "infrastructure_blocked",
                 "experimental",
             ]),
-            34
+            29
         );
         for (key, figure) in [
             ("retired", 2),
-            ("disposition_observed", 172),
+            ("disposition_observed", 177),
             ("disposition_final", 26),
             ("disposition_retired", 2),
-            ("disposition_waiting", 6),
+            ("disposition_waiting", 1),
         ] {
             let line = format!("{key} {figure}\n");
             assert_eq!(

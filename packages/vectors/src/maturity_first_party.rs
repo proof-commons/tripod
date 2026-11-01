@@ -130,6 +130,9 @@ use transaction::state_view::{
 use crate::error::VectorError;
 use crate::live_capability::OracleLiveCurve;
 use crate::matrix::{EvidenceBoundary, MutationLayer};
+use crate::maturity_adapter::{
+    MaturityAdapterCase, MaturityAdapterComparison, MaturityAdapterRefusal,
+};
 use crate::maturity_closure::{
     MaturityDeployment, MaturitySources, OracleStateCurve, closure_target, linked_maturity_bundle,
     maturity_sources,
@@ -189,6 +192,12 @@ const AUXILIARY: [u8; 32] = [0; 32];
 /// member has to say.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityFirstPartyValidator {
+    /// Read Python request framing.
+    PythonRequestFraming,
+    /// Decode a Python request object.
+    PythonRequestJson,
+    /// Check Python execution-request fields.
+    PythonRequestFields,
     /// Classify offers with `transaction::validate_maturity_abi_classification`.
     AbiClassification,
     /// Validate roles with `transaction::validate_maturity_abi_roles`.
@@ -270,6 +279,9 @@ impl MaturityFirstPartyValidator {
     #[must_use]
     pub const fn entry_point(self) -> &'static str {
         match self {
+            Self::PythonRequestFraming => "RequestReader.read",
+            Self::PythonRequestJson => "RequestReader.read_object",
+            Self::PythonRequestFields => "require_execution_request_fields",
             Self::AbiClassification => "transaction::validate_maturity_abi_classification",
             Self::AbiRoleValidation => "transaction::validate_maturity_abi_roles",
             Self::RequestCycleDecoding => "MaturityAnnouncementRequest::decode_announced_cycle",
@@ -304,6 +316,9 @@ impl MaturityFirstPartyValidator {
     #[must_use]
     pub const fn owning_package(self) -> &'static str {
         match self {
+            Self::PythonRequestFraming | Self::PythonRequestJson | Self::PythonRequestFields => {
+                "scripts"
+            }
             Self::AbiClassification
             | Self::AbiRoleValidation
             | Self::RequestCycleDecoding
@@ -351,6 +366,16 @@ impl MaturityFirstPartyValidator {
 /// else.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum MaturityFirstPartyChange {
+    /// Replace the request body with whitespace.
+    BlankPythonRequest,
+    /// Extend request padding beyond the bound.
+    OversizedPythonRequest,
+    /// Remove the request's final newline.
+    UnterminatedPythonRequest,
+    /// Change one JSON delimiter.
+    MalformedPythonRequestJson,
+    /// Add one undeclared execution-request field.
+    UnknownPythonRequestField,
     /// Add a live receipt at either side of the announcement.
     AddLiveReceiptInputOrOutput,
     /// Add a time-locked receipt output beside the announcement.
@@ -533,6 +558,8 @@ pub enum MaturityFirstPartyChange {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum MaturityFirstPartyObservation {
+    /// Exact Python request-entry refusal bound to its retained pair.
+    PythonRequest(MaturityAdapterCase),
     /// Classification's complete typed refusal.
     AbiClassification(MaturityAbiClassificationRefusal),
     /// Coordinator, cardinality or placement refusal.
@@ -867,6 +894,8 @@ impl MaturityFirstPartyCase {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum MaturityFirstPartyRefusal {
+    /// An embedded Python comparison failed typed admission.
+    AdapterAdmission(MaturityAdapterRefusal),
     /// Supplementary keys or retained evidence differ from the recomputed ledger.
     SupplementaryLedgerMismatch,
     /// §16 names no such row in that table.
@@ -3306,6 +3335,13 @@ pub fn maturity_first_party_cases() -> Vec<MaturityFirstPartyCase> {
 pub fn validate_maturity_first_party(
     case: &MaturityFirstPartyCase,
 ) -> Result<ValidatedMaturityFirstPartyEvidence, MaturityFirstPartyRefusal> {
+    validate_maturity_first_party_with_adapter(case, &MaturityAdapterComparison::admitted)
+}
+
+fn validate_maturity_first_party_with_adapter(
+    case: &MaturityFirstPartyCase,
+    adapter: &impl Fn(MaturityAdapterCase) -> Result<MaturityAdapterComparison, MaturityAdapterRefusal>,
+) -> Result<ValidatedMaturityFirstPartyEvidence, MaturityFirstPartyRefusal> {
     let row = matrix_row(case.section, case.name).ok_or(
         MaturityFirstPartyRefusal::RowNotInTheMatrix(case.section, case.name),
     )?;
@@ -3325,10 +3361,13 @@ pub fn validate_maturity_first_party(
     };
     let substrate = substrate()?;
     if supplemental_discharge(case.section, case.name).is_some() {
-        return validate_supplementary_comparison(case, row, discharge);
+        return validate_supplementary_comparison(case, row, discharge, adapter);
     }
     let observed = match discharge.validator {
-        MaturityFirstPartyValidator::AbiClassification
+        MaturityFirstPartyValidator::PythonRequestFraming
+        | MaturityFirstPartyValidator::PythonRequestJson
+        | MaturityFirstPartyValidator::PythonRequestFields
+        | MaturityFirstPartyValidator::AbiClassification
         | MaturityFirstPartyValidator::AbiRoleValidation
         | MaturityFirstPartyValidator::RequestCycleDecoding
         | MaturityFirstPartyValidator::NonceComparison
@@ -5154,6 +5193,8 @@ fn signing_entry_pair() -> Result<MaturityEntrySubjects, MaturityFirstPartyRefus
 /// Actual paired subjects, retained beside the checked refusal rather than a success flag.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MaturityRetainedComparison {
+    /// Source-bound Python request operands and their admitted exact reading.
+    PythonRequest(Box<MaturityAdapterComparison>),
     /// Exact offers through the existing entry points added after bounded consolidation.
     Entries(Box<MaturityEntryComparisonTestStaging>),
     /// Static-root continuity over normally derived constructors.
@@ -5165,11 +5206,59 @@ pub enum MaturityRetainedComparison {
 impl MaturityRetainedComparison {
     fn observe(&self) -> Result<MaturityFirstPartyObservation, MaturityFirstPartyRefusal> {
         match self {
+            Self::PythonRequest(pair) => pair
+                .validate()
+                .map(MaturityFirstPartyObservation::PythonRequest)
+                .map_err(MaturityFirstPartyRefusal::AdapterAdmission),
             Self::Entries(pair) => pair.observe(),
             Self::Constructor(pair) => pair.observe(),
             Self::Symbols(pair) => pair.observe(),
         }
     }
+}
+
+fn adapter_discharge(
+    section: MaturitySafetySection,
+    name: &str,
+) -> Option<(
+    MaturityAdapterCase,
+    MaturityFirstPartyValidator,
+    MaturityFirstPartyChange,
+)> {
+    use MaturityAdapterCase as Case;
+    use MaturityFirstPartyChange as Change;
+    use MaturityFirstPartyValidator as Validator;
+    if section != MaturitySafetySection::ProtocolReportFault {
+        return None;
+    }
+    Some(match name {
+        "blank-request" => (
+            Case::Blank,
+            Validator::PythonRequestFraming,
+            Change::BlankPythonRequest,
+        ),
+        "oversized-request" => (
+            Case::Oversized,
+            Validator::PythonRequestFraming,
+            Change::OversizedPythonRequest,
+        ),
+        "unterminated-request" => (
+            Case::Unterminated,
+            Validator::PythonRequestFraming,
+            Change::UnterminatedPythonRequest,
+        ),
+        "malformed-json" => (
+            Case::MalformedJson,
+            Validator::PythonRequestJson,
+            Change::MalformedPythonRequestJson,
+        ),
+        "unknown-request-field" => (
+            Case::UnknownField,
+            Validator::PythonRequestFields,
+            Change::UnknownPythonRequestField,
+        ),
+        _ => return None,
+    })
 }
 
 fn supplemental_discharge(
@@ -5179,6 +5268,14 @@ fn supplemental_discharge(
     use MaturityFirstPartyChange as Change;
     use MaturityFirstPartyValidator as Validator;
     use MaturitySafetySection as Section;
+    if let Some((case, validator, change)) = adapter_discharge(section, name) {
+        return Some(discharge(
+            validator,
+            change,
+            adapter_refusal,
+            case.refusal(),
+        ));
+    }
     if let Some((validator, change, expected_name)) = entry_discharge(section, name) {
         return Some(discharge(validator, change, entry_refusal, expected_name));
     }
@@ -5633,6 +5730,10 @@ fn entry_refusal_matches(
     }
 }
 
+const fn adapter_refusal(observation: &MaturityFirstPartyObservation) -> bool {
+    matches!(observation, MaturityFirstPartyObservation::PythonRequest(_))
+}
+
 fn supplemental_refusal(observation: &MaturityFirstPartyObservation) -> bool {
     matches!(
         observation,
@@ -5647,13 +5748,19 @@ fn validate_supplementary_comparison(
     case: &MaturityFirstPartyCase,
     row: &MaturitySafetyRow,
     discharge: MaturityFirstPartyDischarge,
+    adapter: &impl Fn(MaturityAdapterCase) -> Result<MaturityAdapterComparison, MaturityAdapterRefusal>,
 ) -> Result<ValidatedMaturityFirstPartyEvidence, MaturityFirstPartyRefusal> {
     use MaturityFirstPartyChange as Change;
     use linker::StateLinkSymbol as Symbol;
     if supplemental_discharge(case.section, case.name) != Some(discharge) {
         return Err(MaturityFirstPartyRefusal::ScenarioNotConstructible);
     }
-    let comparison = if entry_discharge(case.section, case.name).is_some() {
+    let comparison = if let Some((adapter_case, _, _)) = adapter_discharge(case.section, case.name)
+    {
+        MaturityRetainedComparison::PythonRequest(Box::new(
+            adapter(adapter_case).map_err(MaturityFirstPartyRefusal::AdapterAdmission)?,
+        ))
+    } else if entry_discharge(case.section, case.name).is_some() {
         MaturityRetainedComparison::Entries(Box::new(MaturityEntryComparisonTestStaging::new(
             discharge.change,
         )?))
@@ -5678,6 +5785,13 @@ fn validate_supplementary_comparison(
         }
     };
     let observed = comparison.observe()?;
+    if let Some((expected_case, _, _)) = adapter_discharge(case.section, case.name)
+        && observed != MaturityFirstPartyObservation::PythonRequest(expected_case)
+    {
+        return Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
+            observed,
+        ));
+    }
     if !(discharge.expected)(&observed) {
         return Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
             observed,
@@ -5993,6 +6107,33 @@ pub fn maturity_first_party_dispositions()
 fn derive_first_party_dispositions(
     include_entries: bool,
 ) -> Result<Vec<MaturitySupplementaryRow>, MaturityFirstPartyRefusal> {
+    derive_first_party_dispositions_with_adapter(
+        include_entries,
+        &MaturityAdapterComparison::admitted,
+    )
+}
+
+/// Derive the same ledger with an offered adapter fixture, retaining admission failures.
+#[cfg(test)]
+pub(crate) fn derive_first_party_dispositions_from_adapter_fixture(
+    bytes: &[u8],
+) -> Result<Vec<MaturitySupplementaryRow>, MaturityFirstPartyRefusal> {
+    let admitted = crate::maturity_adapter::admit(bytes);
+    derive_first_party_dispositions_with_adapter(true, &|case| {
+        admitted
+            .as_ref()
+            .map_err(|error| *error)?
+            .iter()
+            .find(|pair| pair.validate() == Ok(case))
+            .cloned()
+            .ok_or(MaturityAdapterRefusal::RowBinding)
+    })
+}
+
+fn derive_first_party_dispositions_with_adapter(
+    include_entries: bool,
+    adapter: &impl Fn(MaturityAdapterCase) -> Result<MaturityAdapterComparison, MaturityAdapterRefusal>,
+) -> Result<Vec<MaturitySupplementaryRow>, MaturityFirstPartyRefusal> {
     let subject = MaturityRetainedSubject {
         announcement: Box::new(honest_finalized(substrate()?)?),
         opening: target_elements_conformance::protocol::HandshakeRequest::default(),
@@ -6012,13 +6153,15 @@ fn derive_first_party_dispositions(
             };
             let disposition = if let Some(discharge) =
                 supplemental_discharge(case.section, case.name).filter(|_| {
-                    include_entries || entry_discharge(case.section, case.name).is_none()
+                    include_entries
+                        || (entry_discharge(case.section, case.name).is_none()
+                            && adapter_discharge(case.section, case.name).is_none())
                 }) {
                 let offered = MaturityFirstPartyCase {
                     disposition: MaturityFirstPartyDisposition::Discharge(discharge),
                     ..case
                 };
-                match validate_maturity_first_party(&offered) {
+                match validate_maturity_first_party_with_adapter(&offered, adapter) {
                     Ok(evidence) => {
                         MaturitySupplementaryDisposition::Discharged(Box::new(evidence))
                     }
@@ -6093,6 +6236,68 @@ pub(crate) fn admit_maturity_first_party_dispositions(
 
 #[cfg(test)]
 mod supplementary_tests {
+    #[test]
+    fn adapter_comparison_must_name_the_rows_case() {
+        let case = maturity_first_party_cases()
+            .into_iter()
+            .find(|case| case.name == "blank-request")
+            .expect("adapter row");
+        let offered = MaturityFirstPartyCase {
+            disposition: MaturityFirstPartyDisposition::Discharge(
+                supplemental_discharge(case.section, case.name).expect("adapter discharge"),
+            ),
+            ..case
+        };
+        assert_eq!(
+            validate_maturity_first_party_with_adapter(&offered, &|_| {
+                MaturityAdapterComparison::admitted(MaturityAdapterCase::MalformedJson)
+            }),
+            Err(MaturityFirstPartyRefusal::RefusalNamesAnotherClass(
+                MaturityFirstPartyObservation::PythonRequest(MaturityAdapterCase::MalformedJson)
+            ))
+        );
+    }
+
+    #[test]
+    fn refused_adapter_fixture_retains_all_five_rows_without_credit() {
+        let fixture = std::str::from_utf8(include_bytes!(
+            "../fixtures/adapter-request-comparisons/COMPARISONS"
+        ))
+        .expect("fixture text");
+        let changed = fixture.replace(
+            crate::maturity_adapter::ADAPTER_SOURCE_SHA256,
+            &"0".repeat(64),
+        );
+        let rows = derive_first_party_dispositions_from_adapter_fixture(changed.as_bytes())
+            .expect("refused admission is retained");
+        let mut partition = [0; 3];
+        let mut retained = BTreeSet::new();
+        for row in rows {
+            match row.disposition() {
+                MaturitySupplementaryDisposition::Discharged(_) => partition[0] += 1,
+                MaturitySupplementaryDisposition::OutOfContract { .. } => partition[1] += 1,
+                MaturitySupplementaryDisposition::Retained { attempted, .. } => {
+                    partition[2] += 1;
+                    assert_eq!(
+                        attempted.as_deref(),
+                        Some(&MaturityFirstPartyRefusal::AdapterAdmission(
+                            MaturityAdapterRefusal::SourceDigest
+                        ))
+                    );
+                    retained.insert(row.key().1);
+                }
+            }
+        }
+        assert_eq!(partition, [36, 2, 5]);
+        assert_eq!(
+            retained,
+            MaturityAdapterCase::ALL
+                .into_iter()
+                .map(MaturityAdapterCase::name)
+                .collect()
+        );
+    }
+
     #[test]
     fn supplementary_join_refuses_missing_duplicate_surplus_and_misbound_evidence() {
         use super::{MaturityFirstPartyRefusal, admit_maturity_first_party_dispositions};
@@ -6817,7 +7022,7 @@ mod supplementary_tests {
                 MaturitySupplementaryDisposition::Retained { .. } => census[2] += 1,
             }
         }
-        assert_eq!(census, [36, 2, 5]);
+        assert_eq!(census, [41, 2, 0]);
         assert_eq!(census.iter().sum::<usize>(), 43);
         assert_eq!(
             inherited
@@ -6841,6 +7046,20 @@ mod supplementary_tests {
         );
     }
 
+    fn assert_python_comparison(
+        pair: &MaturityAdapterComparison,
+        evidence: &ValidatedMaturityFirstPartyEvidence,
+    ) {
+        assert_eq!(
+            adapter_discharge(evidence.section(), evidence.name()),
+            Some((
+                pair.validate().expect("adapter pair"),
+                evidence.validator(),
+                evidence.change()
+            ))
+        );
+    }
+
     #[test]
     fn supplementary_comparisons_retain_exact_objects_and_refusals() {
         let rows = ledger();
@@ -6857,6 +7076,9 @@ mod supplementary_tests {
                 evidence.observed()
             );
             match comparison {
+                MaturityRetainedComparison::PythonRequest(pair) => {
+                    assert_python_comparison(pair, evidence);
+                }
                 MaturityRetainedComparison::Entries(pair) => {
                     assert_eq!(pair.change(), evidence.change());
                     assert!(entry_refusal_matches(pair.change(), evidence.observed()));
@@ -7106,7 +7328,7 @@ mod supplementary_tests {
             };
             assert_eq!(*boundary, expected);
         }
-        assert_eq!(retained, 5);
+        assert_eq!(retained, 0);
         assert_eq!(classification, 15);
         assert_eq!(roles, 6);
     }

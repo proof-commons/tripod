@@ -175,6 +175,8 @@ pub fn precedes_the_target(mutation: NegativeMutation) -> Result<bool, VectorErr
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[non_exhaustive]
 pub enum AbiValidationOutcome {
+    /// The Python request entry accepted the control and refused the exact subject.
+    AdapterRequestRefused,
     /// The transaction-owned ABI entry accepted the control and returned
     /// the exact field refusal for the staged malformed subject.
     AbiFieldRefused,
@@ -231,14 +233,17 @@ impl MaturityAbiValidationRow {
     }
 }
 
-/// Recompute the twenty-three ABI-entry readings and retain five unasked adapter rows.
+/// Recompute twenty-three ABI-entry readings and admit five Python request comparisons.
 ///
 /// # Errors
 /// Returns invalid controls, missing subjects or wrong refusal classes unchanged.
 /// An accepted changed offer is a raw-mutation finding, never a discharged row.
 pub fn index_maturity_abi_validation()
 -> Result<Vec<MaturityAbiValidationRow>, crate::maturity_first_party::MaturityFirstPartyRefusal> {
-    use crate::maturity_first_party::{MATURITY_ABI_ENTRY_KEYS, maturity_abi_entry_outcome};
+    use crate::maturity_adapter::{MaturityAdapterCase, MaturityAdapterComparison};
+    use crate::maturity_first_party::{
+        MATURITY_ABI_ENTRY_KEYS, MaturityFirstPartyRefusal, maturity_abi_entry_outcome,
+    };
     use crate::maturity_safety::MaturitySafetySection;
     let mut rows = Vec::new();
     for &(section, name, subject_count) in MATURITY_ABI_ENTRY_KEYS {
@@ -259,13 +264,22 @@ pub fn index_maturity_abi_validation()
             "unterminated-request",
         ]
         .into_iter()
-        .map(|name| MaturityAbiValidationRow {
-            section: MaturitySafetySection::ProtocolReportFault,
-            name,
-            outcome: AbiValidationOutcome::TargetWasNotAsked,
-            subject_count: 0,
-            constructions_observed: 0,
-        }),
+        .map(|name| {
+            let case = MaturityAdapterCase::ALL
+                .into_iter()
+                .find(|case| case.name() == name)
+                .ok_or(MaturityFirstPartyRefusal::ScenarioNotConstructible)?;
+            MaturityAdapterComparison::admitted(case)
+                .map_err(MaturityFirstPartyRefusal::AdapterAdmission)?;
+            Ok(MaturityAbiValidationRow {
+                section: MaturitySafetySection::ProtocolReportFault,
+                name,
+                outcome: AbiValidationOutcome::AdapterRequestRefused,
+                subject_count: 1,
+                constructions_observed: 1,
+            })
+        })
+        .collect::<Result<Vec<_>, MaturityFirstPartyRefusal>>()?,
     );
     Ok(rows)
 }
@@ -315,14 +329,11 @@ mod maturity_index_tests {
                     ]
                     .contains(&row.name)
                 );
-                assert_eq!(row.outcome(), AbiValidationOutcome::TargetWasNotAsked);
-                assert_eq!((row.subject_count(), row.constructions_observed()), (0, 0));
+                assert_eq!(row.outcome(), AbiValidationOutcome::AdapterRequestRefused);
+                assert_eq!((row.subject_count(), row.constructions_observed()), (1, 1));
                 assert!(matches!(
                     entry.disposition(),
-                    MaturitySupplementaryDisposition::Retained {
-                        attempted: None,
-                        ..
-                    }
+                    MaturitySupplementaryDisposition::Discharged(_)
                 ));
                 counts[1] += 1;
             }
@@ -330,10 +341,10 @@ mod maturity_index_tests {
         }
         assert_eq!(keys.len(), 28);
         assert_eq!(counts, [23, 5]);
-        assert_eq!(subjects, 29);
+        assert_eq!(subjects, 34);
         writeln!(
             std::io::stdout().lock(),
-            "census ABI index: {} refused / {} unasked; {subjects} subjects",
+            "census ABI index: {} ABI refused / {} adapter refused / 0 unasked; {subjects} subjects",
             counts[0],
             counts[1]
         )
