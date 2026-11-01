@@ -172,6 +172,56 @@ pub fn sponsor_reserve_subject(
     }
 }
 
+/// Public coordinates at which the fixed reserve material cannot be read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SponsorReserveMaterialRefusal {
+    Binding,
+    Shape,
+    Opening,
+}
+
+/// Borrow the consumed coin's opening without projecting construction material into records.
+pub(crate) fn sponsor_reserve_opening<'a>(
+    registry: &'a FrozenConfidentialFixtureRegistry,
+    digest: &ConfidentialFixtureDigest,
+) -> Result<
+    &'a target_elements_conformance::confidential_fixture::DerivedOpening,
+    SponsorReserveMaterialRefusal,
+> {
+    let resolved = registry
+        .resolve(&sponsor_reserve_handle(), digest)
+        .map_err(|_| SponsorReserveMaterialRefusal::Binding)?;
+    read_sponsor_opening(resolved.outputs(), resolved.openings())
+}
+
+fn read_sponsor_opening<'a>(
+    outputs: &[ConfidentialFixtureOutput],
+    material: &'a target_elements_conformance::confidential_fixture::FixtureOpenings,
+) -> Result<
+    &'a target_elements_conformance::confidential_fixture::DerivedOpening,
+    SponsorReserveMaterialRefusal,
+> {
+    use target_elements_conformance::confidential_fixture::FixtureOpenings;
+    let [first, second] = outputs else {
+        return Err(SponsorReserveMaterialRefusal::Shape);
+    };
+    if first.role != FixtureOutputRole::Primary
+        || second.role != FixtureOutputRole::Balancing
+        || first.semantic_amount != SPONSOR_RESERVE_AMOUNTS[0]
+        || second.semantic_amount != SPONSOR_RESERVE_AMOUNTS[1]
+        || first.output_program != second.output_program
+    {
+        return Err(SponsorReserveMaterialRefusal::Shape);
+    }
+    let FixtureOpenings::Derived { openings, .. } = material else {
+        return Err(SponsorReserveMaterialRefusal::Opening);
+    };
+    let [Some(first), Some(_)] = openings.as_slice() else {
+        return Err(SponsorReserveMaterialRefusal::Opening);
+    };
+    Ok(first)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -191,6 +241,67 @@ mod tests {
 
     /// A reserve identifier standing in for the chain's.
     const RESERVE: [u8; 32] = [0x5A; 32];
+
+    #[test]
+    fn reserve_reader_borrows_the_consumed_coins_own_opening() {
+        let registry = frozen_sponsor_reserve_registry(RESERVE, &PROGRAM).expect("registry");
+        let digest = registry
+            .registered_digest(&sponsor_reserve_handle())
+            .expect("digest");
+        let opening = super::sponsor_reserve_opening(&registry, digest).expect("opening");
+        assert_ne!(opening.value_blinder, [0; 32]);
+        let resolved = registry
+            .resolve(&sponsor_reserve_handle(), digest)
+            .expect("resolved");
+        assert_eq!(
+            opening.value_commitment,
+            resolved.value_commitments().expect("commitments")[0]
+        );
+    }
+
+    #[test]
+    fn reserve_reader_refuses_a_changed_digest() {
+        let registry = frozen_sponsor_reserve_registry(RESERVE, &PROGRAM).expect("registry");
+        let other = frozen_sponsor_reserve_registry([0x5B; 32], &PROGRAM).expect("registry");
+        let digest = other
+            .registered_digest(&sponsor_reserve_handle())
+            .expect("digest");
+        assert!(matches!(
+            super::sponsor_reserve_opening(&registry, digest),
+            Err(super::SponsorReserveMaterialRefusal::Binding)
+        ));
+    }
+
+    #[test]
+    fn reserve_reader_refuses_shape_and_missing_material() {
+        use target_elements_conformance::confidential_fixture::FixtureOpenings;
+        let registry = frozen_sponsor_reserve_registry(RESERVE, &PROGRAM).expect("registry");
+        let resolved = registry
+            .resolve(
+                &sponsor_reserve_handle(),
+                registry
+                    .registered_digest(&sponsor_reserve_handle())
+                    .expect("digest"),
+            )
+            .expect("resolved");
+        assert!(super::read_sponsor_opening(resolved.outputs(), resolved.openings()).is_ok());
+        assert!(matches!(
+            super::read_sponsor_opening(&resolved.outputs()[..1], resolved.openings()),
+            Err(super::SponsorReserveMaterialRefusal::Shape)
+        ));
+        let mut missing = resolved.openings().clone();
+        if let FixtureOpenings::Derived { openings, .. } = &mut missing {
+            openings[0] = None;
+        }
+        assert!(matches!(
+            super::read_sponsor_opening(resolved.outputs(), &missing),
+            Err(super::SponsorReserveMaterialRefusal::Opening)
+        ));
+        assert!(matches!(
+            super::read_sponsor_opening(resolved.outputs(), &FixtureOpenings::RunProduced),
+            Err(super::SponsorReserveMaterialRefusal::Opening)
+        ));
+    }
 
     /// The registry admits the case, and holds a digest for it.
     ///

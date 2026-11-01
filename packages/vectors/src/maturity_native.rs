@@ -52,6 +52,9 @@ pub const ANNOUNCEMENT_STEPS: [&str; 3] = [
     "sponsorless",
 ];
 
+/// Explicit-control-first confidential sponsor observations.
+pub mod confidential;
+
 /// The matrix boundary declared before the submission is executed.
 ///
 /// Funding is infrastructure rather than a matrix row; settlement still requires acceptance.
@@ -4068,6 +4071,18 @@ pub mod sponsored {
         response: &NativeOperationResponse,
         coin: &FundedOutput,
     ) -> Result<SponsorSignature, Refusal> {
+        checked_signature_program(
+            step,
+            response,
+            &decode_hex(&coin.script).unwrap_or_default(),
+        )
+    }
+
+    pub(crate) fn checked_signature_program(
+        step: &OperationStep,
+        response: &NativeOperationResponse,
+        sponsor_program: &[u8],
+    ) -> Result<SponsorSignature, Refusal> {
         let OperationSubject::SponsorSigning(subject) = step.subject() else {
             return Err(Refusal::UnexpectedResponse);
         };
@@ -4085,9 +4100,7 @@ pub mod sponsored {
         };
         let mut program = vec![0, 20];
         program.extend(hash160(&response.sponsor_witness[1]));
-        if decode_hex(&coin.script).as_ref() != Some(&program)
-            || response.sponsor_witness[0].last() != Some(&hash_type)
-        {
+        if sponsor_program != program || response.sponsor_witness[0].last() != Some(&hash_type) {
             return Err(Refusal::SponsoredSignature);
         }
         Ok(SponsorSignature::new(
