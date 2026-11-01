@@ -3654,7 +3654,7 @@ pub(crate) mod tests {
                 after.typed_non_answer_final(),
                 after.typed_non_answer_waiting()
             ),
-            (22, 6)
+            (25, 3)
         );
         let mut changed = 0;
         for (old, new) in source.rows().iter().zip(folded.rows()) {
@@ -4693,7 +4693,7 @@ pub(crate) mod tests {
                 census.retired(),
                 census.waiting()
             ),
-            (171, 22, 2, 11)
+            (171, 25, 2, 8)
         );
         assert_eq!(census.observed(), census.answered());
         assert_eq!(census.outstanding(), 35);
@@ -4714,7 +4714,7 @@ pub(crate) mod tests {
             .expect("waiting row");
         waiting.standing = MaturityRowStanding::InfrastructureBlocked;
         let blocked_census = super::census_from_rows(&blocked.rows);
-        assert_eq!(blocked_census.waiting(), 11);
+        assert_eq!(blocked_census.waiting(), 8);
         assert_eq!(blocked_census.infrastructure_blocked(), 1);
         assert!(!blocked_census.every_required_row_is_answered());
         let mut experimental = PLAN.clone();
@@ -4726,7 +4726,7 @@ pub(crate) mod tests {
             .standing = MaturityRowStanding::Experimental;
         let experimental_census = super::census_from_rows(&experimental.rows);
         assert_eq!(experimental_census.experimental(), 1);
-        assert_eq!(experimental_census.waiting(), 11);
+        assert_eq!(experimental_census.waiting(), 8);
         assert_eq!(
             experimental_census.observed()
                 + experimental_census.final_dispositions()
@@ -5218,8 +5218,8 @@ pub(crate) mod tests {
         // Every declared report row now has its exact consumer pair.
         assert_eq!(census.report_layer_required(), 0);
         // Eight semantic positive waits leave; later-admissible-nonce, extra-state-like
-        // output and wrong-version enter as final. Stale-operator, wrong semantic metadata,
-        // wrong control recipe, two successors and exchanged witnesses enter as waiting.
+        // output and wrong-version enter as final. Three absent coordinates are final;
+        // wrong semantic metadata and two successors retain construction waits.
         assert_eq!(census.outstanding_under_typed_non_answer(), 28);
         // The eight semantic positives, twenty-seven native refusal rows and
         // balanced-state-corruption add thirty-six answers to the prior eighty-three.
@@ -5419,7 +5419,7 @@ pub(crate) mod tests {
                 census.retired(),
                 census.waiting()
             ),
-            (140, 22, 2, 42)
+            (140, 25, 2, 39)
         );
         assert_eq!(census.outstanding(), 66);
         before
@@ -5495,12 +5495,12 @@ pub(crate) mod tests {
                 new.retired(),
                 new.waiting()
             ),
-            (171, 22, 2, 11)
+            (171, 25, 2, 8)
         );
         assert_eq!(new.outstanding_under_typed_non_answer(), 28);
         assert_eq!(
             (new.typed_non_answer_final(), new.typed_non_answer_waiting()),
-            (22, 6)
+            (25, 3)
         );
         assert_eq!(
             (
@@ -6182,9 +6182,9 @@ pub(crate) mod tests {
         );
         // Seven final ABI claims, two acceptances, three matching refusals, one contradiction and one wait.
         assert_eq!(finals.len() + 2 + 3 + 1 + 1, 14);
-        // Native observation adds three final departures and five construction waits.
-        assert_eq!(PLAN.census().typed_non_answer_final(), 22);
-        assert_eq!(PLAN.census().typed_non_answer_waiting(), 6);
+        // Three observed departures and three absent coordinates are final; two constructions wait.
+        assert_eq!(PLAN.census().typed_non_answer_final(), 25);
+        assert_eq!(PLAN.census().typed_non_answer_waiting(), 3);
         assert_eq!(PLAN.census().outstanding_under_typed_non_answer(), 28);
         writeln!(std::io::stdout(), "census sponsored: {:?}", PLAN.census())
             .expect("census output");

@@ -2589,9 +2589,9 @@ mod tests {
         for (key, figure) in [
             ("retired", 2),
             ("disposition_observed", 171),
-            ("disposition_final", 22),
+            ("disposition_final", 25),
             ("disposition_retired", 2),
-            ("disposition_waiting", 11),
+            ("disposition_waiting", 8),
         ] {
             let line = format!("{key} {figure}\n");
             assert_eq!(

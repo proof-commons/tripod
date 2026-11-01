@@ -100,6 +100,7 @@ pub enum NativeUnstageable {
     NoSupersededKeyExists,
     /// The successor control recipe appears in no announcement position,
     /// so there is nothing to write it over.
+    /// Its final scope is recorded at (`rec:backlog:wave0-native-route-settlement`).
     NoOfferablePosition,
     /// Successor metadata is derived and never witnessed, so exchanging
     /// the two metadata witnesses changes a position the candidate does
@@ -2387,6 +2388,304 @@ mod tests {
             );
             assert_eq!(standing, "inherited admission", "{key} standing");
         }
+    }
+
+    #[test]
+    fn absent_coordinates_bind_the_candidate_witness_and_generation_censuses() {
+        use tapscript::{
+            StateAnnouncementWitness, StateConstructorGeneration, StateProgramWitness,
+        };
+
+        let fixture = Fixture::new();
+        let context = fixture.context();
+        let construction = context.finalized.construction();
+        let roles: Vec<_> = construction
+            .abi()
+            .witness_roles()
+            .iter()
+            .map(transaction::MaturityWitnessRole::role)
+            .collect();
+        assert_eq!(
+            roles,
+            vec![
+                StateProgramWitness::SuccessorOutputKeyPrefix,
+                StateProgramWitness::SuccessorNonce,
+                StateProgramWitness::RequestedCycle,
+                StateProgramWitness::StaticSubtreeRoot,
+                StateProgramWitness::PredecessorMetadata,
+                StateProgramWitness::PredecessorOutputKeyPrefix,
+                StateProgramWitness::OperatorSignature,
+            ]
+        );
+        assert_eq!(context.bundle.record().witness().len(), 7);
+        assert_eq!(StateAnnouncementWitness::ALL.len(), 6);
+        assert!(
+            StateAnnouncementWitness::ALL
+                .contains(&StateAnnouncementWitness::DerivedSuccessorMetadata)
+        );
+        // An exhaustive match pins the one-member generation census as well as its value.
+        for constructor in [
+            context.bundle.instances()[0].constructor(),
+            construction.successor_constructor(),
+        ] {
+            match constructor.generation() {
+                StateConstructorGeneration::CanonicalMetadataV1 => {}
+            }
+        }
+    }
+
+    #[test]
+    fn candidate_leaf_and_transition_censuses_have_no_announced_state_spend() {
+        use realization::{Maturity, MaturityTransitionRefusal, announce_maturity};
+        use tapscript::{StateAnnouncementId, StateLeafRole, StateProgramComponent};
+
+        let fixture = Fixture::new();
+        let context = fixture.context();
+        let construction = context.finalized.construction();
+        let predecessor = context.bundle.instances()[0].metadata().semantic;
+        let bounds = context.bundle.deployment().lead_bounds().bounds();
+        let cycle = construction.request().announced_cycle();
+        let successor = announce_maturity(&predecessor, cycle, bounds).expect("first announcement");
+        assert_eq!(successor, construction.successor_metadata());
+        assert_eq!(successor.maturity, Maturity::Announced { cycle });
+        assert_eq!(
+            announce_maturity(&successor, cycle, bounds),
+            Err(MaturityTransitionRefusal::PredecessorAlreadyAnnounced)
+        );
+        assert_eq!(
+            announce_maturity(
+                &predecessor.with_maturity(Maturity::Complete),
+                cycle,
+                bounds
+            ),
+            Err(MaturityTransitionRefusal::PredecessorMaturityComplete)
+        );
+        for constructor in [
+            context.bundle.instances()[0].constructor(),
+            construction.successor_constructor(),
+        ] {
+            assert!(constructor.pattern().execution.always_aborts());
+            let roles: Vec<_> = constructor
+                .static_subtree()
+                .leaves()
+                .iter()
+                .map(|entry| entry.leaf.role)
+                .collect();
+            assert_eq!(roles, [StateLeafRole::Announcement]);
+        }
+        assert_eq!(
+            context
+                .bundle
+                .programs()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            [StateLeafRole::Announcement]
+        );
+        let record = context.bundle.record();
+        let range = record
+            .components()
+            .get(&StateProgramComponent::Semantic(
+                StateAnnouncementId::MaturityPredecessor,
+            ))
+            .expect("predecessor maturity check");
+        let check = &record.program().instructions()[range.clone()];
+        assert!(matches!(
+            check.last(),
+            Some(tapscript::TapscriptInstruction::Opcode(
+                target_elements::OpcodeId::EqualVerify
+            ))
+        ));
+        assert!(
+            matches!(&check[check.len() - 2], tapscript::TapscriptInstruction::Push(item) if item.bytes() == [0])
+        );
+    }
+
+    fn assert_non_state_operation_declarations() {
+        use architecture::{ObjectId, OperationId, RootId, RootUse};
+        use realization::{
+            ConstructibilityClass, DisclosureNode, ExpressionNode, FactId, LifecycleNodeId,
+            Relation,
+        };
+
+        for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+            let scope =
+                realization::RealizationScope::from_operations([operation]).expect("one operation");
+            let realized = realization::derive(&architecture::ARCHITECTURE, scope)
+                .expect("supported operation");
+            let declaration = realized
+                .operation(operation)
+                .expect("operation declaration");
+            for relation in &declaration.relations {
+                let mentions_state = match &relation.relation {
+                    Relation::Cardinality { object, .. }
+                    | Relation::Recognition { object, .. }
+                    | Relation::OwnerAuthorization { object }
+                    | Relation::Representation { object, .. }
+                    | Relation::LifecycleExit { object, .. }
+                    | Relation::Constructibility {
+                        class: ConstructibilityClass::OwnersOf { object },
+                    } => *object == ObjectId::State,
+                    Relation::AllowedObjectFamilies { allowed, .. } => {
+                        allowed.contains(&ObjectId::State)
+                    }
+                    Relation::AmountConservation {
+                        input_objects,
+                        output_objects,
+                        ..
+                    } => {
+                        input_objects.contains(&ObjectId::State)
+                            || output_objects.contains(&ObjectId::State)
+                    }
+                    Relation::RootPolicy { expected } => {
+                        assert_eq!(expected.get(&RootId::State), Some(&RootUse::Forbidden));
+                        false
+                    }
+                    Relation::PermissionlessAuthorization
+                    | Relation::OperatorAuthorization
+                    | Relation::SponsorIsolation
+                    | Relation::SponsorEnvelopeMultiplicity { .. }
+                    | Relation::ProjectionPolicy { .. }
+                    | Relation::CanonicalDeltaPolicy { .. }
+                    | Relation::OpenFlowPolicy { .. }
+                    | Relation::Constructibility {
+                        class:
+                            ConstructibilityClass::PublicPermissionless
+                            | ConstructibilityClass::Operator,
+                    }
+                    | Relation::ExpressionPredicate { .. }
+                    | Relation::SubstrateConservation { .. } => false,
+                };
+                assert!(!mentions_state, "{operation:?}: {relation:?}");
+            }
+            for node in &declaration.lifecycle_nodes {
+                let (LifecycleNodeId::Representation { object, .. }
+                | LifecycleNodeId::RequiredExit { object, .. }) = &node.id;
+                assert_ne!(*object, ObjectId::State, "{operation:?}: {node:?}");
+            }
+            let facts = declaration
+                .expressions
+                .iter()
+                .filter_map(|expression| match &expression.node {
+                    ExpressionNode::Fact(fact) => Some(fact),
+                    _ => None,
+                })
+                .chain(
+                    declaration
+                        .disclosure_nodes
+                        .iter()
+                        .filter_map(|node| match node {
+                            DisclosureNode::Fact { id, .. } => Some(id),
+                            DisclosureNode::Relation { .. } => None,
+                        }),
+                );
+            for fact in facts {
+                let mentions_state = match fact {
+                    FactId::FamilyCount { object, .. }
+                    | FactId::FamilyAmount { object, .. }
+                    | FactId::InputOwners { object, .. }
+                    | FactId::FamilyRecognized { object, .. } => *object == ObjectId::State,
+                    FactId::StateField { .. }
+                    | FactId::RequestedAnnouncementCycle { .. }
+                    | FactId::AnnouncementLead { .. } => true,
+                    FactId::Signers { .. }
+                    | FactId::ProjectionPresent { .. }
+                    | FactId::BoundValue { .. }
+                    | FactId::SponsorIsolated { .. }
+                    | FactId::ProtocolSecretUsed { .. } => false,
+                };
+                assert!(!mentions_state, "{operation:?}: {fact:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn realization_operation_census_retains_only_the_announcement_state_transition() {
+        assert_non_state_operation_declarations();
+        let supported: BTreeSet<_> = architecture::ARCHITECTURE
+            .operations
+            .iter()
+            .filter_map(|operation| {
+                let scope = realization::RealizationScope::from_operations([operation.id])
+                    .expect("one operation");
+                match realization::derive(&architecture::ARCHITECTURE, scope) {
+                    Ok(_) => Some(operation.id),
+                    Err(realization::RealizationError::UnsupportedOperationDeclaration(id)) => {
+                        assert_eq!(id, operation.id);
+                        None
+                    }
+                    Err(error) => panic!("unexpected realization refusal: {error:?}"),
+                }
+            })
+            .collect();
+        assert_eq!(
+            supported,
+            BTreeSet::from([
+                architecture::OperationId::AnnounceMaturity,
+                architecture::OperationId::CompactAsh,
+                architecture::OperationId::TransferLive,
+            ])
+        );
+    }
+
+    #[test]
+    fn historical_unstageable_subjects_keep_their_partition_after_scope_settlement() {
+        use crate::maturity_safety::{MaturityNonAnswerFinality, MaturityRowBoundary, rows};
+        let plan = derive_maturity_evidence_plan_with(
+            MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            MaturityConstructorMaterial::Absent(
+                MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
+            ),
+        )
+        .expect("current evidence");
+        let mut partition = [0; 4];
+        let mut final_absent = 0;
+        for staged in NATIVE_ROWS {
+            match staged.standing {
+                NativeStanding::Staged { .. } => partition[0] += 1,
+                NativeStanding::StagedAcceptanceExpected { .. } => partition[1] += 1,
+                NativeStanding::WaitingOnSponsoredForm => partition[2] += 1,
+                NativeStanding::Unstageable(_) => {
+                    partition[3] += 1;
+                    let row = rows()
+                        .iter()
+                        .find(|row| row.section() == staged.section && row.name() == staged.name)
+                        .expect("Safety key");
+                    let absent = matches!(
+                        staged.name,
+                        "stale-operator"
+                            | "wrong-control-recipe"
+                            | "predecessor-and-successor-metadata-witnesses-exchanged"
+                    );
+                    let boundary = if absent {
+                        MaturityRowBoundary::NativeCoordinateAbsentFromCandidate
+                    } else {
+                        MaturityRowBoundary::NativeSubjectAwaitsConstructionRoute
+                    };
+                    assert_eq!(row.boundary(), boundary);
+                    assert_eq!(
+                        boundary.finality(),
+                        Some(if absent {
+                            MaturityNonAnswerFinality::Final
+                        } else {
+                            MaturityNonAnswerFinality::Waiting
+                        })
+                    );
+                    let entry = plan
+                        .rows()
+                        .iter()
+                        .find(|entry| {
+                            entry.row().section() == staged.section
+                                && entry.row().name() == staged.name
+                        })
+                        .expect("evidence key");
+                    assert_eq!(entry.standing(), &crate::maturity_evidence::MaturityRowStanding::OutstandingUnderTypedNonAnswer(boundary));
+                    final_absent += usize::from(absent);
+                }
+            }
+        }
+        assert_eq!(partition, [25, 3, 2, 5]);
+        assert_eq!(final_absent, 3);
     }
 
     /// The observation fold preserves the denominator and historical staging keys.

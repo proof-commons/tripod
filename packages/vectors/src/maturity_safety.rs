@@ -227,14 +227,20 @@ pub enum MaturityRowBoundary {
     /// construction; relay policy decides the fee; the covenant reads none of
     /// these coordinates. Retained acceptances witness this property of the build.
     NativeCoordinateUndecidedByCandidate,
-    /// Five subjects await a construction route on this candidate.
-    /// `16.4 / stale-operator` needs a superseded key; none is present.
+    /// The candidate carries no position for these coordinates:
+    /// `16.11 / predecessor-and-successor-metadata-witnesses-exchanged` has no
+    /// successor-metadata witness; successor metadata is derived, never free.
+    /// `16.4 / stale-operator` has no operator-key migration relation; the
+    /// accepted generation census has one member and admits no migration.
+    /// `16.6 / wrong-control-recipe` has no operation spending an announced
+    /// state, so no successor control position exists. Each is a property of
+    /// the build; none credits an observation.
+    NativeCoordinateAbsentFromCandidate,
+    /// Two subjects await a construction route on this candidate.
     /// `16.6 / successor-from-wrong-semantic-metadata` needs distinct semantic
-    /// censuses; the deployments share one. `16.6 / wrong-control-recipe` needs
-    /// an offerable successor position. `16.6 / two-state-successors` needs a
+    /// censuses; the staging fixtures share one. `16.6 / two-state-successors` needs a
     /// balanced construction accounting for singleton conservation and retained
-    /// issuance reserves. `16.11 / predecessor-and-successor-metadata-witnesses-exchanged`
-    /// needs a successor metadata witness. These are staging grounds, not universal
+    /// issuance reserves. These are staging grounds, not universal
     /// impossibility claims.
     NativeSubjectAwaitsConstructionRoute,
     /// Former waiting reason for relay and combined-projection acceptances; no row retains it.
@@ -340,6 +346,7 @@ impl MaturityRowBoundary {
             Self::Layer(boundary) => Some(boundary),
             Self::AcceptanceAwaitsRelayAdmissibility
             | Self::NativeCoordinateUndecidedByCandidate
+            | Self::NativeCoordinateAbsentFromCandidate
             | Self::NativeSubjectAwaitsConstructionRoute
             | Self::SponsoredControlRefusedAtConstruction
             | Self::SponsorArmAwaitsRegionScoping
@@ -372,6 +379,7 @@ impl MaturityRowBoundary {
             }
             Self::SponsorConstructionAnsweredByLandedEvidence
             | Self::NativeCoordinateUndecidedByCandidate
+            | Self::NativeCoordinateAbsentFromCandidate
             | Self::SponsorRegionAnsweredByLandedEvidence
             | Self::ZeroSponsorRoleStructureAnsweredByLandedEvidence
             | Self::TotalityAnsweredByLandedNonceEvidence
@@ -383,7 +391,9 @@ impl MaturityRowBoundary {
 /// Whether a typed non-answer retains an observable obligation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MaturityNonAnswerFinality {
-    /// The claim's answer is held by other admitted evidence.
+    /// Other admitted evidence or a property of the build settles the claim,
+    /// including a claim outside the admitted contract, under
+    /// (`def:guide15-exec:non-answer-finality`).
     Final,
     /// The claim still requires its named observable route.
     Waiting,
@@ -1899,7 +1909,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "stale-operator",
         L::WitnessProof,
         Loc::ApprovedOperatorKey,
-        Bound::NativeSubjectAwaitsConstructionRoute,
+        Bound::NativeCoordinateAbsentFromCandidate,
         C::AnnouncementLeaf,
         names(authorization(), Class::ExternalReportSubjectMismatch),
     ),
@@ -2266,7 +2276,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "wrong-control-recipe",
         L::LinkedConstructorProgram,
         Loc::ControlBlock,
-        Bound::NativeSubjectAwaitsConstructionRoute,
+        Bound::NativeCoordinateAbsentFromCandidate,
         C::LinkedConstructor,
         names(constructibility(), Class::ExternalReportFailed),
     ),
@@ -3007,7 +3017,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "predecessor-and-successor-metadata-witnesses-exchanged",
         L::WitnessProof,
         Loc::WitnessStack,
-        Bound::NativeSubjectAwaitsConstructionRoute,
+        Bound::NativeCoordinateAbsentFromCandidate,
         C::AnnouncementLeaf,
         unlinked(Why::NoPublishedRelationNamesIt),
     ),
@@ -3916,11 +3926,12 @@ mod tests {
             rows().iter().filter(|row| row.boundary() == wanted).count()
         };
         // Eight relay obligations and the retyped combined row accept on the
-        // accepted-transaction layer; three departures and five unavailable
-        // subjects enter typed reasons. Confidential value retains its route.
+        // accepted-transaction layer; three departures and three absent coordinates
+        // are final. Two constructions and confidential value retain their routes.
         assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 0);
         assert_eq!(standing(Bound::NativeCoordinateUndecidedByCandidate), 3);
-        assert_eq!(standing(Bound::NativeSubjectAwaitsConstructionRoute), 5);
+        assert_eq!(standing(Bound::NativeSubjectAwaitsConstructionRoute), 2);
+        assert_eq!(standing(Bound::NativeCoordinateAbsentFromCandidate), 3);
         assert_eq!(standing(Bound::SponsoredControlRefusedAtConstruction), 0);
         assert_eq!(standing(Bound::SponsorArmAwaitsRegionScoping), 0);
         assert_eq!(standing(Bound::TotalityAnsweredByLandedNonceEvidence), 11);
@@ -3993,11 +4004,14 @@ mod tests {
                         S::SuccessorConstructorFault | S::AbiLinkerFault
                     ));
                 }
-                Bound::NativeSubjectAwaitsConstructionRoute => {
+                Bound::NativeCoordinateAbsentFromCandidate => {
                     assert!(matches!(
                         row.section(),
                         S::OperatorFault | S::SuccessorConstructorFault | S::AbiLinkerFault
                     ));
+                }
+                Bound::NativeSubjectAwaitsConstructionRoute => {
+                    assert_eq!(row.section(), S::SuccessorConstructorFault);
                 }
                 Bound::Layer(layer) => match layer {
                     B::RootHistoryReportRejection => assert_eq!(
@@ -4013,6 +4027,43 @@ mod tests {
                 },
             }
         }
+    }
+
+    #[test]
+    fn absent_native_coordinates_have_exact_final_membership() {
+        use super::MaturityNonAnswerFinality;
+
+        let absent: Vec<_> = rows()
+            .iter()
+            .filter(|row| row.boundary() == Bound::NativeCoordinateAbsentFromCandidate)
+            .map(|row| (row.section(), row.name()))
+            .collect();
+        assert_eq!(
+            absent,
+            vec![
+                (S::OperatorFault, "stale-operator"),
+                (S::SuccessorConstructorFault, "wrong-control-recipe"),
+                (
+                    S::AbiLinkerFault,
+                    "predecessor-and-successor-metadata-witnesses-exchanged",
+                ),
+            ]
+        );
+        let boundary = Bound::NativeCoordinateAbsentFromCandidate;
+        assert_eq!(boundary.layer(), None);
+        assert_eq!(boundary.finality(), Some(MaturityNonAnswerFinality::Final));
+        let waiting: Vec<_> = rows()
+            .iter()
+            .filter(|row| row.boundary() == Bound::NativeSubjectAwaitsConstructionRoute)
+            .map(MaturitySafetyRow::name)
+            .collect();
+        assert_eq!(
+            waiting,
+            [
+                "successor-from-wrong-semantic-metadata",
+                "two-state-successors"
+            ]
+        );
     }
 
     #[test]
