@@ -2515,7 +2515,7 @@ mod tests {
         let canonical = render_maturity_safety_report(&control);
         let first = canonical.lines().next().expect("canonical line");
         let subjects = [
-            canonical.replacen("answered 171", "answered 172", 1),
+            canonical.replacen("answered 172", "answered 173", 1),
             format!("{canonical}surplus 1\n"),
             format!("{canonical}{first}\n"),
             format!("{canonical}diagnostic /caller/private\n"),
@@ -2584,14 +2584,14 @@ mod tests {
                 "infrastructure_blocked",
                 "experimental",
             ]),
-            35
+            34
         );
         for (key, figure) in [
             ("retired", 2),
-            ("disposition_observed", 171),
-            ("disposition_final", 25),
+            ("disposition_observed", 172),
+            ("disposition_final", 26),
             ("disposition_retired", 2),
-            ("disposition_waiting", 8),
+            ("disposition_waiting", 6),
         ] {
             let line = format!("{key} {figure}\n");
             assert_eq!(
@@ -2937,8 +2937,8 @@ mod tests {
     fn the_native_refusal_block_names_every_observed_refusal() {
         let validated = validated();
         let reported = validated.report().native_refusals();
-        // Thirty-eight row claims carry matching native refusals.
-        assert_eq!(reported.len(), 38);
+        // The retained semantic refusal is the thirty-ninth matching refusal claim.
+        assert_eq!(reported.len(), 39);
         assert_eq!(
             reported.len(),
             PLAN.census().native_refusal_observed()
@@ -2964,7 +2964,7 @@ mod tests {
             .filter(|(_, line)| line.starts_with("native_refusal "))
             .collect();
         // Every admitted refusal claim renders at its declared boundary.
-        assert_eq!(native.len(), 38);
+        assert_eq!(native.len(), 39);
         let last_witness = lines
             .iter()
             .rposition(|line| line.starts_with("witness "))
@@ -3030,8 +3030,8 @@ mod tests {
         assert_eq!(
             refusal,
             MaturitySafetyReportRefusal::NativeRefusalCountDiffers {
-                stated: 37,
-                recomputed: 38,
+                stated: 38,
+                recomputed: 39,
             }
         );
         assert_eq!(
@@ -3193,8 +3193,9 @@ mod tests {
             clause.native_refusals_witnessed(),
             census.native_refusal_observed()
         );
-        // Native observation adds twenty-eight refusal claims to the prior ten.
-        assert_eq!(clause.native_refusals_witnessed(), 38);
+        // Native observation adds twenty-eight refusal claims to the prior ten;
+        // the retained semantic refusal is the thirty-ninth.
+        assert_eq!(clause.native_refusals_witnessed(), 39);
         assert_eq!(clause.rows_still_owed(), census.rows() - census.answered());
 
         // Every witnessed refusal names the boundary its row declared and

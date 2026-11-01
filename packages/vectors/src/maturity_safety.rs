@@ -222,7 +222,7 @@ pub enum MaturityRowBoundary {
     Layer(EvidenceBoundary),
     /// The candidate leaves these coordinates undecided: nonce leastness in
     /// `16.6 / later-admissible-nonce-instead-of-first`, output count in
-    /// `16.6 / extra-state-like-output`, and version in
+    /// `16.6 / extra-state-like-output` and `16.6 / two-state-successors`, and version in
     /// `16.11 / wrong-transaction-version`. Consensus accepts each valid
     /// construction; relay policy decides the fee; the covenant reads none of
     /// these coordinates. Retained acceptances witness this property of the build.
@@ -236,12 +236,11 @@ pub enum MaturityRowBoundary {
     /// state, so no successor control position exists. Each is a property of
     /// the build; none credits an observation.
     NativeCoordinateAbsentFromCandidate,
-    /// Two subjects await a construction route on this candidate.
-    /// `16.6 / successor-from-wrong-semantic-metadata` needs distinct semantic
-    /// censuses; the staging fixtures share one. `16.6 / two-state-successors` needs a
-    /// balanced construction accounting for singleton conservation and retained
-    /// issuance reserves. These are staging grounds, not universal
-    /// impossibility claims.
+    /// Former construction-route waiting reason; no row retains it.
+    ///
+    /// Retained semantic metadata has an admitted script-path refusal against its
+    /// same-coin control. The balanced two-successor construction accepts with
+    /// exact readback and witnesses the candidate's unread output count.
     NativeSubjectAwaitsConstructionRoute,
     /// Former waiting reason for relay and combined-projection acceptances; no row retains it.
     ///
@@ -2195,7 +2194,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "successor-from-wrong-semantic-metadata",
         L::SemanticFact,
         Loc::SuccessorMetadataField,
-        Bound::NativeSubjectAwaitsConstructionRoute,
+        Bound::Layer(B::ScriptPathRejection),
         C::AnnouncementLeaf,
         names(output_recognition(), Class::WrongRecognizedObject),
     ),
@@ -2303,7 +2302,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "two-state-successors",
         L::TargetTransaction,
         Loc::TransactionOutput,
-        Bound::NativeSubjectAwaitsConstructionRoute,
+        Bound::NativeCoordinateUndecidedByCandidate,
         C::CoordinatorStructure,
         names(output_cardinality(), Class::CardinalityAboveMaximum),
     ),
@@ -3926,11 +3925,11 @@ mod tests {
             rows().iter().filter(|row| row.boundary() == wanted).count()
         };
         // Eight relay obligations and the retyped combined row accept on the
-        // accepted-transaction layer; three departures and three absent coordinates
-        // are final. Two constructions and confidential value retain their routes.
+        // accepted-transaction layer; four departures and three absent coordinates
+        // are final. Confidential value retains its observation route.
         assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 0);
-        assert_eq!(standing(Bound::NativeCoordinateUndecidedByCandidate), 3);
-        assert_eq!(standing(Bound::NativeSubjectAwaitsConstructionRoute), 2);
+        assert_eq!(standing(Bound::NativeCoordinateUndecidedByCandidate), 4);
+        assert_eq!(standing(Bound::NativeSubjectAwaitsConstructionRoute), 0);
         assert_eq!(standing(Bound::NativeCoordinateAbsentFromCandidate), 3);
         assert_eq!(standing(Bound::SponsoredControlRefusedAtConstruction), 0);
         assert_eq!(standing(Bound::SponsorArmAwaitsRegionScoping), 0);
@@ -3953,8 +3952,8 @@ mod tests {
             .iter()
             .filter(|row| row.boundary().is_typed_non_answer())
             .count();
-        assert_eq!(non_answers, 28);
-        assert_eq!(row_count() - non_answers, 178);
+        assert_eq!(non_answers, 27);
+        assert_eq!(row_count() - non_answers, 179);
         assert_eq!(
             rows()
                 .iter()
@@ -4052,18 +4051,11 @@ mod tests {
         let boundary = Bound::NativeCoordinateAbsentFromCandidate;
         assert_eq!(boundary.layer(), None);
         assert_eq!(boundary.finality(), Some(MaturityNonAnswerFinality::Final));
-        let waiting: Vec<_> = rows()
+        let waiting = rows()
             .iter()
             .filter(|row| row.boundary() == Bound::NativeSubjectAwaitsConstructionRoute)
-            .map(MaturitySafetyRow::name)
-            .collect();
-        assert_eq!(
-            waiting,
-            [
-                "successor-from-wrong-semantic-metadata",
-                "two-state-successors"
-            ]
-        );
+            .count();
+        assert_eq!(waiting, 0);
     }
 
     #[test]
@@ -4400,10 +4392,11 @@ mod tests {
             }
         }
         // Two sponsored positives and four sponsor negatives add six native layers;
-        // the combined row adds its accepted-transaction layer after retyping.
-        assert_eq!(reachable, 50);
+        // the combined row adds its accepted-transaction layer after retyping,
+        // and the retained semantic row adds its script-path layer.
+        assert_eq!(reachable, 51);
         assert_eq!(unreachable, 128);
-        assert_eq!(reachable + unreachable, 178);
+        assert_eq!(reachable + unreachable, 179);
         let pre_target = rows()
             .iter()
             .filter(|row| row.refusing_layer().is_some_and(B::is_pre_target))

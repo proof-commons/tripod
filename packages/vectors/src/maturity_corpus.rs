@@ -564,6 +564,53 @@ const SPONSORED_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins {
     ..VARIABLE_PINS
 };
 
+/// SHA-256 of the retained archive's exact manifest.
+pub const MATURITY_RETAINED_MANIFEST_SHA256: &str =
+    "a94537093fae80f8053a67b60e00658fb0de0ccfb9fe8c286b3e8ea4737a690d";
+/// SHA-256 of the retained report, including its campaign manifest.
+pub const MATURITY_RETAINED_RUN_ADDRESS: &str =
+    "18d9e05ed1bdc2e63a5fac65cdc4a1345db9b9f8ab2cf2c4abf074796ad76c6f";
+const MATURITY_RETAINED_CEREMONY_SHA256: &str =
+    "921a32c9201397b792133273c4e8a6c275271ac94a3a6f262c3ddd8010196923";
+const RETAINED_NODE_TIP: &str = "b7fc5d080a7e9ccc0ef48c3ba11db243e794bdb0";
+const RETAINED_FILES: [MaturityArchiveFile<'static>; 4] = [
+    MaturityArchiveFile::new(
+        "4558d26aba.report.capture",
+        include_bytes!("../fixtures/maturity-retained-run-of-record/4558d26aba.report.capture"),
+    ),
+    MaturityArchiveFile::new(
+        "4558d26aba.report.capture.timing",
+        include_bytes!(
+            "../fixtures/maturity-retained-run-of-record/4558d26aba.report.capture.timing"
+        ),
+    ),
+    MaturityArchiveFile::new(
+        "MANIFEST.sha256",
+        include_bytes!("../fixtures/maturity-retained-run-of-record/MANIFEST.sha256"),
+    ),
+    MaturityArchiveFile::new(
+        "RUN-REPORT",
+        include_bytes!("../fixtures/maturity-retained-run-of-record/RUN-REPORT"),
+    ),
+];
+const RETAINED_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins {
+    names: [
+        "4558d26aba.report.capture",
+        "4558d26aba.report.capture.timing",
+        "MANIFEST.sha256",
+        "RUN-REPORT",
+    ],
+    sizes: [382_918, 49, 191, 17_376],
+    manifest_sha256: MATURITY_RETAINED_MANIFEST_SHA256,
+    run_address: MATURITY_RETAINED_RUN_ADDRESS,
+    ceremony_sha256: MATURITY_RETAINED_CEREMONY_SHA256,
+    capture_target: MaturityCaptureTarget::new(
+        "maturity_retained",
+        "the_retained_maturity_routes_run_against_a_real_target",
+    ),
+    ..NATIVE_PINS
+};
+
 const NATIVE_FILES: [MaturityArchiveFile<'static>; 4] = [
     MaturityArchiveFile::new(
         "745e4e01ad.report.capture",
@@ -726,6 +773,8 @@ pub enum MaturityCorpusImportRefusal {
     PayloadDisagreement { field: &'static str },
     /// The planner refused construction, an exact request, or a recorded response.
     Derivation(MaturityNativePlanRefusal),
+    /// A retained family disagrees with its campaign or admission precondition.
+    RetainedCampaign(crate::maturity_native::native::RetainedCampaignRefusal),
 }
 
 type ImportResult<T> = Result<T, MaturityCorpusImportRefusal>;
@@ -1232,6 +1281,7 @@ fn parse_report_suite(
     cursor: &mut Cursor<'_>,
     pins: &MaturityCorpusPins<'_>,
     mutant_profile: Option<&str>,
+    exact_test: Option<&str>,
 ) -> ImportResult<[String; 5]> {
     cursor.exact(if mutant_profile.is_some() {
         "run-report-schema native-maturity-mutant-run-report 1"
@@ -1252,9 +1302,17 @@ fn parse_report_suite(
     if let Some(profile) = mutant_profile {
         cursor.exact(&format!("capture-profile {profile}"))?;
     }
+    let selection = if let Some(test) = exact_test {
+        if cursor.text("rust-test-name")? != test {
+            return Err(cursor.refusal());
+        }
+        format!(" --exact {test}")
+    } else {
+        String::new()
+    };
     if cursor.text("cargo-argv")?
         != format!(
-            "{} test -p tripod-vectors --test {} -- --ignored --test-threads=1",
+            "{} test -p tripod-vectors --test {} -- --ignored{selection} --test-threads=1",
             pins.cargo_path(),
             pins.capture_target().target()
         )
@@ -1300,6 +1358,15 @@ fn parse_report_body(
     pins: &MaturityCorpusPins<'_>,
     mutant_profile: Option<&str>,
 ) -> ImportResult<(MaturityReportFacts, [u64; 4])> {
+    parse_report_body_selected(bytes, pins, mutant_profile, None)
+}
+
+fn parse_report_body_selected(
+    bytes: &[u8],
+    pins: &MaturityCorpusPins<'_>,
+    mutant_profile: Option<&str>,
+    exact_test: Option<&str>,
+) -> ImportResult<(MaturityReportFacts, [u64; 4])> {
     let mut cursor = Cursor::new("RUN-REPORT", bytes)?;
     let [
         suite_commit,
@@ -1307,7 +1374,7 @@ fn parse_report_body(
         expected_tip,
         binary_revision,
         intended_tip,
-    ] = parse_report_suite(&mut cursor, pins, mutant_profile)?;
+    ] = parse_report_suite(&mut cursor, pins, mutant_profile, exact_test)?;
     let adapter_name = cursor.text("executor-adapter-name")?;
     let adapter_version = cursor.text("executor-adapter-version")?;
     let node_name = cursor.text("node-name")?;
@@ -2626,6 +2693,305 @@ pub fn maturity_native_run_of_record() -> ImportResult<&'static ValidatedNativeM
     }
 }
 
+/// Admitted retained observations, with both families validated before any fold.
+pub struct ValidatedRetainedMaturityCorpus {
+    /// Exact four-file report provenance.
+    pub report: MaturityReportFacts,
+    /// Complete exact replay of both retained families.
+    pub evidence: crate::maturity_native::native::RetainedRoutesPlanner,
+    /// Node-default policy premises with distinct provenance.
+    pub fee_floors: MaturityDisclosedFeeFloors,
+}
+
+struct RetainedReportFields {
+    policy: Vec<u8>,
+    families: Vec<u8>,
+    stopped: Vec<u8>,
+    rows: [Vec<u8>; 2],
+}
+
+fn retained_json(bytes: &[u8]) -> ImportResult<serde_json::Value> {
+    let value: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|_| Refusal::RunReportGrammar)?;
+    binding(
+        "retained-json-encoding",
+        serde_json::to_vec(&value).map_err(|_| Refusal::RunReportGrammar)? == bytes,
+    )?;
+    Ok(value)
+}
+
+fn validate_retained_fields(fields: &RetainedReportFields) -> ImportResult<()> {
+    let families = retained_json(&fields.families)?;
+    let stopped = retained_json(&fields.stopped)?;
+    for (index, name) in ["wrong-semantic-metadata", "two-state-successors"]
+        .iter()
+        .enumerate()
+    {
+        let fail = |field| {
+            Refusal::RetainedCampaign(crate::maturity_native::native::RetainedCampaignRefusal {
+                family: (*name).to_owned(),
+                field,
+            })
+        };
+        let family = families.get(index).ok_or_else(|| fail("absent family"))?;
+        if family["family"] != *name {
+            return Err(fail("family"));
+        }
+        if stopped
+            .as_array()
+            .is_some_and(|items| items.iter().any(|value| value.as_str() == Some(*name)))
+            || family["stopped"] == true
+        {
+            return Err(fail("stopped"));
+        }
+        if family["subject"].is_null() {
+            return Err(fail("absent subject"));
+        }
+        if family["expectation"] != "agreement" {
+            return Err(fail("expectation"));
+        }
+        if family["control_accepted"] != true
+            || family["control"]["layer"] != "accepted"
+            || family["control"]["readback"] != "matched"
+        {
+            return Err(fail("accepted control"));
+        }
+    }
+    binding(
+        "retained-family-census",
+        families.as_array().is_some_and(|values| values.len() == 2),
+    )?;
+    binding("retained-stopped-empty", stopped == serde_json::json!([]))
+}
+
+fn parse_retained_report(
+    bytes: &[u8],
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<(MaturityReportFacts, RetainedReportFields)> {
+    let mut cursor = Cursor::new("retained report", bytes)?;
+    let profile = cursor
+        .lines
+        .iter()
+        .position(|line| *line == "capture-profile retained")
+        .ok_or(Refusal::RunReportGrammar)?;
+    let mut normalized = cursor.lines[..profile].join("\n");
+    normalized.push('\n');
+    cursor.index = profile;
+    cursor.exact("capture-profile retained")?;
+    for phase in ["preflight", "cargo", "census", "manifest"] {
+        let wall = cursor.value("phase-wall-ms")?;
+        let digits = wall
+            .strip_prefix(phase)
+            .and_then(|tail| tail.strip_prefix(' '))
+            .ok_or(Refusal::RunReportGrammar)?;
+        number(digits).ok_or(Refusal::RunReportGrammar)?;
+    }
+    number(cursor.value("elapsed-wall-ms")?).ok_or(Refusal::RunReportGrammar)?;
+    let policy = cursor.bytes("retained-policy")?;
+    let families = cursor.bytes("retained-families")?;
+    let stopped = cursor.bytes("retained-stopped")?;
+    cursor.exact("campaign-manifest-schema 1")?;
+    cursor.exact("campaign-manifest-count 2")?;
+    let rows = [cursor.bytes("campaign-row")?, cursor.bytes("campaign-row")?];
+    for line in &cursor.lines[cursor.index..] {
+        normalized.push_str(line);
+        normalized.push('\n');
+    }
+    let (mut report, _) = parse_report_body_selected(
+        normalized.as_bytes(),
+        pins,
+        None,
+        Some(pins.capture_target().test()),
+    )?;
+    binding(
+        "retained-node-tip",
+        report.expected_tip == RETAINED_NODE_TIP,
+    )?;
+    report.run_address = hex_bytes(&tagged::sha256(bytes));
+    let fields = RetainedReportFields {
+        policy,
+        families,
+        stopped,
+        rows,
+    };
+    validate_retained_fields(&fields)?;
+    Ok((report, fields))
+}
+
+/// Admit the retained archive before assigning either family's standing.
+/// # Errors
+/// Refuses byte, provenance, campaign, policy, route and readback disagreements.
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton or retained row.
+pub fn admit_retained_maturity_corpus(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<ValidatedRetainedMaturityCorpus> {
+    admit_retained_with_replay(
+        files,
+        pins,
+        crate::maturity_native::native::replay_retained_routes,
+    )
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Admission follows the archive bindings before exact replay."
+)]
+fn admit_retained_with_replay(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: &MaturityCorpusPins<'_>,
+    replay: impl FnOnce(
+        CandidateDeploymentIdentity,
+        BranchContext,
+        &[(OperationStep, NativeOperationResponse)],
+    ) -> Result<
+        crate::maturity_native::native::RetainedRoutesPlanner,
+        crate::maturity_native::MaturityNativePlanRefusal,
+    >,
+) -> ImportResult<ValidatedRetainedMaturityCorpus> {
+    use crate::maturity_native::sponsored::Policy;
+    validate_census(files, pins)?;
+    validate_manifest(files, pins.manifest_sha256())?;
+    binding(
+        "retained-schedule",
+        pins.schedule() == tapscript::StateWitnessSchedule::VariableMetadata,
+    )?;
+    let (report, fields) = parse_retained_report(files[3].bytes, pins)?;
+    check_report_address(&report, pins)?;
+    let policy_bytes = &fields.policy;
+    let policy = Policy::parse(retained_json(policy_bytes)?).map_err(Refusal::Derivation)?;
+    validate_common_bindings(files, pins, &report)?;
+    let floors = pins.fee_floors();
+    binding(
+        "retained-fee-floors",
+        floors.min_relay_tx_fee() == policy.0["relay"].as_str().unwrap_or_default()
+            && floors.block_min_tx_fee() == policy.0["block"].as_str().unwrap_or_default()
+            && floors.provenance() == MaturityPremiseProvenance::ReportedByNode
+            && floors.block_provenance() == MaturityPremiseProvenance::PinnedSourceNoOverride,
+    )?;
+    let mut cursor = Cursor::new("retained capture", files[0].bytes)?;
+    parse_header(&mut cursor, &report, pins)?;
+    parse_environment(&mut cursor, &report, pins)?;
+    cursor.exact("digest-count 0")?;
+    let count = number(cursor.value("operation-count")?).ok_or_else(|| cursor.refusal())?;
+    let operations = (0..count)
+        .map(|index| parse_operation_block(&mut cursor, index, "", SubjectKind::Sponsored))
+        .collect::<ImportResult<Vec<_>>>()?;
+    let payload = parse_tail(&mut cursor, files[0].bytes)?;
+    let mut cursor = Cursor::new("retained payload", &payload)?;
+    cursor.exact("maturity-retained-evidence-schema 1")?;
+    let identity = CandidateDeploymentIdentity::new(
+        cursor
+            .bytes("deployment-id")?
+            .try_into()
+            .map_err(|_| cursor.refusal())?,
+        cursor
+            .bytes("genesis-id")?
+            .try_into()
+            .map_err(|_| cursor.refusal())?,
+    )
+    .map_err(|_| cursor.refusal())?;
+    binding(
+        "retained-deployment",
+        hex_bytes(identity.network_id()) == report.network_id
+            && hex_bytes(identity.genesis_id()) == report.genesis_id,
+    )?;
+    let identifier = cursor
+        .bytes("branch-identifier")?
+        .try_into()
+        .map_err(|_| cursor.refusal())?;
+    let checkpoint = cursor
+        .value("branch-checkpoint")?
+        .parse::<u64>()
+        .map_err(|_| cursor.refusal())?;
+    let branch = BranchContext::new(identifier, checkpoint).map_err(|_| cursor.refusal())?;
+    binding(
+        "retained-policy",
+        cursor.bytes("retained-policy")? == fields.policy,
+    )?;
+    binding(
+        "retained-families",
+        cursor.bytes("retained-families")? == fields.families,
+    )?;
+    binding(
+        "retained-stopped",
+        cursor.bytes("retained-stopped")? == fields.stopped,
+    )?;
+    cursor.exact("campaign-manifest-schema 1")?;
+    cursor.exact("campaign-manifest-count 2")?;
+    for row in &fields.rows {
+        binding(
+            "retained-campaign-row",
+            cursor.bytes("campaign-row")? == *row,
+        )?;
+    }
+    let mut exchanges = Vec::new();
+    for operation in operations {
+        let bytes = cursor.bytes("exchange")?;
+        let (case, subject, response): (
+            target_elements_conformance::protocol::OperationCaseId,
+            OperationSubject,
+            NativeOperationResponse,
+        ) = serde_json::from_slice(&bytes).map_err(|_| cursor.refusal())?;
+        binding(
+            "retained-exchange",
+            operation.step.subject() == &subject
+                && response.case == case
+                && operation.layer == response.observed_layer
+                && operation.detail == response.observed_detail.as_deref().unwrap_or_default()
+                && operation.accepted_identity.map(|id| id.to_target_display())
+                    == response.accepted_txid,
+        )?;
+        exchanges.push((OperationStep::new(&case.step, subject), response));
+    }
+    cursor.done()?;
+    let evidence = replay(identity, branch, &exchanges).map_err(Refusal::Derivation)?;
+    binding(
+        "retained-derived-families",
+        serde_json::to_vec(&evidence.families_json()).map_err(|_| Refusal::RunReportGrammar)?
+            == fields.families,
+    )?;
+    binding(
+        "retained-derived-stopped",
+        serde_json::to_vec(&evidence.stopped()).map_err(|_| Refusal::RunReportGrammar)?
+            == fields.stopped,
+    )?;
+    binding(
+        "retained-derived-policy",
+        evidence.policy() == Some(&policy),
+    )?;
+    binding(
+        "retained-operation-census",
+        evidence.exchanges().len() == count,
+    )?;
+    let rows = fields
+        .rows
+        .iter()
+        .map(|row| retained_json(row))
+        .collect::<ImportResult<Vec<_>>>()?;
+    crate::maturity_native::native::RetainedCampaignManifest::validate(&evidence, &rows)
+        .map_err(Refusal::RetainedCampaign)?;
+    Ok(ValidatedRetainedMaturityCorpus {
+        report,
+        evidence,
+        fee_floors: floors,
+    })
+}
+
+/// Admit the immutable retained archive once per process.
+/// # Errors
+/// Preserves the first exact admission refusal.
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton or retained row.
+pub fn maturity_retained_run_of_record() -> ImportResult<&'static ValidatedRetainedMaturityCorpus> {
+    static CORPUS: OnceLock<ImportResult<ValidatedRetainedMaturityCorpus>> = OnceLock::new();
+    match CORPUS.get_or_init(|| admit_retained_maturity_corpus(&RETAINED_FILES, &RETAINED_PINS)) {
+        Ok(corpus) => Ok(corpus),
+        Err(error) => Err(error.clone()),
+    }
+}
+
 /// Admitted independent acquisition and the two separately validated reports.
 pub struct ValidatedObserverMaturityCorpus {
     observation: serde_json::Value,
@@ -3494,6 +3860,525 @@ pub fn accepted_public_handoff(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn retained_admission_binds_bytes_provenance_census_routes_and_readback() {
+        use std::io::Write as _;
+        let start = std::time::Instant::now();
+        let corpus = admit_retained_maturity_corpus(&RETAINED_FILES, &RETAINED_PINS)
+            .expect("retained archive");
+        writeln!(
+            std::io::stdout(),
+            "census cold retained admission wall {:?}",
+            start.elapsed()
+        )
+        .expect("wall output");
+        assert_eq!(corpus.report.run_address(), MATURITY_RETAINED_RUN_ADDRESS);
+        assert_eq!(corpus.evidence.exchanges().len(), 9);
+        let families = corpus.evidence.families();
+        assert_eq!(families.len(), 2);
+        assert_eq!(corpus.evidence.stopped(), [] as [&str; 0]);
+        assert_eq!(corpus.evidence.complete(), Ok(()));
+        for family in &families {
+            assert_eq!(family.expectation(), "agreement");
+            assert!(family.accepted_control_identity().is_some());
+            assert_eq!(family.control_coins.len(), 1);
+            let (_, response) = family.control.expect("accepted control");
+            assert_eq!(
+                crate::maturity_native::sponsored::detail(response)
+                    .expect("route")
+                    .1,
+                Some(MaturityAcceptanceRoute::DirectBlockAfterRelayRefusal)
+            );
+        }
+        assert_eq!(families[0].subject_coins.len(), 1);
+        assert_eq!(families[1].subject_coins.len(), 2);
+        assert_eq!(
+            families[0].subject_coins[0].1,
+            families[0].control_coins[0].1
+        );
+        assert_ne!(
+            families[1].subject_coins[0].1.outpoint,
+            families[1].control_coins[0].1.outpoint
+        );
+        assert_eq!(
+            corpus.fee_floors.provenance(),
+            MaturityPremiseProvenance::ReportedByNode
+        );
+        assert_eq!(
+            corpus.fee_floors.block_provenance(),
+            MaturityPremiseProvenance::PinnedSourceNoOverride
+        );
+    }
+
+    #[test]
+    fn retained_report_address_refuses_a_grammar_valid_changed_wall() {
+        let mut bytes = RETAINED_FILES[3].bytes.to_vec();
+        let prefix = b"phase-wall-ms preflight ";
+        let index = bytes
+            .windows(prefix.len())
+            .position(|part| part == prefix)
+            .expect("phase wall")
+            + prefix.len();
+        bytes[index] = if bytes[index] == b'1' { b'2' } else { b'1' };
+        assert!(parse_retained_report(&bytes, &RETAINED_PINS).is_ok());
+        let mut files = RETAINED_FILES;
+        files[3] = MaturityArchiveFile::new(files[3].name, &bytes);
+        assert_eq!(
+            admit_retained_maturity_corpus(&files, &RETAINED_PINS).err(),
+            Some(Refusal::RunReportAddress)
+        );
+    }
+
+    #[test]
+    fn retained_node_tip_refuses_a_consistent_different_revision() {
+        let tip = "1".repeat(40);
+        let binary = &tip[..12];
+        let version = format!("Elements Core daemon version v28.99.0-{binary}");
+        let original = std::str::from_utf8(RETAINED_FILES[3].bytes).expect("report");
+        let lines: Vec<_> = original
+            .lines()
+            .map(|line| {
+                if line.starts_with("elementsd-expected-tip ") {
+                    return format!("elementsd-expected-tip {tip}");
+                }
+                for (field, value) in [
+                    ("elementsd-binary-reported-revision", binary),
+                    ("elementsd-intended-executed-tip", tip.as_str()),
+                    ("node-version", version.as_str()),
+                ] {
+                    if line.starts_with(&format!("{field} ")) {
+                        return format!("{field} {} {}", value.len(), hex_bytes(value.as_bytes()));
+                    }
+                }
+                line.to_owned()
+            })
+            .collect();
+        let bytes = format!("{}\n", lines.join("\n")).into_bytes();
+        assert_eq!(
+            parse_retained_report(&bytes, &RETAINED_PINS).err(),
+            Some(Refusal::CrossFileBinding {
+                field: "retained-node-tip"
+            })
+        );
+    }
+
+    #[test]
+    fn retained_schedule_pin_refuses_another_schedule() {
+        let pins = MaturityCorpusPins {
+            schedule: tapscript::StateWitnessSchedule::WholeMetadata,
+            ..RETAINED_PINS
+        };
+        assert_eq!(
+            admit_retained_maturity_corpus(&RETAINED_FILES, &pins).err(),
+            Some(Refusal::CrossFileBinding {
+                field: "retained-schedule"
+            })
+        );
+    }
+
+    #[test]
+    fn retained_one_family_record_names_the_absent_family() {
+        let (_, mut fields) =
+            parse_retained_report(RETAINED_FILES[3].bytes, &RETAINED_PINS).expect("report");
+        let mut families = retained_json(&fields.families).expect("families");
+        families.as_array_mut().expect("array").pop();
+        fields.families = serde_json::to_vec(&families).expect("JSON");
+        assert_eq!(
+            validate_retained_fields(&fields),
+            Err(Refusal::RetainedCampaign(
+                crate::maturity_native::native::RetainedCampaignRefusal {
+                    family: "two-state-successors".to_owned(),
+                    field: "absent family",
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn retained_archive_pins_refuse_changed_files() {
+        for index in 0..4 {
+            let mut bytes = RETAINED_FILES[index].bytes.to_vec();
+            bytes[0] ^= 1;
+            let mut files = RETAINED_FILES;
+            files[index] = MaturityArchiveFile::new(files[index].name, &bytes);
+            assert!(admit_retained_maturity_corpus(&files, &RETAINED_PINS).is_err());
+            let mut longer = bytes.clone();
+            longer.push(b'\n');
+            files[index] = MaturityArchiveFile::new(files[index].name, &longer);
+            assert!(matches!(
+                validate_census(&files, &RETAINED_PINS),
+                Err(Refusal::FileSize { .. })
+            ));
+        }
+        let mut files = RETAINED_FILES;
+        files.swap(0, 1);
+        assert_eq!(
+            validate_census(&files, &RETAINED_PINS),
+            Err(Refusal::CorpusCensus)
+        );
+        for pins in [
+            MaturityCorpusPins {
+                manifest_sha256: &"0".repeat(64),
+                ..RETAINED_PINS
+            },
+            MaturityCorpusPins {
+                run_address: &"0".repeat(64),
+                ..RETAINED_PINS
+            },
+            MaturityCorpusPins {
+                ceremony_sha256: &"0".repeat(64),
+                ..RETAINED_PINS
+            },
+            MaturityCorpusPins {
+                cargo_path: "/wrong/cargo",
+                ..RETAINED_PINS
+            },
+            MaturityCorpusPins {
+                capture_target: MaturityCaptureTarget::new("wrong", "wrong"),
+                ..RETAINED_PINS
+            },
+            MaturityCorpusPins {
+                funding_count: 1,
+                ..RETAINED_PINS
+            },
+            MaturityCorpusPins {
+                framework_revision: MaturityFrameworkRevision::Unrecorded,
+                ..RETAINED_PINS
+            },
+            MaturityCorpusPins {
+                fee_floors: MaturityDisclosedFeeFloors::node_defaults("0.00000200", "0.00000100"),
+                ..RETAINED_PINS
+            },
+        ] {
+            assert!(admit_retained_maturity_corpus(&RETAINED_FILES, &pins).is_err());
+        }
+    }
+
+    fn changed_retained_report(field: &str, value: &str, encoded: bool) -> Vec<u8> {
+        let report = std::str::from_utf8(RETAINED_FILES[3].bytes).expect("UTF-8");
+        let replacement = if encoded {
+            format!("{field} {} {}", value.len(), hex_bytes(value.as_bytes()))
+        } else {
+            format!("{field} {value}")
+        };
+        let mut lines: Vec<_> = report.lines().map(str::to_owned).collect();
+        let line = lines
+            .iter_mut()
+            .find(|line| line.starts_with(&format!("{field} ")))
+            .expect("field");
+        *line = replacement;
+        format!("{}\n", lines.join("\n")).into_bytes()
+    }
+
+    macro_rules! retained_grammar_refusal {
+        ($name:ident, $field:literal, $value:expr, $encoded:literal) => {
+            #[test]
+            fn $name() {
+                let bytes = changed_retained_report($field, $value, $encoded);
+                assert!(parse_retained_report(&bytes, &RETAINED_PINS).is_err());
+            }
+        };
+    }
+    retained_grammar_refusal!(
+        retained_suite_refuses_wrong_test_name,
+        "rust-test-name",
+        "another_test",
+        true
+    );
+    retained_grammar_refusal!(
+        retained_suite_refuses_nonexact_argv,
+        "cargo-argv",
+        "/workspace/toolchains/cargo/bin/cargo test -p tripod-vectors --test maturity_retained -- --ignored --test-threads=1",
+        true
+    );
+    retained_grammar_refusal!(
+        retained_suite_refuses_changed_cargo_path,
+        "cargo-argv",
+        "/wrong/cargo test -p tripod-vectors --test maturity_retained -- --ignored --exact the_retained_maturity_routes_run_against_a_real_target --test-threads=1",
+        true
+    );
+    retained_grammar_refusal!(
+        retained_suite_refuses_wrong_count,
+        "observed-test-count",
+        "2",
+        false
+    );
+    retained_grammar_refusal!(
+        retained_suite_refuses_dirty_provenance,
+        "suite-clean",
+        "no",
+        false
+    );
+    retained_grammar_refusal!(
+        retained_suite_refuses_bad_source_identity,
+        "suite-tree",
+        "not-source-provenance",
+        false
+    );
+    retained_grammar_refusal!(
+        retained_suite_refuses_changed_revision,
+        "elementsd-binary-reported-revision",
+        "000000000000",
+        true
+    );
+    retained_grammar_refusal!(
+        retained_suite_refuses_wrong_revision_length,
+        "elementsd-binary-reported-revision",
+        "b7fc5d08",
+        true
+    );
+    retained_grammar_refusal!(
+        retained_suite_refuses_changed_intended_tip,
+        "elementsd-intended-executed-tip",
+        &"0".repeat(40),
+        true
+    );
+    retained_grammar_refusal!(
+        retained_suite_refuses_wrong_adapter,
+        "executor-adapter-version",
+        "2.0.0",
+        true
+    );
+    retained_grammar_refusal!(
+        retained_suite_refuses_wrong_protocol,
+        "protocol-revision",
+        "7",
+        false
+    );
+    retained_grammar_refusal!(
+        retained_suite_refuses_wrong_target,
+        "deployment-target-contract",
+        "another-target",
+        true
+    );
+    retained_grammar_refusal!(
+        retained_tail_refuses_wrong_profile,
+        "capture-profile",
+        "native",
+        false
+    );
+    retained_grammar_refusal!(
+        retained_tail_refuses_phase_order,
+        "phase-wall-ms",
+        "cargo 42",
+        false
+    );
+    retained_grammar_refusal!(
+        retained_tail_refuses_phase_wall,
+        "phase-wall-ms",
+        "preflight -1",
+        false
+    );
+    retained_grammar_refusal!(
+        retained_tail_refuses_elapsed_wall,
+        "elapsed-wall-ms",
+        "01",
+        false
+    );
+    retained_grammar_refusal!(
+        retained_tail_refuses_campaign_schema,
+        "campaign-manifest-schema",
+        "2",
+        false
+    );
+    retained_grammar_refusal!(
+        retained_tail_refuses_campaign_count,
+        "campaign-manifest-count",
+        "1",
+        false
+    );
+    retained_grammar_refusal!(retained_tail_refuses_ineligible, "eligible", "no", false);
+
+    #[test]
+    fn retained_tail_refuses_missing_duplicate_and_surplus_lines() {
+        let original = std::str::from_utf8(RETAINED_FILES[3].bytes).expect("report");
+        let policy = original
+            .lines()
+            .find(|line| line.starts_with("retained-policy "))
+            .expect("policy");
+        for bytes in [
+            original.replace(&format!("{policy}\n"), ""),
+            original.replace(
+                "campaign-manifest-count 2\n",
+                "campaign-manifest-count 2\ncampaign-manifest-count 2\n",
+            ),
+            format!("{original}surplus yes\n"),
+        ] {
+            assert!(parse_retained_report(bytes.as_bytes(), &RETAINED_PINS).is_err());
+        }
+    }
+
+    #[test]
+    fn retained_families_refuse_stopped_absent_and_contradicting_subjects() {
+        for index in 0..2 {
+            for (field, value, reason) in [
+                ("stopped", serde_json::json!(true), "stopped"),
+                ("subject", serde_json::Value::Null, "absent subject"),
+                (
+                    "expectation",
+                    serde_json::json!("contradiction"),
+                    "expectation",
+                ),
+                (
+                    "control_accepted",
+                    serde_json::json!(false),
+                    "accepted control",
+                ),
+            ] {
+                let (_, mut fields) =
+                    parse_retained_report(RETAINED_FILES[3].bytes, &RETAINED_PINS).expect("report");
+                let mut families = retained_json(&fields.families).expect("families");
+                let family = families[index]["family"].as_str().expect("name").to_owned();
+                families[index][field] = value;
+                fields.families = serde_json::to_vec(&families).expect("JSON");
+                assert_eq!(
+                    validate_retained_fields(&fields),
+                    Err(Refusal::RetainedCampaign(
+                        crate::maturity_native::native::RetainedCampaignRefusal {
+                            family,
+                            field: reason
+                        }
+                    ))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn retained_campaign_refuses_each_changed_coordinate() {
+        use crate::maturity_native::native::RetainedCampaignManifest;
+        let corpus = maturity_retained_run_of_record().expect("archive");
+        let (_, fields) =
+            parse_retained_report(RETAINED_FILES[3].bytes, &RETAINED_PINS).expect("report");
+        let rows: Vec<_> = fields
+            .rows
+            .iter()
+            .map(|bytes| retained_json(bytes).expect("row"))
+            .collect();
+        assert_eq!(
+            RetainedCampaignManifest::validate(&corpus.evidence, &rows),
+            Ok(())
+        );
+        for index in 0..2 {
+            for pointer in [
+                "/claim/name",
+                "/claim/section",
+                "/control_id",
+                "/control/digest",
+                "/observation/digest",
+                "/observation/funded_outpoints/0/output/outpoint/txid",
+                "/observation/funded_outpoints/0/funding_step",
+                "/compatibility",
+                "/candidate/subject_pin",
+                "/candidate/schedule",
+                "/abi",
+                "/deployment/network",
+                "/branch/checkpoint",
+                "/policy_requirement",
+                "/policy",
+                "/constructor",
+                "/mutation",
+                "/declared_boundary",
+                "/expected_layer",
+                "/expected_consumer",
+                "/operation",
+                "/target",
+                "/family",
+                "/control/claims/0/name",
+            ] {
+                let mut changed = rows.clone();
+                *changed[index].pointer_mut(pointer).expect("coordinate") =
+                    serde_json::json!("changed");
+                let refusal = RetainedCampaignManifest::validate(&corpus.evidence, &changed)
+                    .expect_err("changed coordinate");
+                assert_eq!(
+                    refusal.family,
+                    rows[index]["family"].as_str().expect("family")
+                );
+                assert_eq!(refusal.field, pointer.split('/').nth(1).expect("field"));
+            }
+        }
+        let mut changed = rows.clone();
+        changed[0]["surplus"] = serde_json::json!(true);
+        assert_eq!(
+            RetainedCampaignManifest::validate(&corpus.evidence, &changed)
+                .expect_err("surplus")
+                .field,
+            "field census"
+        );
+        assert!(RetainedCampaignManifest::validate(&corpus.evidence, &rows[..1]).is_err());
+    }
+
+    #[test]
+    fn retained_policy_requires_node_defaults_and_provenance() {
+        let (_, fields) =
+            parse_retained_report(RETAINED_FILES[3].bytes, &RETAINED_PINS).expect("report");
+        let policy = retained_json(&fields.policy).expect("policy");
+        for (field, value) in [
+            ("unit", serde_json::json!("units")),
+            ("block_identifier", serde_json::json!("other")),
+            ("block", serde_json::json!("0.00000200")),
+            ("relay_provenance", serde_json::json!("assumed")),
+            ("block_provenance", serde_json::json!("assumed")),
+            (
+                "start_arguments",
+                serde_json::json!(["-daemon=0", "-minrelaytxfee=0"]),
+            ),
+            (
+                "start_arguments",
+                serde_json::json!(["-daemon=0", "-blockmintxfee=0"]),
+            ),
+        ] {
+            let mut changed = policy.clone();
+            changed[field] = value;
+            assert_eq!(
+                crate::maturity_native::sponsored::Policy::parse(changed),
+                Err(MaturityNativePlanRefusal::SponsoredPolicy)
+            );
+        }
+        assert!(crate::maturity_native::sponsored::Policy::parse(serde_json::Value::Null).is_err());
+    }
+
+    #[test]
+    fn retained_replay_refuses_changed_routes_and_readback() {
+        for readback in [false, true] {
+            let result = admit_retained_with_replay(
+                &RETAINED_FILES,
+                &RETAINED_PINS,
+                |identity, branch, exchanges| {
+                    let mut changed = exchanges.to_vec();
+                    let response = &mut changed[3].1;
+                    if readback {
+                        response
+                            .mined_readback
+                            .as_mut()
+                            .expect("readback")
+                            .raw_transaction[0] ^= 1;
+                    } else {
+                        let mut detail: serde_json::Value = serde_json::from_str(
+                            response.observed_detail.as_deref().expect("detail"),
+                        )
+                        .expect("JSON");
+                        detail["route"] = serde_json::json!("setup");
+                        response.observed_detail =
+                            Some(serde_json::to_string(&detail).expect("JSON"));
+                    }
+                    crate::maturity_native::native::replay_retained_routes(
+                        identity, branch, &changed,
+                    )
+                },
+            );
+            assert_eq!(
+                result.err(),
+                Some(Refusal::Derivation(if readback {
+                    MaturityNativePlanRefusal::SubmissionReadbackMismatch
+                } else {
+                    MaturityNativePlanRefusal::SponsoredRoute
+                }))
+            );
+        }
+    }
     #[test]
     fn native_observation_admission_binds_bytes_policy_census_and_replay() {
         let corpus = super::maturity_native_run_of_record().expect("native archive");

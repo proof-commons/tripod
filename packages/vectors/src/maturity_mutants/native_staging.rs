@@ -2985,9 +2985,66 @@ mod tests {
         );
     }
 
+    fn assert_historical_boundary(
+        staged: &NativeRow,
+        plan: &crate::maturity_evidence::MaturityAnnouncementEvidencePlan,
+    ) -> bool {
+        use crate::maturity_safety::{MaturityNonAnswerFinality, MaturityRowBoundary, rows};
+        let row = rows()
+            .iter()
+            .find(|row| row.section() == staged.section && row.name() == staged.name)
+            .expect("Safety key");
+        let absent = matches!(
+            staged.name,
+            "stale-operator"
+                | "wrong-control-recipe"
+                | "predecessor-and-successor-metadata-witnesses-exchanged"
+        );
+        let boundary = if absent {
+            assert!(matches!(staged.standing, NativeStanding::Unstageable(_)));
+            MaturityRowBoundary::NativeCoordinateAbsentFromCandidate
+        } else {
+            assert!(staged.standing.subject().is_some());
+            if staged.name == "successor-from-wrong-semantic-metadata" {
+                MaturityRowBoundary::Layer(crate::matrix::EvidenceBoundary::ScriptPathRejection)
+            } else {
+                MaturityRowBoundary::NativeCoordinateUndecidedByCandidate
+            }
+        };
+        assert_eq!(row.boundary(), boundary);
+        assert_eq!(
+            boundary.finality(),
+            if staged.name == "successor-from-wrong-semantic-metadata" {
+                None
+            } else {
+                Some(MaturityNonAnswerFinality::Final)
+            }
+        );
+        let entry = plan
+            .rows()
+            .iter()
+            .find(|entry| {
+                entry.row().section() == staged.section && entry.row().name() == staged.name
+            })
+            .expect("evidence key");
+        if staged.name == "successor-from-wrong-semantic-metadata" {
+            assert!(matches!(
+                entry.standing(),
+                crate::maturity_evidence::MaturityRowStanding::NativeRefusalObserved(_)
+            ));
+        } else {
+            assert_eq!(
+                entry.standing(),
+                &crate::maturity_evidence::MaturityRowStanding::OutstandingUnderTypedNonAnswer(
+                    boundary
+                )
+            );
+        }
+        absent
+    }
+
     #[test]
     fn historical_unstageable_subjects_keep_their_partition_after_scope_settlement() {
-        use crate::maturity_safety::{MaturityNonAnswerFinality, MaturityRowBoundary, rows};
         let plan = derive_maturity_evidence_plan_with(
             MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
             MaturityConstructorMaterial::Absent(
@@ -3031,7 +3088,7 @@ mod tests {
             .collect();
         let mut partition = [0; 4];
         let mut final_absent = 0;
-        let mut constructed_waits = 0;
+        let mut constructed_admitted = 0;
         for (staged, standing) in NATIVE_ROWS.iter().zip(snapshot) {
             match standing {
                 NativeStanding::Staged { .. } => partition[0] += 1,
@@ -3039,49 +3096,15 @@ mod tests {
                 NativeStanding::WaitingOnSponsoredForm => partition[2] += 1,
                 NativeStanding::Unstageable(_) => {
                     partition[3] += 1;
-                    let row = rows()
-                        .iter()
-                        .find(|row| row.section() == staged.section && row.name() == staged.name)
-                        .expect("Safety key");
-                    let absent = matches!(
-                        staged.name,
-                        "stale-operator"
-                            | "wrong-control-recipe"
-                            | "predecessor-and-successor-metadata-witnesses-exchanged"
-                    );
-                    let boundary = if absent {
-                        assert!(matches!(staged.standing, NativeStanding::Unstageable(_)));
-                        MaturityRowBoundary::NativeCoordinateAbsentFromCandidate
-                    } else {
-                        assert!(staged.standing.subject().is_some());
-                        constructed_waits += 1;
-                        MaturityRowBoundary::NativeSubjectAwaitsConstructionRoute
-                    };
-                    assert_eq!(row.boundary(), boundary);
-                    assert_eq!(
-                        boundary.finality(),
-                        Some(if absent {
-                            MaturityNonAnswerFinality::Final
-                        } else {
-                            MaturityNonAnswerFinality::Waiting
-                        })
-                    );
-                    let entry = plan
-                        .rows()
-                        .iter()
-                        .find(|entry| {
-                            entry.row().section() == staged.section
-                                && entry.row().name() == staged.name
-                        })
-                        .expect("evidence key");
-                    assert_eq!(entry.standing(), &crate::maturity_evidence::MaturityRowStanding::OutstandingUnderTypedNonAnswer(boundary));
+                    let absent = assert_historical_boundary(staged, &plan);
+                    constructed_admitted += usize::from(!absent);
                     final_absent += usize::from(absent);
                 }
             }
         }
         assert_eq!(partition, [25, 3, 2, 5]);
         assert_eq!(final_absent, 3);
-        assert_eq!(constructed_waits, 2);
+        assert_eq!(constructed_admitted, 2);
     }
 
     #[test]
@@ -3158,9 +3181,9 @@ mod tests {
         .expect("the evidence plan derives");
         assert_eq!(plan.census().rows(), 206);
         // Thirty-six supplementary comparisons add answers after the report campaign.
-        assert_eq!(plan.census().answered(), 171);
+        assert_eq!(plan.census().answered(), 172);
         // Two ordering claims retire without becoming answered; thirty-six comparisons answer.
-        assert_eq!(plan.census().outstanding(), 35);
+        assert_eq!(plan.census().outstanding(), 34);
         assert_eq!(plan.census().native_run_required(), 0);
         assert_eq!(row_count(), 206);
 

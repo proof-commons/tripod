@@ -1129,12 +1129,317 @@ pub mod native {
         Sponsored(OperationStep),
     }
 
+    /// One refused campaign coordinate, retained with its family.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub struct RetainedCampaignRefusal {
+        /// Family whose offered record disagrees.
+        pub family: String,
+        /// The exact binding that failed.
+        pub field: &'static str,
+    }
+
+    fn retained_hex(bytes: &[u8]) -> String {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        for byte in bytes {
+            let _ = write!(out, "{byte:02x}");
+        }
+        out
+    }
+
+    const fn retained_expected_layer(
+        row: &crate::maturity_mutants::native_staging::NativeRow,
+    ) -> ObservedOutcomeLayer {
+        use crate::maturity_mutants::native_staging::{NativeBoundary, NativeStanding};
+        if matches!(
+            row.standing(),
+            NativeStanding::StagedAcceptanceExpected { .. }
+        ) {
+            ObservedOutcomeLayer::Accepted
+        } else {
+            match row.boundary() {
+                NativeBoundary::ScriptPathRejection => ObservedOutcomeLayer::ScriptPathRejection,
+                NativeBoundary::ConsensusRejectionBeforeScript => {
+                    ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+                }
+            }
+        }
+    }
+
+    /// Frozen intent and untrusted observations, validated again at admission.
+    pub struct RetainedCampaignManifest {
+        /// Proposed rows; comparison against replay is required before admission.
+        pub rows: Vec<serde_json::Value>,
+        /// Earlier funding responses used to bind submitted inputs.
+        pub funding: Vec<(String, FundedOutput)>,
+    }
+
+    impl RetainedCampaignManifest {
+        /// Freeze the two typed claims before any target interaction.
+        /// # Panics
+        /// Panics only if the fixed retained roster loses its typed row.
+        #[must_use]
+        pub fn new(identity: &CandidateDeploymentIdentity, context: BranchContext) -> Self {
+            let rows = RETAINED_SUBJECTS.iter().zip(RETAINED_FAMILIES).map(|(subject, family)| {
+            let row = NATIVE_ROWS.iter().find(|row| row.standing().subject() == Some(*subject))
+                .expect("retained subject has a typed row");
+            assert_eq!(row.boundary(), crate::maturity_mutants::native_staging::NativeBoundary::ScriptPathRejection);
+            let expected_layer = retained_expected_layer(row);
+            let second = *subject == NativeSubject::TwoStateSuccessors;
+            serde_json::json!({
+                "claim":{"section":row.section().section(), "name":row.name()},
+                "operation":"announce_maturity", "family":family,
+                "candidate":{"schedule":tapscript::StateWitnessSchedule::VariableMetadata.name(),
+                    "subject_pin":subject.pin()},
+                "abi":"variable-metadata", "target":"elements-tapscript-v2",
+                "deployment":{"network":retained_hex(identity.network_id()),
+                    "genesis":retained_hex(identity.genesis_id())},
+                "branch":{"identifier":retained_hex(context.identifier()), "checkpoint":context.checkpoint()},
+                "policy_requirement":"node-defaults", "policy":null,
+                "constructor":if second { "TargetTransaction" } else { "link_for_metadata" },
+                "mutation":if second { "second-same-asset-input-and-successor-at-amount-one" } else { "semantic-q-checked-plus-one" },
+                "declared_boundary":"script_path_rejection",
+                "expected_layer":expected_layer,
+                "control_id":format!("{family}:control:{}", if second {5} else {3}),
+                "compatibility":if second { "equivalent-coin" } else { "same-coin" },
+                "control":null, "observation":null,
+                "expected_consumer":"native-evidence-fold",
+            })
+        }).collect();
+
+            Self {
+                rows,
+                funding: Vec::new(),
+            }
+        }
+
+        /// Retain a funding response before offering the next submission.
+        pub fn retain_funding(
+            &mut self,
+            case: &OperationCaseId,
+            response: &NativeOperationResponse,
+        ) {
+            self.funding.extend(
+                response
+                    .funded_outputs
+                    .iter()
+                    .cloned()
+                    .map(|coin| (case.step.clone(), coin)),
+            );
+        }
+
+        /// Bind a submission to frozen intent, earlier coins and validated policy.
+        /// # Errors
+        /// Names the family and the first disagreeing coordinate.
+        pub fn bind_submission(
+            &mut self,
+            step: &OperationStep,
+            policy: Option<&sponsored::Policy>,
+        ) -> Result<(), RetainedCampaignRefusal> {
+            let family = step
+                .case()
+                .step
+                .split(':')
+                .next()
+                .unwrap_or_default()
+                .to_owned();
+            self.bind_submission_fields(step, policy)
+                .map_err(|field| RetainedCampaignRefusal { family, field })
+        }
+
+        fn bind_submission_fields(
+            &mut self,
+            step: &OperationStep,
+            policy: Option<&sponsored::Policy>,
+        ) -> Result<(), &'static str> {
+            let OperationSubject::Submission(subject) = step.subject() else {
+                return Ok(());
+            };
+            let parts = step.case().step.split(':').collect::<Vec<_>>();
+            let [family, label, _] = parts.as_slice() else {
+                return Err("submission step shape");
+            };
+            let index = RETAINED_FAMILIES
+                .iter()
+                .position(|value| value == family)
+                .ok_or("unknown family")?;
+            let control = *label == "control";
+            let row = self.rows.get_mut(index).ok_or("row census")?;
+            if control {
+                if row["control_id"] != step.case().step {
+                    return Err("control identity");
+                }
+            } else {
+                let claims = submission_rows(step);
+                if claims.len() != 1
+                    || claims[0].0.section() != row["claim"]["section"]
+                    || claims[0].1 != row["claim"]["name"]
+                {
+                    return Err("subject claim mapping");
+                }
+            }
+            let transaction = TargetTransaction::decode(&subject.transaction_bytes)
+                .map_err(|_| "transaction encoding")?;
+            let inputs = transaction
+                .inputs()
+                .iter()
+                .map(|input| {
+                    let point = input.outpoint();
+                    let (funding_step, coin) = self
+                        .funding
+                        .iter()
+                        .find(|(_, coin)| {
+                            coin.outpoint.txid == point.txid().to_target_display()
+                                && coin.outpoint.vout == point.index()
+                        })
+                        .ok_or("submission spends an unretained outpoint")?;
+                    Ok(serde_json::json!({"funding_step":funding_step, "output":coin}))
+                })
+                .collect::<Result<Vec<_>, &'static str>>()?;
+            let expected_inputs = if !control && index == 1 { 2 } else { 1 };
+            if inputs.len() != expected_inputs {
+                return Err("funded input census");
+            }
+            let policy = policy.ok_or("submission has no validated policy")?;
+            row["policy"] = policy.0.clone();
+            let slot = if control { "control" } else { "observation" };
+            if !row[slot].is_null() {
+                return Err("duplicate submission");
+            }
+            row[slot] = serde_json::json!({"step":step.case().step,
+            "digest":retained_hex(&target_elements_conformance::constructor::tagged::sha256(&subject.transaction_bytes)),
+            "funded_outpoints":inputs, "claims":[row["claim"].clone()]});
+            if !row["control"].is_null() && !row["observation"].is_null() {
+                let control_coin = &row["control"]["funded_outpoints"][0]["output"];
+                let subject_coin = &row["observation"]["funded_outpoints"][0]["output"];
+                for key in ["asset", "amount_satoshis", "script"] {
+                    if control_coin[key] != subject_coin[key] {
+                        return Err("control compatibility");
+                    }
+                }
+                if (control_coin["outpoint"] == subject_coin["outpoint"]) != (index == 0) {
+                    return Err("control outpoint relationship");
+                }
+            }
+            Ok(())
+        }
+
+        /// Reconstruct every row from exact replay, then compare all closed fields.
+        /// # Errors
+        /// Refuses missing rows, surplus fields or a changed campaign coordinate.
+        /// # Panics
+        /// Panics only if the fixed retained roster loses its typed row.
+        pub fn validate(
+            plan: &RetainedRoutesPlanner,
+            offered: &[serde_json::Value],
+        ) -> Result<(), RetainedCampaignRefusal> {
+            plan.admit_families()?;
+            let mut expected = Self::new(&plan.inner.identity, plan.inner.branch);
+            for (step, response) in plan.exchanges() {
+                expected.bind_submission(step, plan.policy())?;
+                expected.retain_funding(step.case(), response);
+            }
+            for (index, family) in RETAINED_FAMILIES.iter().enumerate() {
+                let fail = |field| RetainedCampaignRefusal {
+                    family: (*family).to_owned(),
+                    field,
+                };
+                let row = offered.get(index).ok_or_else(|| fail("row census"))?;
+                let canonical = &expected.rows[index];
+                for field in [
+                    "claim",
+                    "operation",
+                    "family",
+                    "candidate",
+                    "abi",
+                    "target",
+                    "deployment",
+                    "branch",
+                    "policy_requirement",
+                    "policy",
+                    "constructor",
+                    "mutation",
+                    "declared_boundary",
+                    "expected_layer",
+                    "control_id",
+                    "compatibility",
+                    "control",
+                    "observation",
+                    "expected_consumer",
+                ] {
+                    if row.get(field) != canonical.get(field) {
+                        return Err(fail(field));
+                    }
+                }
+                if row != canonical {
+                    return Err(fail("field census"));
+                }
+            }
+            if offered.len() != 2 {
+                return Err(RetainedCampaignRefusal {
+                    family: "retained".to_owned(),
+                    field: "row census",
+                });
+            }
+            Ok(())
+        }
+    }
+
     enum RetainedAction {
         Bootstrap(OperationStep),
         FundPredecessor { control: bool },
         Control,
         FundSecondCoin,
         Subject,
+    }
+
+    /// Borrowed observations and funding provenance for one retained claim.
+    pub struct RetainedFamilyObservation<'a> {
+        /// Stable family name.
+        pub family: &'static str,
+        /// Typed staging claim and its expected outcome.
+        pub row: &'static crate::maturity_mutants::native_staging::NativeRow,
+        /// The exact control exchange, if present.
+        pub control: Option<&'a (OperationStep, NativeOperationResponse)>,
+        /// The exact departure exchange, if present.
+        pub subject: Option<&'a (OperationStep, NativeOperationResponse)>,
+        /// Outcome expected by the typed staging standing.
+        pub expected: ObservedOutcomeLayer,
+        /// Whether the control stopped this family.
+        pub stopped: bool,
+        /// Control inputs joined to preceding funding responses.
+        pub control_coins: Vec<(&'a OperationStep, &'a FundedOutput)>,
+        /// Subject inputs joined to preceding funding responses.
+        pub subject_coins: Vec<(&'a OperationStep, &'a FundedOutput)>,
+    }
+
+    impl RetainedFamilyObservation<'_> {
+        /// Agreement is separate from an accepted control and admission.
+        #[must_use]
+        pub fn expectation(&self) -> &'static str {
+            self.subject.map_or("absent", |(_, response)| {
+                if response.observed_layer == self.expected {
+                    "agreement"
+                } else {
+                    "contradiction"
+                }
+            })
+        }
+
+        /// Identity is available only for an acceptance with exact mined readback.
+        #[must_use]
+        pub fn accepted_control_identity(&self) -> Option<Txid> {
+            let (step, response) = self.control?;
+            let OperationSubject::Submission(subject) = step.subject() else {
+                return None;
+            };
+            if response.observed_layer != ObservedOutcomeLayer::Accepted
+                || sponsored::check_readback(&subject.transaction_bytes, response).is_err()
+            {
+                return None;
+            }
+            Txid::from_target_display(response.accepted_txid.as_deref()?).ok()
+        }
     }
 
     /// The two retained constructions use one issuance and separate accepted controls.
@@ -1208,44 +1513,114 @@ pub mod native {
             &self.stopped
         }
 
-        /// Each family retains its control, departure and expectation independently.
-        /// Missing exchanges remain null because an absent response establishes nothing.
+        /// Typed family observations used by rendering, admission and the fold.
+        #[must_use]
+        pub fn families(&self) -> Vec<RetainedFamilyObservation<'_>> {
+            RETAINED_FAMILIES
+                .iter()
+                .zip(RETAINED_SUBJECTS)
+                .filter_map(|(family, subject)| {
+                    let row = NATIVE_ROWS
+                        .iter()
+                        .find(|row| row.standing().subject() == Some(subject))?;
+                    let find = |label| {
+                        self.exchanges.iter().find(|(step, _)| {
+                            let mut parts = step.case().step.split(':');
+                            parts.next() == Some(*family) && parts.next() == Some(label)
+                        })
+                    };
+                    let control = find("control");
+                    let departure = find(row.name());
+                    let expected = retained_expected_layer(row);
+                    let coins = |exchange: Option<&(OperationStep, NativeOperationResponse)>| {
+                        let Some((step, _)) = exchange else {
+                            return Vec::new();
+                        };
+                        let OperationSubject::Submission(subject) = step.subject() else {
+                            return Vec::new();
+                        };
+                        let Ok(tx) = TargetTransaction::decode(&subject.transaction_bytes) else {
+                            return Vec::new();
+                        };
+                        tx.inputs()
+                            .iter()
+                            .filter_map(|input| {
+                                self.exchanges
+                                    .iter()
+                                    .take_while(|(earlier, _)| earlier.case() != step.case())
+                                    .find_map(|(funding, response)| {
+                                        response
+                                            .funded_outputs
+                                            .iter()
+                                            .find(|coin| {
+                                                coin.outpoint.txid
+                                                    == input.outpoint().txid().to_target_display()
+                                                    && coin.outpoint.vout
+                                                        == input.outpoint().index()
+                                            })
+                                            .map(|coin| (funding, coin))
+                                    })
+                            })
+                            .collect()
+                    };
+                    Some(RetainedFamilyObservation {
+                        family,
+                        row,
+                        control,
+                        subject: departure,
+                        expected,
+                        stopped: self.stopped.contains(family),
+                        control_coins: coins(control),
+                        subject_coins: coins(departure),
+                    })
+                })
+                .collect()
+        }
+
+        /// Each family renders from the same typed observations used at admission.
         #[must_use]
         pub fn families_json(&self) -> Vec<serde_json::Value> {
-            RETAINED_FAMILIES.iter().zip(RETAINED_SUBJECTS).map(|(family, subject)| {
-                let row = NATIVE_ROWS.iter().find(|row| row.standing().subject() == Some(subject));
-                let find = |control: bool| self.exchanges.iter().find(|(step, _)| {
-                    let mut parts = step.case().step.split(':');
-                    parts.next() == Some(*family)
-                        && parts.next() == if control { Some("control") } else { row.map(crate::maturity_mutants::native_staging::NativeRow::name) }
+            self.families().iter().map(|family| serde_json::json!({
+                "family": family.family,
+                "claim": {"section": family.row.section().section(), "name": family.row.name()},
+                "control": family.control.map(retained_observation),
+                "subject": family.subject.map(retained_observation),
+                "stopped": family.stopped,
+                "expectation": family.expectation(),
+                "control_accepted": family.accepted_control_identity().is_some(),
+            })).collect()
+        }
+
+        /// Admit both families together; diagnostic completion alone grants no credit.
+        /// # Errors
+        /// Names a stopped, absent, contradicting or uncontrolled family.
+        pub fn admit_families(&self) -> Result<(), RetainedCampaignRefusal> {
+            for family in self.families() {
+                let field = if family.stopped {
+                    Some("stopped")
+                } else if family.subject.is_none() {
+                    Some("absent subject")
+                } else if family.expectation() != "agreement" {
+                    Some("expectation")
+                } else if family.accepted_control_identity().is_none() {
+                    Some("accepted control")
+                } else {
+                    None
+                };
+                if let Some(field) = field {
+                    return Err(RetainedCampaignRefusal {
+                        family: family.family.to_owned(),
+                        field,
+                    });
+                }
+            }
+            if self.families().len() != 2 {
+                return Err(RetainedCampaignRefusal {
+                    family: "retained".to_owned(),
+                    field: "family census",
                 });
-                let control = find(true);
-                let departure = find(false);
-                let expected = row.map(|row| {
-                    use crate::maturity_mutants::native_staging::{NativeBoundary, NativeStanding};
-                    if matches!(row.standing(), NativeStanding::StagedAcceptanceExpected { .. }) {
-                        ObservedOutcomeLayer::Accepted
-                    } else {
-                        match row.boundary() {
-                            NativeBoundary::ScriptPathRejection => ObservedOutcomeLayer::ScriptPathRejection,
-                            NativeBoundary::ConsensusRejectionBeforeScript => ObservedOutcomeLayer::ConsensusRejectionBeforeScript,
-                        }
-                    }
-                });
-                serde_json::json!({
-                    "family": family,
-                    "claim": row.map(|row| serde_json::json!({"section":row.section().section(), "name":row.name()})),
-                    "control": control.map(retained_observation),
-                    "subject": departure.map(retained_observation),
-                    "stopped": self.stopped.contains(family),
-                    "expectation": departure.map_or("absent", |(_, response)| if Some(response.observed_layer) == expected { "agreement" } else { "contradiction" }),
-                    "control_accepted": control.is_some_and(|(step, response)| {
-                        matches!(step.subject(), OperationSubject::Submission(bytes)
-                            if response.observed_layer == ObservedOutcomeLayer::Accepted
-                                && sponsored::check_readback(&bytes.transaction_bytes, response).is_ok())
-                    }),
-                })
-            }).collect()
+            }
+            Ok(())
         }
 
         /// A terminal refusal remains available without inventing an observation.

@@ -2203,6 +2203,8 @@ fn derive_maturity_evidence_source(
         .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
     let native = crate::maturity_corpus::maturity_native_run_of_record()
         .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
+    let retained = crate::maturity_corpus::maturity_retained_run_of_record()
+        .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
     let combined = combined_projection()?;
     let root_history_mutations =
         MaturityMutationRegistry::registered(MaturityMutationRegistryKind::RootHistory);
@@ -2282,10 +2284,14 @@ fn derive_maturity_evidence_source(
             row,
             standing: combined_projection_standing(
                 row,
-                remaining_native_standing(
+                retained_native_standing(
                     row,
-                    sponsored_standing(row, mutant_standing(row, standing, refusal), sponsored),
-                    native,
+                    remaining_native_standing(
+                        row,
+                        sponsored_standing(row, mutant_standing(row, standing, refusal), sponsored),
+                        native,
+                    ),
+                    retained,
                 ),
                 combined,
             ),
@@ -3543,6 +3549,68 @@ fn remaining_native_standing(
     }
 }
 
+/// Attribute the retained semantic observation only after whole-archive admission.
+fn retained_native_standing(
+    row: &MaturitySafetyRow,
+    standing: MaturityRowStanding,
+    corpus: &crate::maturity_corpus::ValidatedRetainedMaturityCorpus,
+) -> MaturityRowStanding {
+    use crate::maturity_corpus::MATURITY_RETAINED_RUN_ADDRESS;
+    if corpus.report.run_address() != MATURITY_RETAINED_RUN_ADDRESS
+        || !matches!(
+            standing,
+            MaturityRowStanding::NativeRunRequired(_)
+                | MaturityRowStanding::NativeRefusalAtUnexpectedBoundary(_)
+        )
+    {
+        return standing;
+    }
+    let families = corpus.evidence.families();
+    let Some(family) = families
+        .iter()
+        .find(|family| (family.row.section(), family.row.name()) == (row.section(), row.name()))
+    else {
+        return standing;
+    };
+    if family.row.standing().subject() != Some(crate::maturity_mutants::native_staging::NativeSubject::SuccessorFromWrongSemanticMetadata)
+        || family.control_coins.len() != 1 || family.subject_coins.len() != 1
+        || family.control_coins[0].1 != family.subject_coins[0].1 {
+        return standing;
+    }
+    let (Some((step, response)), Some(control)) =
+        (family.subject, family.accepted_control_identity())
+    else {
+        return standing;
+    };
+    if response.observed_layer != ObservedOutcomeLayer::ScriptPathRejection {
+        return standing;
+    }
+    let Some((control_kind, site, carrier)) = native_declaration(row) else {
+        return standing;
+    };
+    let OperationSubject::Submission(subject) = step.subject() else {
+        return standing;
+    };
+    let (Some(layer), Some(detail)) = (row.refusing_layer(), response.observed_detail.clone())
+    else {
+        return standing;
+    };
+    let refusal = MaturityNativeRefusal::record(
+        layer,
+        response.observed_layer,
+        MaturityAcceptedControl::new(control_kind, control),
+        detail,
+        MaturitySubmittedSubject::ExactBytes(subject.transaction_bytes.clone()),
+        MaturityMutationSite::Locator(site),
+        MaturityCarrierOutcome::new(carrier, MaturityCarrierExecution::Executed),
+    );
+    if native_refusal_binds_to_row(row, &refusal) == MaturityRowBinding::Bound {
+        MaturityRowStanding::from_native_refusal(refusal)
+    } else {
+        standing
+    }
+}
+
 /// Count the classified rows into one bucket per standing.
 fn census_from_rows(classified: &[MaturityEvidenceRow]) -> MaturityEvidenceCensus {
     use crate::maturity_safety::MaturityNonAnswerFinality;
@@ -3592,6 +3660,119 @@ fn census_from_rows(classified: &[MaturityEvidenceRow]) -> MaturityEvidenceCensu
 
 #[cfg(test)]
 pub(crate) mod tests {
+
+    #[test]
+    fn retained_semantic_refusal_binds_its_exact_row_and_same_coin_control() {
+        let corpus = crate::maturity_corpus::maturity_retained_run_of_record().expect("retained");
+        let families = corpus.evidence.families();
+        let family = &families[0];
+        let (subject, response) = family.subject.expect("semantic subject");
+        let (control, _) = family.control.expect("control");
+        let position = |step: &target_elements_conformance::executor::OperationStep| {
+            corpus
+                .evidence
+                .exchanges()
+                .iter()
+                .position(|(candidate, _)| candidate.case() == step.case())
+                .expect("exchange")
+        };
+        assert!(position(subject) < position(control));
+        assert_eq!(
+            family.subject_coins[0].1.outpoint,
+            family.control_coins[0].1.outpoint
+        );
+        assert_eq!(
+            response.observed_layer,
+            ObservedOutcomeLayer::ScriptPathRejection
+        );
+        let entry = PLAN
+            .rows()
+            .iter()
+            .find(|entry| {
+                entry.row().section() == family.row.section()
+                    && entry.row().name() == family.row.name()
+            })
+            .expect("claim");
+        let MaturityRowStanding::NativeRefusalObserved(refusal) = entry.standing() else {
+            panic!("bound refusal");
+        };
+        assert_eq!(
+            native_refusal_binds_to_row(entry.row(), refusal),
+            MaturityRowBinding::Bound
+        );
+        assert_eq!(refusal.observed_layer(), response.observed_layer);
+        assert_eq!(
+            super::retained_native_standing(
+                entry.row(),
+                MaturityRowStanding::NativeRunRequired(None),
+                corpus
+            ),
+            *entry.standing()
+        );
+    }
+
+    #[test]
+    fn retained_two_successor_acceptance_binds_final_undecided_standing() {
+        use crate::maturity_safety::MaturityRowBoundary;
+
+        let corpus = crate::maturity_corpus::maturity_retained_run_of_record().expect("retained");
+        let families = corpus.evidence.families();
+        let family = &families[1];
+        let (step, response) = family.subject.expect("two-successor subject");
+        assert!(family.accepted_control_identity().is_some());
+        assert_eq!(response.observed_layer, ObservedOutcomeLayer::Accepted);
+        let OperationSubject::Submission(subject) = step.subject() else {
+            panic!("submission");
+        };
+        assert_eq!(
+            response
+                .mined_readback
+                .as_ref()
+                .expect("readback")
+                .raw_transaction,
+            subject.transaction_bytes
+        );
+        assert_eq!(
+            crate::maturity_native::sponsored::detail(response)
+                .expect("route")
+                .1,
+            Some(crate::maturity_native::MaturityAcceptanceRoute::DirectBlockAfterRelayRefusal)
+        );
+        assert_ne!(
+            family.control_coins[0].1.outpoint,
+            family.subject_coins[0].1.outpoint
+        );
+        let entry = PLAN
+            .rows()
+            .iter()
+            .find(|entry| {
+                entry.row().section() == family.row.section()
+                    && entry.row().name() == family.row.name()
+            })
+            .expect("claim");
+        assert_eq!(
+            entry.row().boundary(),
+            MaturityRowBoundary::NativeCoordinateUndecidedByCandidate
+        );
+        assert_eq!(
+            entry.row().boundary().finality(),
+            Some(crate::maturity_safety::MaturityNonAnswerFinality::Final)
+        );
+        assert_eq!(
+            entry.standing(),
+            &MaturityRowStanding::OutstandingUnderTypedNonAnswer(
+                MaturityRowBoundary::NativeCoordinateUndecidedByCandidate
+            )
+        );
+        assert_eq!(
+            super::retained_native_standing(
+                entry.row(),
+                MaturityRowStanding::NativeRunRequired(None),
+                corpus
+            ),
+            MaturityRowStanding::NativeRunRequired(None)
+        );
+    }
     pub fn contradicted_report_plan() -> MaturityAnnouncementEvidencePlan {
         let mut plan = PLAN.clone();
         let entry = plan
@@ -3637,7 +3818,7 @@ pub(crate) mod tests {
                 before.report_layer_observed(),
                 before.outstanding_under_typed_non_answer()
             ),
-            (206, 120, 86, 15, 0, 28)
+            (206, 121, 85, 15, 0, 27)
         );
         assert_eq!(
             (
@@ -3648,14 +3829,14 @@ pub(crate) mod tests {
                 after.report_layer_observed(),
                 after.outstanding_under_typed_non_answer()
             ),
-            (206, 135, 71, 0, 15, 28)
+            (206, 136, 70, 0, 15, 27)
         );
         assert_eq!(
             (
                 after.typed_non_answer_final(),
                 after.typed_non_answer_waiting()
             ),
-            (25, 3)
+            (26, 1)
         );
         let mut changed = 0;
         for (old, new) in source.rows().iter().zip(folded.rows()) {
@@ -3738,9 +3919,9 @@ pub(crate) mod tests {
         }
         assert_eq!([accepted_departures, positives, native_claims], [3, 8, 28]);
         // Fifteen report pairs and thirty-six supplementary comparisons add answers.
-        assert_eq!(PLAN.census().answered(), 171);
+        assert_eq!(PLAN.census().answered(), 172);
         // Report pairs remove fifteen obligations; thirty-six comparisons answer thirty-six more.
-        assert_eq!(PLAN.census().outstanding(), 35);
+        assert_eq!(PLAN.census().outstanding(), 34);
     }
 
     #[test]
@@ -3865,11 +4046,20 @@ pub(crate) mod tests {
     /// depended on the environment it happens to run in would be checking
     /// the harness rather than the plan.
     static PLAN: LazyLock<MaturityAnnouncementEvidencePlan> = LazyLock::new(|| {
-        derive_maturity_evidence_plan_with(
+        use std::io::Write as _;
+        let start = std::time::Instant::now();
+        let plan = derive_maturity_evidence_plan_with(
             MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
             absent_material(),
         )
-        .expect("the evidence plan derives from its eight inputs")
+        .expect("the evidence plan derives from its eight inputs");
+        writeln!(
+            std::io::stdout(),
+            "census first evidence-plan access wall {:?}",
+            start.elapsed()
+        )
+        .expect("wall output");
+        plan
     });
 
     /// Explicit absence used by deterministic test derivations.
@@ -4510,8 +4700,9 @@ pub(crate) mod tests {
         // cycle, unaffected fields and zero/nonzero nonce acceptances to the prior three.
         assert_eq!(census.native_acceptance_observed(), 12);
         // The twenty-seven native refusal rows and balanced-state-corruption add
-        // twenty-eight declared-boundary refusals to the prior ten.
-        assert_eq!(census.native_refusal_observed(), 38);
+        // twenty-eight declared-boundary refusals to the prior ten;
+        // the retained semantic refusal is the thirty-ninth.
+        assert_eq!(census.native_refusal_observed(), 39);
         // Balanced-state-corruption now reaches its declared STATE script boundary.
         assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
         assert_eq!(census.constructor_continuity_observed(), 0);
@@ -4694,10 +4885,10 @@ pub(crate) mod tests {
                 census.retired(),
                 census.waiting()
             ),
-            (171, 25, 2, 8)
+            (172, 26, 2, 6)
         );
         assert_eq!(census.observed(), census.answered());
-        assert_eq!(census.outstanding(), 35);
+        assert_eq!(census.outstanding(), 34);
         assert_eq!(
             census.observed() + census.final_dispositions() + census.retired() + census.waiting(),
             206
@@ -4715,7 +4906,7 @@ pub(crate) mod tests {
             .expect("waiting row");
         waiting.standing = MaturityRowStanding::InfrastructureBlocked;
         let blocked_census = super::census_from_rows(&blocked.rows);
-        assert_eq!(blocked_census.waiting(), 8);
+        assert_eq!(blocked_census.waiting(), 6);
         assert_eq!(blocked_census.infrastructure_blocked(), 1);
         assert!(!blocked_census.every_required_row_is_answered());
         let mut experimental = PLAN.clone();
@@ -4727,7 +4918,7 @@ pub(crate) mod tests {
             .standing = MaturityRowStanding::Experimental;
         let experimental_census = super::census_from_rows(&experimental.rows);
         assert_eq!(experimental_census.experimental(), 1);
-        assert_eq!(experimental_census.waiting(), 8);
+        assert_eq!(experimental_census.waiting(), 6);
         assert_eq!(
             experimental_census.observed()
                 + experimental_census.final_dispositions()
@@ -5129,9 +5320,9 @@ pub(crate) mod tests {
                 "{row} admits a refusal it has no boundary or no mutant for",
             );
         }
-        // Fourteen positive rows are their own controls; twenty-seven other rows
+        // Fourteen positive rows are their own controls; twenty-six other rows
         // carry a typed reason rather than a layer.
-        assert_eq!(admitting_none, 41);
+        assert_eq!(admitting_none, 40);
     }
 
     /// The classifier, walked row by row against every observed layer.
@@ -5141,7 +5332,7 @@ pub(crate) mod tests {
     /// reads it. Neither says what the classifier does with a row: that
     /// a refusal recorded at each layer in turn answers a row exactly
     /// where the layer is the row's own, and that the rows a run can
-    /// answer at all are the fifty the matrix declares a
+    /// answer at all are the fifty-one the matrix declares a
     /// target verdict for, are facts about the matrix and the classifier
     /// together.
     #[test]
@@ -5193,10 +5384,11 @@ pub(crate) mod tests {
                 }
             }
         }
-        // The combined acceptance adds one layer row across seven observed layers.
-        assert_eq!(pairs, 1246);
-        assert_eq!(at_the_boundary, 50);
-        assert_eq!(bound, 38);
+        // The combined acceptance adds one layer row across seven observed layers;
+        // the retained semantic row adds another at the script-path layer.
+        assert_eq!(pairs, 1253);
+        assert_eq!(at_the_boundary, 51);
+        assert_eq!(bound, 39);
     }
 
     /// The census figures the readers this module adds leave unmoved.
@@ -5220,12 +5412,12 @@ pub(crate) mod tests {
         assert_eq!(census.report_layer_required(), 0);
         // Eight semantic positive waits leave; later-admissible-nonce, extra-state-like
         // output and wrong-version enter as final. Three absent coordinates are final;
-        // wrong semantic metadata and two successors retain construction waits.
-        assert_eq!(census.outstanding_under_typed_non_answer(), 28);
+        // retained semantic metadata supplies a refusal; two successors is final.
+        assert_eq!(census.outstanding_under_typed_non_answer(), 27);
         // The eight semantic positives, twenty-seven native refusal rows and
         // balanced-state-corruption add thirty-six answers to the prior eighty-three.
         // Fifteen report pairs and thirty-six first-party comparisons add answers to the native census.
-        assert_eq!(census.answered(), 171);
+        assert_eq!(census.answered(), 172);
         assert_eq!(census.root_history_observed(), 16);
         assert_eq!(census.public_recovery_observed(), 14);
         assert_eq!(census.native_declared_boundary_observed(), 0);
@@ -5233,8 +5425,9 @@ pub(crate) mod tests {
         // cycle, unaffected fields and zero/nonzero nonce acceptances to the prior three.
         assert_eq!(census.native_acceptance_observed(), 12);
         // The twenty-seven native refusal rows and balanced-state-corruption add
-        // twenty-eight declared-boundary refusals to the prior ten.
-        assert_eq!(census.native_refusal_observed(), 38);
+        // twenty-eight declared-boundary refusals to the prior ten;
+        // the retained semantic refusal is the thirty-ninth.
+        assert_eq!(census.native_refusal_observed(), 39);
         // Balanced-state-corruption now reaches its declared STATE script boundary.
         assert_eq!(census.native_refusal_at_unexpected_boundary(), 0);
         assert_eq!(
@@ -5297,7 +5490,7 @@ pub(crate) mod tests {
                 before.census().answered(),
                 before.census().outstanding()
             ),
-            (206, 135, 71)
+            (206, 136, 70)
         );
         assert_eq!(
             ledger
@@ -5420,9 +5613,9 @@ pub(crate) mod tests {
                 census.retired(),
                 census.waiting()
             ),
-            (140, 25, 2, 39)
+            (141, 26, 2, 37)
         );
-        assert_eq!(census.outstanding(), 66);
+        assert_eq!(census.outstanding(), 65);
         before
     }
 
@@ -5496,19 +5689,19 @@ pub(crate) mod tests {
                 new.retired(),
                 new.waiting()
             ),
-            (171, 25, 2, 8)
+            (172, 26, 2, 6)
         );
-        assert_eq!(new.outstanding_under_typed_non_answer(), 28);
+        assert_eq!(new.outstanding_under_typed_non_answer(), 27);
         assert_eq!(
             (new.typed_non_answer_final(), new.typed_non_answer_waiting()),
-            (25, 3)
+            (26, 1)
         );
         assert_eq!(
             (
                 new.native_acceptance_observed(),
                 new.native_refusal_observed()
             ),
-            (12, 38)
+            (12, 39)
         );
         assert_eq!(
             (new.report_layer_required(), new.report_layer_observed()),
@@ -5643,15 +5836,15 @@ pub(crate) mod tests {
     fn assert_admitted_supplementary_census(closed: &MaturityAnnouncementEvidencePlan) {
         assert_eq!(closed.census().rows(), 206);
         // Five retained comparisons add answers; the two retirements add none.
-        assert_eq!(closed.census().answered(), 140);
-        assert_eq!(closed.census().outstanding(), 66);
+        assert_eq!(closed.census().answered(), 141);
+        assert_eq!(closed.census().outstanding(), 65);
         assert_eq!(closed.census().first_party_discharged(), 45);
         assert_eq!(closed.census().first_party_required(), 36);
         assert_eq!(closed.census().retired(), 2);
         // Native, report and typed-reason evidence remains unchanged.
         assert_eq!(closed.census().native_run_required(), 0);
         assert_eq!(closed.census().report_layer_required(), 0);
-        assert_eq!(closed.census().outstanding_under_typed_non_answer(), 28);
+        assert_eq!(closed.census().outstanding_under_typed_non_answer(), 27);
     }
 
     #[test]
@@ -5857,8 +6050,9 @@ pub(crate) mod tests {
         // cycle, unaffected fields and zero/nonzero nonce acceptances to the prior three.
         assert_eq!(PLAN.census().native_acceptance_observed(), 12);
         // The twenty-seven native refusal rows and balanced-state-corruption add
-        // twenty-eight declared-boundary refusals to the prior ten.
-        assert_eq!(PLAN.census().native_refusal_observed(), 38);
+        // twenty-eight declared-boundary refusals to the prior ten;
+        // the retained semantic refusal is the thirty-ninth.
+        assert_eq!(PLAN.census().native_refusal_observed(), 39);
         assert_eq!(
             historical.evidence().acceptance_obligation(),
             &crate::maturity_native::MaturityAcceptanceObligation::Outstanding {
@@ -5958,7 +6152,7 @@ pub(crate) mod tests {
             .map(|classified| (classified.row().section(), classified.row().name()))
             .collect();
         assert!(expected.is_subset(&observed));
-        assert_eq!(observed.len(), 38);
+        assert_eq!(observed.len(), 39);
     }
 
     #[test]
@@ -6183,10 +6377,10 @@ pub(crate) mod tests {
         );
         // Seven final ABI claims, two acceptances, three matching refusals, one contradiction and one wait.
         assert_eq!(finals.len() + 2 + 3 + 1 + 1, 14);
-        // Three observed departures and three absent coordinates are final; two constructions wait.
-        assert_eq!(PLAN.census().typed_non_answer_final(), 25);
-        assert_eq!(PLAN.census().typed_non_answer_waiting(), 3);
-        assert_eq!(PLAN.census().outstanding_under_typed_non_answer(), 28);
+        // Four observed departures and three absent coordinates are final; confidential value waits.
+        assert_eq!(PLAN.census().typed_non_answer_final(), 26);
+        assert_eq!(PLAN.census().typed_non_answer_waiting(), 1);
+        assert_eq!(PLAN.census().outstanding_under_typed_non_answer(), 27);
         writeln!(std::io::stdout(), "census sponsored: {:?}", PLAN.census())
             .expect("census output");
     }
