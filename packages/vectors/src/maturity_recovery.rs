@@ -65,6 +65,36 @@ pub struct PublicAnnouncementHandoff {
     static_subtree: StateStaticSubtree,
     internal_key: StateInternalKeyPolicy,
     contract: TargetContractVersion,
+    positions: Option<MaturityPublicPositionContext>,
+}
+
+/// Public chain outputs and deployment coordinates needed to classify positions.
+/// No constructor results or process-local signing state enter this context.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct MaturityPublicPositionContext {
+    pub(crate) spent: Vec<crate::maturity_continuity::MaturityFundedPredecessor>,
+    pub(crate) reserve_asset: transaction::bytes::AssetId,
+    pub(crate) identity: linker::CandidateDeploymentIdentity,
+    pub(crate) branch: transaction::operator_right::BranchContext,
+}
+
+impl MaturityPublicPositionContext {
+    pub(crate) fn funded(
+        &self,
+        outpoint: Outpoint,
+    ) -> Result<
+        crate::maturity_continuity::MaturityFundedPredecessor,
+        crate::maturity_continuity::MaturityPositionalRefusal,
+    > {
+        let mut matches = self.spent.iter().filter(|coin| coin.outpoint == outpoint);
+        let coin = matches
+            .next()
+            .ok_or(crate::maturity_continuity::MaturityPositionalRefusal::PublicContext)?;
+        if matches.next().is_some() {
+            return Err(crate::maturity_continuity::MaturityPositionalRefusal::PublicContext);
+        }
+        Ok(coin.clone())
+    }
 }
 
 impl PublicAnnouncementHandoff {
@@ -97,7 +127,14 @@ impl PublicAnnouncementHandoff {
             static_subtree,
             internal_key,
             contract,
+            positions: None,
         }
+    }
+
+    /// Attach public spent outputs and deployment facts for positional role validation.
+    pub(crate) fn with_positions(mut self, positions: MaturityPublicPositionContext) -> Self {
+        self.positions = Some(positions);
+        self
     }
 
     /// The source and claimed identity.
@@ -543,6 +580,270 @@ pub fn recover_public_successor(
     })
 }
 
+/// Recover from public spent outputs and deployment facts after independently
+/// authenticating their STATE and sponsor positions under one derived ABI.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Positional authentication precedes the full public recovery byte checks without changing the sponsorless path."
+)]
+pub(crate) fn recover_public_successor_at_layout(
+    handoff: &PublicAnnouncementHandoff,
+) -> Result<RecoveredSuccessor, crate::maturity_continuity::MaturityPositionalRefusal> {
+    use crate::maturity_continuity::{
+        MaturityPositionalRefusal as Failure, classify_at_layout, witness_at_layout,
+    };
+    let context = handoff.positions.as_ref().ok_or(Failure::PublicContext)?;
+    let transaction = TargetTransaction::decode(handoff.bytes())
+        .map_err(|error| Failure::Decode(Box::new(error)))?;
+    let coordinator = usize::from(
+        transaction::MaturityInputLayout::stated()
+            .coordinator()
+            .index(),
+    );
+    let input = transaction
+        .inputs()
+        .get(coordinator)
+        .ok_or(Failure::PublicContext)?;
+    let funded = context.funded(input.outpoint())?;
+    let stack = transaction
+        .witnesses()
+        .get(coordinator)
+        .ok_or(Failure::PublicContext)?
+        .stack();
+    if stack.len() != 9 {
+        return Err(MaturityContinuityRefusal::WitnessItemCount {
+            actual: stack.len(),
+        }
+        .into());
+    }
+    let target =
+        closure_target().map_err(|error| MaturityContinuityRefusal::Target(Box::new(error)))?;
+    let metadata = decoded_witness_metadata(stack, handoff.schedule(), &target)?;
+    let bundle = public_projection_bundle(
+        &context.identity,
+        funded.asset,
+        handoff.schedule(),
+        metadata.semantic,
+    )
+    .map_err(|error| Failure::PublicBundle(Box::new(error)))?;
+    let (abi, view, classified) = classify_at_layout(handoff.bytes(), &bundle, context)?;
+    let roles = transaction::validate_maturity_abi_roles(&abi, &view, &classified)
+        .map_err(|error| Failure::Roles(Box::new(error)))?;
+    let (positional_stack, requested_cycle) =
+        witness_at_layout(&transaction, &abi, Some(&roles), handoff.schedule())?;
+    (|| -> Result<RecoveredSuccessor, MaturityRecoveryRefusal> {
+        use MaturityRecoveryRefusal as Refusal;
+
+        let transaction = TargetTransaction::decode(handoff.bytes()).map_err(|_| {
+            Refusal::MissingTransaction {
+                locator: handoff.locator().identity(),
+                offered: handoff.bytes().len(),
+            }
+        })?;
+        let recomputed = submitted_transaction_identities(&transaction, handoff.bytes()).identity();
+        if recomputed != handoff.locator().identity() {
+            return Err(Refusal::CopiedTransactionBytes {
+                locator: handoff.locator().identity(),
+                recomputed,
+            });
+        }
+
+        let stated = handoff.state_output_index();
+        let declared = u32::from(abi.outputs().successor_position());
+        if stated != declared {
+            return Err(Refusal::WrongOutputIndex { stated, declared });
+        }
+        let successor = Outpoint::new(recomputed, stated)
+            .map_err(|_| Refusal::WrongOutputIndex { stated, declared })?;
+
+        let stack = positional_stack;
+        let predecessor = transaction
+            .inputs()
+            .get(usize::from(abi.inputs().coordinator().index()))
+            .map(TargetInput::outpoint)
+            .ok_or_else(|| Refusal::MalformedPublicWitness {
+                refusal: Box::new(MaturityContinuityRefusal::InputCount { actual: 0 }),
+            })?;
+        let [_, nonce_bytes, _, root_bytes, _, _, _, _, control_bytes] = stack else {
+            return Err(Refusal::MalformedPublicWitness {
+                refusal: Box::new(MaturityContinuityRefusal::WitnessItemCount {
+                    actual: stack.len(),
+                }),
+            });
+        };
+
+        let witnessed = fixed_bytes::<32>(root_bytes);
+        let published = *handoff.static_subtree().root();
+        if witnessed != published {
+            return Err(Refusal::WrongStaticSubtree {
+                witnessed,
+                published,
+            });
+        }
+
+        let target = closure_target().map_err(|refusal| Refusal::ReviewedContractUnavailable {
+            refusal: Box::new(refusal),
+        })?;
+        let metadata =
+            decoded_witness_metadata(stack, handoff.schedule(), &target).map_err(|refusal| {
+                Refusal::MalformedPublicWitness {
+                    refusal: Box::new(refusal),
+                }
+            })?;
+        let minimum_control_width = 33;
+        if control_bytes.len() < minimum_control_width {
+            return Err(Refusal::MalformedPublicWitness {
+                refusal: Box::new(MaturityContinuityRefusal::WitnessWidth {
+                    index: 8,
+                    expected: minimum_control_width,
+                    actual: control_bytes.len(),
+                }),
+            });
+        }
+        let leaf_program = state_metadata_leaf_program(&target, &metadata).map_err(|refusal| {
+            Refusal::SuccessorCommitmentRefused {
+                refusal: Box::new(refusal),
+            }
+        })?;
+        let witnessed = leaf_hash(
+            target.definition().leaf_version(),
+            &leaf_program.encode(&target),
+        );
+        let tail = control_bytes
+            .get(control_bytes.len() - 32..)
+            .ok_or_else(|| Refusal::MalformedPublicWitness {
+                refusal: Box::new(MaturityContinuityRefusal::WitnessWidth {
+                    index: 8,
+                    expected: minimum_control_width,
+                    actual: control_bytes.len(),
+                }),
+            })?;
+        let control = fixed_bytes::<32>(tail);
+        if witnessed != control {
+            return Err(Refusal::MetadataFromAnotherSuccessor { witnessed, control });
+        }
+
+        let successor_semantics =
+            announce_maturity(&metadata.semantic, requested_cycle, handoff.bounds()).map_err(
+                |refusal| Refusal::StaleSuccessor {
+                    requested: requested_cycle,
+                    bounds: handoff.bounds(),
+                    refusal: Box::new(refusal),
+                },
+            )?;
+        let representation =
+            StateRepresentationNonce::new(u32::from_be_bytes(fixed_bytes::<4>(nonce_bytes)));
+        let successor_metadata = EncodedStateMetadata {
+            semantic: successor_semantics,
+            representation,
+        };
+        let reconstructed = state_output_program_at_nonce(
+            &target,
+            &successor_metadata,
+            handoff.static_subtree(),
+            handoff.internal_key(),
+            &OracleStateCurve,
+        )
+        .map_err(|refusal| Refusal::SuccessorCommitmentRefused {
+            refusal: Box::new(refusal),
+        })?;
+
+        let actual = usize::try_from(stated)
+            .ok()
+            .and_then(|index| transaction.outputs().get(index))
+            .ok_or(Refusal::WrongOutputIndex { stated, declared })?;
+        let comparison = MaturityByteComparison::new(actual.program(), &reconstructed);
+        if !comparison.agrees() {
+            return Err(Refusal::ReconstructedProgramDiffers { comparison });
+        }
+        Ok(RecoveredSuccessor {
+            predecessor_metadata: metadata,
+            successor_semantics,
+            representation,
+            requested_cycle,
+            program: comparison,
+            contract: handoff.contract(),
+            predecessor,
+            successor,
+        })
+    })()
+    .map_err(|error| Failure::Recovery(Box::new(error)))
+}
+
+/// Rebuild the published recipe solely from deployment facts and decoded metadata.
+fn public_projection_bundle(
+    identity: &linker::CandidateDeploymentIdentity,
+    asset: transaction::bytes::AssetId,
+    schedule: StateWitnessSchedule,
+    metadata: StateMetadata,
+) -> Result<linker::CandidateLinkedMaturityBundle, MaturityClosureRefusal> {
+    use crate::maturity_closure::{
+        MaturityDeployment, MaturityWitnessSelection, decode_announcement_leaf,
+        linked_announcement_bytes, maturity_sources,
+    };
+    use linker::{
+        OperatorDeploymentBinding, StateLinkDeploymentParameters, StateLinkSources,
+        StateSingletonAsset,
+    };
+    use realization::StateSingletonDeclaration;
+    use tapscript::StackItem;
+    use target_elements::EncodingClass;
+
+    let target = closure_target()?;
+    let sources = maturity_sources(
+        MaturityDeployment::PublishedSignerHeld,
+        MaturityWitnessSelection::Retained(schedule),
+    )?;
+    let seed = sources.link(&OracleStateCurve)?;
+    let deployment = seed.deployment();
+    let internal = StackItem::encoded(
+        &target,
+        EncodingClass::XOnlyPublicKey,
+        seed.policy().internal_key().key().to_vec(),
+    )
+    .map_err(|_| MaturityClosureRefusal::SourcesUnavailable)?;
+    let operator = OperatorDeploymentBinding::bind(
+        &target,
+        deployment.operator().key().clone(),
+        deployment.operator().profile().clone(),
+        identity.clone(),
+        &internal,
+    )
+    .map_err(MaturityClosureRefusal::LinkRefused)?;
+    let bridge = StateLinkDeploymentParameters::bind(
+        &target,
+        seed.plan().clone(),
+        deployment.lead_bounds(),
+        identity.clone(),
+        operator,
+        deployment.maximum_control_path_depth(),
+        sources.record(),
+    )
+    .map_err(MaturityClosureRefusal::LinkRefused)?;
+    let singleton = StateSingletonAsset::new(*asset.internal());
+    let specification = ARCHITECTURE
+        .asset(architecture::AssetId::Pid)
+        .ok_or(MaturityClosureRefusal::PlanUnavailable)?;
+    let declaration = StateSingletonDeclaration::from_architecture_asset(specification)
+        .map_err(|_| MaturityClosureRefusal::SourcesUnavailable)?;
+    let linked = linker::link_state_candidate(
+        &target,
+        &StateLinkSources::new(
+            sources.record(),
+            &bridge,
+            sources.constructor(),
+            &singleton,
+            &declaration,
+            &metadata,
+            &OracleStateCurve,
+        ),
+    )
+    .map_err(MaturityClosureRefusal::LinkRefused)?;
+    let bytes = linked_announcement_bytes(&linked, &target)?;
+    decode_announcement_leaf(&target, &bytes)?;
+    Ok(linked)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -559,6 +860,104 @@ mod tests {
     use tapscript::{StateLeafRole, StateStaticLeaf, StateStaticNode, TapscriptProgram};
     use target_elements::ReviewedElementsTapscriptDefinition;
     use transaction::bytes::{InputWitness, TargetOutput};
+
+    #[test]
+    fn positional_and_sponsorless_recovery_agree_on_archived_handoff() {
+        let input = crate::maturity_continuity::tests::variable_archived().input();
+        let handoff = accepted_handoff().with_positions(MaturityPublicPositionContext {
+            spent: vec![input.funded.clone()],
+            reserve_asset: input.funded.asset,
+            identity: input.identity.clone(),
+            branch: input.branch,
+        });
+        assert_eq!(
+            recover_public_successor_at_layout(&handoff).expect("positional recovery"),
+            recover_public_successor(handoff.clone()).expect("sponsorless recovery")
+        );
+        let transaction = TargetTransaction::decode(handoff.bytes()).expect("archived bytes");
+        let mut witnesses = transaction.witnesses().to_vec();
+        let mut stack = witnesses[0].stack().to_vec();
+        stack.pop();
+        witnesses[0] = InputWitness::new(stack);
+        let changed = TargetTransaction::with_output_witnesses(
+            transaction.version(),
+            transaction.inputs().to_vec(),
+            transaction.outputs().to_vec(),
+            transaction.lock_time(),
+            witnesses,
+            transaction.output_witnesses().to_vec(),
+        )
+        .expect("short witness");
+        let mut short = handoff;
+        short.bytes = changed.encode();
+        assert_eq!(
+            recover_public_successor_at_layout(&short),
+            Err(
+                crate::maturity_continuity::MaturityPositionalRefusal::Continuity(Box::new(
+                    MaturityContinuityRefusal::WitnessItemCount { actual: 8 }
+                ))
+            )
+        );
+    }
+
+    #[test]
+    fn positional_public_recovery_requires_exact_public_spent_outputs() {
+        use crate::maturity_continuity::MaturityPositionalRefusal;
+        use crate::maturity_corpus::{
+            maturity_sponsored_run_of_record, sponsored_projection_source,
+        };
+        let source =
+            sponsored_projection_source(maturity_sponsored_run_of_record().expect("archive"))
+                .expect("selected control");
+        let handoff = PublicAnnouncementHandoff::new(
+            PublicAnnouncementLocator::new(
+                MaturityByteSource::ArchivedSubmission {
+                    run_address: crate::maturity_corpus::MATURITY_SPONSORED_RUN_ADDRESS.to_owned(),
+                },
+                source.readback.identity(),
+            ),
+            source.readback.bytes().to_vec(),
+            0,
+            source.bundle.record().schedule(),
+            source.bundle.deployment().lead_bounds().bounds(),
+            source.bundle.static_subtree().clone(),
+            source.bundle.policy().internal_key(),
+            TargetContractVersion::V2,
+        );
+        assert_eq!(
+            recover_public_successor_at_layout(&handoff),
+            Err(MaturityPositionalRefusal::PublicContext)
+        );
+        assert_eq!(
+            recover_public_successor(handoff.clone()),
+            Err(MaturityRecoveryRefusal::MalformedPublicWitness {
+                refusal: Box::new(MaturityContinuityRefusal::InputCount { actual: 2 })
+            })
+        );
+        let complete = handoff.clone().with_positions(source.context.clone());
+        assert!(
+            recover_public_successor_at_layout(&complete)
+                .expect("public recovery")
+                .programs_agree()
+        );
+        let mut missing = source.context.clone();
+        missing.spent.pop();
+        assert_eq!(
+            recover_public_successor_at_layout(&handoff.clone().with_positions(missing)),
+            Err(MaturityPositionalRefusal::PublicContext)
+        );
+        let mut mismatched = source.context;
+        mismatched.spent.last_mut().expect("sponsor").program = vec![0];
+        assert_eq!(
+            recover_public_successor_at_layout(&handoff.with_positions(mismatched)),
+            Err(MaturityPositionalRefusal::Classification(Box::new(
+                transaction::MaturityAbiClassificationRefusal::ClaimContradictsBytes {
+                    side: realization::ObservedSide::Input,
+                    position: 1,
+                }
+            )))
+        );
+    }
 
     /// The one published announcement leaf is the whole static subtree:
     /// the recipe carries every consumer within it and needs no support leaf.

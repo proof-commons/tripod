@@ -242,9 +242,9 @@ impl MaturityAnnouncementRequest {
     /// `state_signing::witness_item`: eight big-endian bytes become a cycle.
     /// The width comes from the ABI's role record, not its stack position.
     /// Decoding claims nothing about admissibility, which the leaf and the
-    /// realization decide. At this landing the consumers are tests; the
-    /// continuity and recovery readers in the vectors crate are prospective
-    /// consumers. This entry broadens no existing production validator.
+    /// realization decide. Tests and the positional continuity and public-recovery
+    /// readers in the vectors crate consume this entry. This entry broadens no
+    /// existing production validator.
     ///
     /// # Errors
     /// Returns `CycleWidth` unless the role declares the cycle's exact

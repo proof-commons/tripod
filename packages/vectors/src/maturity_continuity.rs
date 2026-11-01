@@ -586,6 +586,8 @@ impl MaturityContinuityRefusal {
 type Refusal = MaturityContinuityRefusal;
 type ProjectionResult<T> = Result<T, Refusal>;
 
+// These fixed widths belong to the sponsorless reader; the positional reader
+// decodes the requested cycle through the ABI's role record.
 const fn declared_widths(schedule: StateWitnessSchedule) -> [usize; 7] {
     let metadata = match schedule {
         StateWitnessSchedule::WholeMetadata => STATE_METADATA_BYTES,
@@ -629,6 +631,232 @@ pub(crate) fn witness(
         }
     }
     Ok(stack)
+}
+
+/// A positional reading reports missing evidence, invalid public inputs or refused projections.
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MaturityPositionalRefusal {
+    /// No validated roles were supplied.
+    MissingRoles,
+    /// The roles describe different decoded bytes, including witnesses.
+    AnotherTransaction,
+    /// The supplied schedule differs from the ABI's schedule.
+    Schedule,
+    /// A required layout position or public funding fact is absent or ambiguous.
+    PublicContext,
+    /// A witness role has no declared exact width.
+    UndeclaredOrRangedRoleWidth { position: usize },
+    /// The request decoder refused the role-selected cycle item.
+    Cycle(transaction::MaturityRequestDecodingRefusal),
+    /// The existing continuity checks refused a byte binding.
+    Continuity(Box<MaturityContinuityRefusal>),
+    /// The transaction bytes could not be decoded.
+    Decode(Box<TransactionRefusal>),
+    /// The announcement realization scope could not be constructed.
+    RealizationScope,
+    /// The announcement realization could not be derived.
+    Realization,
+    /// The public state view or ABI could not be derived.
+    View(Box<TransactionRefusal>),
+    /// Classification refused the offered bytes and claims.
+    Classification(Box<transaction::MaturityAbiClassificationRefusal>),
+    /// The classified positions failed the role entry.
+    Roles(Box<transaction::MaturityAbiRoleRefusal>),
+    /// The admitted archive could not replay the selected submission or readback.
+    Replay,
+    /// The public deployment facts could not reconstruct their linked bundle.
+    PublicBundle(Box<MaturityClosureRefusal>),
+    /// Public successor recovery refused a byte binding.
+    Recovery(Box<crate::maturity_recovery::MaturityRecoveryRefusal>),
+}
+
+impl From<MaturityContinuityRefusal> for MaturityPositionalRefusal {
+    fn from(refusal: MaturityContinuityRefusal) -> Self {
+        Self::Continuity(Box::new(refusal))
+    }
+}
+
+/// Read STATE witness positions only after roles authenticate the same transaction.
+/// The caller derives classification and roles from the same ABI and view; roles
+/// retain authenticated claims without promoting blocked sponsor relations.
+pub(crate) fn witness_at_layout<'a>(
+    transaction: &'a TargetTransaction,
+    abi: &transaction::CandidateMaturityAnnouncementAbi,
+    roles: Option<&transaction::ValidatedMaturityAbiRoles<'_>>,
+    schedule: StateWitnessSchedule,
+) -> Result<(&'a [Vec<u8>], Cycle), MaturityPositionalRefusal> {
+    use MaturityPositionalRefusal as Failure;
+    let roles = roles.ok_or(Failure::MissingRoles)?;
+    if roles.transaction() != transaction {
+        return Err(Failure::AnotherTransaction);
+    }
+    if abi.schedule() != schedule {
+        return Err(Failure::Schedule);
+    }
+    let coordinator = usize::from(abi.inputs().coordinator().index());
+    let successor = usize::from(abi.outputs().successor_position());
+    if transaction.outputs().get(successor).is_none() {
+        return Err(Failure::PublicContext);
+    }
+    let stack = transaction
+        .witnesses()
+        .get(coordinator)
+        .ok_or(Failure::PublicContext)?
+        .stack();
+    if stack.len() != 9 {
+        return Err(Refusal::WitnessItemCount {
+            actual: stack.len(),
+        }
+        .into());
+    }
+    let cycle_position = abi
+        .witness_roles()
+        .iter()
+        .find(|role| role.role() == tapscript::StateProgramWitness::RequestedCycle)
+        .ok_or(Failure::PublicContext)?
+        .position();
+    let cycle = transaction::MaturityAnnouncementRequest::decode_announced_cycle(
+        abi,
+        stack.get(cycle_position).ok_or(Failure::PublicContext)?,
+    )
+    .map_err(Failure::Cycle)?;
+    for role in abi.witness_roles() {
+        let index = role.position();
+        if index == cycle_position {
+            continue;
+        }
+        let width_refusal = Failure::UndeclaredOrRangedRoleWidth { position: index };
+        let expected = role.minimum_width().ok_or_else(|| width_refusal.clone())?;
+        if role.maximum_width() != Some(expected) {
+            return Err(width_refusal);
+        }
+        let item = stack.get(index).ok_or(Failure::PublicContext)?;
+        if item.len() != expected {
+            return Err(Refusal::WitnessWidth {
+                index,
+                expected,
+                actual: item.len(),
+            }
+            .into());
+        }
+    }
+    Ok((stack, cycle))
+}
+
+/// State the archived predecessor from public funding and decoded metadata, then
+/// authenticate the layout claims under the ABI derived from that same view.
+pub(crate) fn classify_at_layout(
+    bytes: &[u8],
+    bundle: &CandidateLinkedMaturityBundle,
+    context: &crate::maturity_recovery::MaturityPublicPositionContext,
+) -> Result<
+    (
+        transaction::CandidateMaturityAnnouncementAbi,
+        transaction::ValidatedMaturityStateView,
+        transaction::ValidatedMaturityAbiClassification,
+    ),
+    MaturityPositionalRefusal,
+> {
+    use MaturityPositionalRefusal as Failure;
+    use transaction::bytes::{AssetField, ValueField};
+    use transaction::{MaturityPositionClaim as Claim, MaturityViewStatement as Statement};
+    let transaction =
+        TargetTransaction::decode(bytes).map_err(|error| Failure::Decode(Box::new(error)))?;
+    let target = closure_target().map_err(|error| Refusal::Target(Box::new(error)))?;
+    let coordinator = usize::from(
+        transaction::MaturityInputLayout::stated()
+            .coordinator()
+            .index(),
+    );
+    let input = transaction
+        .inputs()
+        .get(coordinator)
+        .ok_or(Failure::PublicContext)?;
+    let stack = transaction
+        .witnesses()
+        .get(coordinator)
+        .ok_or(Failure::PublicContext)?
+        .stack();
+    if stack.len() != 9 {
+        return Err(Refusal::WitnessItemCount {
+            actual: stack.len(),
+        }
+        .into());
+    }
+    let metadata = decoded_witness_metadata(stack, bundle.record().schedule(), &target)?;
+    let funded = context.funded(input.outpoint())?;
+    let view = transaction::PublicMaturityStateView::new(vec![
+        Statement::CurrentStateOutpoint(input.outpoint()),
+        Statement::AssetAndAmount(
+            AssetField::Explicit(funded.asset),
+            ValueField::Explicit(funded.amount),
+        ),
+        Statement::PredecessorMetadata(metadata.semantic),
+        Statement::PredecessorRepresentationNonce(metadata.representation),
+        Statement::CurrentRootBinding(context.branch),
+        Statement::PredecessorProgram(funded.program),
+        Statement::AcceptedLinkedBundle(Box::new(bundle.clone())),
+    ])
+    .and_then(|view| view.validate(&target, &OracleStateCurve))
+    .map_err(|error| Failure::View(Box::new(error)))?;
+    let abi = transaction::derive_maturity_announcement_abi(&target, &view)
+        .map_err(|error| Failure::View(Box::new(error)))?;
+    let spent = transaction
+        .inputs()
+        .iter()
+        .map(|input| {
+            let funded = context.funded(input.outpoint())?;
+            Ok(transaction::SpentOutputCensusEntry::new(
+                AssetField::Explicit(funded.asset),
+                ValueField::Explicit(funded.amount),
+                funded.program,
+            ))
+        })
+        .collect::<Result<Vec<_>, Failure>>()?;
+    let inputs = transaction
+        .inputs()
+        .iter()
+        .enumerate()
+        .map(|(position, _)| {
+            if position == usize::from(abi.inputs().coordinator().index()) {
+                Claim::State
+            } else {
+                Claim::SponsorMember
+            }
+        })
+        .collect();
+    let outputs = transaction
+        .outputs()
+        .iter()
+        .enumerate()
+        .map(|(position, output)| {
+            if position == usize::from(abi.outputs().successor_position()) {
+                Claim::State
+            } else if output.is_fee() {
+                Claim::TargetFee
+            } else {
+                Claim::SponsorChange
+            }
+        })
+        .collect();
+    let scope = realization::RealizationScope::from_operations([
+        architecture::OperationId::AnnounceMaturity,
+    ])
+    .map_err(|_| Failure::RealizationScope)?;
+    let spec = realization::derive(&architecture::ARCHITECTURE, scope)
+        .map_err(|_| Failure::Realization)?;
+    let offer = transaction::MaturityAbiOffer {
+        bytes,
+        spent: &spent,
+        reserve_asset: context.reserve_asset,
+        inputs,
+        outputs,
+        canonical: realization::ObservedCanonicalPartition::default(),
+    };
+    let classified = transaction::validate_maturity_abi_classification(&abi, &view, &spec, &offer)
+        .map_err(|error| Failure::Classification(Box::new(error)))?;
+    Ok((abi, view, classified))
 }
 
 fn carried_width(legalization: &StateWitnessLegalization) -> usize {
@@ -1848,6 +2076,138 @@ pub fn project_maturity_continuity_with_acceptance(
     })
 }
 
+/// Project the same constructor checks at authenticated ABI positions.
+pub(crate) fn project_maturity_continuity_at_layout(
+    input: MaturityProjectionInput<'_>,
+    claim: &MaturityAcceptanceObligation,
+    abi: &transaction::CandidateMaturityAnnouncementAbi,
+    roles: Option<&transaction::ValidatedMaturityAbiRoles<'_>>,
+) -> Result<ValidatedMaturityContinuity, MaturityPositionalRefusal> {
+    let transaction = TargetTransaction::decode(input.submitted_bytes)
+        .map_err(|error| Refusal::Decode(Box::new(error)))?;
+    let schedule = input.bundle.record().schedule();
+    let (stack, requested_cycle) = witness_at_layout(&transaction, abi, roles, schedule)?;
+    let decoded = transaction.inputs()[usize::from(abi.inputs().coordinator().index())].outpoint();
+    if decoded != input.funded.outpoint {
+        return Err(Refusal::SpentOutpoint {
+            decoded,
+            funded: input.funded.outpoint,
+        }
+        .into());
+    }
+    let target = closure_target().map_err(|error| Refusal::Target(Box::new(error)))?;
+    let metadata = decoded_witness_metadata(stack, schedule, &target)?;
+    retained_context(&input, metadata)?;
+    let predecessor = reconstruct(&target, metadata, input.bundle, TransactionSide::Input)?;
+    predecessor_program(predecessor.output_program(), &input.funded.program)?;
+    let predecessor_leastness = leastness(
+        &target,
+        &predecessor,
+        input.bundle,
+        TransactionSide::Input,
+        input.bundle.policy().budget(),
+    )?;
+    let mut diagnostics = MaturityProjectionDiagnostics::empty();
+    let (static_root, control_block) =
+        predecessor_bindings(&target, stack, &predecessor, input.bundle, &mut diagnostics)?;
+    let bounds = input.bundle.deployment().lead_bounds().bounds();
+    let expected = announce_maturity(&metadata.semantic, requested_cycle, bounds)
+        .map_err(|error| Refusal::Transition(Box::new(error)))?;
+    let mut semantic_comparison = transition_comparison(&predecessor, expected, requested_cycle);
+    let successor_metadata = EncodedStateMetadata {
+        semantic: expected,
+        representation: StateRepresentationNonce::new(u32::from_be_bytes(fixed_bytes(&stack[1]))),
+    };
+    let successor = reconstruct(
+        &target,
+        successor_metadata,
+        input.bundle,
+        TransactionSide::Output,
+    )?;
+    let expected_fields = commitments(
+        &encode_state_metadata(&expected, successor_metadata.representation),
+        TransactionSide::Output,
+    );
+    semantic_comparison.reconstructed_against_expected = Some(field_comparisons(
+        successor.field_commitments(),
+        &expected_fields,
+    ));
+    diagnostics.semantic = Some(semantic_comparison.clone());
+    successor_bindings_at_layout(
+        &transaction,
+        usize::from(abi.outputs().successor_position()),
+        stack,
+        &successor,
+        &mut diagnostics,
+    )?;
+    let successor_leastness = leastness(
+        &target,
+        &successor,
+        input.bundle,
+        TransactionSide::Output,
+        input.bundle.policy().budget(),
+    )?;
+    let static_comparison = static_comparison(
+        [&predecessor, &successor],
+        [&predecessor_leastness, &successor_leastness],
+        static_root,
+        control_block,
+    );
+    // Evidence assembly follows every existing byte-binding check, preserving the first-refusal order.
+    let evidence = constructor_evidence(
+        &target,
+        [&predecessor, &successor],
+        [&predecessor_leastness, &successor_leastness],
+        input.bundle,
+        &stack[8],
+    )?;
+    verify_acceptance_claim(claim, schedule, &transaction, input.submitted_bytes)?;
+    Ok(ValidatedMaturityContinuity {
+        source: input.source,
+        submitted_bytes: input.submitted_bytes.to_vec(),
+        byte_identity: sha256(input.submitted_bytes),
+        transaction,
+        funded: input.funded.clone(),
+        branch: input.branch,
+        identity: input.identity.clone(),
+        bundle: input.bundle.clone(),
+        bounds,
+        requested_cycle,
+        predecessor,
+        successor,
+        predecessor_leastness,
+        successor_leastness,
+        static_comparison,
+        semantic_comparison,
+        diagnostics,
+        evidence,
+        acceptance: Box::new(claim.clone()),
+    })
+}
+
+fn successor_bindings_at_layout(
+    transaction: &TargetTransaction,
+    position: usize,
+    stack: &[Vec<u8>],
+    successor: &MaturityConstructorProjection,
+    diagnostics: &mut MaturityProjectionDiagnostics,
+) -> ProjectionResult<()> {
+    let program = MaturityByteComparison::new(
+        transaction.outputs()[position].program(),
+        successor.output_program(),
+    );
+    diagnostics.output_program = Some(program.clone());
+    if !program.agrees() {
+        return Err(Refusal::OutputProgram(Box::new(diagnostics.clone())));
+    }
+    let parity = MaturityByteComparison::new(&stack[0], &[prefix(successor.parity())]);
+    diagnostics.successor_prefix = Some(parity.clone());
+    if !parity.agrees() {
+        return Err(Refusal::SuccessorPrefix(Box::new(diagnostics.clone())));
+    }
+    Ok(())
+}
+
 /// Facts about one witnessed nonce, separate from the constructor a host search selects.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MaturityConstructorProjection {
@@ -2196,6 +2556,166 @@ impl ValidatedMaturityContinuity {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    mod positional_tests {
+        use super::*;
+        use crate::maturity_corpus::{
+            SponsoredProjectionSource, maturity_sponsored_run_of_record,
+            sponsored_projection_source,
+        };
+
+        fn source() -> &'static SponsoredProjectionSource {
+            static SOURCE: std::sync::OnceLock<SponsoredProjectionSource> =
+                std::sync::OnceLock::new();
+            SOURCE.get_or_init(|| {
+                sponsored_projection_source(maturity_sponsored_run_of_record().expect("archive"))
+                    .expect("selected control")
+            })
+        }
+
+        #[test]
+        fn positional_reader_requires_roles_for_the_same_bytes_and_schedule() {
+            let source = source();
+            let (abi, view, classified) =
+                classify_at_layout(source.readback.bytes(), &source.bundle, &source.context)
+                    .expect("classification");
+            let roles =
+                transaction::validate_maturity_abi_roles(&abi, &view, &classified).expect("roles");
+            let tx = roles.transaction();
+            assert_eq!(
+                witness_at_layout(tx, &abi, None, abi.schedule()),
+                Err(MaturityPositionalRefusal::MissingRoles)
+            );
+            assert_eq!(
+                witness_at_layout(tx, &abi, Some(&roles), StateWitnessSchedule::WholeMetadata),
+                Err(MaturityPositionalRefusal::Schedule)
+            );
+            assert!(witness_at_layout(tx, &abi, Some(&roles), abi.schedule()).is_ok());
+            let other = TargetTransaction::with_output_witnesses(
+                tx.version(),
+                tx.inputs().to_vec(),
+                tx.outputs().to_vec(),
+                tx.lock_time() + 1,
+                tx.witnesses().to_vec(),
+                tx.output_witnesses().to_vec(),
+            )
+            .expect("changed transaction");
+            assert_eq!(
+                witness_at_layout(&other, &abi, Some(&roles), abi.schedule()),
+                Err(MaturityPositionalRefusal::AnotherTransaction)
+            );
+            let mut witnesses = tx.witnesses().to_vec();
+            let mut stack = witnesses[0].stack().to_vec();
+            stack[6][0] ^= 1;
+            witnesses[0] = transaction::bytes::InputWitness::new(stack);
+            let witness_only = TargetTransaction::with_output_witnesses(
+                tx.version(),
+                tx.inputs().to_vec(),
+                tx.outputs().to_vec(),
+                tx.lock_time(),
+                witnesses,
+                tx.output_witnesses().to_vec(),
+            )
+            .expect("witness-only change");
+            assert_eq!(
+                submitted_transaction_identities(tx, &tx.encode()).identity(),
+                submitted_transaction_identities(&witness_only, &witness_only.encode()).identity()
+            );
+            assert_ne!(
+                submitted_transaction_identities(tx, &tx.encode()).witness_identity(),
+                submitted_transaction_identities(&witness_only, &witness_only.encode())
+                    .witness_identity()
+            );
+            assert_eq!(
+                witness_at_layout(&witness_only, &abi, Some(&roles), abi.schedule()),
+                Err(MaturityPositionalRefusal::AnotherTransaction)
+            );
+            assert_eq!(
+                witness(tx, abi.schedule()),
+                Err(Refusal::InputCount {
+                    actual: tx.inputs().len()
+                })
+            );
+        }
+
+        #[test]
+        fn positional_and_sponsorless_projections_agree_on_archived_bytes() {
+            for source in [archived(), variable_archived()] {
+                let context = crate::maturity_recovery::MaturityPublicPositionContext {
+                    spent: vec![source.funded.clone()],
+                    reserve_asset: source.funded.asset,
+                    identity: source.identity.clone(),
+                    branch: source.branch,
+                };
+                let (abi, view, classified) =
+                    classify_at_layout(&source.bytes, &source.bundle, &context)
+                        .expect("own archived ABI classification");
+                let roles = transaction::validate_maturity_abi_roles(&abi, &view, &classified)
+                    .expect("own archived roles");
+                assert_eq!(
+                    project_maturity_continuity_at_layout(
+                        source.input(),
+                        &source.acceptance,
+                        &abi,
+                        Some(&roles)
+                    )
+                    .expect("positional projection"),
+                    source.project_claimed().expect("sponsorless projection")
+                );
+            }
+        }
+
+        #[test]
+        fn positional_cycle_uses_the_request_decoder() {
+            let source = source();
+            let tx = TargetTransaction::decode(source.readback.bytes()).expect("bytes");
+            let mut witnesses = tx.witnesses().to_vec();
+            let mut stack = witnesses[0].stack().to_vec();
+            stack[2].pop();
+            witnesses[0] = transaction::bytes::InputWitness::new(stack);
+            let changed = TargetTransaction::with_output_witnesses(
+                tx.version(),
+                tx.inputs().to_vec(),
+                tx.outputs().to_vec(),
+                tx.lock_time(),
+                witnesses,
+                tx.output_witnesses().to_vec(),
+            )
+            .expect("changed witness");
+            let (abi, view, classified) =
+                classify_at_layout(&changed.encode(), &source.bundle, &source.context)
+                    .expect("classification does not decode cycle");
+            let roles =
+                transaction::validate_maturity_abi_roles(&abi, &view, &classified).expect("roles");
+            assert_eq!(
+                witness_at_layout(&changed, &abi, Some(&roles), abi.schedule()),
+                Err(MaturityPositionalRefusal::Cycle(
+                    transaction::MaturityRequestDecodingRefusal::CycleWidth {
+                        declared: 8,
+                        offered: 7
+                    }
+                ))
+            );
+        }
+
+        #[test]
+        fn positional_funding_is_joined_by_outpoint_and_requires_one_match() {
+            let source = source();
+            let mut context = source.context.clone();
+            context.spent.reverse();
+            assert!(classify_at_layout(source.readback.bytes(), &source.bundle, &context).is_ok());
+            let coin = context.spent.pop().expect("spent coin");
+            assert!(matches!(
+                classify_at_layout(source.readback.bytes(), &source.bundle, &context),
+                Err(MaturityPositionalRefusal::PublicContext)
+            ));
+            context.spent.extend([coin.clone(), coin]);
+            assert!(matches!(
+                classify_at_layout(source.readback.bytes(), &source.bundle, &context),
+                Err(MaturityPositionalRefusal::PublicContext)
+            ));
+        }
+    }
+
     use super::*;
     use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
     use crate::matrix::EvidenceBoundary;

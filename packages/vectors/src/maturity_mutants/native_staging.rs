@@ -2401,9 +2401,9 @@ mod tests {
         .expect("the evidence plan derives");
         assert_eq!(plan.census().rows(), 206);
         // Thirty-six supplementary comparisons add answers after the report campaign.
-        assert_eq!(plan.census().answered(), 170);
+        assert_eq!(plan.census().answered(), 171);
         // Two ordering claims retire without becoming answered; thirty-six comparisons answer.
-        assert_eq!(plan.census().outstanding(), 36);
+        assert_eq!(plan.census().outstanding(), 35);
         assert_eq!(plan.census().native_run_required(), 0);
         assert_eq!(row_count(), 206);
 

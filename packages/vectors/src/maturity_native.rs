@@ -2343,6 +2343,31 @@ pub mod sponsored {
                 .as_ref()
                 .map(|bundle| bundle.record().schedule())
         }
+        /// Replay to this exact submission before later cases replace its linked bundle.
+        pub(crate) fn projection_context(
+            &self,
+            selected: &OperationStep,
+        ) -> Result<(CandidateLinkedMaturityBundle, BranchContext, AssetId), Refusal> {
+            let mut replay = Self::new(self.identity.clone(), self.branch)?;
+            let mut next = replay.advance(None)?;
+            for (position, (step, response)) in self.exchanges.iter().enumerate() {
+                if next.as_ref() != Some(step) {
+                    return Err(Refusal::TranscriptStepMismatch { position });
+                }
+                if step == selected {
+                    let bundle = replay.bundle.clone().ok_or(Refusal::IncompleteTranscript)?;
+                    let sponsor = replay
+                        .sponsor
+                        .as_ref()
+                        .ok_or(Refusal::IncompleteTranscript)?;
+                    let asset = asset_of(&sponsor.coin.asset).ok_or(Refusal::FundingMismatch)?;
+                    return Ok((bundle, self.branch, asset));
+                }
+                next = replay.advance(Some((step.case(), response)))?;
+            }
+            Err(Refusal::IncompleteTranscript)
+        }
+
         /// Rows still undecided after their one fresh attempt, with the retained reason.
         #[must_use]
         pub fn waiting(&self) -> &[WaitingRow] {
@@ -3300,6 +3325,29 @@ pub mod sponsored {
         }
         Ok(())
     }
+    /// Retain checked readback fields for a projection of an accepted submission.
+    pub(crate) fn accepted_readback(
+        bytes: &[u8],
+        response: &NativeOperationResponse,
+    ) -> Result<super::MaturityAcceptedReadback, Refusal> {
+        check_readback(bytes, response)?;
+        let readback = response
+            .mined_readback
+            .as_ref()
+            .ok_or(Refusal::SubmissionReadbackMismatch)?;
+        Ok(super::MaturityAcceptedReadback {
+            identity: Txid::from_target_display(&readback.transaction_id)
+                .map_err(|_| Refusal::SubmissionReadbackMismatch)?,
+            witness_identity: Txid::from_target_display(&readback.witness_transaction_id)
+                .map_err(|_| Refusal::SubmissionReadbackMismatch)?,
+            block_hash: decode_hex(&readback.block_hash)
+                .and_then(|bytes| bytes.try_into().ok())
+                .ok_or(Refusal::SubmissionReadbackMismatch)?,
+            block_height: readback.block_height,
+            bytes: bytes.to_vec(),
+        })
+    }
+
     /// Replay every request before deriving the schedule's census and bindings.
     /// # Errors
     /// Returns the first exact-request, policy, signing, boundary or readback refusal.

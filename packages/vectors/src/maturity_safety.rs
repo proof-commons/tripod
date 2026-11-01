@@ -237,17 +237,14 @@ pub enum MaturityRowBoundary {
     /// needs a successor metadata witness. These are staging grounds, not universal
     /// impossibility claims.
     NativeSubjectAwaitsConstructionRoute,
-    /// The row asks for an acceptance of its own shape.
+    /// Former waiting reason for relay and combined-projection acceptances; no row retains it.
     ///
-    /// The constant-elision route closed on `0.6.245-dev`; its accepted
-    /// archive answers the sponsorless row. Rows standing on this reason
-    /// ask for acceptances of their own shapes that no admitted run supplies.
-    /// Their classification belongs to the first two open questions of
-    /// `plans/drafts/accepted-byte-classification-study.md`: whether the rows
-    /// standing on this reason retype to the accepted-transaction layer, and whether
-    /// §16.1's last row is one row or four. A relaxed node policy is not a
-    /// route: no deployed argument list relaxes standardness, and an
-    /// acceptance under a policy nobody runs would carry that caveat wherever it went.
+    /// The admitted sponsorless, semantic and sponsored routes supply their own
+    /// acceptances. The combined row requires one relay-and-template acceptance
+    /// and all four projections over identical bytes. Its positional readers
+    /// discharge that conjunction without broadening a target validator.
+    /// Whether the guide should split the conjunction remains open in
+    /// plans/drafts/accepted-byte-classification-study.md.
     AcceptanceAwaitsRelayAdmissibility,
     /// Former waiting reason for eleven sponsored rows; no row retains it.
     ///
@@ -1504,13 +1501,10 @@ const fn report_fault(
 pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     // §16.1 — the fourteen positive cases.
     //
-    // Nine ask for an acceptance of their own shape that no admitted
-    // route supplies. The admitted accepted run answers the sponsorless
-    // case under the variable schedule. Its declaration here remains
-    // the relay-policy layer of the whole schedule; the schedule-indexed
-    // boundary rule maps the case for both schedules. The two sponsored
-    // rows retain the former construction-refusal bound pending admitted
-    // evidence; both explicit sponsored controls construct.
+    // The sponsorless row has its variable-schedule acceptance; eight semantic
+    // rows and two sponsored forms have relay-and-template acceptances. The
+    // combined row binds one sponsored acceptance to all four projections.
+    // The sponsorless declaration retains its schedule-indexed relay boundary.
     positive(
         "minimum-valid-lead",
         Bound::Layer(B::AcceptedTransaction),
@@ -1580,7 +1574,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
     ),
     positive(
         "accepted-target-transaction-with-semantic-constructor-root-and-recovery-projections-all-matching",
-        Bound::AcceptanceAwaitsRelayAdmissibility,
+        Bound::Layer(B::AcceptedTransaction),
         C::Target,
     ),
     // §16.2 — the eleven maturity-window faults.
@@ -3921,9 +3915,10 @@ mod tests {
         let standing = |wanted: MaturityRowBoundary| {
             rows().iter().filter(|row| row.boundary() == wanted).count()
         };
-        // Eight relay obligations accept; three departures and five unavailable
+        // Eight relay obligations and the retyped combined row accept on the
+        // accepted-transaction layer; three departures and five unavailable
         // subjects enter typed reasons. Confidential value retains its route.
-        assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 1);
+        assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 0);
         assert_eq!(standing(Bound::NativeCoordinateUndecidedByCandidate), 3);
         assert_eq!(standing(Bound::NativeSubjectAwaitsConstructionRoute), 5);
         assert_eq!(standing(Bound::SponsoredControlRefusedAtConstruction), 0);
@@ -3947,8 +3942,8 @@ mod tests {
             .iter()
             .filter(|row| row.boundary().is_typed_non_answer())
             .count();
-        assert_eq!(non_answers, 29);
-        assert_eq!(row_count() - non_answers, 177);
+        assert_eq!(non_answers, 28);
+        assert_eq!(row_count() - non_answers, 178);
         assert_eq!(
             rows()
                 .iter()
@@ -4353,10 +4348,11 @@ mod tests {
                 reachable += 1;
             }
         }
-        // Two sponsored positives and four sponsor negatives add six native layers.
-        assert_eq!(reachable, 49);
+        // Two sponsored positives and four sponsor negatives add six native layers;
+        // the combined row adds its accepted-transaction layer after retyping.
+        assert_eq!(reachable, 50);
         assert_eq!(unreachable, 128);
-        assert_eq!(reachable + unreachable, 177);
+        assert_eq!(reachable + unreachable, 178);
         let pre_target = rows()
             .iter()
             .filter(|row| row.refusing_layer().is_some_and(B::is_pre_target))

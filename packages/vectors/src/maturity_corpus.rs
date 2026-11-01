@@ -2925,6 +2925,107 @@ pub struct ValidatedSponsoredMaturityCorpus {
     pub fee_floors: MaturityDisclosedFeeFloors,
 }
 
+/// The unique S2 control chosen for the combined projection, with no fallback.
+pub(crate) const COMBINED_PROJECTION_CASE: &str =
+    "sponsored-with-change-where-supported:control:52";
+
+/// The selected admitted submission with its replayed bundle and public funding context.
+#[derive(Clone, Debug)]
+pub(crate) struct SponsoredProjectionSource {
+    pub(crate) bundle: CandidateLinkedMaturityBundle,
+    pub(crate) context: crate::maturity_recovery::MaturityPublicPositionContext,
+    pub(crate) readback: crate::maturity_native::MaturityAcceptedReadback,
+    pub(crate) response: NativeOperationResponse,
+}
+
+/// Select one admitted control and join every spent output by outpoint rather than archive order.
+pub(crate) fn sponsored_projection_source(
+    corpus: &ValidatedSponsoredMaturityCorpus,
+) -> Result<SponsoredProjectionSource, crate::maturity_continuity::MaturityPositionalRefusal> {
+    select_sponsored_projection_source(corpus, COMBINED_PROJECTION_CASE)
+}
+
+/// Select a different admitted case only for cross-transaction refusal tests.
+#[cfg(test)]
+pub(crate) fn sponsored_projection_source_for_case(
+    corpus: &ValidatedSponsoredMaturityCorpus,
+    case: &str,
+) -> Result<SponsoredProjectionSource, crate::maturity_continuity::MaturityPositionalRefusal> {
+    select_sponsored_projection_source(corpus, case)
+}
+
+/// Join the explicitly selected archive case with its unique public funding facts.
+fn select_sponsored_projection_source(
+    corpus: &ValidatedSponsoredMaturityCorpus,
+    case: &str,
+) -> Result<SponsoredProjectionSource, crate::maturity_continuity::MaturityPositionalRefusal> {
+    use crate::live_owner_observation::{asset_of, decode_hex, outpoint_of};
+    use crate::maturity_continuity::{
+        MaturityFundedPredecessor, MaturityPositionalRefusal as Failure,
+    };
+    use crate::maturity_native::sponsored;
+    if corpus.report.run_address() != MATURITY_SPONSORED_RUN_ADDRESS {
+        return Err(Failure::PublicContext);
+    }
+    let credited = corpus.evidence.credited();
+    let mut matches = credited.iter().filter(|(step, _)| step.case().step == case);
+    let (step, response) = matches.next().ok_or(Failure::PublicContext)?;
+    if matches.next().is_some()
+        || response.observed_layer != ObservedOutcomeLayer::Accepted
+        || !matches!(
+            sponsored::detail(response),
+            Ok((_, Some(MaturityAcceptanceRoute::RelayAndTemplate)))
+        )
+    {
+        return Err(Failure::PublicContext);
+    }
+    let OperationSubject::Submission(subject) = step.subject() else {
+        return Err(Failure::PublicContext);
+    };
+    let (bundle, branch, reserve_asset) = corpus
+        .evidence
+        .projection_context(step)
+        .map_err(|_| Failure::Replay)?;
+    let readback = sponsored::accepted_readback(&subject.transaction_bytes, response)
+        .map_err(|_| Failure::Replay)?;
+    let transaction = transaction::bytes::TargetTransaction::decode(readback.bytes())
+        .map_err(|error| Failure::Decode(Box::new(error)))?;
+    let spent = transaction
+        .inputs()
+        .iter()
+        .map(|input| {
+            let mut matches = corpus
+                .evidence
+                .exchanges()
+                .iter()
+                .flat_map(|(_, response)| &response.funded_outputs)
+                .filter(|coin| outpoint_of(&coin.outpoint) == Some(input.outpoint()));
+            let coin = matches.next().ok_or(Failure::PublicContext)?;
+            if matches.next().is_some() {
+                return Err(Failure::PublicContext);
+            }
+            Ok(MaturityFundedPredecessor {
+                outpoint: input.outpoint(),
+                asset: asset_of(&coin.asset).ok_or(Failure::PublicContext)?,
+                amount: coin.amount_satoshis,
+                program: decode_hex(&coin.script).ok_or(Failure::PublicContext)?,
+            })
+        })
+        .collect::<Result<Vec<_>, Failure>>()?;
+    let context = crate::maturity_recovery::MaturityPublicPositionContext {
+        spent,
+        reserve_asset,
+        identity: bundle.deployment().identity().clone(),
+        branch,
+    };
+    Ok(SponsoredProjectionSource {
+        bundle,
+        context,
+        readback,
+        response: response.clone(),
+    })
+}
+
 /// Admits a sponsored capture through its own file pins and exact request replay.
 ///
 /// # Errors
@@ -3216,6 +3317,33 @@ pub fn replay_maturity_variable_run_of_record(
 }
 
 impl crate::maturity_history::MaturityRootCheckpoint {
+    /// Bind the selected sponsored readback through the same checkpoint checks.
+    pub(crate) fn bind_sponsored(
+        edge: &StateRootEdge,
+        handoff: &PublicAnnouncementHandoff,
+        corpus: &ValidatedSponsoredMaturityCorpus,
+        source: &SponsoredProjectionSource,
+        linked_candidate: MaturityDeclaredPremise<CandidateLinkedMaturityBundle>,
+        candidate_abi: MaturityDeclaredPremise<CandidateMaturityAnnouncementAbi>,
+    ) -> Result<Self, MaturityRootCheckpointRefusal> {
+        let facts = crate::maturity_history::MaturityRootCheckpointFacts {
+            network_identity: corpus.report.network_id().to_owned(),
+            genesis_identity: corpus.report.genesis_id().to_owned(),
+            predecessor: edge.predecessor(),
+            successor: edge.successor(),
+            target_contract: corpus.report.target_contract().to_owned(),
+            branch: source.context.branch,
+        };
+        Self::from_readback(
+            facts,
+            &source.readback,
+            linked_candidate,
+            candidate_abi,
+            edge,
+            handoff,
+        )
+    }
+
     /// Bind the admitted readback and its ten checkpoint facts to a public handoff and edge.
     ///
     /// # Errors

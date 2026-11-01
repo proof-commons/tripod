@@ -1694,6 +1694,10 @@ impl MaturityAnnouncementEvidencePlan {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum MaturityEvidenceRefusal {
+    /// The selected sponsored bytes could not supply their positional projections.
+    CombinedProjectionRefused(Box<crate::maturity_continuity::MaturityPositionalRefusal>),
+    /// Acceptance and all four projection terms did not agree on identical bytes.
+    CombinedProjectionDisagrees,
     /// An exact report pair, its keyed join, or final report validation failed.
     ReportCampaignRefused(Box<crate::maturity_report::MaturityReportConsumerRefusal>),
     /// The committed maturity run failed its byte, grammar, binding or replay admission.
@@ -2199,6 +2203,7 @@ fn derive_maturity_evidence_source(
         .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
     let native = crate::maturity_corpus::maturity_native_run_of_record()
         .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
+    let combined = combined_projection()?;
     let root_history_mutations =
         MaturityMutationRegistry::registered(MaturityMutationRegistryKind::RootHistory);
     let continuity = accepted_continuity(accepted_corpus)?;
@@ -2275,10 +2280,14 @@ fn derive_maturity_evidence_source(
         );
         classified.push(MaturityEvidenceRow {
             row,
-            standing: remaining_native_standing(
+            standing: combined_projection_standing(
                 row,
-                sponsored_standing(row, mutant_standing(row, standing, refusal), sponsored),
-                native,
+                remaining_native_standing(
+                    row,
+                    sponsored_standing(row, mutant_standing(row, standing, refusal), sponsored),
+                    native,
+                ),
+                combined,
             ),
         });
     }
@@ -2780,6 +2789,519 @@ fn sponsored_refusal(
     ))
 }
 
+/// The single Safety row requiring acceptance and all four projections together.
+const COMBINED_PROJECTION_ROW: &str = "accepted-target-transaction-with-semantic-constructor-root-and-recovery-projections-all-matching";
+
+/// One projection result bound to its own transaction identity and exact bytes.
+#[derive(Clone, Debug)]
+struct CombinedProjectionTerm {
+    term: crate::maturity_safety::MaturityProjectionTerm,
+    identity: Txid,
+    witness_identity: Txid,
+    bytes: Vec<u8>,
+    agrees: bool,
+}
+
+/// The four projection bindings and the admission that can discharge their conjunction.
+#[derive(Clone, Debug)]
+struct CombinedProjectionAgreement {
+    abi: CandidateMaturityAnnouncementAbi,
+    view: ValidatedMaturityStateView,
+    classified: transaction::ValidatedMaturityAbiClassification,
+    readback: crate::maturity_native::MaturityAcceptedReadback,
+    terms: Vec<CombinedProjectionTerm>,
+    standing: MaturityRowStanding,
+}
+
+impl CombinedProjectionAgreement {
+    fn agrees(&self) -> bool {
+        use crate::maturity_safety::MaturityProjectionTerm::{
+            Constructor, PublicRecovery, RootHistory, Semantic,
+        };
+        let expected =
+            std::collections::BTreeSet::from([Semantic, Constructor, RootHistory, PublicRecovery]);
+        let actual = self
+            .terms
+            .iter()
+            .map(|term| term.term)
+            .collect::<std::collections::BTreeSet<_>>();
+        transaction::validate_maturity_abi_roles(&self.abi, &self.view, &self.classified).is_ok()
+            && transaction::bytes::TargetTransaction::decode(self.readback.bytes())
+                .is_ok_and(|transaction| &transaction == self.classified.transaction())
+            && self.terms.len() == expected.len()
+            && actual == expected
+            && self.terms.iter().all(|term| {
+                term.agrees
+                    && term.identity == self.readback.identity()
+                    && term.witness_identity == self.readback.witness_identity()
+                    && term.bytes == self.readback.bytes()
+            })
+            && matches!(&self.standing, MaturityRowStanding::NativeAcceptanceObserved { identity, block_height, schedule, .. }
+                if *identity == self.readback.identity() && *block_height == self.readback.block_height() && *schedule == self.abi.schedule())
+    }
+}
+
+/// Cache the admitted conjunction so every row fold sees the same checked evidence.
+fn combined_projection() -> Result<&'static CombinedProjectionAgreement, MaturityEvidenceRefusal> {
+    static AGREEMENT: std::sync::OnceLock<
+        Result<CombinedProjectionAgreement, MaturityEvidenceRefusal>,
+    > = std::sync::OnceLock::new();
+    AGREEMENT
+        .get_or_init(build_combined_projection)
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
+/// Build the conjunction from the fixed sponsored archive control without fallback.
+fn build_combined_projection() -> Result<CombinedProjectionAgreement, MaturityEvidenceRefusal> {
+    let corpus = maturity_sponsored_run_of_record()
+        .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
+    let source = crate::maturity_corpus::sponsored_projection_source(corpus)
+        .map_err(|error| MaturityEvidenceRefusal::CombinedProjectionRefused(Box::new(error)))?;
+    project_sponsored_source(corpus, &source)
+}
+
+/// Reconstruct public handoff facts from the coordinator leaf and published deployment.
+fn combined_public_handoff(
+    source: &crate::maturity_corpus::SponsoredProjectionSource,
+    abi: &CandidateMaturityAnnouncementAbi,
+    transaction: &transaction::bytes::TargetTransaction,
+) -> Result<crate::maturity_recovery::PublicAnnouncementHandoff, MaturityPublicRecoveryReportRefusal>
+{
+    use crate::maturity_closure::{MaturityDeployment, OracleStateCurve, closure_target};
+    use crate::maturity_recovery::{PublicAnnouncementHandoff, PublicAnnouncementLocator};
+    use crate::maturity_recovery_report::MaturityAcceptedHandoffStage as Stage;
+    use realization::{AnnouncementLeadBounds, Cycle};
+    use tapscript::{
+        STATE_NUMS_KEY, StateInternalKeyPolicy, StateLeafRole, StateStaticLeaf, StateStaticNode,
+        StateStaticSubtree, TapscriptProgram,
+    };
+    let coordinator = usize::from(abi.inputs().coordinator().index());
+    let target = closure_target().map_err(|refusal| {
+        MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+            stage: Box::new(Stage::ReviewedTargetUnavailable(refusal)),
+        }
+    })?;
+    let stack = transaction
+        .witnesses()
+        .get(coordinator)
+        .map_or(&[][..], |input| input.stack());
+    let leaf = stack.get(7).ok_or_else(|| {
+        MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+            stage: Box::new(Stage::LeafAbsent { items: stack.len() }),
+        }
+    })?;
+    let program = TapscriptProgram::decode(&target, leaf).map_err(|refusal| {
+        MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+            stage: Box::new(Stage::LeafUndecodable(refusal)),
+        }
+    })?;
+    let subtree = StateStaticSubtree::new(
+        &target,
+        Some(StateStaticNode::Leaf {
+            identity: 0,
+            leaf: StateStaticLeaf {
+                role: StateLeafRole::Announcement,
+                program,
+                version: target.definition().leaf_version().get(),
+            },
+        }),
+    )
+    .map_err(
+        |refusal| MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+            stage: Box::new(Stage::SubtreeRefused(refusal)),
+        },
+    )?;
+    let (minimum, maximum) = MaturityDeployment::PublishedSignerHeld
+        .parameters()
+        .map_err(
+            |refusal| MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+                stage: Box::new(Stage::DeploymentUnavailable(refusal)),
+            },
+        )?
+        .lead();
+    let bounds = AnnouncementLeadBounds::new(Cycle::new(minimum), Cycle::new(maximum)).map_err(
+        |refusal| MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+            stage: Box::new(Stage::LeadBoundsRefused(refusal)),
+        },
+    )?;
+    let internal_key =
+        StateInternalKeyPolicy::new(STATE_NUMS_KEY, &OracleStateCurve).map_err(|refusal| {
+            MaturityPublicRecoveryReportRefusal::AcceptedHandoffUnavailable {
+                stage: Box::new(Stage::InternalKeyRefused(refusal)),
+            }
+        })?;
+    Ok(PublicAnnouncementHandoff::new(
+        PublicAnnouncementLocator::new(
+            MaturityByteSource::ArchivedSubmission {
+                run_address: MATURITY_SPONSORED_RUN_ADDRESS.to_owned(),
+            },
+            source.readback.identity(),
+        ),
+        source.readback.bytes().to_vec(),
+        u32::from(abi.outputs().successor_position()),
+        abi.schedule(),
+        bounds,
+        subtree,
+        internal_key,
+        target_elements::TargetContractVersion::V2,
+    )
+    .with_positions(source.context.clone()))
+}
+
+/// Compute each projection from the selected public bytes and retain its own binding.
+#[expect(
+    clippy::too_many_lines,
+    reason = "The four projection operands and their shared acceptance are assembled together before any standing is minted."
+)]
+fn project_sponsored_source(
+    corpus: &ValidatedSponsoredMaturityCorpus,
+    source: &crate::maturity_corpus::SponsoredProjectionSource,
+) -> Result<CombinedProjectionAgreement, MaturityEvidenceRefusal> {
+    use crate::maturity_continuity::{
+        classify_at_layout, project_maturity_continuity_at_layout, submitted_transaction_identities,
+    };
+    use crate::maturity_recovery::recover_public_successor_at_layout;
+    use crate::maturity_safety::MaturityProjectionTerm::{
+        Constructor, PublicRecovery, RootHistory, Semantic,
+    };
+    let refused = |error| MaturityEvidenceRefusal::CombinedProjectionRefused(Box::new(error));
+    let bytes = source.readback.bytes();
+    let (abi, view, classified) =
+        classify_at_layout(bytes, &source.bundle, &source.context).map_err(refused)?;
+    let roles =
+        transaction::validate_maturity_abi_roles(&abi, &view, &classified).map_err(|error| {
+            refused(crate::maturity_continuity::MaturityPositionalRefusal::Roles(Box::new(error)))
+        })?;
+    let transaction = roles.transaction();
+    let funded = source
+        .context
+        .funded(transaction.inputs()[usize::from(abi.inputs().coordinator().index())].outpoint())
+        .map_err(refused)?;
+    let claim = MaturityAcceptanceObligation::Established {
+        schedule: abi.schedule(),
+        identity: source.readback.identity(),
+        readback: source.readback.clone(),
+    };
+    let continuity = project_maturity_continuity_at_layout(
+        MaturityProjectionInput {
+            source: MaturityByteSource::ArchivedSubmission {
+                run_address: MATURITY_SPONSORED_RUN_ADDRESS.to_owned(),
+            },
+            submitted_bytes: bytes,
+            funded: &funded,
+            branch: source.context.branch,
+            bundle: &source.bundle,
+            identity: &source.context.identity,
+        },
+        &claim,
+        &abi,
+        Some(&roles),
+    )
+    .map_err(refused)?;
+    let handoff = combined_public_handoff(source, &abi, transaction)
+        .map_err(|error| MaturityEvidenceRefusal::PublicRecoveryReportRefused(Box::new(error)))?;
+    let edge = StateRootEdge::from_continuity(&continuity);
+    let premise = MaturityPremiseProvenance::DeploymentDeclaration;
+    let checkpoint = MaturityRootCheckpoint::bind_sponsored(
+        &edge,
+        &handoff,
+        corpus,
+        source,
+        MaturityDeclaredPremise::declared(source.bundle.clone(), premise),
+        MaturityDeclaredPremise::declared(abi.clone(), premise),
+    )
+    .map_err(|error| MaturityEvidenceRefusal::RootHistoryCheckpointRefused(Box::new(error)))?;
+    let recovered = recover_public_successor_at_layout(&handoff).map_err(refused)?;
+    let static_facts = continuity.static_comparison();
+    let constructor = static_facts.static_root().agrees()
+        && static_facts.control_block().agrees()
+        && static_facts.descriptor_result().is_ok()
+        && static_facts.constructor_result().is_ok()
+        && [
+            continuity.predecessor_leastness(),
+            continuity.successor_leastness(),
+        ]
+        .iter()
+        .all(|least| least.is_host_least() && least.reconstructed_facts_match() == Some(true));
+    let identities =
+        submitted_transaction_identities(continuity.transaction(), continuity.submitted_bytes());
+    let public_transaction = transaction::bytes::TargetTransaction::decode(handoff.bytes())
+        .map_err(|error| {
+            refused(crate::maturity_continuity::MaturityPositionalRefusal::Decode(Box::new(error)))
+        })?;
+    let public_identities = submitted_transaction_identities(&public_transaction, handoff.bytes());
+    let recovery_semantics_agree =
+        recovered.successor_semantics() == continuity.expected_successor();
+    // Successful recovery already binds its successor identity to the handoff locator.
+    let recovery_locator_agrees = recovered.successor().txid() == handoff.locator().identity();
+    let terms = [
+        (
+            Semantic,
+            identities.identity(),
+            identities.witness_identity(),
+            continuity.submitted_bytes(),
+            continuity.semantic_comparison().transition_agrees()
+                && continuity.semantic_comparison().reconstruction_agrees() == Some(true),
+        ),
+        (
+            Constructor,
+            identities.identity(),
+            identities.witness_identity(),
+            continuity.submitted_bytes(),
+            constructor,
+        ),
+        (
+            RootHistory,
+            checkpoint.transaction_identity(),
+            public_identities.witness_identity(),
+            handoff.bytes(),
+            checkpoint.binds(&edge, &handoff).is_ok(),
+        ),
+        (
+            PublicRecovery,
+            recovered.successor().txid(),
+            public_identities.witness_identity(),
+            handoff.bytes(),
+            recovered.programs_agree()
+                && recovery_locator_agrees
+                && recovery_semantics_agree
+                && recovered.predecessor() == edge.predecessor()
+                && recovered.successor() == edge.successor(),
+        ),
+    ]
+    .into_iter()
+    .map(
+        |(term, identity, witness_identity, bytes, agrees)| CombinedProjectionTerm {
+            term,
+            identity,
+            witness_identity,
+            bytes: bytes.to_vec(),
+            agrees,
+        },
+    )
+    .collect();
+    let standing = sponsored_acceptance_standing(corpus, &source.response)
+        .ok_or(MaturityEvidenceRefusal::CombinedProjectionDisagrees)?;
+    let agreement = CombinedProjectionAgreement {
+        abi,
+        view,
+        classified,
+        readback: source.readback.clone(),
+        terms,
+        standing,
+    };
+    if !agreement.agrees() {
+        return Err(MaturityEvidenceRefusal::CombinedProjectionDisagrees);
+    }
+    Ok(agreement)
+}
+
+/// Promote only the exact combined row after every projection and acceptance agrees.
+fn combined_projection_standing(
+    row: &MaturitySafetyRow,
+    standing: MaturityRowStanding,
+    agreement: &CombinedProjectionAgreement,
+) -> MaturityRowStanding {
+    if row.section() == MaturitySafetySection::Positive
+        && row.name() == COMBINED_PROJECTION_ROW
+        && row.boundary() == MaturityRowBoundary::Layer(EvidenceBoundary::AcceptedTransaction)
+        && row.carrier() == MaturityIntendedCarrier::Target
+        && matches!(standing, MaturityRowStanding::NativeRunRequired(_))
+        && agreement.agrees()
+    {
+        agreement.standing.clone()
+    } else {
+        standing
+    }
+}
+
+#[cfg(test)]
+mod combined_tests {
+    use super::*;
+    use std::io::Write as _;
+
+    #[test]
+    fn positional_roles_preserve_blocked_sponsor_verdicts() {
+        use realization::{
+            RelationId, RelationKind, RelationStatus, RelationSubject, TransactionSide,
+        };
+        let agreement = combined_projection().expect("projection");
+        let report = agreement.classified.report();
+        for side in [TransactionSide::Input, TransactionSide::Output] {
+            let subject = RelationSubject::ObjectFamily {
+                side,
+                object: architecture::ObjectId::PlainLbtc,
+            };
+            let recognition = RelationId::new(
+                architecture::OperationId::AnnounceMaturity,
+                RelationKind::Recognition,
+                subject.clone(),
+            );
+            let cardinality = RelationId::new(
+                architecture::OperationId::AnnounceMaturity,
+                RelationKind::Cardinality,
+                subject,
+            );
+            assert!(matches!(
+                report.verdict(&recognition).expect("recognition").status,
+                RelationStatus::Failed { .. }
+            ));
+            assert!(matches!(
+                report.verdict(&cardinality).expect("cardinality").status,
+                RelationStatus::Blocked { .. }
+            ));
+        }
+        let isolation = RelationId::new(
+            architecture::OperationId::AnnounceMaturity,
+            RelationKind::SponsorIsolation,
+            RelationSubject::Sponsor,
+        );
+        assert!(matches!(
+            report.verdict(&isolation).expect("isolation").status,
+            RelationStatus::Blocked { .. }
+        ));
+    }
+
+    #[test]
+    fn combined_projection_binds_the_selected_acceptance_and_all_four_terms() {
+        let agreement = combined_projection().expect("combined projection");
+        assert!(agreement.agrees());
+        assert_eq!(agreement.readback.block_height(), 49);
+        assert_eq!(agreement.terms.len(), 4);
+        let corpus = maturity_sponsored_run_of_record().expect("archive");
+        let source =
+            crate::maturity_corpus::sponsored_projection_source(corpus).expect("selected control");
+        let detail: serde_json::Value =
+            serde_json::from_str(source.response.observed_detail.as_deref().expect("detail"))
+                .expect("JSON");
+        assert_eq!(detail["detail"]["template"]["member"], true);
+        assert_eq!(detail["route"], "relay-and-template");
+        assert_eq!(agreement.readback.bytes(), source.readback.bytes());
+        let roles = transaction::validate_maturity_abi_roles(
+            &agreement.abi,
+            &agreement.view,
+            &agreement.classified,
+        )
+        .expect("roles");
+        assert!(
+            roles
+                .input_claims()
+                .contains(&transaction::MaturityPositionClaim::SponsorMember)
+        );
+        assert!(
+            roles
+                .output_claims()
+                .contains(&transaction::MaturityPositionClaim::SponsorChange)
+        );
+        assert!(
+            roles
+                .output_claims()
+                .contains(&transaction::MaturityPositionClaim::TargetFee)
+        );
+        assert_eq!(
+            agreement.standing,
+            sponsored_acceptance_standing(corpus, &source.response).expect("acceptance")
+        );
+        let row = rows()
+            .iter()
+            .find(|row| row.name() == COMBINED_PROJECTION_ROW)
+            .expect("row");
+        assert_eq!(
+            row.boundary(),
+            MaturityRowBoundary::Layer(EvidenceBoundary::AcceptedTransaction)
+        );
+        assert_eq!(
+            combined_projection_standing(
+                row,
+                MaturityRowStanding::NativeRunRequired(None),
+                agreement
+            ),
+            agreement.standing
+        );
+        writeln!(
+            std::io::stdout(),
+            "census combined: case={} identity={} height={} terms={}",
+            crate::maturity_corpus::COMBINED_PROJECTION_CASE,
+            agreement.readback.identity().to_target_display(),
+            agreement.readback.block_height(),
+            agreement.terms.len()
+        )
+        .expect("selection output");
+    }
+
+    #[test]
+    fn combined_fold_refuses_terms_from_two_accepted_transactions() {
+        let agreement = combined_projection().expect("selected projection");
+        let corpus = maturity_sponsored_run_of_record().expect("archive");
+        let other_source = crate::maturity_corpus::sponsored_projection_source_for_case(
+            corpus,
+            "sponsored-without-change:control:34",
+        )
+        .expect("other accepted transaction");
+        let other =
+            project_sponsored_source(corpus, &other_source).expect("other four projections");
+        assert!(other.agrees());
+        assert_ne!(agreement.readback.identity(), other.readback.identity());
+        let row = rows()
+            .iter()
+            .find(|row| row.name() == COMBINED_PROJECTION_ROW)
+            .expect("row");
+        for term in &other.terms {
+            let mut mixed = agreement.clone();
+            *mixed
+                .terms
+                .iter_mut()
+                .find(|candidate| candidate.term == term.term)
+                .expect("term") = term.clone();
+            let waiting = MaturityRowStanding::NativeRunRequired(None);
+            assert!(!mixed.agrees());
+            assert_eq!(
+                combined_projection_standing(row, waiting.clone(), &mixed),
+                waiting
+            );
+        }
+    }
+
+    #[test]
+    fn combined_fold_requires_each_term_and_preserves_other_rows() {
+        let agreement = combined_projection().expect("projection");
+        let row = rows()
+            .iter()
+            .find(|row| row.name() == COMBINED_PROJECTION_ROW)
+            .expect("row");
+        for position in 0..agreement.terms.len() {
+            let mut missing = agreement.clone();
+            missing.terms.remove(position);
+            assert!(!missing.agrees());
+            let mut false_term = agreement.clone();
+            false_term.terms[position].agrees = false;
+            assert!(!false_term.agrees());
+            let mut wrong_bytes = agreement.clone();
+            wrong_bytes.terms[position].bytes.push(0);
+            assert!(!wrong_bytes.agrees());
+        }
+        let mut repeated = agreement.clone();
+        repeated.terms[0] = repeated.terms[1].clone();
+        assert!(!repeated.agrees());
+        let unchanged = MaturityRowStanding::OutstandingUnderTypedNonAnswer(
+            MaturityRowBoundary::AcceptanceAwaitsRelayAdmissibility,
+        );
+        assert_eq!(
+            combined_projection_standing(row, unchanged.clone(), agreement),
+            unchanged
+        );
+        let moved = rows()
+            .iter()
+            .filter(|row| {
+                let waiting = MaturityRowStanding::NativeRunRequired(None);
+                combined_projection_standing(row, waiting.clone(), agreement) != waiting
+            })
+            .count();
+        assert_eq!(moved, 1);
+    }
+}
+
 /// Fold credited submissions into their exact section/name rows beside the mutant fold.
 fn sponsored_standing(
     row: &MaturitySafetyRow,
@@ -3114,7 +3636,7 @@ pub(crate) mod tests {
                 before.report_layer_observed(),
                 before.outstanding_under_typed_non_answer()
             ),
-            (206, 119, 87, 15, 0, 29)
+            (206, 120, 86, 15, 0, 28)
         );
         assert_eq!(
             (
@@ -3125,14 +3647,14 @@ pub(crate) mod tests {
                 after.report_layer_observed(),
                 after.outstanding_under_typed_non_answer()
             ),
-            (206, 134, 72, 0, 15, 29)
+            (206, 135, 71, 0, 15, 28)
         );
         assert_eq!(
             (
                 after.typed_non_answer_final(),
                 after.typed_non_answer_waiting()
             ),
-            (22, 7)
+            (22, 6)
         );
         let mut changed = 0;
         for (old, new) in source.rows().iter().zip(folded.rows()) {
@@ -3215,9 +3737,9 @@ pub(crate) mod tests {
         }
         assert_eq!([accepted_departures, positives, native_claims], [3, 8, 28]);
         // Fifteen report pairs and thirty-six supplementary comparisons add answers.
-        assert_eq!(PLAN.census().answered(), 170);
+        assert_eq!(PLAN.census().answered(), 171);
         // Report pairs remove fifteen obligations; thirty-six comparisons answer thirty-six more.
-        assert_eq!(PLAN.census().outstanding(), 36);
+        assert_eq!(PLAN.census().outstanding(), 35);
     }
 
     #[test]
@@ -3985,7 +4507,7 @@ pub(crate) mod tests {
         // The accepted run and bound mutant refusals change the standing partition.
         // The eight semantic positives add minimum/maximum/interior lead, smallest/upper
         // cycle, unaffected fields and zero/nonzero nonce acceptances to the prior three.
-        assert_eq!(census.native_acceptance_observed(), 11);
+        assert_eq!(census.native_acceptance_observed(), 12);
         // The twenty-seven native refusal rows and balanced-state-corruption add
         // twenty-eight declared-boundary refusals to the prior ten.
         assert_eq!(census.native_refusal_observed(), 38);
@@ -4171,10 +4693,10 @@ pub(crate) mod tests {
                 census.retired(),
                 census.waiting()
             ),
-            (170, 22, 2, 12)
+            (171, 22, 2, 11)
         );
         assert_eq!(census.observed(), census.answered());
-        assert_eq!(census.outstanding(), 36);
+        assert_eq!(census.outstanding(), 35);
         assert_eq!(
             census.observed() + census.final_dispositions() + census.retired() + census.waiting(),
             206
@@ -4192,7 +4714,7 @@ pub(crate) mod tests {
             .expect("waiting row");
         waiting.standing = MaturityRowStanding::InfrastructureBlocked;
         let blocked_census = super::census_from_rows(&blocked.rows);
-        assert_eq!(blocked_census.waiting(), 12);
+        assert_eq!(blocked_census.waiting(), 11);
         assert_eq!(blocked_census.infrastructure_blocked(), 1);
         assert!(!blocked_census.every_required_row_is_answered());
         let mut experimental = PLAN.clone();
@@ -4204,7 +4726,7 @@ pub(crate) mod tests {
             .standing = MaturityRowStanding::Experimental;
         let experimental_census = super::census_from_rows(&experimental.rows);
         assert_eq!(experimental_census.experimental(), 1);
-        assert_eq!(experimental_census.waiting(), 12);
+        assert_eq!(experimental_census.waiting(), 11);
         assert_eq!(
             experimental_census.observed()
                 + experimental_census.final_dispositions()
@@ -4618,7 +5140,7 @@ pub(crate) mod tests {
     /// reads it. Neither says what the classifier does with a row: that
     /// a refusal recorded at each layer in turn answers a row exactly
     /// where the layer is the row's own, and that the rows a run can
-    /// answer at all are the forty-nine the matrix declares a
+    /// answer at all are the fifty the matrix declares a
     /// target verdict for, are facts about the matrix and the classifier
     /// together.
     #[test]
@@ -4670,9 +5192,9 @@ pub(crate) mod tests {
                 }
             }
         }
-        // Two sponsored positives and four sponsor faults add six layer rows.
-        assert_eq!(pairs, 1239);
-        assert_eq!(at_the_boundary, 49);
+        // The combined acceptance adds one layer row across seven observed layers.
+        assert_eq!(pairs, 1246);
+        assert_eq!(at_the_boundary, 50);
         assert_eq!(bound, 38);
     }
 
@@ -4698,17 +5220,17 @@ pub(crate) mod tests {
         // Eight semantic positive waits leave; later-admissible-nonce, extra-state-like
         // output and wrong-version enter as final. Stale-operator, wrong semantic metadata,
         // wrong control recipe, two successors and exchanged witnesses enter as waiting.
-        assert_eq!(census.outstanding_under_typed_non_answer(), 29);
+        assert_eq!(census.outstanding_under_typed_non_answer(), 28);
         // The eight semantic positives, twenty-seven native refusal rows and
         // balanced-state-corruption add thirty-six answers to the prior eighty-three.
         // Fifteen report pairs and thirty-six first-party comparisons add answers to the native census.
-        assert_eq!(census.answered(), 170);
+        assert_eq!(census.answered(), 171);
         assert_eq!(census.root_history_observed(), 16);
         assert_eq!(census.public_recovery_observed(), 14);
         assert_eq!(census.native_declared_boundary_observed(), 0);
         // The eight semantic positives add minimum/maximum/interior lead, smallest/upper
         // cycle, unaffected fields and zero/nonzero nonce acceptances to the prior three.
-        assert_eq!(census.native_acceptance_observed(), 11);
+        assert_eq!(census.native_acceptance_observed(), 12);
         // The twenty-seven native refusal rows and balanced-state-corruption add
         // twenty-eight declared-boundary refusals to the prior ten.
         assert_eq!(census.native_refusal_observed(), 38);
@@ -4774,7 +5296,7 @@ pub(crate) mod tests {
                 before.census().answered(),
                 before.census().outstanding()
             ),
-            (206, 134, 72)
+            (206, 135, 71)
         );
         assert_eq!(
             ledger
@@ -4897,9 +5419,9 @@ pub(crate) mod tests {
                 census.retired(),
                 census.waiting()
             ),
-            (139, 22, 2, 43)
+            (140, 22, 2, 42)
         );
-        assert_eq!(census.outstanding(), 67);
+        assert_eq!(census.outstanding(), 66);
         before
     }
 
@@ -4973,19 +5495,19 @@ pub(crate) mod tests {
                 new.retired(),
                 new.waiting()
             ),
-            (170, 22, 2, 12)
+            (171, 22, 2, 11)
         );
-        assert_eq!(new.outstanding_under_typed_non_answer(), 29);
+        assert_eq!(new.outstanding_under_typed_non_answer(), 28);
         assert_eq!(
             (new.typed_non_answer_final(), new.typed_non_answer_waiting()),
-            (22, 7)
+            (22, 6)
         );
         assert_eq!(
             (
                 new.native_acceptance_observed(),
                 new.native_refusal_observed()
             ),
-            (11, 38)
+            (12, 38)
         );
         assert_eq!(
             (new.report_layer_required(), new.report_layer_observed()),
@@ -5120,15 +5642,15 @@ pub(crate) mod tests {
     fn assert_admitted_supplementary_census(closed: &MaturityAnnouncementEvidencePlan) {
         assert_eq!(closed.census().rows(), 206);
         // Five retained comparisons add answers; the two retirements add none.
-        assert_eq!(closed.census().answered(), 139);
-        assert_eq!(closed.census().outstanding(), 67);
+        assert_eq!(closed.census().answered(), 140);
+        assert_eq!(closed.census().outstanding(), 66);
         assert_eq!(closed.census().first_party_discharged(), 45);
         assert_eq!(closed.census().first_party_required(), 36);
         assert_eq!(closed.census().retired(), 2);
         // Native, report and typed-reason evidence remains unchanged.
         assert_eq!(closed.census().native_run_required(), 0);
         assert_eq!(closed.census().report_layer_required(), 0);
-        assert_eq!(closed.census().outstanding_under_typed_non_answer(), 29);
+        assert_eq!(closed.census().outstanding_under_typed_non_answer(), 28);
     }
 
     #[test]
@@ -5332,7 +5854,7 @@ pub(crate) mod tests {
         assert_eq!(PLAN.census().native_declared_boundary_observed(), 0);
         // The eight semantic positives add minimum/maximum/interior lead, smallest/upper
         // cycle, unaffected fields and zero/nonzero nonce acceptances to the prior three.
-        assert_eq!(PLAN.census().native_acceptance_observed(), 11);
+        assert_eq!(PLAN.census().native_acceptance_observed(), 12);
         // The twenty-seven native refusal rows and balanced-state-corruption add
         // twenty-eight declared-boundary refusals to the prior ten.
         assert_eq!(PLAN.census().native_refusal_observed(), 38);
@@ -5662,8 +6184,8 @@ pub(crate) mod tests {
         assert_eq!(finals.len() + 2 + 3 + 1 + 1, 14);
         // Native observation adds three final departures and five construction waits.
         assert_eq!(PLAN.census().typed_non_answer_final(), 22);
-        assert_eq!(PLAN.census().typed_non_answer_waiting(), 7);
-        assert_eq!(PLAN.census().outstanding_under_typed_non_answer(), 29);
+        assert_eq!(PLAN.census().typed_non_answer_waiting(), 6);
+        assert_eq!(PLAN.census().outstanding_under_typed_non_answer(), 28);
         writeln!(std::io::stdout(), "census sponsored: {:?}", PLAN.census())
             .expect("census output");
     }
@@ -5800,20 +6322,36 @@ pub(crate) mod tests {
     fn sponsored_fold_preserves_relay_operator_and_funding_obligations() {
         use crate::maturity_safety::MaturityRowBoundary;
         let corpus = crate::maturity_corpus::maturity_sponsored_run_of_record().expect("archive");
-        let relay: Vec<_> = PLAN
+        let relay = PLAN
             .rows()
             .iter()
             .filter(|entry| {
                 entry.row().boundary() == MaturityRowBoundary::AcceptanceAwaitsRelayAdmissibility
             })
-            .collect();
-        assert_eq!(relay.len(), 1);
-        for entry in relay {
-            assert_eq!(
-                super::sponsored_standing(entry.row(), entry.standing().clone(), corpus),
-                *entry.standing()
-            );
-        }
+            .count();
+        assert_eq!(relay, 0);
+        let combined = PLAN
+            .rows()
+            .iter()
+            .find(|entry| entry.row().name() == super::COMBINED_PROJECTION_ROW)
+            .expect("combined row");
+        assert_eq!(
+            combined.row().boundary(),
+            MaturityRowBoundary::Layer(EvidenceBoundary::AcceptedTransaction)
+        );
+        let agreement = super::combined_projection().expect("selected combined agreement");
+        assert_eq!(combined.standing(), &agreement.standing);
+        assert!(matches!(
+            combined.standing(),
+            MaturityRowStanding::NativeAcceptanceObserved { run_address, identity, block_height: 49, .. }
+                if *run_address == crate::maturity_corpus::MATURITY_SPONSORED_RUN_ADDRESS
+                    && *identity == agreement.readback.identity()
+        ));
+        let waiting = MaturityRowStanding::NativeRunRequired(None);
+        assert_eq!(
+            super::sponsored_standing(combined.row(), waiting.clone(), corpus),
+            waiting
+        );
         for name in [
             "sponsor-input-added-after-signing",
             "fee-output-changed-after-signing",
