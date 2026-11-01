@@ -194,8 +194,19 @@ fn the_confidential_maturity_route_runs_against_a_real_target() {
         "handshake changed"
     );
     outcome.expect("capture operations");
-    vectors::maturity_native::confidential::CampaignManifest::validate(&plan, &plan.manifest.rows)
-        .expect("reported campaign projection");
+    vectors::maturity_native::confidential::ConfidentialCampaignFields {
+        policy: plan.policy().expect("policy").0.clone(),
+        families: plan.families_json(),
+        stopped: if plan.families_json()[0]["stopped"] == true {
+            json!([FAMILY])
+        } else {
+            json!([])
+        },
+        preflight,
+        rows: plan.manifest.rows.clone(),
+    }
+    .validate(&plan)
+    .expect("reported campaign records");
     let replay =
         replay_confidential_route(identity, branch(), plan.exchanges()).expect("exact replay");
     assert_eq!(replay.manifest.rows, plan.manifest.rows);

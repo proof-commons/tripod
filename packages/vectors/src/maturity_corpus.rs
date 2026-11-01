@@ -364,6 +364,8 @@ pub struct MaturityCorpusPins<'a> {
     cargo_path: &'a str,
     framework_revision: MaturityFrameworkRevision,
     funding_count: usize,
+    capabilities: &'a [&'a str],
+    funding: &'a [&'a str],
     fee_floors: MaturityDisclosedFeeFloors,
 }
 
@@ -399,6 +401,8 @@ impl<'a> MaturityCorpusPins<'a> {
             cargo_path,
             framework_revision,
             funding_count,
+            capabilities: &CAPABILITIES,
+            funding: &[],
             fee_floors,
         }
     }
@@ -611,6 +615,55 @@ const RETAINED_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins {
     ..NATIVE_PINS
 };
 
+/// SHA-256 of the confidential archive's exact manifest.
+pub const MATURITY_CONFIDENTIAL_MANIFEST_SHA256: &str =
+    "f8eafa447f983af9fdae3258bd38f40eb37325d17654478fc03bfdacd03cd230";
+/// SHA-256 of the confidential report, including its campaign manifest.
+pub const MATURITY_CONFIDENTIAL_RUN_ADDRESS: &str =
+    "5322aaa214c06593c431023f68775b1b6c946556877c172fb88589aeb0073905";
+const MATURITY_CONFIDENTIAL_CEREMONY_SHA256: &str =
+    "98684c49369aefc388e4d128aa53906b195676dbc31b18d30b1132fea61441d7";
+const CONFIDENTIAL_FILES: [MaturityArchiveFile<'static>; 4] = [
+    MaturityArchiveFile::new(
+        "2b0d2f31c8.report.capture",
+        include_bytes!("../fixtures/maturity-confidential-run-of-record/2b0d2f31c8.report.capture"),
+    ),
+    MaturityArchiveFile::new(
+        "2b0d2f31c8.report.capture.timing",
+        include_bytes!(
+            "../fixtures/maturity-confidential-run-of-record/2b0d2f31c8.report.capture.timing"
+        ),
+    ),
+    MaturityArchiveFile::new(
+        "MANIFEST.sha256",
+        include_bytes!("../fixtures/maturity-confidential-run-of-record/MANIFEST.sha256"),
+    ),
+    MaturityArchiveFile::new(
+        "RUN-REPORT",
+        include_bytes!("../fixtures/maturity-confidential-run-of-record/RUN-REPORT"),
+    ),
+];
+const CONFIDENTIAL_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins {
+    names: [
+        "2b0d2f31c8.report.capture",
+        "2b0d2f31c8.report.capture.timing",
+        "MANIFEST.sha256",
+        "RUN-REPORT",
+    ],
+    sizes: [1_822_687, 49, 191, 193_213],
+    manifest_sha256: MATURITY_CONFIDENTIAL_MANIFEST_SHA256,
+    run_address: MATURITY_CONFIDENTIAL_RUN_ADDRESS,
+    ceremony_sha256: MATURITY_CONFIDENTIAL_CEREMONY_SHA256,
+    capture_target: MaturityCaptureTarget::new(
+        "maturity_confidential",
+        "the_confidential_maturity_route_runs_against_a_real_target",
+    ),
+    funding_count: 4,
+    capabilities: &CONFIDENTIAL_CAPABILITIES,
+    funding: &CONFIDENTIAL_FUNDING,
+    ..RETAINED_PINS
+};
+
 const NATIVE_FILES: [MaturityArchiveFile<'static>; 4] = [
     MaturityArchiveFile::new(
         "745e4e01ad.report.capture",
@@ -775,6 +828,8 @@ pub enum MaturityCorpusImportRefusal {
     Derivation(MaturityNativePlanRefusal),
     /// A retained family disagrees with its campaign or admission precondition.
     RetainedCampaign(crate::maturity_native::native::RetainedCampaignRefusal),
+    /// A confidential family disagrees with its campaign or admission precondition.
+    ConfidentialCampaign(crate::maturity_native::confidential::ConfidentialCampaignRefusal),
 }
 
 type ImportResult<T> = Result<T, MaturityCorpusImportRefusal>;
@@ -1490,6 +1545,30 @@ const CAPABILITIES: [&str; 12] = [
     "test-script-path-authorization",
 ];
 
+const CONFIDENTIAL_CAPABILITIES: [&str; 14] = [
+    "failure-class-reporting",
+    "transaction-context",
+    "resource-observation",
+    "tree-materialization",
+    "confidential-conservation",
+    "owner-authorized-normalization",
+    "compound-prototype-fixtures",
+    "fresh-process-lifecycle",
+    "test-funding-ceremony",
+    "target-transaction-submission",
+    "test-sponsor-authorization",
+    "test-script-path-authorization",
+    "confidential-value-test-funding",
+    "confidential-value-sponsor-authorization",
+];
+
+const CONFIDENTIAL_FUNDING: [&str; 4] = [
+    "0 representation explicit-asset-confidential-value",
+    "1 custody central-public-fixtures",
+    "2 materializer guide-ctf-deterministic-v1",
+    "3 reproducibility byte_identity",
+];
+
 fn parse_environment(
     cursor: &mut Cursor<'_>,
     report: &MaturityReportFacts,
@@ -1510,12 +1589,15 @@ fn parse_environment(
         "environment-domain 0 tapscript supported true active true",
         "environment-leaf-count 1",
         "environment-leaf 0 196 supported true active true",
-        "environment-capability-count 12",
     ] {
         cursor.exact(line)?;
     }
+    cursor.exact(&format!(
+        "environment-capability-count {}",
+        pins.capabilities.len()
+    ))?;
     let mut capabilities = Vec::new();
-    for (index, expected) in CAPABILITIES.iter().enumerate() {
+    for (index, expected) in pins.capabilities.iter().enumerate() {
         let value = cursor.value("environment-capability")?;
         if value != format!("{index} {expected}") {
             return Err(cursor.refusal());
@@ -1526,8 +1608,12 @@ fn parse_environment(
         "environment-funding-count {}",
         pins.funding_count()
     ))?;
-    for _ in 0..pins.funding_count() {
-        cursor.value("environment-funding")?;
+    binding(
+        "environment-funding-roster",
+        pins.funding.len() == pins.funding_count(),
+    )?;
+    for expected in pins.funding {
+        cursor.exact(&format!("environment-funding {expected}"))?;
     }
     Ok(capabilities)
 }
@@ -1621,6 +1707,7 @@ enum SubjectKind {
     Funding,
     Submission,
     Sponsored,
+    Confidential,
 }
 
 impl From<usize> for SubjectKind {
@@ -1635,16 +1722,17 @@ impl From<usize> for SubjectKind {
 
 fn parse_subject(text: &str, kind: impl Into<SubjectKind>) -> Option<OperationSubject> {
     let kind = kind.into();
-    if kind == SubjectKind::Sponsored {
+    if matches!(kind, SubjectKind::Sponsored | SubjectKind::Confidential) {
         let subject: OperationSubject = serde_json::from_str(text).ok()?;
         return (serde_json::to_string(&subject).ok()?.as_str() == text
-            && matches!(
+            && (matches!(
                 subject,
                 OperationSubject::Funding(_)
                     | OperationSubject::SponsorFunding(_)
                     | OperationSubject::SponsorSigning(_)
                     | OperationSubject::Submission(_)
-            ))
+            ) || (kind == SubjectKind::Confidential
+                && matches!(subject, OperationSubject::ConfidentialSponsorFunding(_)))))
         .then_some(subject);
     }
     if kind == SubjectKind::Submission {
@@ -1753,6 +1841,9 @@ fn parse_operation_block(
             OperationSubject::Funding(_)
             | OperationSubject::SponsorFunding(_)
             | OperationSubject::SponsorSigning(_) => request_bytes.is_empty(),
+            OperationSubject::ConfidentialSponsorFunding(_) => {
+                kind == SubjectKind::Confidential && request_bytes.is_empty()
+            }
             OperationSubject::Submission(submission) => {
                 !request_bytes.is_empty() && request_bytes == submission.transaction_bytes
             }
@@ -2992,6 +3083,291 @@ pub fn maturity_retained_run_of_record() -> ImportResult<&'static ValidatedRetai
     }
 }
 
+/// Admitted confidential observations, with the confidential family validated before any fold.
+pub struct ValidatedConfidentialMaturityCorpus {
+    /// Exact four-file report provenance.
+    pub report: MaturityReportFacts,
+    /// Complete exact replay of the confidential family.
+    pub evidence: crate::maturity_native::confidential::Planner,
+    /// Node-default policy premises with distinct provenance.
+    pub fee_floors: MaturityDisclosedFeeFloors,
+}
+
+struct ConfidentialReportFields {
+    policy: Vec<u8>,
+    families: Vec<u8>,
+    stopped: Vec<u8>,
+    rows: [Vec<u8>; 1],
+    preflight: Vec<u8>,
+}
+
+impl ConfidentialReportFields {
+    fn decoded(
+        &self,
+    ) -> ImportResult<crate::maturity_native::confidential::ConfidentialCampaignFields> {
+        Ok(
+            crate::maturity_native::confidential::ConfidentialCampaignFields {
+                policy: retained_json(&self.policy)?,
+                families: retained_json(&self.families)?,
+                stopped: retained_json(&self.stopped)?,
+                preflight: retained_json(&self.preflight)?,
+                rows: self
+                    .rows
+                    .iter()
+                    .map(|row| retained_json(row))
+                    .collect::<ImportResult<Vec<_>>>()?,
+            },
+        )
+    }
+}
+
+fn parse_confidential_report(
+    bytes: &[u8],
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<(MaturityReportFacts, ConfidentialReportFields)> {
+    let mut cursor = Cursor::new("confidential report", bytes)?;
+    let profile = cursor
+        .lines
+        .iter()
+        .position(|line| *line == "capture-profile confidential")
+        .ok_or(Refusal::RunReportGrammar)?;
+    let mut normalized = cursor.lines[..profile].join("\n");
+    normalized.push('\n');
+    cursor.index = profile;
+    cursor.exact("capture-profile confidential")?;
+    for phase in ["preflight", "cargo", "census", "manifest"] {
+        let wall = cursor.value("phase-wall-ms")?;
+        let digits = wall
+            .strip_prefix(phase)
+            .and_then(|tail| tail.strip_prefix(' '))
+            .ok_or(Refusal::RunReportGrammar)?;
+        number(digits).ok_or(Refusal::RunReportGrammar)?;
+    }
+    number(cursor.value("elapsed-wall-ms")?).ok_or(Refusal::RunReportGrammar)?;
+    let policy = cursor.bytes("confidential-policy")?;
+    let families = cursor.bytes("confidential-families")?;
+    let stopped = cursor.bytes("confidential-stopped")?;
+    cursor.exact("campaign-manifest-schema 1")?;
+    cursor.exact("campaign-manifest-count 1")?;
+    let rows = [cursor.bytes("campaign-row")?];
+    for _ in 0..4 {
+        let line = cursor
+            .lines
+            .get(cursor.index)
+            .ok_or_else(|| cursor.refusal())?;
+        normalized.push_str(line);
+        cursor.index += 1;
+        normalized.push('\n');
+    }
+    let preflight = cursor.bytes("confidential-preflight")?;
+    if cursor.lines.get(cursor.index) == Some(&"eligible no") {
+        return Err(Refusal::ConfidentialCampaign(
+            crate::maturity_native::confidential::ConfidentialCampaignRefusal {
+                family: crate::maturity_native::confidential::FAMILY.to_owned(),
+                field: "eligible",
+            },
+        ));
+    }
+    for line in &cursor.lines[cursor.index..] {
+        normalized.push_str(line);
+        normalized.push('\n');
+    }
+    let (mut report, _) = parse_report_body_selected(
+        normalized.as_bytes(),
+        pins,
+        None,
+        Some(pins.capture_target().test()),
+    )?;
+    binding(
+        "confidential-node-tip",
+        report.expected_tip == RETAINED_NODE_TIP,
+    )?;
+    report.run_address = hex_bytes(&tagged::sha256(bytes));
+    let fields = ConfidentialReportFields {
+        policy,
+        families,
+        stopped,
+        rows,
+        preflight,
+    };
+    fields
+        .decoded()?
+        .require_agreement()
+        .map_err(Refusal::ConfidentialCampaign)?;
+    Ok((report, fields))
+}
+
+/// Admit the confidential archive before assigning the family's standing.
+/// # Errors
+/// Refuses byte, provenance, campaign, policy, route and readback disagreements.
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton or confidential row.
+pub fn admit_confidential_maturity_corpus(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<ValidatedConfidentialMaturityCorpus> {
+    admit_confidential_with_replay(
+        files,
+        pins,
+        crate::maturity_native::confidential::replay_confidential_route,
+    )
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Admission follows the archive bindings before exact replay."
+)]
+fn admit_confidential_with_replay(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: &MaturityCorpusPins<'_>,
+    replay: impl FnOnce(
+        CandidateDeploymentIdentity,
+        BranchContext,
+        &[(OperationStep, NativeOperationResponse)],
+    ) -> Result<
+        crate::maturity_native::confidential::Planner,
+        crate::maturity_native::confidential::RouteRefusal,
+    >,
+) -> ImportResult<ValidatedConfidentialMaturityCorpus> {
+    use crate::maturity_native::sponsored::Policy;
+    validate_census(files, pins)?;
+    validate_manifest(files, pins.manifest_sha256())?;
+    binding(
+        "confidential-schedule",
+        pins.schedule() == tapscript::StateWitnessSchedule::VariableMetadata,
+    )?;
+    let (report, fields) = parse_confidential_report(files[3].bytes, pins)?;
+    check_report_address(&report, pins)?;
+    let policy_bytes = &fields.policy;
+    let policy = Policy::parse(retained_json(policy_bytes)?).map_err(Refusal::Derivation)?;
+    validate_common_bindings(files, pins, &report)?;
+    let floors = pins.fee_floors();
+    binding(
+        "confidential-fee-floors",
+        floors.min_relay_tx_fee() == policy.0["relay"].as_str().unwrap_or_default()
+            && floors.block_min_tx_fee() == policy.0["block"].as_str().unwrap_or_default()
+            && floors.provenance() == MaturityPremiseProvenance::ReportedByNode
+            && floors.block_provenance() == MaturityPremiseProvenance::PinnedSourceNoOverride,
+    )?;
+    let mut cursor = Cursor::new("confidential capture", files[0].bytes)?;
+    parse_header(&mut cursor, &report, pins)?;
+    parse_environment(&mut cursor, &report, pins)?;
+    cursor.exact("digest-count 0")?;
+    let count = number(cursor.value("operation-count")?).ok_or_else(|| cursor.refusal())?;
+    let operations = (0..count)
+        .map(|index| parse_operation_block(&mut cursor, index, "", SubjectKind::Confidential))
+        .collect::<ImportResult<Vec<_>>>()?;
+    let payload = parse_tail(&mut cursor, files[0].bytes)?;
+    let mut cursor = Cursor::new("confidential payload", &payload)?;
+    cursor.exact("maturity-confidential-evidence-schema 1")?;
+    let identity = CandidateDeploymentIdentity::new(
+        cursor
+            .bytes("deployment-id")?
+            .try_into()
+            .map_err(|_| cursor.refusal())?,
+        cursor
+            .bytes("genesis-id")?
+            .try_into()
+            .map_err(|_| cursor.refusal())?,
+    )
+    .map_err(|_| cursor.refusal())?;
+    binding(
+        "confidential-deployment",
+        hex_bytes(identity.network_id()) == report.network_id
+            && hex_bytes(identity.genesis_id()) == report.genesis_id,
+    )?;
+    let identifier = cursor
+        .bytes("branch-identifier")?
+        .try_into()
+        .map_err(|_| cursor.refusal())?;
+    let checkpoint = cursor
+        .value("branch-checkpoint")?
+        .parse::<u64>()
+        .map_err(|_| cursor.refusal())?;
+    let branch = BranchContext::new(identifier, checkpoint).map_err(|_| cursor.refusal())?;
+    binding(
+        "confidential-policy",
+        cursor.bytes("confidential-policy")? == fields.policy,
+    )?;
+    binding(
+        "confidential-families",
+        cursor.bytes("confidential-families")? == fields.families,
+    )?;
+    binding(
+        "confidential-stopped",
+        cursor.bytes("confidential-stopped")? == fields.stopped,
+    )?;
+    binding(
+        "confidential-preflight",
+        cursor.bytes("confidential-preflight")? == fields.preflight,
+    )?;
+    cursor.exact("campaign-manifest-schema 1")?;
+    cursor.exact("campaign-manifest-count 1")?;
+    for row in &fields.rows {
+        binding(
+            "confidential-campaign-row",
+            cursor.bytes("campaign-row")? == *row,
+        )?;
+    }
+    let mut exchanges = Vec::new();
+    for operation in operations {
+        let bytes = cursor.bytes("exchange")?;
+        let (case, subject, response): (
+            target_elements_conformance::protocol::OperationCaseId,
+            OperationSubject,
+            NativeOperationResponse,
+        ) = serde_json::from_slice(&bytes).map_err(|_| cursor.refusal())?;
+        binding(
+            "confidential-exchange",
+            operation.step.subject() == &subject
+                && response.case == case
+                && operation.layer == response.observed_layer
+                && operation.detail == response.observed_detail.as_deref().unwrap_or_default()
+                && operation.accepted_identity.map(|id| id.to_target_display())
+                    == response.accepted_txid,
+        )?;
+        exchanges.push((OperationStep::new(&case.step, subject), response));
+    }
+    cursor.done()?;
+    let evidence = replay(identity, branch, &exchanges).map_err(|error| {
+        Refusal::ConfidentialCampaign(
+            crate::maturity_native::confidential::ConfidentialCampaignRefusal {
+                family: crate::maturity_native::confidential::FAMILY.to_owned(),
+                field: error.field,
+            },
+        )
+    })?;
+    binding(
+        "confidential-operation-census",
+        count == 14 && evidence.exchanges().len() == count,
+    )?;
+    let decoded = fields.decoded()?;
+    decoded
+        .admit(&evidence)
+        .map_err(Refusal::ConfidentialCampaign)?;
+    Ok(ValidatedConfidentialMaturityCorpus {
+        report,
+        evidence,
+        fee_floors: floors,
+    })
+}
+
+/// Admit the immutable confidential archive once per process.
+/// # Errors
+/// Preserves the first exact admission refusal.
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton or confidential row.
+pub fn maturity_confidential_run_of_record()
+-> ImportResult<&'static ValidatedConfidentialMaturityCorpus> {
+    static CORPUS: OnceLock<ImportResult<ValidatedConfidentialMaturityCorpus>> = OnceLock::new();
+    match CORPUS
+        .get_or_init(|| admit_confidential_maturity_corpus(&CONFIDENTIAL_FILES, &CONFIDENTIAL_PINS))
+    {
+        Ok(corpus) => Ok(corpus),
+        Err(error) => Err(error.clone()),
+    }
+}
+
 /// Admitted independent acquisition and the two separately validated reports.
 pub struct ValidatedObserverMaturityCorpus {
     observation: serde_json::Value,
@@ -4052,6 +4428,523 @@ mod tests {
             },
         ] {
             assert!(admit_retained_maturity_corpus(&RETAINED_FILES, &pins).is_err());
+        }
+    }
+
+    #[test]
+    fn confidential_report_address_refuses_a_grammar_valid_changed_wall() {
+        let mut bytes = CONFIDENTIAL_FILES[3].bytes.to_vec();
+        let prefix = b"phase-wall-ms preflight ";
+        let index = bytes
+            .windows(prefix.len())
+            .position(|part| part == prefix)
+            .expect("phase wall")
+            + prefix.len();
+        bytes[index] = if bytes[index] == b'1' { b'2' } else { b'1' };
+        assert!(parse_confidential_report(&bytes, &CONFIDENTIAL_PINS).is_ok());
+        let mut files = CONFIDENTIAL_FILES;
+        files[3] = MaturityArchiveFile::new(files[3].name, &bytes);
+        assert_eq!(
+            admit_confidential_maturity_corpus(&files, &CONFIDENTIAL_PINS).err(),
+            Some(Refusal::RunReportAddress)
+        );
+    }
+
+    #[test]
+    fn confidential_node_tip_refuses_a_consistent_different_revision() {
+        let tip = "1".repeat(40);
+        let binary = &tip[..12];
+        let version = format!("Elements Core daemon version v28.99.0-{binary}");
+        let original = std::str::from_utf8(CONFIDENTIAL_FILES[3].bytes).expect("report");
+        let lines: Vec<_> = original
+            .lines()
+            .map(|line| {
+                if line.starts_with("elementsd-expected-tip ") {
+                    return format!("elementsd-expected-tip {tip}");
+                }
+                for (field, value) in [
+                    ("elementsd-binary-reported-revision", binary),
+                    ("elementsd-intended-executed-tip", tip.as_str()),
+                    ("node-version", version.as_str()),
+                ] {
+                    if line.starts_with(&format!("{field} ")) {
+                        return format!("{field} {} {}", value.len(), hex_bytes(value.as_bytes()));
+                    }
+                }
+                line.to_owned()
+            })
+            .collect();
+        let bytes = format!("{}\n", lines.join("\n")).into_bytes();
+        assert_eq!(
+            parse_confidential_report(&bytes, &CONFIDENTIAL_PINS).err(),
+            Some(Refusal::CrossFileBinding {
+                field: "confidential-node-tip"
+            })
+        );
+    }
+
+    #[test]
+    fn confidential_schedule_pin_refuses_another_schedule() {
+        let pins = MaturityCorpusPins {
+            schedule: tapscript::StateWitnessSchedule::WholeMetadata,
+            ..CONFIDENTIAL_PINS
+        };
+        assert_eq!(
+            admit_confidential_maturity_corpus(&CONFIDENTIAL_FILES, &pins).err(),
+            Some(Refusal::CrossFileBinding {
+                field: "confidential-schedule"
+            })
+        );
+    }
+
+    #[test]
+    fn confidential_archive_pins_refuse_changed_files() {
+        for index in 0..4 {
+            let mut bytes = CONFIDENTIAL_FILES[index].bytes.to_vec();
+            bytes[0] ^= 1;
+            let mut files = CONFIDENTIAL_FILES;
+            files[index] = MaturityArchiveFile::new(files[index].name, &bytes);
+            assert!(admit_confidential_maturity_corpus(&files, &CONFIDENTIAL_PINS).is_err());
+            let mut longer = bytes.clone();
+            longer.push(b'\n');
+            files[index] = MaturityArchiveFile::new(files[index].name, &longer);
+            assert!(matches!(
+                validate_census(&files, &CONFIDENTIAL_PINS),
+                Err(Refusal::FileSize { .. })
+            ));
+        }
+        let mut files = CONFIDENTIAL_FILES;
+        files.swap(0, 1);
+        assert_eq!(
+            validate_census(&files, &CONFIDENTIAL_PINS),
+            Err(Refusal::CorpusCensus)
+        );
+        for pins in [
+            MaturityCorpusPins {
+                manifest_sha256: &"0".repeat(64),
+                ..CONFIDENTIAL_PINS
+            },
+            MaturityCorpusPins {
+                run_address: &"0".repeat(64),
+                ..CONFIDENTIAL_PINS
+            },
+            MaturityCorpusPins {
+                ceremony_sha256: &"0".repeat(64),
+                ..CONFIDENTIAL_PINS
+            },
+            MaturityCorpusPins {
+                cargo_path: "/wrong/cargo",
+                ..CONFIDENTIAL_PINS
+            },
+            MaturityCorpusPins {
+                capture_target: MaturityCaptureTarget::new("wrong", "wrong"),
+                ..CONFIDENTIAL_PINS
+            },
+            MaturityCorpusPins {
+                funding_count: 1,
+                ..CONFIDENTIAL_PINS
+            },
+            MaturityCorpusPins {
+                framework_revision: MaturityFrameworkRevision::Unrecorded,
+                ..CONFIDENTIAL_PINS
+            },
+            MaturityCorpusPins {
+                fee_floors: MaturityDisclosedFeeFloors::node_defaults("0.00000200", "0.00000100"),
+                ..CONFIDENTIAL_PINS
+            },
+        ] {
+            assert!(admit_confidential_maturity_corpus(&CONFIDENTIAL_FILES, &pins).is_err());
+        }
+    }
+
+    #[test]
+    fn confidential_admission_binds_bytes_provenance_census_route_and_readback() {
+        use std::io::Write as _;
+        let start = std::time::Instant::now();
+        let corpus = admit_confidential_maturity_corpus(&CONFIDENTIAL_FILES, &CONFIDENTIAL_PINS)
+            .expect("confidential archive");
+        writeln!(
+            std::io::stdout(),
+            "census cold confidential admission wall {:?}",
+            start.elapsed()
+        )
+        .expect("wall output");
+        assert_eq!(
+            corpus.report.run_address(),
+            MATURITY_CONFIDENTIAL_RUN_ADDRESS
+        );
+        assert_eq!(corpus.report.expected_tip(), RETAINED_NODE_TIP);
+        assert_eq!(corpus.evidence.exchanges().len(), 14);
+        assert_eq!(corpus.evidence.admit(), Ok(()));
+        let families = corpus.evidence.families_json();
+        assert_eq!(families.as_array().expect("families").len(), 1);
+        assert_eq!(families[0]["expectation"], "agreement");
+        assert_eq!(families[0]["control_accepted"], true);
+        assert_eq!(families[0]["stopped"], false);
+        assert_eq!(families[0]["eligible"], true);
+        assert_eq!(families[0]["refusal"], serde_json::Value::Null);
+        for (index, fee, change, height) in [(7, 141, 1_109, 7), (13, 409, 841, 10)] {
+            let (step, response) = &corpus.evidence.exchanges()[index];
+            assert_eq!(response.observed_layer, ObservedOutcomeLayer::Accepted);
+            assert_eq!(
+                crate::maturity_native::sponsored::detail(response)
+                    .expect("route")
+                    .1,
+                Some(MaturityAcceptanceRoute::RelayAndTemplate)
+            );
+            let OperationSubject::Submission(subject) = step.subject() else {
+                panic!("submission")
+            };
+            let readback = response.mined_readback.as_ref().expect("exact readback");
+            assert_eq!(readback.raw_transaction, subject.transaction_bytes);
+            let slot = if index == 7 { "control" } else { "subject" };
+            assert_eq!(families[0][slot]["fee"], fee);
+            assert_eq!(families[0][slot]["change"], change);
+            assert_eq!(fee + change, 1_250);
+            assert_eq!(readback.block_height, height);
+        }
+        assert_eq!(
+            corpus.fee_floors.provenance(),
+            MaturityPremiseProvenance::ReportedByNode
+        );
+        assert_eq!(
+            corpus.fee_floors.block_provenance(),
+            MaturityPremiseProvenance::PinnedSourceNoOverride
+        );
+    }
+
+    fn confidential_fields() -> crate::maturity_native::confidential::ConfidentialCampaignFields {
+        parse_confidential_report(CONFIDENTIAL_FILES[3].bytes, &CONFIDENTIAL_PINS)
+            .expect("report")
+            .1
+            .decoded()
+            .expect("fields")
+    }
+
+    #[test]
+    fn confidential_campaign_refuses_each_changed_field() {
+        use crate::maturity_native::confidential::{ConfidentialCampaignRefusal, FAMILY};
+        let corpus = maturity_confidential_run_of_record().expect("admitted archive");
+        let fail = |field| {
+            Err(ConfidentialCampaignRefusal {
+                family: FAMILY.to_owned(),
+                field,
+            })
+        };
+        for key in [
+            "family",
+            "claim",
+            "control",
+            "subject",
+            "stopped",
+            "expectation",
+            "control_accepted",
+            "eligible",
+            "refusal",
+        ] {
+            let mut fields = confidential_fields();
+            fields.families[0][key] = serde_json::json!("changed");
+            assert_eq!(fields.validate(&corpus.evidence), fail(key), "{key}");
+            assert_eq!(fields.admit(&corpus.evidence), fail(key), "{key}");
+        }
+        for (slot, key) in [
+            ("control", "digest"),
+            ("subject", "digest"),
+            ("control", "funded_outpoints"),
+            ("subject", "readback"),
+        ] {
+            let mut fields = confidential_fields();
+            fields.families[0][slot][key] = serde_json::json!("changed");
+            assert_eq!(fields.validate(&corpus.evidence), fail(slot));
+        }
+        let mut fields = confidential_fields();
+        fields.families[0]["surplus"] = serde_json::json!(true);
+        assert_eq!(fields.validate(&corpus.evidence), fail("family keys"));
+        let mut fields = confidential_fields();
+        fields.stopped = serde_json::json!([FAMILY]);
+        assert_eq!(fields.validate(&corpus.evidence), fail("stopped set"));
+        let mut fields = confidential_fields();
+        fields.policy["relay"] = serde_json::json!("0");
+        assert_eq!(fields.validate(&corpus.evidence), fail("policy"));
+        let keys: Vec<_> = confidential_fields().rows[0]
+            .as_object()
+            .expect("row")
+            .keys()
+            .cloned()
+            .collect();
+        for key in keys {
+            let mut fields = confidential_fields();
+            fields.rows[0][&key] = serde_json::json!("changed");
+            assert!(fields.validate(&corpus.evidence).is_err(), "{key}");
+        }
+    }
+
+    #[test]
+    fn confidential_preflight_is_a_reading_and_requires_exact_profiles() {
+        let mut fields = confidential_fields();
+        fields.preflight["library_sha256"] = serde_json::json!("a".repeat(64));
+        assert_eq!(fields.validate_preflight(), Ok(()));
+        for value in ["A".repeat(64), "a".repeat(63), "g".repeat(64)] {
+            fields.preflight["library_sha256"] = serde_json::json!(value);
+            assert!(fields.validate_preflight().is_err());
+        }
+        for key in ["library_configured", "library_readable", "probe", "capture"] {
+            let mut fields = confidential_fields();
+            fields.preflight[key] = serde_json::json!(false);
+            assert!(fields.validate_preflight().is_err(), "{key}");
+        }
+        for reading in ["probe", "capture"] {
+            let mut fields = confidential_fields();
+            fields.preflight[reading]["profiles"]["materializer"] = serde_json::json!("changed");
+            assert!(fields.validate_preflight().is_err());
+        }
+        let mut fields = confidential_fields();
+        fields.preflight["surplus"] = serde_json::json!(true);
+        assert!(fields.validate_preflight().is_err());
+    }
+
+    #[test]
+    fn confidential_admission_refuses_contradicted_pending_and_stopped_families() {
+        for (key, value) in [
+            ("expectation", serde_json::json!("contradiction")),
+            ("expectation", serde_json::json!("pending")),
+            ("stopped", serde_json::json!(true)),
+            ("eligible", serde_json::json!(false)),
+            ("control_accepted", serde_json::json!(false)),
+            ("refusal", serde_json::json!("readback")),
+        ] {
+            let mut fields = confidential_fields();
+            fields.families[0][key] = value;
+            assert_eq!(
+                fields.require_agreement().expect_err("not admitted").field,
+                key
+            );
+        }
+        let mut fields = confidential_fields();
+        fields.stopped = serde_json::json!(["confidential-sponsor"]);
+        assert_eq!(
+            fields.require_agreement().expect_err("stopped").field,
+            "stopped set"
+        );
+    }
+
+    #[test]
+    fn confidential_environment_requires_its_exact_capabilities_and_funding() {
+        let (report, _) =
+            parse_confidential_report(CONFIDENTIAL_FILES[3].bytes, &CONFIDENTIAL_PINS)
+                .expect("report");
+        for pins in [
+            MaturityCorpusPins {
+                capabilities: &CAPABILITIES,
+                ..CONFIDENTIAL_PINS
+            },
+            MaturityCorpusPins {
+                funding: &[],
+                ..CONFIDENTIAL_PINS
+            },
+            MaturityCorpusPins {
+                funding_count: 0,
+                ..CONFIDENTIAL_PINS
+            },
+        ] {
+            let mut cursor = Cursor::new("capture", CONFIDENTIAL_FILES[0].bytes).expect("capture");
+            parse_header(&mut cursor, &report, &pins).expect("header");
+            assert!(parse_environment(&mut cursor, &report, &pins).is_err());
+        }
+    }
+
+    #[test]
+    fn confidential_funding_subject_is_scoped_to_the_confidential_parser() {
+        let corpus = maturity_confidential_run_of_record().expect("archive");
+        let text =
+            serde_json::to_string(corpus.evidence.exchanges()[9].0.subject()).expect("subject");
+        assert!(parse_subject(&text, SubjectKind::Confidential).is_some());
+        for kind in [
+            SubjectKind::Sponsored,
+            SubjectKind::Funding,
+            SubjectKind::Submission,
+        ] {
+            assert!(parse_subject(&text, kind).is_none());
+        }
+    }
+
+    #[test]
+    fn confidential_preflight_line_must_appear_once_at_its_declared_position() {
+        let original = std::str::from_utf8(CONFIDENTIAL_FILES[3].bytes).expect("report");
+        let line = original
+            .lines()
+            .find(|line| line.starts_with("confidential-preflight "))
+            .expect("preflight");
+        let missing = original.replace(&format!("{line}\n"), "");
+        for bytes in [
+            missing.clone(),
+            original.replace(line, &format!("{line}\n{line}")),
+            missing.replace(
+                "ceremony-roster begin",
+                &format!("{line}\nceremony-roster begin"),
+            ),
+            format!("{missing}{line}\n"),
+        ] {
+            assert!(parse_confidential_report(bytes.as_bytes(), &CONFIDENTIAL_PINS).is_err());
+        }
+    }
+
+    fn changed_confidential_report(field: &str, value: &str, encoded: bool) -> Vec<u8> {
+        let report = std::str::from_utf8(CONFIDENTIAL_FILES[3].bytes).expect("UTF-8");
+        let replacement = if encoded {
+            format!("{field} {} {}", value.len(), hex_bytes(value.as_bytes()))
+        } else {
+            format!("{field} {value}")
+        };
+        let mut lines: Vec<_> = report.lines().map(str::to_owned).collect();
+        let line = lines
+            .iter_mut()
+            .find(|line| line.starts_with(&format!("{field} ")))
+            .expect("field");
+        *line = replacement;
+        format!("{}\n", lines.join("\n")).into_bytes()
+    }
+
+    macro_rules! confidential_grammar_refusal {
+        ($name:ident, $field:literal, $value:expr, $encoded:literal) => {
+            #[test]
+            fn $name() {
+                let bytes = changed_confidential_report($field, $value, $encoded);
+                assert!(parse_confidential_report(&bytes, &CONFIDENTIAL_PINS).is_err());
+            }
+        };
+    }
+    confidential_grammar_refusal!(
+        confidential_suite_refuses_wrong_test_name,
+        "rust-test-name",
+        "another_test",
+        true
+    );
+    confidential_grammar_refusal!(
+        confidential_suite_refuses_nonexact_argv,
+        "cargo-argv",
+        "/workspace/toolchains/cargo/bin/cargo test -p tripod-vectors --test maturity_confidential -- --ignored --test-threads=1",
+        true
+    );
+    confidential_grammar_refusal!(
+        confidential_suite_refuses_changed_cargo_path,
+        "cargo-argv",
+        "/wrong/cargo test -p tripod-vectors --test maturity_confidential -- --ignored --exact the_confidential_maturity_route_runs_against_a_real_target --test-threads=1",
+        true
+    );
+    confidential_grammar_refusal!(
+        confidential_suite_refuses_wrong_count,
+        "observed-test-count",
+        "2",
+        false
+    );
+    confidential_grammar_refusal!(
+        confidential_suite_refuses_dirty_provenance,
+        "suite-clean",
+        "no",
+        false
+    );
+    confidential_grammar_refusal!(
+        confidential_suite_refuses_bad_source_identity,
+        "suite-tree",
+        "not-source-provenance",
+        false
+    );
+    confidential_grammar_refusal!(
+        confidential_suite_refuses_changed_revision,
+        "elementsd-binary-reported-revision",
+        "000000000000",
+        true
+    );
+    confidential_grammar_refusal!(
+        confidential_suite_refuses_wrong_revision_length,
+        "elementsd-binary-reported-revision",
+        "b7fc5d08",
+        true
+    );
+    confidential_grammar_refusal!(
+        confidential_suite_refuses_changed_intended_tip,
+        "elementsd-intended-executed-tip",
+        &"0".repeat(40),
+        true
+    );
+    confidential_grammar_refusal!(
+        confidential_suite_refuses_wrong_adapter,
+        "executor-adapter-version",
+        "2.0.0",
+        true
+    );
+    confidential_grammar_refusal!(
+        confidential_suite_refuses_wrong_protocol,
+        "protocol-revision",
+        "7",
+        false
+    );
+    confidential_grammar_refusal!(
+        confidential_suite_refuses_wrong_target,
+        "deployment-target-contract",
+        "another-target",
+        true
+    );
+    confidential_grammar_refusal!(
+        confidential_tail_refuses_wrong_profile,
+        "capture-profile",
+        "native",
+        false
+    );
+    confidential_grammar_refusal!(
+        confidential_tail_refuses_phase_order,
+        "phase-wall-ms",
+        "cargo 42",
+        false
+    );
+    confidential_grammar_refusal!(
+        confidential_tail_refuses_phase_wall,
+        "phase-wall-ms",
+        "preflight -1",
+        false
+    );
+    confidential_grammar_refusal!(
+        confidential_tail_refuses_elapsed_wall,
+        "elapsed-wall-ms",
+        "01",
+        false
+    );
+    confidential_grammar_refusal!(
+        confidential_tail_refuses_campaign_schema,
+        "campaign-manifest-schema",
+        "2",
+        false
+    );
+    confidential_grammar_refusal!(
+        confidential_tail_refuses_campaign_count,
+        "campaign-manifest-count",
+        "2",
+        false
+    );
+    confidential_grammar_refusal!(
+        confidential_tail_refuses_ineligible,
+        "eligible",
+        "no",
+        false
+    );
+
+    #[test]
+    fn confidential_tail_refuses_missing_duplicate_and_surplus_lines() {
+        let original = std::str::from_utf8(CONFIDENTIAL_FILES[3].bytes).expect("report");
+        let policy = original
+            .lines()
+            .find(|line| line.starts_with("confidential-policy "))
+            .expect("policy");
+        for bytes in [
+            original.replace(&format!("{policy}\n"), ""),
+            original.replace(
+                "campaign-manifest-count 1\n",
+                "campaign-manifest-count 1\ncampaign-manifest-count 1\n",
+            ),
+            format!("{original}surplus yes\n"),
+        ] {
+            assert!(parse_confidential_report(bytes.as_bytes(), &CONFIDENTIAL_PINS).is_err());
         }
     }
 

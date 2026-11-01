@@ -2205,6 +2205,8 @@ fn derive_maturity_evidence_source(
         .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
     let retained = crate::maturity_corpus::maturity_retained_run_of_record()
         .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
+    let confidential = crate::maturity_corpus::maturity_confidential_run_of_record()
+        .map_err(MaturityEvidenceRefusal::NativeCorpusImportRefused)?;
     let combined = combined_projection()?;
     let root_history_mutations =
         MaturityMutationRegistry::registered(MaturityMutationRegistryKind::RootHistory);
@@ -2284,15 +2286,23 @@ fn derive_maturity_evidence_source(
             row,
             standing: combined_projection_standing(
                 row,
-                retained_native_standing(
+                confidential_standing(
                     row,
-                    remaining_native_standing(
+                    retained_native_standing(
                         row,
-                        sponsored_standing(row, mutant_standing(row, standing, refusal), sponsored),
-                        native,
+                        remaining_native_standing(
+                            row,
+                            sponsored_standing(
+                                row,
+                                mutant_standing(row, standing, refusal),
+                                sponsored,
+                            ),
+                            native,
+                        ),
+                        retained,
                     ),
-                    retained,
-                ),
+                    confidential,
+                )?,
                 combined,
             ),
         });
@@ -3611,6 +3621,63 @@ fn retained_native_standing(
     }
 }
 
+/// Return whether a row needs confidential binding, refusing inconsistent claim coordinates.
+fn confidential_row_binding(
+    section: crate::maturity_safety::MaturitySafetySection,
+    name: &str,
+    boundary: crate::maturity_safety::MaturityRowBoundary,
+) -> Option<bool> {
+    use crate::maturity_native::confidential::CLAIM;
+    use crate::maturity_safety::{MaturityRowBoundary, MaturitySafetySection};
+    let expected = MaturityRowBoundary::ConfidentialSponsorValueUndecidedByCandidate;
+    if name != CLAIM && boundary != expected {
+        return Some(false);
+    }
+    (section == MaturitySafetySection::SponsorFault && name == CLAIM && boundary == expected)
+        .then_some(true)
+}
+
+/// Bind the final build property to its admitted acceptance without changing its typed standing.
+fn confidential_standing(
+    row: &MaturitySafetyRow,
+    standing: MaturityRowStanding,
+    corpus: &crate::maturity_corpus::ValidatedConfidentialMaturityCorpus,
+) -> Result<MaturityRowStanding, MaturityEvidenceRefusal> {
+    use crate::maturity_native::confidential::{CLAIM, FAMILY};
+    let fail = || {
+        MaturityEvidenceRefusal::NativeCorpusImportRefused(
+            MaturityCorpusImportRefusal::CrossFileBinding {
+                field: "confidential-standing",
+            },
+        )
+    };
+    if !confidential_row_binding(row.section(), row.name(), row.boundary()).ok_or_else(fail)? {
+        return Ok(standing);
+    }
+    if corpus.report.run_address() != crate::maturity_corpus::MATURITY_CONFIDENTIAL_RUN_ADDRESS
+        || corpus.evidence.admit().is_err()
+    {
+        return Err(fail());
+    }
+    let (step, response) = corpus.evidence.exchanges().get(13).ok_or_else(fail)?;
+    let OperationSubject::Submission(subject) = step.subject() else {
+        return Err(fail());
+    };
+    if step.case().step != format!("{FAMILY}:{CLAIM}:13")
+        || response.observed_layer != ObservedOutcomeLayer::Accepted
+        || !crate::maturity_native::sponsored::detail(response).is_ok_and(|(_, route)| {
+            route == Some(crate::maturity_native::MaturityAcceptanceRoute::RelayAndTemplate)
+        })
+        || response
+            .mined_readback
+            .as_ref()
+            .is_none_or(|readback| readback.raw_transaction != subject.transaction_bytes)
+    {
+        return Err(fail());
+    }
+    Ok(standing)
+}
+
 /// Count the classified rows into one bucket per standing.
 fn census_from_rows(classified: &[MaturityEvidenceRow]) -> MaturityEvidenceCensus {
     use crate::maturity_safety::MaturityNonAnswerFinality;
@@ -3773,6 +3840,114 @@ pub(crate) mod tests {
             MaturityRowStanding::NativeRunRequired(None)
         );
     }
+
+    #[test]
+    fn confidential_row_binding_refuses_mismatches_and_passes_unrelated_rows() {
+        use crate::maturity_native::confidential::CLAIM;
+        use crate::maturity_safety::{MaturityRowBoundary as B, MaturitySafetySection as S};
+
+        let boundary = B::ConfidentialSponsorValueUndecidedByCandidate;
+        assert_eq!(
+            super::confidential_row_binding(S::SponsorFault, CLAIM, boundary),
+            Some(true)
+        );
+        assert_eq!(
+            super::confidential_row_binding(S::Positive, CLAIM, boundary),
+            None
+        );
+        assert_eq!(
+            super::confidential_row_binding(S::SponsorFault, "another-claim", boundary),
+            None
+        );
+        assert_eq!(
+            super::confidential_row_binding(
+                S::SponsorFault,
+                CLAIM,
+                B::ConfidentialSponsorAwaitsBalancedProofRoute
+            ),
+            None
+        );
+        assert_eq!(
+            super::confidential_row_binding(
+                S::Positive,
+                "another-claim",
+                B::ConfidentialSponsorAwaitsBalancedProofRoute
+            ),
+            Some(false)
+        );
+        let entry = PLAN
+            .rows()
+            .iter()
+            .find(|entry| entry.row().name() != CLAIM && entry.row().boundary() != boundary)
+            .expect("unrelated row");
+        let corpus = crate::maturity_corpus::maturity_confidential_run_of_record()
+            .expect("confidential archive");
+        assert_eq!(
+            super::confidential_standing(entry.row(), entry.standing().clone(), corpus),
+            Ok(entry.standing().clone())
+        );
+    }
+
+    #[test]
+    fn confidential_acceptance_binds_final_build_property_standing() {
+        use crate::maturity_native::confidential::CLAIM;
+        use crate::maturity_safety::{MaturityNonAnswerFinality, MaturityRowBoundary};
+
+        let corpus = crate::maturity_corpus::maturity_confidential_run_of_record()
+            .expect("confidential archive");
+        assert_eq!(corpus.evidence.admit(), Ok(()));
+        let (step, response) = &corpus.evidence.exchanges()[13];
+        assert_eq!(response.observed_layer, ObservedOutcomeLayer::Accepted);
+        let OperationSubject::Submission(subject) = step.subject() else {
+            panic!("submission");
+        };
+        assert_eq!(
+            response
+                .mined_readback
+                .as_ref()
+                .expect("readback")
+                .raw_transaction,
+            subject.transaction_bytes
+        );
+        assert_eq!(
+            crate::maturity_native::sponsored::detail(response)
+                .expect("route")
+                .1,
+            Some(crate::maturity_native::MaturityAcceptanceRoute::RelayAndTemplate)
+        );
+        let family = corpus.evidence.families_json();
+        assert_eq!(family[0]["control_accepted"], true);
+        assert_ne!(
+            family[0]["control"]["funded_outpoints"][0]["output"]["outpoint"],
+            family[0]["subject"]["funded_outpoints"][0]["output"]["outpoint"]
+        );
+        let entry = PLAN
+            .rows()
+            .iter()
+            .find(|entry| entry.row().name() == CLAIM)
+            .expect("claim");
+        let boundary = MaturityRowBoundary::ConfidentialSponsorValueUndecidedByCandidate;
+        assert_eq!(entry.row().boundary(), boundary);
+        assert_eq!(boundary.layer(), None);
+        assert_eq!(boundary.finality(), Some(MaturityNonAnswerFinality::Final));
+        assert_eq!(
+            entry.standing(),
+            &MaturityRowStanding::OutstandingUnderTypedNonAnswer(boundary)
+        );
+        assert_eq!(
+            super::confidential_standing(entry.row(), entry.standing().clone(), corpus),
+            Ok(entry.standing().clone())
+        );
+        assert_eq!(
+            super::confidential_standing(
+                entry.row(),
+                MaturityRowStanding::NativeRunRequired(None),
+                corpus
+            ),
+            Ok(MaturityRowStanding::NativeRunRequired(None))
+        );
+    }
+
     pub fn contradicted_report_plan() -> MaturityAnnouncementEvidencePlan {
         let mut plan = PLAN.clone();
         let entry = plan
@@ -3836,7 +4011,7 @@ pub(crate) mod tests {
                 after.typed_non_answer_final(),
                 after.typed_non_answer_waiting()
             ),
-            (26, 1)
+            (27, 0)
         );
         let mut changed = 0;
         for (old, new) in source.rows().iter().zip(folded.rows()) {
@@ -4885,7 +5060,7 @@ pub(crate) mod tests {
                 census.retired(),
                 census.waiting()
             ),
-            (177, 26, 2, 1)
+            (177, 27, 2, 0)
         );
         assert_eq!(census.observed(), census.answered());
         assert_eq!(census.outstanding(), 29);
@@ -4899,15 +5074,15 @@ pub(crate) mod tests {
         );
         assert!(!census.every_required_row_is_answered());
         let mut blocked = PLAN.clone();
-        let waiting = blocked
+        let confidential = blocked
             .rows
             .iter_mut()
             .find(|entry| {
                 entry.row().name()
                     == "confidential-sponsor-value-where-the-selected-target-policy-claims-support"
             })
-            .expect("waiting row");
-        waiting.standing = MaturityRowStanding::InfrastructureBlocked;
+            .expect("confidential row");
+        confidential.standing = MaturityRowStanding::InfrastructureBlocked;
         let blocked_census = super::census_from_rows(&blocked.rows);
         assert_eq!(blocked_census.waiting(), 1);
         assert_eq!(blocked_census.infrastructure_blocked(), 1);
@@ -4920,7 +5095,7 @@ pub(crate) mod tests {
                 entry.row().name()
                     == "confidential-sponsor-value-where-the-selected-target-policy-claims-support"
             })
-            .expect("waiting row")
+            .expect("confidential row")
             .standing = MaturityRowStanding::Experimental;
         let experimental_census = super::census_from_rows(&experimental.rows);
         assert_eq!(experimental_census.experimental(), 1);
@@ -5623,7 +5798,7 @@ pub(crate) mod tests {
                 census.retired(),
                 census.waiting()
             ),
-            (141, 26, 2, 37)
+            (141, 27, 2, 36)
         );
         assert_eq!(census.outstanding(), 65);
         before
@@ -5699,12 +5874,12 @@ pub(crate) mod tests {
                 new.retired(),
                 new.waiting()
             ),
-            (177, 26, 2, 1)
+            (177, 27, 2, 0)
         );
         assert_eq!(new.outstanding_under_typed_non_answer(), 27);
         assert_eq!(
             (new.typed_non_answer_final(), new.typed_non_answer_waiting()),
-            (26, 1)
+            (27, 0)
         );
         assert_eq!(
             (
@@ -6356,18 +6531,18 @@ pub(crate) mod tests {
             SponsorFault,
             "confidential-sponsor-value-where-the-selected-target-policy-claims-support",
         );
-        let boundary = B::ConfidentialSponsorAwaitsBalancedProofRoute;
+        let boundary = B::ConfidentialSponsorValueUndecidedByCandidate;
         assert_eq!(entry.row().boundary(), boundary);
-        assert_eq!(boundary.finality(), Some(F::Waiting));
+        assert_eq!(boundary.finality(), Some(F::Final));
         assert_eq!(
             entry.standing(),
             &MaturityRowStanding::OutstandingUnderTypedNonAnswer(boundary)
         );
-        // Seven final ABI claims, two acceptances, three matching refusals, one contradiction and one wait.
-        assert_eq!(finals.len() + 2 + 3 + 1 + 1, 14);
-        // Four observed departures and three absent coordinates are final; confidential value waits.
-        assert_eq!(PLAN.census().typed_non_answer_final(), 26);
-        assert_eq!(PLAN.census().typed_non_answer_waiting(), 1);
+        // Seven final ABI claims, one confidential final, two acceptances, three matching refusals and one contradiction.
+        assert_eq!(finals.len() + 1 + 2 + 3 + 1, 14);
+        // Four observed departures, three absent coordinates and confidential value are final.
+        assert_eq!(PLAN.census().typed_non_answer_final(), 27);
+        assert_eq!(PLAN.census().typed_non_answer_waiting(), 0);
         assert_eq!(PLAN.census().outstanding_under_typed_non_answer(), 27);
         writeln!(std::io::stdout(), "census sponsored: {:?}", PLAN.census())
             .expect("census output");

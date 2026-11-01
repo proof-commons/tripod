@@ -41,7 +41,7 @@ use transaction::view::{PublicConstructionView, PublicOutputView};
 
 /// The sole family in this profile.
 pub const FAMILY: &str = "confidential-sponsor";
-/// The Safety claim, whose waiting reason is unchanged by this planner.
+/// The Safety claim, whose final build-property standing requires separate archive admission.
 pub const CLAIM: &str =
     "confidential-sponsor-value-where-the-selected-target-policy-claims-support";
 /// Exact successful schedule; template transactions are never submitted.
@@ -108,8 +108,12 @@ impl RouteSpecification {
             .iter()
             .find(|row| row.section() == MaturitySafetySection::SponsorFault && row.name() == CLAIM)
             .ok_or_else(|| refused("typed claim"))?;
-        if row.boundary() != MaturityRowBoundary::ConfidentialSponsorAwaitsBalancedProofRoute {
-            return Err(refused("waiting reason"));
+        if !matches!(
+            row.boundary(),
+            MaturityRowBoundary::ConfidentialSponsorAwaitsBalancedProofRoute
+                | MaturityRowBoundary::ConfidentialSponsorValueUndecidedByCandidate
+        ) {
+            return Err(refused("typed boundary"));
         }
         let schedule = tapscript::StateWitnessSchedule::VariableMetadata;
         let sources = map(
@@ -321,6 +325,196 @@ impl CampaignManifest {
         )?;
         if replay.manifest.rows != offered {
             return Err(refused("campaign projection"));
+        }
+        Ok(())
+    }
+}
+
+/// A public campaign coordinate that failed record binding or archive admission.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfidentialCampaignRefusal {
+    /// Family whose record was refused.
+    pub family: String,
+    /// First field that disagreed.
+    pub field: &'static str,
+}
+
+fn campaign_refused(field: &'static str) -> ConfidentialCampaignRefusal {
+    ConfidentialCampaignRefusal {
+        family: FAMILY.to_owned(),
+        field,
+    }
+}
+
+/// Closed records shared by the diagnostic wrapper and immutable archive admission.
+pub struct ConfidentialCampaignFields {
+    /// Selected default policy and its provenance.
+    pub policy: Value,
+    /// Single family, including the complete control and subject readbacks.
+    pub families: Value,
+    /// Families stopped before a qualified control.
+    pub stopped: Value,
+    /// Deployment readings, never a pinned library identity.
+    pub preflight: Value,
+    /// Closed campaign projection.
+    pub rows: Vec<Value>,
+}
+
+impl ConfidentialCampaignFields {
+    /// Bind preflight readings without treating a self-built library as a constant.
+    /// # Errors
+    /// Refuses surplus keys, missing capabilities, changed profiles or unequal readings.
+    pub fn validate_preflight(&self) -> Result<(), ConfidentialCampaignRefusal> {
+        let p = &self.preflight;
+        let keys = [
+            "library_configured",
+            "library_readable",
+            "library_sha256",
+            "probe",
+            "capture",
+        ];
+        if !p.as_object().is_some_and(|map| {
+            map.len() == keys.len() && keys.iter().all(|key| map.contains_key(*key))
+        }) {
+            return Err(campaign_refused("preflight keys"));
+        }
+        for key in ["library_configured", "library_readable"] {
+            if p[key] != true {
+                return Err(campaign_refused(key));
+            }
+        }
+        if !p["library_sha256"].as_str().is_some_and(|s| {
+            s.len() == 64
+                && s.bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        }) {
+            return Err(campaign_refused("library_sha256"));
+        }
+        let expected = json!({
+            "confidential_value_test_funding": true,
+            "confidential_value_sponsor_authorization": true,
+            "advertisement_matches": true,
+            "profiles": crate::confidential_predecessor::selected_profiles()
+        });
+        if p["probe"] != p["capture"] {
+            return Err(campaign_refused("probe"));
+        }
+        if p["capture"] != expected {
+            return Err(campaign_refused("capture"));
+        }
+        Ok(())
+    }
+
+    /// Bind diagnostic records to the replayed planner without requiring agreement.
+    /// # Errors
+    /// Refuses any changed policy, family, campaign, stopped set or preflight reading.
+    pub fn validate(&self, plan: &Planner) -> Result<(), ConfidentialCampaignRefusal> {
+        if plan.policy().map(|p| &p.0) != Some(&self.policy) {
+            return Err(campaign_refused("policy"));
+        }
+        let expected = plan.families_json();
+        let keys = [
+            "family",
+            "claim",
+            "control",
+            "subject",
+            "stopped",
+            "expectation",
+            "control_accepted",
+            "eligible",
+            "refusal",
+        ];
+        if self.families.as_array().is_none_or(|rows| rows.len() != 1) {
+            return Err(campaign_refused("families"));
+        }
+        let family = &self.families[0];
+        if !family.as_object().is_some_and(|map| {
+            map.len() == keys.len() && keys.iter().all(|key| map.contains_key(*key))
+        }) {
+            return Err(campaign_refused("family keys"));
+        }
+        for key in keys {
+            if family[key] != expected[0][key] {
+                return Err(campaign_refused(key));
+            }
+        }
+        let stopped = if expected[0]["stopped"] == true {
+            json!([FAMILY])
+        } else {
+            json!([])
+        };
+        if self.stopped != stopped {
+            return Err(campaign_refused("stopped set"));
+        }
+        self.validate_preflight()?;
+        if self.rows.len() != 1 {
+            return Err(campaign_refused("campaign count"));
+        }
+        let canonical = &plan.manifest.rows[0];
+        let offered = &self.rows[0];
+        if offered
+            .as_object()
+            .is_none_or(|map| Some(map.len()) != canonical.as_object().map(serde_json::Map::len))
+        {
+            return Err(campaign_refused("campaign keys"));
+        }
+        // These comparisons reject mutations before the independent, more expensive replay.
+        for key in [
+            "claim",
+            "operation",
+            "family",
+            "candidate",
+            "abi",
+            "target",
+            "deployment",
+            "branch",
+            "policy_requirement",
+            "policy",
+            "constructor",
+            "mutation",
+            "declared_boundary",
+            "expected_layer",
+            "control_id",
+            "compatibility",
+            "control",
+            "observation",
+            "expected_consumer",
+        ] {
+            if offered[key] != canonical[key] {
+                return Err(campaign_refused(key));
+            }
+        }
+        CampaignManifest::validate(plan, &self.rows).map_err(|error| campaign_refused(error.field))
+    }
+
+    /// Require the accepted-control agreement boundary for immutable archive admission.
+    /// # Errors
+    /// Refuses changed records or a stopped, contradicted or pending family, even if structurally eligible.
+    pub fn admit(&self, plan: &Planner) -> Result<(), ConfidentialCampaignRefusal> {
+        self.validate(plan)?;
+        self.require_agreement()?;
+        plan.admit().map_err(|error| campaign_refused(error.field))
+    }
+
+    /// Check the closed admission outcome before expensive route replay.
+    /// # Errors
+    /// Refuses every outcome other than eligible agreement after an accepted control.
+    pub fn require_agreement(&self) -> Result<(), ConfidentialCampaignRefusal> {
+        let family = &self.families[0];
+        if self.stopped != json!([]) {
+            return Err(campaign_refused("stopped set"));
+        }
+        for (key, value) in [
+            ("family", json!(FAMILY)),
+            ("stopped", json!(false)),
+            ("expectation", json!("agreement")),
+            ("control_accepted", json!(true)),
+            ("eligible", json!(true)),
+            ("refusal", Value::Null),
+        ] {
+            if family[key] != value {
+                return Err(campaign_refused(key));
+            }
         }
         Ok(())
     }

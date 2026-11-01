@@ -236,6 +236,8 @@ pub enum MaturityRowBoundary {
     /// state, so no successor control position exists. Each is a property of
     /// the build; none credits an observation.
     NativeCoordinateAbsentFromCandidate,
+    /// The retained candidate does not read the sponsor value commitment. For `16.10 / confidential-sponsor-value-where-the-selected-target-policy-claims-support`, the admitted equivalent-coin explicit control and balanced confidential subject both accept through relay and ordinary template selection under node-default policy, with exact readback. Their agreement witnesses selected support and the candidate's unread coordinate. This is a final property of the build; it adds neither an accepted-transaction layer nor a refusal answer for this fault row. A changed candidate or selected policy requires these premises to be rechecked.
+    ConfidentialSponsorValueUndecidedByCandidate,
     /// Former construction-route waiting reason; no row retains it.
     ///
     /// Retained semantic metadata has an admitted script-path refusal against its
@@ -266,7 +268,7 @@ pub enum MaturityRowBoundary {
     /// refusal against its script boundary. Overlap, foreign asset and empty
     /// offer use `SponsorConstructionAnsweredByLandedEvidence`; successor
     /// membership uses `SponsorRegionAnsweredByLandedEvidence`; confidential
-    /// value uses `ConfidentialSponsorAwaitsBalancedProofRoute`.
+    /// value is final under `ConfidentialSponsorValueUndecidedByCandidate`.
     /// The compatibility entry without a sponsor context returns
     /// `SponsorRequestedWithoutCapability` for both sponsored change choices.
     SponsoredControlRefusedAtConstruction,
@@ -312,12 +314,9 @@ pub enum MaturityRowBoundary {
     /// The funding refusal establishes no zero-valued-input execution; that
     /// execution question is not a row of this matrix.
     ZeroSponsorRoleStructureAnsweredByLandedEvidence,
-    /// A balanced confidential control, proofs and selected-policy observation are owed.
+    /// Former balanced-proof-route waiting reason; no row retains it.
     ///
-    /// `confidential_sponsor_value_requires_balanced_proof_route` in
-    /// `packages/transaction/src/tests/state_construct_tests.rs` establishes
-    /// only the explicit route's refusal. The confidential-value row waits
-    /// for the balanced confidential route and retains its observable obligation.
+    /// The admitted explicit control and balanced confidential subject agree through relay and ordinary template selection with exact readback. The row now records the candidate's unread sponsor value coordinate as a final build property.
     ConfidentialSponsorAwaitsBalancedProofRoute,
     /// The row is answered by landed nonce and tweak evidence.
     ///
@@ -346,6 +345,7 @@ impl MaturityRowBoundary {
             Self::AcceptanceAwaitsRelayAdmissibility
             | Self::NativeCoordinateUndecidedByCandidate
             | Self::NativeCoordinateAbsentFromCandidate
+            | Self::ConfidentialSponsorValueUndecidedByCandidate
             | Self::NativeSubjectAwaitsConstructionRoute
             | Self::SponsoredControlRefusedAtConstruction
             | Self::SponsorArmAwaitsRegionScoping
@@ -379,6 +379,7 @@ impl MaturityRowBoundary {
             Self::SponsorConstructionAnsweredByLandedEvidence
             | Self::NativeCoordinateUndecidedByCandidate
             | Self::NativeCoordinateAbsentFromCandidate
+            | Self::ConfidentialSponsorValueUndecidedByCandidate
             | Self::SponsorRegionAnsweredByLandedEvidence
             | Self::ZeroSponsorRoleStructureAnsweredByLandedEvidence
             | Self::TotalityAnsweredByLandedNonceEvidence
@@ -2913,7 +2914,7 @@ pub const MATURITY_SAFETY_ROWS: &[MaturitySafetyRow] = &[
         "confidential-sponsor-value-where-the-selected-target-policy-claims-support",
         L::TargetTransaction,
         Loc::SponsorEnvelope,
-        Bound::ConfidentialSponsorAwaitsBalancedProofRoute,
+        Bound::ConfidentialSponsorValueUndecidedByCandidate,
         C::CoordinatorStructure,
         unlinked(Why::NoPublishedRelationNamesIt),
     ),
@@ -3920,13 +3921,17 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The complete reason census and section partition are checked together."
+    )]
     fn each_typed_non_answer_stands_on_exactly_the_rows_its_reason_names() {
         let standing = |wanted: MaturityRowBoundary| {
             rows().iter().filter(|row| row.boundary() == wanted).count()
         };
         // Eight relay obligations and the retyped combined row accept on the
         // accepted-transaction layer; four departures and three absent coordinates
-        // are final. Confidential value retains its observation route.
+        // are final. Admitted confidential agreement binds one further final reason.
         assert_eq!(standing(Bound::AcceptanceAwaitsRelayAdmissibility), 0);
         assert_eq!(standing(Bound::NativeCoordinateUndecidedByCandidate), 4);
         assert_eq!(standing(Bound::NativeSubjectAwaitsConstructionRoute), 0);
@@ -3946,6 +3951,10 @@ mod tests {
         );
         assert_eq!(
             standing(Bound::ConfidentialSponsorAwaitsBalancedProofRoute),
+            0
+        );
+        assert_eq!(
+            standing(Bound::ConfidentialSponsorValueUndecidedByCandidate),
             1
         );
         let non_answers = rows()
@@ -3987,7 +3996,8 @@ mod tests {
                 | Bound::SponsorConstructionAnsweredByLandedEvidence
                 | Bound::SponsorRegionAnsweredByLandedEvidence
                 | Bound::ZeroSponsorRoleStructureAnsweredByLandedEvidence
-                | Bound::ConfidentialSponsorAwaitsBalancedProofRoute => {
+                | Bound::ConfidentialSponsorAwaitsBalancedProofRoute
+                | Bound::ConfidentialSponsorValueUndecidedByCandidate => {
                     assert_eq!(row.section(), S::SponsorFault, "{row} is not a sponsor row");
                 }
                 Bound::TotalityAnsweredByLandedNonceEvidence => {
