@@ -510,11 +510,11 @@ Any removed relation or changed interface records the effect on compiler placeme
 
 **Task (bite-0-4 — Deliverables)** · `task:guide15-exec:bite-0-4-deliverables`
 
-Implement the three rules stated below from `plans/guides/guide_thirteen_feature_requests.md`, make the required negative subjects constructible at their declared boundaries, and close the remaining 71 of 72 compact negative rows (`T4-009`).
+Implement the three rules stated below from `plans/guides/guide_thirteen_feature_requests.md`, make the required negative subjects constructible at their declared boundaries, and complete the 74-row compact negative closure under the current 48 / 20 / 6 partition, retaining 71 outstanding of 72 and 48 / 18 / 6 as before-figures at their original evidence scope (`T4-009`).
 
 **Setting (bite-0-4 — Files and packages)** · `setup:guide15-exec:bite-0-4-files-and-packages`
 
-`packages/vectors/src/`, compact fixtures and evidence plans, `packages/transaction/src/`, `packages/linker/src/`, any required target-generic conformance support, and the compact gate disposition in `plans/backlog.md`. (`pkg:linker:contract`); (`pkg:transaction:contract`); (`pkg:vectors:contract`).
+`packages/vectors/src/`, compact fixtures and evidence plans, `packages/transaction/src/`, `packages/linker/src/`, any required target-generic conformance support, and the compact gate disposition in `plans/backlog.md`; the bounded extension for the remaining compact validation entries, tests and records is specified by ruling 139 (`rule:phase7:wave0-rulings`). (`pkg:linker:contract`); (`pkg:transaction:contract`); (`pkg:vectors:contract`).
 
 **Caveat (Compact positive evidence cannot answer negatives)** · `cav:guide15-exec:compact-negative-scope`
 
@@ -522,15 +522,15 @@ The admitted positive compact result remains at its Phase-4 scope; increasing th
 
 **Task (Part 0.4a — Three rules for the negative half)** · `task:guide15-exec:bite-0-4a`
 
-Carry the three guide-level rules below into the compact negative work; they answer the guide gaps in `plans/guides/guide_thirteen_feature_requests.md` while keeping the 72-row campaign separate (`T4-009`).
+Carry the three guide-level rules below into the compact negative work; they answer the guide gaps in `plans/guides/guide_thirteen_feature_requests.md` while keeping the 74-row campaign with its 48 / 20 / 6 partition separate, retaining 72 and 48 / 18 / 6 as before-figures (`T4-009`).
 
 **Rule (A negative row names relation, mutation class, and boundary)** · `rule:guide15-exec:compact-negative-row`
 
-Every compact negative row names the relation it tests, its mutation class, and the boundary at which its refusal answers that relation; a refusal at another boundary is retained as evidence of that boundary only (`pkg:vectors:contract`); `plans/guides/guide_thirteen_feature_requests.md`.
+Every compact negative row names the relation it tests, its mutation class, and the boundary at which its refusal answers that relation; a refusal at another boundary is retained as evidence of that boundary only (`pkg:vectors:contract`); `plans/guides/guide_thirteen_feature_requests.md`. A row formally closed under ruling 136 has an expected boundary that names its inherited manifest classification, and its answer is its typed formal-closure reason (`rule:phase7:wave0-rulings`).
 
 **Rule (First-party discharge has an explicit admitted condition)** · `rule:guide15-exec:compact-first-party`
 
-Each of the eighteen first-party rows names a retained comparison subject and checked relation sufficient to discharge its admitted claim, or an explicit out-of-scope declaration with its argument; an observable obligation cannot be removed by that declaration (`rule:guide15-exec:observable-retention`); `plans/guides/guide_thirteen_feature_requests.md`.
+Each of the twenty first-party rows in the current 74 = 48 + 20 + 6 census, with 72 = 48 + 18 + 6 retained as the before-figure, names a retained comparison subject and checked relation sufficient to discharge its admitted claim, or an explicit out-of-scope declaration with its argument; an observable obligation cannot be removed by that declaration (`rule:guide15-exec:observable-retention`); `plans/guides/guide_thirteen_feature_requests.md`.
 
 **Rule (ABI validation is a named negative entry point)** · `rule:guide15-exec:compact-abi-entry`
 
@@ -538,15 +538,15 @@ The compact negative plan names the typed ABI-validation entry point and exact m
 
 **Task (Part 0.4b — Pinned-target compact campaign)** · `task:guide15-exec:bite-0-4b`
 
-Dispose all 72 rows: 48 target-executable, eighteen first-party, and six unreachable; one target-executable row is already discharged, leaving 47 native rows and 71 rows overall outstanding. Run the native half only after 0.1, with exact funded subjects and accepted controls on the pinned target; report observations separately from final non-observation dispositions (`T4-009`); `plans/guides/guide_thirteen_feature_requests.md`.
+Dispose all 74 rows under the current 48 / 20 / 6 partition: 48 target-executable, twenty first-party, and six external-report rows, retaining 72 / 48 / 18 / 6 and the one historical native discharge leaving 47 native and 71 overall outstanding as before-figures at their original evidence scope. Run the native half only after 0.1, with exact funded subjects and accepted controls on the pinned target; report observations separately from final non-observation dispositions (`T4-009`); `plans/guides/guide_thirteen_feature_requests.md`.
 
 **Gate (bite-0-4 — Gate)** · `gate:guide15-exec:bite-0-4-gate`
 
-All 72 rows have exact subjects and final dispositions, with observed refusals at matching boundaries or typed formal closure reasons; the three guide requests each have an implementing artifact and passing verification. (`T4-009`).
+All 74 rows under the current 48 / 20 / 6 partition, with 72 / 48 / 18 / 6 retained as before-figures, have exact subjects and final dispositions, with observed refusals at matching boundaries or typed formal closure reasons; the three guide requests each have an implementing artifact and passing verification. (`T4-009`).
 
 **Record (bite-0-4 — Closure carrier)** · `rec:guide15-exec:bite-0-4-closure-carrier`
 
-`T12-004` closes `T4-009`; the record reports answered and formally closed counts separately, so closing the backlog row does not falsely claim 72 observed refusals.
+`T12-004` closes the native half at its recorded 48-requirement scope; `T4-009`'s remaining obligations close through their own evidence before `T12-007` consolidates them, with observed and formally closed counts reported separately (`rec:guide15-exec:bite-0-7-closure-carrier`), so no closure claims 74 observed refusals, as none claimed 72.
 
 **Requirement (Current compact pipeline regressions)** · `req:guide15-exec:compact-regressions`
 
@@ -1854,7 +1854,7 @@ The figure's typed source, exact subject, adverse direction, and restoration obl
 | Relation links 14 / 102 / 90 (`data:guide15-exec:relation-census`) | Published relation identities and operation regions | Lost justified link or unaccounted changed identity | Refit mapping, recount, and composed/fault observations |
 | Four debt carriers (`T11-064`); (`T11-063`); (`T4-009`); (`T11-110`) | Each row's own closing criterion | A previously satisfied criterion no longer holds | Reopen the affected criterion and reproduce its evidence |
 | Five conjuncts (`reg:guide15-exec:conditional-conjuncts`) | Exact subclaims and conditional assumptions | Lost observation or invalidated assumption without disposition | Repeat affected observations and separately rule residuals |
-| Compact 72 rows (`T4-009`) | Selected compact candidate and mutation boundaries | Lost discharge or new observable gap | Current-candidate positive and focused negative campaign |
+| Compact 74 rows, partition 48 / 20 / 6; before-figures 72 / 48 / 18 / 6 (`T4-009`) | Selected compact candidate and mutation boundaries | Lost discharge or new observable gap | Current-candidate positive and focused negative campaign |
 | Twelve questions (`sec:guide15:preflight`) | Accepted choices and their typed authorities | Invalidated or missing accepted disposition | Numbered acceptance and consuming proof, including carrier reopening |
 | Entry 65 rows (`tab:guide15-exec:preflight`) | Finding scope and assigned execution exits | Lost evidence or unmet consuming obligation | Row-specific revalidation with finding and execution separate |
 | Resource 53 / 86 / 80 bytes and weight 2,091 (`data:guide15-exec:resource-subjects`) | Exact schedule, bundle, ABI, target, and policy | Prediction mismatch or refusal of the previously admitted form | Remeasure changed forms, retaining absent dimensions and replay-only bounds |
