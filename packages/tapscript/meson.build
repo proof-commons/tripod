@@ -33,6 +33,7 @@ tapscript_source_files = files(
   'src/tests/bundle_tests.rs',
   'src/tests/byte_census_tests.rs',
   'src/tests/census_tests.rs',
+  'src/tests/compact_validation_tests.rs',
   'src/tests/ctf_reproductions.rs',
   'src/tests/guide12_reproductions.rs',
   'src/tests/guide13_reproductions.rs',

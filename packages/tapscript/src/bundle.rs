@@ -87,7 +87,11 @@ use crate::capability::BackendPatternId;
 use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::operation_assessment::{EmissionRefusal, OperationAssessmentSet, assess_operation_plan};
-use crate::pattern::{AbiAssumption, CompactAshSymbols, coordinator_program, member_program};
+use crate::pattern::{
+    AbiAssumption, CompactAshSymbols, CompactEmittedRepresentationRefusal,
+    ash_input_recognition_fragment, compare_compact_recognition, coordinator_program,
+    member_program,
+};
 use crate::policy::{
     AshRepresentationSelection, CompactAshBackendPolicy, ExactTargetProjection, TieBreak,
 };
@@ -1164,6 +1168,122 @@ impl OutstandingLifecycle {
 }
 
 // --- Refusals ---------------------------------------------------------
+
+/// A refusal of an offered compact constructor or outstanding declaration set.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CompactEmittedLifecycleRefusal {
+    /// Exactly one keyed Compact coordinator path was omitted.
+    MissingCompactExit {
+        /// The omitted constructor key, including its shape.
+        leaf: LeafRole,
+    },
+    /// Exactly one outstanding Clear declaration was omitted.
+    MissingClearDeclaration {
+        /// The complete retained declaration that was omitted.
+        requirement: LifecycleRequirement,
+    },
+    /// Constructor content changed beyond one omitted coordinator path.
+    ConstructorStructureMismatch,
+    /// Outstanding declarations changed beyond one omitted Clear requirement.
+    OutstandingDeclarationsMismatch,
+}
+
+/// Compare offered keyed programs and declarations with a retained candidate.
+///
+/// The Compact claim concerns one concrete coordinator path. The Clear claim
+/// establishes retention of the outstanding declaration and refuses its removal.
+/// No emitted Clear path exists in this candidate and no emitted-path claim is
+/// made. Clear's realization landing in Wave 2 reopens this disposition under
+/// ruling 138 (`rule:phase7:wave0-rulings`) in its candidate-bound form.
+/// This comparison does not change emission or construct a candidate bundle.
+///
+/// # Errors
+///
+/// Exact single omissions return their named lifecycle refusal. Other changes,
+/// including simultaneous omissions, return a structural mismatch.
+pub fn validate_compact_emitted_lifecycle(
+    bundle: &CandidateRelocatableTapscriptBundle,
+    offered_leaves: &BTreeMap<LeafRole, TapscriptProgram>,
+    offered_outstanding: &BTreeSet<LifecycleRequirement>,
+) -> Result<(), CompactEmittedLifecycleRefusal> {
+    use CompactEmittedLifecycleRefusal as R;
+    let leaves: BTreeMap<_, _> = bundle
+        .constructor()
+        .leaves()
+        .iter()
+        .map(|(key, leaf)| (*key, leaf.program().clone()))
+        .collect();
+    let outstanding: BTreeSet<_> = bundle
+        .outstanding_lifecycle()
+        .requirements()
+        .cloned()
+        .collect();
+    if &leaves != offered_leaves {
+        if &outstanding == offered_outstanding && leaves.len() == offered_leaves.len() + 1 {
+            let missing = leaves.keys().find(|key| !offered_leaves.contains_key(key));
+            if let Some(leaf @ LeafRole::Coordinator { .. }) = missing
+                && offered_leaves
+                    .iter()
+                    .all(|(key, program)| leaves.get(key) == Some(program))
+            {
+                return Err(R::MissingCompactExit { leaf: *leaf });
+            }
+        }
+        return Err(R::ConstructorStructureMismatch);
+    }
+    if &outstanding != offered_outstanding {
+        if outstanding.len() == offered_outstanding.len() + 1
+            && offered_outstanding.is_subset(&outstanding)
+            && let Some(requirement) = outstanding.difference(offered_outstanding).next()
+            && requirement.exit.as_str() == "clear"
+        {
+            return Err(R::MissingClearDeclaration {
+                requirement: requirement.clone(),
+            });
+        }
+        return Err(R::OutstandingDeclarationsMismatch);
+    }
+    Ok(())
+}
+
+/// Compare only the input-zero recognition fragment with its emitted structure.
+///
+/// Rebuilds the canonical fragment from the retained unresolved symbols and
+/// establishes its occurrence in every retained coordinator program. This does
+/// not validate every recognition site, execute a program, or compare bytes.
+///
+/// # Errors
+///
+/// Construction and emitted-binding failures remain distinct from a missing
+/// explicit-value authentication operation and other recognition differences.
+pub fn validate_compact_emitted_representation(
+    target: &ReviewedElementsTapscriptDefinition,
+    bundle: &CandidateRelocatableTapscriptBundle,
+    offered: &TapscriptProgram,
+) -> Result<(), CompactEmittedRepresentationRefusal> {
+    use CompactEmittedRepresentationRefusal as R;
+    let canonical = ash_input_recognition_fragment(target, bundle.unresolved_symbols(), 0)
+        .map_err(R::Construction)?;
+    let mut coordinators = bundle
+        .constructor()
+        .leaves()
+        .iter()
+        .filter_map(|(key, leaf)| {
+            matches!(key, LeafRole::Coordinator { .. }).then_some(leaf.program())
+        })
+        .peekable();
+    if coordinators.peek().is_none()
+        || !coordinators.all(|program| {
+            program
+                .instructions()
+                .windows(canonical.len())
+                .any(|window| window == canonical.instructions())
+        })
+    {
+        return Err(R::CanonicalFragmentNotEmitted);
+    }
+    compare_compact_recognition(&canonical, offered)
+}
 
 /// Why a candidate bundle was not emitted.
 ///

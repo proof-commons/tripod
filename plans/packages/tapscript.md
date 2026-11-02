@@ -91,6 +91,8 @@ The relocatable bundle contains:
 
 The final linked bundle is linker-owned.
 
+The additive compact comparison entries preserve emission and acceptance semantics. `validate_compact_secret_free_path` checks the existing authorization-primitive census on an offered typed protocol leaf; execution validity and sponsor authorization outside that leaf are separate claims. `validate_compact_emitted_representation` binds the input-zero recognition fragment to the retained candidate and distinguishes removal of its explicit-value prefix authentication from other structural changes; it does not validate every recognition site. `validate_compact_emitted_lifecycle` compares offered keyed programs and outstanding declarations with the retained candidate, distinguishing one omitted coordinator path from one omitted Clear declaration. The lifecycle comparison preserves the prohibition on removing lifecycle exits: no emitted Clear path exists in this candidate, no emitted-path claim is made, and Clear's realization landing in Wave 2 reopens the declaration disposition under ruling 138 (`rule:phase7:wave0-rulings`). These entries return new typed refusals without extending existing refusal enums or exposing malformed candidate construction.
+
 > Illustrative boundary; names and exact fields are not frozen.
 
 ```rust

@@ -36,14 +36,15 @@ pub use authorization::{
 };
 pub use bundle::{
     BackendArtifactStatus, BundleRefusal, BundleSymbol, CandidateRelocatableTapscriptBundle,
-    ConcreteCarrierSite, ConcreteLayout, ConcreteRelationPlacement, ConstructorAssumption,
-    ExplicitValuePolicy, FieldSide, InputPlacement, InputRole, InternalKeyPolicy,
-    IntrospectionReference, KeyPathPolicy, LeafProgram, LeafRole, OutputPlacement, OutputRole,
-    OutstandingLifecycle, ProgramResources, ProgramRole, Relocation, RelocationEncoding,
-    RelocationSite, ResourceModel, ResourceObligation, ShapeResourceFormula, SharedLeafProof,
-    SharingGround, StaticAshConstructor, SubstitutionMode, SymbolBinding, SymbolEntry, SymbolWidth,
-    TargetRole, WitnessComponent, WitnessRole, emit_candidate_bundle, fit_shape_model,
-    predict_shape_model,
+    CompactEmittedLifecycleRefusal, ConcreteCarrierSite, ConcreteLayout, ConcreteRelationPlacement,
+    ConstructorAssumption, ExplicitValuePolicy, FieldSide, InputPlacement, InputRole,
+    InternalKeyPolicy, IntrospectionReference, KeyPathPolicy, LeafProgram, LeafRole,
+    OutputPlacement, OutputRole, OutstandingLifecycle, ProgramResources, ProgramRole, Relocation,
+    RelocationEncoding, RelocationSite, ResourceModel, ResourceObligation, ShapeResourceFormula,
+    SharedLeafProof, SharingGround, StaticAshConstructor, SubstitutionMode, SymbolBinding,
+    SymbolEntry, SymbolWidth, TargetRole, WitnessComponent, WitnessRole, emit_candidate_bundle,
+    fit_shape_model, predict_shape_model, validate_compact_emitted_lifecycle,
+    validate_compact_emitted_representation,
 };
 pub use capability::{
     AssessmentDisposition, AssessmentProjection, BackendFoundationRequirement, BackendPatternId,
@@ -123,9 +124,11 @@ pub use operator_authorization::{
     operator_profile_coverage_lands_only_on_required_dimensions, selected_operator_profile,
 };
 pub use pattern::{
-    AUTHORIZATION_PRIMITIVES, AbiAssumption, BackendPattern, CompactAshSymbols, MutationOutcome,
+    AUTHORIZATION_PRIMITIVES, AbiAssumption, BackendPattern, CompactAshSymbols,
+    CompactEmittedRepresentationRefusal, CompactSecretFreePathRefusal, MutationOutcome,
     PatternFailure, PatternMutation, PatternOwner, PatternResources, PatternStackContract,
     build_pattern, carries_authorization, coordinator_program, member_program, operation_patterns,
+    validate_compact_secret_free_path,
 };
 pub use policy::{
     AshRepresentationSelection, CompactAshBackendPolicy, ConcreteCandidate, ExactTargetProjection,

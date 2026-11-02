@@ -1301,6 +1301,78 @@ pub fn carries_authorization(program: &TapscriptProgram) -> bool {
     })
 }
 
+/// A refusal of the compact protocol leaf's secret-free claim.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompactSecretFreePathRefusal {
+    /// The offered protocol leaf carries an authorization or cadence primitive.
+    UnexpectedProtocolSecret,
+}
+
+/// Compare a typed protocol leaf against the existing authorization census.
+///
+/// This checks neither execution validity nor emitted provenance. Sponsor
+/// authorization leaves outside the protocol leaf are outside this claim.
+///
+/// # Errors
+///
+/// Returns `UnexpectedProtocolSecret` exactly when [`carries_authorization`] holds.
+pub fn validate_compact_secret_free_path(
+    offered: &TapscriptProgram,
+) -> Result<(), CompactSecretFreePathRefusal> {
+    if carries_authorization(offered) {
+        Err(CompactSecretFreePathRefusal::UnexpectedProtocolSecret)
+    } else {
+        Ok(())
+    }
+}
+
+/// A structural refusal of the compact input-zero recognition comparison.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CompactEmittedRepresentationRefusal {
+    /// Rebuilding the canonical typed fragment failed.
+    Construction(TapscriptError),
+    /// The canonical fragment is absent from a retained coordinator program.
+    CanonicalFragmentNotEmitted,
+    /// Only the explicit-value prefix's verifying equality was removed.
+    MissingExplicitValueAuthentication,
+    /// A different recognition coordinate, or several coordinates, changed.
+    RecognitionStructureMismatch,
+}
+
+/// Compare typed recognition instructions, distinguishing one exact omission.
+pub(crate) fn compare_compact_recognition(
+    canonical: &TapscriptProgram,
+    offered: &TapscriptProgram,
+) -> Result<(), CompactEmittedRepresentationRefusal> {
+    use CompactEmittedRepresentationRefusal as R;
+    if offered == canonical {
+        return Ok(());
+    }
+    let instructions = canonical.instructions();
+    let Some(authentication) = instructions.windows(3).position(|window| {
+        matches!(
+            window,
+            [
+                TapscriptInstruction::Opcode(OpcodeId::InspectInputValue),
+                TapscriptInstruction::Push(_),
+                TapscriptInstruction::Opcode(OpcodeId::EqualVerify),
+            ]
+        )
+    }) else {
+        return Err(R::RecognitionStructureMismatch);
+    };
+    let authentication = authentication + 2;
+    if offered.instructions().iter().eq(instructions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, instruction)| (index != authentication).then_some(instruction)))
+    {
+        Err(R::MissingExplicitValueAuthentication)
+    } else {
+        Err(R::RecognitionStructureMismatch)
+    }
+}
+
 /// The width of one explicit amount operand, in bytes.
 ///
 /// The reviewed explicit-value payload's width, which is also the

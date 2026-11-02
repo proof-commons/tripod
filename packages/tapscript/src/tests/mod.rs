@@ -42,6 +42,7 @@ mod authorization_tests;
 mod bundle_tests;
 mod byte_census_tests;
 mod census_tests;
+mod compact_validation_tests;
 mod ctf_reproductions;
 mod guide12_reproductions;
 mod guide13_reproductions;
