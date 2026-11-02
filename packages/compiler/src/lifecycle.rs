@@ -87,6 +87,35 @@ pub fn build_lifecycle_analysis(
 ) -> Result<CompilerLifecycleAnalysis, CompileError> {
     let projection = input.realization().project().lifecycle;
 
+    build_lifecycle_analysis_from_projection(input, relations, &projection)
+}
+
+/// Compare reachability in an offered compact lifecycle projection.
+///
+/// This runs the existing traversal with the bound input's relations and scope.
+/// It checks paths between retained nodes, not completeness of the offered node
+/// census. Exact path-removal comparisons must retain every node and every
+/// unrelated edge. Success makes no deployment-completeness claim.
+///
+/// # Errors
+///
+/// Propagates relation-analysis errors and the existing traversal's
+/// [`CompileError::MissingRepresentationChoice`] or
+/// [`CompileError::MissingLifecyclePath`] unchanged.
+pub fn validate_compact_lifecycle_projection(
+    input: &BoundCompilerInput,
+    offered: &realization::LifecycleGraphProjection,
+) -> Result<(), CompileError> {
+    let relations = crate::relation::build_relation_analysis(input)?;
+    build_lifecycle_analysis_from_projection(input, &relations, offered).map(|_| ())
+}
+
+/// Build the analysis over a supplied lifecycle projection; the shared traversal behind both routes.
+pub fn build_lifecycle_analysis_from_projection(
+    input: &BoundCompilerInput,
+    relations: &CompilerRelationAnalysis,
+    projection: &realization::LifecycleGraphProjection,
+) -> Result<CompilerLifecycleAnalysis, CompileError> {
     // Representation variables from the exact representation relations.
     let mut choices = Vec::new();
     let mut choice_objects = BTreeSet::new();

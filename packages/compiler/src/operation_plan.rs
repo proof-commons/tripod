@@ -511,6 +511,38 @@ pub fn plan_compact_ash_target_operation(
     Ok(plan)
 }
 
+/// Compare an offered ASH selection against the retained compact plan's analysis.
+///
+/// The retained plan must pass unchanged before only its ASH selection is
+/// replaced internally. Success states agreement with the existing explicit-ASH
+/// policy; no changed plan or mutable analysis is returned.
+///
+/// # Errors
+///
+/// Propagates scoped-analysis and retained-plan validation errors unchanged.
+/// Returns [`CompileError::TargetPlanRepresentationMismatch`] when the offered
+/// selection disagrees with the compact policy.
+pub fn validate_compact_representation(
+    input: &BoundCompilerInput,
+    placement_limits: PlacementSearchLimits,
+    plan: &ValidatedTargetOperationPlan,
+    offered: RepresentationMode,
+) -> Result<(), CompileError> {
+    let analyzed = analyze_scoped_program(input, placement_limits)?;
+    validate_target_operation_plan(&analyzed, plan)?;
+    let subject = with_compact_representation(plan, offered);
+    validate_target_operation_plan(&analyzed, &subject)
+}
+
+fn with_compact_representation(
+    plan: &ValidatedTargetOperationPlan,
+    offered: RepresentationMode,
+) -> ValidatedTargetOperationPlan {
+    let mut subject = plan.clone();
+    subject.representation.selected.insert(ASH, offered);
+    subject
+}
+
 /// Derive the plan from a complete analyzed program.
 ///
 /// Crate-private and reachable only below
@@ -1146,6 +1178,11 @@ fn validate_against_factor(
 /// out of every other build.
 #[cfg(test)]
 impl ValidatedTargetOperationPlan {
+    /// Requires a plan that has passed validation; only the ASH selection is replaced.
+    pub(crate) fn with_compact_representation(&self, offered: RepresentationMode) -> Self {
+        with_compact_representation(self, offered)
+    }
+
     pub(crate) const fn source_mut(&mut self) -> &mut TargetOperationSource {
         &mut self.source
     }

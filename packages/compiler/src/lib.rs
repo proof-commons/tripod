@@ -37,6 +37,7 @@ pub use expression::ExpressionCycleComponent;
 pub use input::{
     AnalysisPolicy, BoundCompilerInput, CompilationScope, ProofSearchLimits, bind_input,
 };
+pub use lifecycle::validate_compact_lifecycle_projection;
 pub use maturity_announcement_plan::validate_maturity_announcement_plan;
 pub use maturity_announcement_requirements::{
     AnnouncementConstructorRole, AnnouncementDuty, AnnouncementMetadataRequirement,
@@ -49,6 +50,9 @@ pub use maturity_announcement_requirements::{
 };
 pub use relation::RelationCycleComponent;
 pub use source::OperandId;
+pub use sponsor_region::{
+    SponsorEnvelopeMultiplicityError, validate_sponsor_envelope_multiplicity,
+};
 
 #[cfg(test)]
 mod tests;

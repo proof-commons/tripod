@@ -39,6 +39,7 @@ compiler_source_files = files(
   'src/tests/analyzed_program_tests.rs',
   'src/tests/carrier_tests.rs',
   'src/tests/case_tests.rs',
+  'src/tests/compact_validation_tests.rs',
   'src/tests/constructibility_tests.rs',
   'src/tests/coverage_graph_tests.rs',
   'src/tests/coverage_oracle_tests.rs',

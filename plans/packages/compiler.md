@@ -98,11 +98,9 @@ The core analyzed value contains:
 A later target-selected plan may bind an abstract target capability identity
 and deterministic proof choices.
 
-That complete analyzed value is planned, not published. The relation and
-expression graphs, folding, proof-obligation classification, feasible-plan
-enumeration, source requirements, constructibility, disclosure, and lifecycle
-analyses exist today as crate-private stages; only the validated input boundary
-and the typed error root are public.
+That complete analyzed value is planned, not published. The relation and expression graphs, folding, proof-obligation classification, feasible-plan enumeration, source requirements, constructibility, disclosure, and lifecycle analyses exist today as crate-private stages; the public surface reaches them only through the validated input boundary, the typed error root, the published plan boundaries and the comparison entries below, none of which publishes a stage container.
+
+The compact comparison entries add no mutable plan or analyzed-program constructor. `operation_plan::validate_compact_representation` re-analyzes a bound input, validates the retained plan, then checks only an offered ASH selection against the existing explicit policy. `validate_compact_lifecycle_projection` runs the existing reachability traversal over an offered projection with the bound relations and scope; its exact path-removal comparisons retain all nodes and unrelated edges. This narrow check does not establish completeness of the offered node census or deployment lifecycle completion. Both entries preserve the existing typed refusals and leave existing validation paths unchanged.
 
 > Illustrative boundary; names and exact fields are not frozen.
 
@@ -143,6 +141,8 @@ A relation absent from the analyzed result is a compile failure.
 `SponsorEnvelopeMultiplicity` remains MODEL-SCOPE resource policy over the operation's own fee-sponsor flows, with its declared maximum unchanged and enforced by no leaf.
 
 The compact and live plans publish its `ModelScope` boundary explicitly, with scope-evaluation coverage and no runtime carrier, carrier layout, or target projection.
+
+`validate_sponsor_envelope_multiplicity` evaluates an offered `OperationObservation` through the retained realization and accepts only the declared multiplicity relation's `Passed` verdict. The realization counts owned fee-sponsor envelopes against its declared maximum; transaction input cardinality is a separate relation. `SponsorEnvelopeMultiplicityError` preserves evaluation failures, absent declarations or verdicts, and non-passing typed verdicts without relabelling isolation or cardinality failures. This additive comparison applies to both sponsor coverage identities and is not wired into emission or any existing validation path.
 
 ## Proof planning · `rule:compiler:proofs`
 

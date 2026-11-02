@@ -10,6 +10,7 @@ mod analyzed_program_oracle_tests;
 mod analyzed_program_tests;
 mod carrier_tests;
 mod case_tests;
+mod compact_validation_tests;
 mod constructibility_tests;
 mod coverage_graph_tests;
 mod coverage_oracle_tests;

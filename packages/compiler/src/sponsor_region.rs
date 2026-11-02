@@ -32,9 +32,73 @@
 use std::collections::BTreeSet;
 
 use architecture::{ObjectId, OpenFlowKind, OperationId};
-use realization::Relation;
+use realization::{
+    OperationObservation, RealizationError, Relation, RelationId, RelationStatus, RelationVerdict,
+    ScopedRealizationSpec,
+};
 
 use crate::{CompileError, relation::CompilerRelationAnalysis};
+
+/// A multiplicity comparison that did not establish the declared relation.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum SponsorEnvelopeMultiplicityError {
+    /// Observation normalization or realization evaluation failed.
+    #[error("sponsor multiplicity evaluation failed: {0}")]
+    Evaluation(RealizationError),
+    /// The offered operation has no multiplicity declaration.
+    #[error("no sponsor multiplicity declaration for {operation:?}")]
+    MissingDeclaration { operation: OperationId },
+    /// Evaluation returned no verdict for the declared relation.
+    /// Unreachable with the current evaluator, which gives every declared relation
+    /// of the operation a verdict; retained as a guard and deliberately untested.
+    #[error("no sponsor multiplicity verdict for {relation:?}")]
+    MissingVerdict { relation: RelationId },
+    /// The declared relation returned a verdict other than `Passed`.
+    #[error("sponsor multiplicity did not pass: {0:?}")]
+    Refused(RelationVerdict),
+}
+
+/// Compare an offered operation's owned fee-sponsor envelope multiplicity.
+///
+/// Delegates the count and declared maximum to the realization evaluator and
+/// accepts only the multiplicity relation's `Passed` verdict. This counts owned
+/// fee-sponsor flows, not transaction inputs, and establishes neither isolation
+/// nor whole-operation conformance. It is independent of emission.
+///
+/// # Errors
+///
+/// Returns [`SponsorEnvelopeMultiplicityError`] for an absent declaration or
+/// verdict, an evaluation error, or a non-passing verdict retained unchanged.
+pub fn validate_sponsor_envelope_multiplicity(
+    realization: &ScopedRealizationSpec,
+    offered: &OperationObservation,
+) -> Result<(), SponsorEnvelopeMultiplicityError> {
+    let declaration = realization
+        .relations()
+        .find(|declaration| {
+            declaration.id.operation() == offered.operation
+                && matches!(
+                    declaration.relation,
+                    Relation::SponsorEnvelopeMultiplicity { .. }
+                )
+        })
+        .ok_or(SponsorEnvelopeMultiplicityError::MissingDeclaration {
+            operation: offered.operation,
+        })?;
+    let report = realization
+        .evaluate_operation(offered)
+        .map_err(SponsorEnvelopeMultiplicityError::Evaluation)?;
+    let verdict = report.verdict(&declaration.id).ok_or_else(|| {
+        SponsorEnvelopeMultiplicityError::MissingVerdict {
+            relation: declaration.id.clone(),
+        }
+    })?;
+    if verdict.status == RelationStatus::Passed {
+        Ok(())
+    } else {
+        Err(SponsorEnvelopeMultiplicityError::Refused(verdict.clone()))
+    }
+}
 
 /// The object family the architecture uses for both regions.
 ///
