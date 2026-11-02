@@ -1878,6 +1878,165 @@ pub fn derive_maturity_evidence_plan()
     )
 }
 
+/// Comparison of a recorded diagnostic with the frozen first-party expectation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiagnosticAttributionVerdict {
+    /// Equal named classes, or recorded unclassified against an unnamed expectation.
+    Agreement,
+    /// Different classes, including either direction of a named/unnamed mismatch.
+    Difference,
+    /// No observation or no diagnostic recording.
+    Absent,
+}
+
+/// One claim's supplementary attribution, carrying no Safety standing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiagnosticAttributionEntry {
+    /// Safety section key.
+    pub section: &'static str,
+    /// Safety row key within the section.
+    pub name: &'static str,
+    /// Family supplying the accepted control.
+    pub family: &'static str,
+    /// Typed staged subject, shared by two claims where required.
+    pub subject: crate::maturity_mutants::native_staging::NativeSubject,
+    /// Frozen expected class; absence is not a wildcard.
+    pub expected: Option<target_elements_conformance::protocol::ObservedFailureClass>,
+    /// Why the expected class can or cannot be named.
+    pub reason: crate::maturity_native::DiagnosticExpectationReason,
+    /// Exact recorded vocabulary key, preserving the unclassified sentinel.
+    pub recorded_key: Option<String>,
+    /// The three-state reader's result, separate from the raw key.
+    pub recorded: crate::maturity_native::RecordedBlockScriptError,
+    /// The family's accepted control identity in this capture.
+    pub control_step: String,
+    /// The subject exchange identity, if observed.
+    pub observation_step: Option<String>,
+    /// Comparison without assigning or changing a standing.
+    pub verdict: DiagnosticAttributionVerdict,
+}
+
+/// The diagnostic-attribution-ledger consumer, derived only from the admitted archive.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DiagnosticAttributionLedger {
+    entries: [DiagnosticAttributionEntry; 25],
+}
+
+impl DiagnosticAttributionLedger {
+    /// All twenty-five claim entries, in the frozen expectation order.
+    #[must_use]
+    pub const fn entries(&self) -> &[DiagnosticAttributionEntry; 25] {
+        &self.entries
+    }
+}
+
+/// Admission or binding prevented derivation of diagnostic attribution.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DiagnosticAttributionRefusal {
+    /// Whole-archive admission failed before any comparison.
+    Corpus(Box<MaturityCorpusImportRefusal>),
+    /// A recorded diagnostic was malformed or outside the vocabulary.
+    Recording(crate::maturity_native::BlockScriptErrorRefusal),
+    /// A claim, accepted control or declared boundary did not bind.
+    Binding(&'static str),
+}
+
+fn diagnostic_verdict(
+    expected: Option<target_elements_conformance::protocol::ObservedFailureClass>,
+    recorded: crate::maturity_native::RecordedBlockScriptError,
+) -> DiagnosticAttributionVerdict {
+    use crate::maturity_native::RecordedBlockScriptError;
+    match recorded {
+        RecordedBlockScriptError::NotRecorded => DiagnosticAttributionVerdict::Absent,
+        RecordedBlockScriptError::Recorded(class) if class == expected => {
+            DiagnosticAttributionVerdict::Agreement
+        }
+        RecordedBlockScriptError::Recorded(_) => DiagnosticAttributionVerdict::Difference,
+    }
+}
+
+fn derive_diagnostic_attribution(
+    corpus: &crate::maturity_corpus::ValidatedDiagnosticMaturityCorpus,
+) -> Result<DiagnosticAttributionLedger, DiagnosticAttributionRefusal> {
+    use crate::maturity_native::{
+        DIAGNOSTIC_EXPECTED_CLASSES, RecordedBlockScriptError, recorded_block_script_error,
+    };
+    use DiagnosticAttributionRefusal::{Binding, Recording};
+    let observations = corpus.evidence.observations();
+    let mut entries = Vec::new();
+    for &(section, name, expected, reason) in DIAGNOSTIC_EXPECTED_CLASSES {
+        let mut matched = observations
+            .iter()
+            .filter(|observation| observation.claims.contains(&(section, name)));
+        let subject = matched.next().ok_or(Binding("claim absent"))?;
+        if matched.next().is_some() {
+            return Err(Binding("duplicate claim"));
+        }
+        let (control, _) = subject
+            .control
+            .filter(|_| subject.control_accepted)
+            .ok_or(Binding("accepted control"))?;
+        let (recorded_key, recorded) = if let Some((_, response)) = subject.observation {
+            if response.observed_layer != ObservedOutcomeLayer::ScriptPathRejection {
+                return Err(Binding("script-path boundary"));
+            }
+            let recorded = recorded_block_script_error(response).map_err(Recording)?;
+            let detail: serde_json::Value =
+                serde_json::from_str(response.observed_detail.as_deref().unwrap_or_default())
+                    .map_err(|_| Binding("observation detail"))?;
+            if detail["route"] != "refused" {
+                return Err(Binding("refused route"));
+            }
+            (
+                detail["detail"]["block_script_error"]
+                    .as_str()
+                    .map(str::to_owned),
+                recorded,
+            )
+        } else {
+            (None, RecordedBlockScriptError::NotRecorded)
+        };
+        entries.push(DiagnosticAttributionEntry {
+            section,
+            name,
+            family: subject.family,
+            subject: subject.subject,
+            expected,
+            reason,
+            recorded_key,
+            recorded,
+            control_step: control.case().step.clone(),
+            observation_step: subject
+                .observation
+                .map(|(step, _)| step.case().step.clone()),
+            verdict: diagnostic_verdict(expected, recorded),
+        });
+    }
+    let entries = entries.try_into().map_err(|_| Binding("claim census"))?;
+    Ok(DiagnosticAttributionLedger { entries })
+}
+
+/// Load the supplementary attribution once without accepting a row or returning a standing.
+/// # Errors
+/// Preserves the first archive, recording or claim-binding refusal.
+/// # Panics
+/// Panics only if the fixed architecture loses a singleton or diagnostic expectation,
+/// which callers cannot arrange.
+pub fn diagnostic_attribution_ledger()
+-> Result<&'static DiagnosticAttributionLedger, DiagnosticAttributionRefusal> {
+    static LEDGER: std::sync::OnceLock<
+        Result<DiagnosticAttributionLedger, DiagnosticAttributionRefusal>,
+    > = std::sync::OnceLock::new();
+    LEDGER
+        .get_or_init(|| {
+            let corpus = crate::maturity_corpus::maturity_diagnostic_run_of_record()
+                .map_err(|error| DiagnosticAttributionRefusal::Corpus(Box::new(error)))?;
+            derive_diagnostic_attribution(corpus)
+        })
+        .as_ref()
+        .map_err(Clone::clone)
+}
+
 /// Enter the accepted archive's established sponsorless obligation as its row standing.
 ///
 /// The schedule-indexed boundary rule has already determined each archive's
@@ -3727,6 +3886,377 @@ fn census_from_rows(classified: &[MaturityEvidenceRow]) -> MaturityEvidenceCensu
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use super::{
+        DiagnosticAttributionEntry, DiagnosticAttributionVerdict, diagnostic_attribution_ledger,
+        diagnostic_verdict,
+    };
+    use crate::maturity_closure::{MaturityWitnessSelection, closure_target};
+
+    fn assert_diagnostic_campaign_entries(entries: &[DiagnosticAttributionEntry; 25]) {
+        let report = include_str!("../fixtures/maturity-diagnostic-run-of-record/RUN-REPORT");
+        let rows: Vec<serde_json::Value> = report
+            .lines()
+            .filter_map(|line| {
+                let encoded = line.strip_prefix("campaign-row ")?;
+                let (length, hex) = encoded.split_once(' ').expect("encoded campaign row");
+                let bytes = super::decode_hex(hex).expect("campaign bytes");
+                assert_eq!(
+                    bytes.len(),
+                    length.parse::<usize>().expect("campaign length")
+                );
+                Some(serde_json::from_slice(&bytes).expect("campaign JSON"))
+            })
+            .collect();
+        assert_eq!(rows.len(), 23);
+        let mut bound = std::collections::BTreeSet::new();
+        for row in rows {
+            for claim in row["claims"].as_array().expect("campaign claims") {
+                let entry = entries
+                    .iter()
+                    .find(|entry| claim["section"] == entry.section && claim["name"] == entry.name)
+                    .expect("campaign claim in ledger");
+                assert!(
+                    bound.insert((entry.section, entry.name)),
+                    "duplicate campaign claim"
+                );
+                assert_eq!(
+                    row["expected_class"],
+                    serde_json::json!(entry.expected.map(|class| format!("{class:?}")))
+                );
+                assert_eq!(row["expectation_reason"], format!("{:?}", entry.reason));
+                assert_eq!(row["control"]["step"], entry.control_step);
+                assert_eq!(
+                    row["observation"]["step"].as_str(),
+                    entry.observation_step.as_deref()
+                );
+            }
+        }
+        assert_eq!(
+            bound,
+            entries
+                .iter()
+                .map(|entry| (entry.section, entry.name))
+                .collect()
+        );
+    }
+
+    #[test]
+    fn diagnostic_attribution_recomputes_every_claim_in_both_directions() {
+        use crate::maturity_native::{
+            DIAGNOSTIC_EXPECTED_CLASSES, RecordedBlockScriptError, recorded_block_script_error,
+        };
+        use std::collections::BTreeMap;
+        let corpus = crate::maturity_corpus::maturity_diagnostic_run_of_record().expect("archive");
+        let ledger = diagnostic_attribution_ledger().expect("ledger");
+        assert_diagnostic_campaign_entries(ledger.entries());
+        let mut reference = BTreeMap::new();
+        let mut skipped = std::collections::BTreeSet::new();
+        for subject in corpus.evidence.observations() {
+            let (control, response) = subject.control.expect("control");
+            assert!(subject.control_accepted);
+            assert_eq!(response.observed_layer, ObservedOutcomeLayer::Accepted);
+            let (step, response) = subject.observation.expect("subject");
+            for &(section, name) in &subject.claims {
+                let Some(&(_, _, expected, reason)) = DIAGNOSTIC_EXPECTED_CLASSES
+                    .iter()
+                    .find(|entry| entry.0 == section && entry.1 == name)
+                else {
+                    assert_eq!(
+                        response.observed_layer,
+                        ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+                    );
+                    skipped.insert((section, name));
+                    continue;
+                };
+                let recorded = recorded_block_script_error(response).expect("recording");
+                let detail: serde_json::Value =
+                    serde_json::from_str(response.observed_detail.as_deref().expect("detail"))
+                        .expect("JSON");
+                let verdict = match recorded {
+                    RecordedBlockScriptError::NotRecorded => DiagnosticAttributionVerdict::Absent,
+                    RecordedBlockScriptError::Recorded(class) => {
+                        if expected == class {
+                            DiagnosticAttributionVerdict::Agreement
+                        } else {
+                            DiagnosticAttributionVerdict::Difference
+                        }
+                    }
+                };
+                let entry = DiagnosticAttributionEntry {
+                    section,
+                    name,
+                    family: subject.family,
+                    subject: subject.subject,
+                    expected,
+                    reason,
+                    recorded_key: detail["detail"]["block_script_error"]
+                        .as_str()
+                        .map(str::to_owned),
+                    recorded,
+                    control_step: control.case().step.clone(),
+                    observation_step: Some(step.case().step.clone()),
+                    verdict,
+                };
+                assert!(
+                    reference.insert((section, name), entry).is_none(),
+                    "duplicate claim"
+                );
+            }
+        }
+        assert_eq!(
+            skipped,
+            std::collections::BTreeSet::from([("16.11", "wrong-sequence")])
+        );
+        let offered: BTreeMap<_, _> = ledger
+            .entries()
+            .iter()
+            .map(|entry| ((entry.section, entry.name), entry.clone()))
+            .collect();
+        assert_eq!(offered.len(), 25);
+        assert_eq!(reference.len(), 25);
+        for (key, entry) in &offered {
+            assert_eq!(reference.get(key), Some(entry));
+        }
+        for (key, entry) in &reference {
+            assert_eq!(offered.get(key), Some(entry));
+        }
+        assert_diagnostic_census_and_shared_claims(&offered);
+    }
+
+    fn assert_diagnostic_census_and_shared_claims(
+        offered: &std::collections::BTreeMap<(&str, &str), DiagnosticAttributionEntry>,
+    ) {
+        let mut counts = (0, 0, 0);
+        for entry in offered.values() {
+            match entry.verdict {
+                DiagnosticAttributionVerdict::Agreement => counts.0 += 1,
+                DiagnosticAttributionVerdict::Difference => counts.1 += 1,
+                DiagnosticAttributionVerdict::Absent => counts.2 += 1,
+            }
+        }
+        assert_eq!(counts, (24, 1, 0));
+        for pair in [
+            [
+                ("16.2", "successor-remains-unannounced"),
+                ("16.6", "successor-from-predecessor-metadata-unchanged"),
+            ],
+            [
+                ("16.4", "wrong-operator"),
+                ("16.4", "valid-signature-under-another-key"),
+            ],
+        ] {
+            assert_eq!(offered[&pair[0]].subject, offered[&pair[1]].subject);
+            assert_eq!(
+                offered[&pair[0]].observation_step,
+                offered[&pair[1]].observation_step
+            );
+            assert_eq!(
+                offered[&pair[0]].recorded_key,
+                offered[&pair[1]].recorded_key
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostic_attribution_retains_the_finding_and_recorded_agreements() {
+        use crate::maturity_native::RecordedBlockScriptError;
+        let offered: std::collections::BTreeMap<_, _> = diagnostic_attribution_ledger()
+            .expect("ledger")
+            .entries()
+            .iter()
+            .map(|entry| ((entry.section, entry.name), entry))
+            .collect();
+        let reorder = &offered[&("16.11", "witness-item-reorder")];
+        assert_eq!(reorder.expected, None);
+        assert_eq!(
+            reorder.reason,
+            crate::maturity_native::DiagnosticExpectationReason::UnnameableFirstCheck
+        );
+        assert_eq!(
+            reorder.recorded_key.as_deref(),
+            Some("Operation not valid with the current stack size")
+        );
+        assert_eq!(
+            reorder.recorded,
+            RecordedBlockScriptError::Recorded(Some(
+                target_elements_conformance::protocol::ObservedFailureClass::StackUnderflow
+            ))
+        );
+        assert_eq!(reorder.verdict, DiagnosticAttributionVerdict::Difference);
+        for key in [
+            ("16.5", "wrong-leaf-version"),
+            ("16.11", "control-block-from-another-program"),
+        ] {
+            assert_eq!(offered[&key].recorded_key.as_deref(), Some("unclassified"));
+            assert_eq!(
+                offered[&key].verdict,
+                DiagnosticAttributionVerdict::Agreement
+            );
+        }
+        assert_eq!(
+            offered[&("16.6", "successor-from-wrong-semantic-metadata")]
+                .recorded_key
+                .as_deref(),
+            Some("EC scalar mult verify fail")
+        );
+    }
+
+    #[test]
+    fn diagnostic_comparison_distinguishes_absence_and_both_mismatch_directions() {
+        use crate::maturity_native::RecordedBlockScriptError::{NotRecorded, Recorded};
+        use DiagnosticAttributionVerdict::{Absent, Agreement, Difference};
+        use target_elements_conformance::protocol::ObservedFailureClass::{
+            InvalidCurveRelation, StackUnderflow,
+        };
+        for (expected, recorded, verdict) in [
+            (None, NotRecorded, Absent),
+            (Some(StackUnderflow), NotRecorded, Absent),
+            (None, Recorded(None), Agreement),
+            (
+                Some(StackUnderflow),
+                Recorded(Some(StackUnderflow)),
+                Agreement,
+            ),
+            (None, Recorded(Some(StackUnderflow)), Difference),
+            (Some(StackUnderflow), Recorded(None), Difference),
+            (
+                Some(StackUnderflow),
+                Recorded(Some(InvalidCurveRelation)),
+                Difference,
+            ),
+        ] {
+            assert_eq!(diagnostic_verdict(expected, recorded), verdict);
+        }
+    }
+
+    #[test]
+    fn diagnostic_attribution_leaves_every_standing_and_census_unchanged() {
+        use crate::maturity_first_party::{
+            MaturitySupplementaryDisposition, maturity_first_party_dispositions,
+        };
+        use crate::maturity_mutants::native_staging::{NATIVE_ROWS, NativeStanding};
+        let before = derive_maturity_evidence_plan_with(
+            MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            MaturityConstructorMaterial::Absent(
+                MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
+            ),
+        )
+        .expect("plan");
+        diagnostic_attribution_ledger().expect("ledger loaded");
+        let after = derive_maturity_evidence_plan_with(
+            MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
+            MaturityConstructorMaterial::Absent(
+                MaturityConstructorMaterialAbsence::NotSuppliedToDerivation,
+            ),
+        )
+        .expect("plan");
+        assert_eq!(before.rows(), after.rows());
+        assert_eq!(before.census(), after.census());
+        let census = after.census();
+        assert_eq!(
+            (census.rows(), census.answered(), census.outstanding()),
+            (206, 177, 29)
+        );
+        assert_eq!(
+            (
+                census.observed(),
+                census.final_dispositions(),
+                census.retired(),
+                census.waiting()
+            ),
+            (177, 27, 2, 0)
+        );
+        assert_eq!(
+            (
+                census.typed_non_answer_final(),
+                census.typed_non_answer_waiting()
+            ),
+            (27, 0)
+        );
+        assert_eq!(
+            (
+                census.native_acceptance_observed(),
+                census.native_refusal_observed()
+            ),
+            (12, 39)
+        );
+        assert_eq!(
+            (
+                census.first_party_discharged(),
+                census.first_party_required()
+            ),
+            (81, 0)
+        );
+        let mut supplementary = [0; 3];
+        for row in maturity_first_party_dispositions().expect("dispositions") {
+            match row.disposition() {
+                MaturitySupplementaryDisposition::Discharged(_) => supplementary[0] += 1,
+                MaturitySupplementaryDisposition::OutOfContract { .. } => supplementary[1] += 1,
+                MaturitySupplementaryDisposition::Retained { .. } => supplementary[2] += 1,
+            }
+        }
+        assert_eq!(supplementary, [41, 2, 0]);
+        let mut staging = [0; 4];
+        for row in NATIVE_ROWS {
+            match row.standing() {
+                NativeStanding::Staged { .. } => staging[0] += 1,
+                NativeStanding::StagedAcceptanceExpected { .. } => staging[1] += 1,
+                NativeStanding::WaitingOnSponsoredForm => staging[2] += 1,
+                NativeStanding::Unstageable(_) => staging[3] += 1,
+            }
+        }
+        assert_eq!(staging, [26, 4, 2, 3]);
+    }
+
+    #[test]
+    fn diagnostic_loading_preserves_every_staged_subject_pin() {
+        use crate::maturity_mutants::native_staging::{NativeSubject, stage_native_subject};
+        use crate::maturity_mutants::{MaturityMutantContext, foreign_key_predecessor_program};
+        use target_elements_conformance::executor::TargetOperationPlanner;
+        diagnostic_attribution_ledger().expect("ledger loaded");
+        let input = crate::maturity_continuity::tests::variable_archived().input();
+        let corpus = maturity_variable_run_of_record().expect("variable archive");
+        let mut planner = crate::maturity_native::MaturityAnnouncementPlanner::new(
+            input.identity.clone(),
+            input.branch,
+            MaturityWitnessSelection::Retained(tapscript::StateWitnessSchedule::VariableMetadata),
+        )
+        .expect("planner");
+        let mut next = planner.next_step(None).expect("issuance");
+        for (step, response) in &corpus.exchanges()[..2] {
+            assert_eq!(next.as_ref(), Some(step));
+            next = planner
+                .next_step(Some((step.case(), response)))
+                .expect("funding");
+        }
+        let mut foreign = input.funded.clone();
+        foreign.outpoint = transaction::bytes::Outpoint::new(
+            input.funded.outpoint.txid(),
+            input.funded.outpoint.index() + 1,
+        )
+        .expect("outpoint");
+        foreign.program = foreign_key_predecessor_program(input.bundle).expect("foreign program");
+        let target = closure_target().expect("target");
+        let context = MaturityMutantContext {
+            target: &target,
+            bundle: input.bundle,
+            finalized: planner.announcement().expect("announcement"),
+            submitted_bytes: input.submitted_bytes,
+            funded: input.funded,
+            identity: input.identity,
+            branch: input.branch,
+            foreign_funded: Some(&foreign),
+        };
+        for subject in NativeSubject::ALL {
+            let bytes = stage_native_subject(subject, &context).expect("subject");
+            let digest = target_elements_conformance::constructor::tagged::sha256(&bytes);
+            let mut hex = String::new();
+            for byte in digest {
+                write!(hex, "{byte:02x}").expect("hex");
+            }
+            assert_eq!(hex, subject.pin(), "{subject:?}");
+        }
+    }
 
     #[test]
     fn retained_semantic_refusal_binds_its_exact_row_and_same_coin_control() {

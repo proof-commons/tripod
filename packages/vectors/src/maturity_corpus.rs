@@ -86,6 +86,15 @@ pub const MATURITY_NATIVE_RUN_ADDRESS: &str =
     "a0232585c887fcaf8ac4fd7050e77258bf7a6e0aebba7fce7d67c829374682f8";
 const MATURITY_NATIVE_CEREMONY_SHA256: &str =
     "707adc52ee34f394fde4d95f9c5f5c5ec5fac48f051694a760b05afc4abbcae1";
+/// SHA-256 of the diagnostic archive's exact manifest.
+pub const MATURITY_DIAGNOSTIC_MANIFEST_SHA256: &str =
+    "f041eb5d02b95f71829acbe966bf4eef4dbe9a738514f3cf09f10f545765faee";
+/// SHA-256 of the original diagnostic report bytes.
+pub const MATURITY_DIAGNOSTIC_RUN_ADDRESS: &str =
+    "a7159fdc16c5a2a7bb8f9ce5011fe014377d481023e14e2acb714461a47a6cbc";
+const MATURITY_DIAGNOSTIC_CEREMONY_SHA256: &str =
+    "f27b3f710e495cf8e193ff062ca7b5304f3f6236c9bfadda268d91ace7caffe2";
+
 /// SHA-256 of the independent observation manifest.
 pub const MATURITY_OBSERVER_MANIFEST_SHA256: &str =
     "ef34c7d29b8bf6c54a9b23fbbd072ae97d11533fd47aafddf996c88edb0f57e8";
@@ -612,6 +621,47 @@ const RETAINED_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins {
         "maturity_retained",
         "the_retained_maturity_routes_run_against_a_real_target",
     ),
+    ..NATIVE_PINS
+};
+
+const DIAGNOSTIC_FILES: [MaturityArchiveFile<'static>; 4] = [
+    MaturityArchiveFile::new(
+        "ae053ac43a.report.capture",
+        include_bytes!("../fixtures/maturity-diagnostic-run-of-record/ae053ac43a.report.capture"),
+    ),
+    MaturityArchiveFile::new(
+        "ae053ac43a.report.capture.timing",
+        include_bytes!(
+            "../fixtures/maturity-diagnostic-run-of-record/ae053ac43a.report.capture.timing"
+        ),
+    ),
+    MaturityArchiveFile::new(
+        "MANIFEST.sha256",
+        include_bytes!("../fixtures/maturity-diagnostic-run-of-record/MANIFEST.sha256"),
+    ),
+    MaturityArchiveFile::new(
+        "RUN-REPORT",
+        include_bytes!("../fixtures/maturity-diagnostic-run-of-record/RUN-REPORT"),
+    ),
+];
+const DIAGNOSTIC_PINS: MaturityCorpusPins<'static> = MaturityCorpusPins {
+    names: [
+        "ae053ac43a.report.capture",
+        "ae053ac43a.report.capture.timing",
+        "MANIFEST.sha256",
+        "RUN-REPORT",
+    ],
+    sizes: [2_321_183, 49, 191, 151_862],
+    manifest_sha256: MATURITY_DIAGNOSTIC_MANIFEST_SHA256,
+    run_address: MATURITY_DIAGNOSTIC_RUN_ADDRESS,
+    ceremony_sha256: MATURITY_DIAGNOSTIC_CEREMONY_SHA256,
+    capture_target: MaturityCaptureTarget::new(
+        "maturity_diagnostic",
+        "the_diagnostic_maturity_routes_run_against_a_real_target",
+    ),
+    funding_count: 4,
+    capabilities: &CONFIDENTIAL_CAPABILITIES,
+    funding: &CONFIDENTIAL_FUNDING,
     ..NATIVE_PINS
 };
 
@@ -3083,6 +3133,322 @@ pub fn maturity_retained_run_of_record() -> ImportResult<&'static ValidatedRetai
     }
 }
 
+/// Admitted diagnostic observations, with all seven families validated before any fold.
+pub struct ValidatedDiagnosticMaturityCorpus {
+    /// Exact four-file report provenance.
+    pub report: MaturityReportFacts,
+    /// Complete exact replay of all seven diagnostic families.
+    pub evidence: crate::maturity_native::native::DiagnosticRoutesPlanner,
+    /// Node-default policy premises with distinct provenance.
+    pub fee_floors: MaturityDisclosedFeeFloors,
+}
+
+struct DiagnosticReportFields {
+    policy: Vec<u8>,
+    families: Vec<u8>,
+    stopped: Vec<u8>,
+    rows: Vec<Vec<u8>>,
+}
+
+fn validate_diagnostic_fields(fields: &DiagnosticReportFields) -> ImportResult<()> {
+    let families = retained_json(&fields.families)?;
+    let stopped = retained_json(&fields.stopped)?;
+    let names = [
+        "window",
+        "metadata",
+        "operator",
+        "predecessor",
+        "successor",
+        "abi",
+        "wrong-semantic-metadata",
+    ];
+    binding(
+        "diagnostic-family-census",
+        families
+            .as_array()
+            .is_some_and(|values| values.len() == names.len()),
+    )?;
+    binding("diagnostic-stopped-empty", stopped == serde_json::json!([]))?;
+    for (index, name) in names.iter().enumerate() {
+        let fail = |field| {
+            Refusal::RetainedCampaign(crate::maturity_native::native::RetainedCampaignRefusal {
+                family: (*name).to_owned(),
+                field,
+            })
+        };
+        let family = &families[index];
+        if family["family"] != *name {
+            return Err(fail("family"));
+        }
+        if family["stopped"] != false {
+            return Err(fail("stopped"));
+        }
+        if family["expectation"] != "agreement" {
+            return Err(fail("expectation"));
+        }
+        if family["control_accepted"] != true
+            || family["control"]["layer"] != "accepted"
+            || family["control"]["readback"] != "matched"
+        {
+            return Err(fail("accepted control"));
+        }
+        let subjects = family["subjects"]
+            .as_array()
+            .ok_or_else(|| fail("absent subject"))?;
+        if subjects.len() != [2, 1, 6, 4, 6, 4, 1][index] {
+            return Err(fail("subject census"));
+        }
+        for subject in subjects {
+            let expected = if subject["subject"] == "wrong-sequence" {
+                "consensus_rejection_before_script"
+            } else {
+                "script_path_rejection"
+            };
+            if subject["observation"].is_null() {
+                return Err(fail("absent subject"));
+            }
+            if subject["expectation"] != "agreement" || subject["observation"]["layer"] != expected
+            {
+                return Err(fail("subject expectation"));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn parse_diagnostic_report(
+    bytes: &[u8],
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<(MaturityReportFacts, DiagnosticReportFields)> {
+    let mut cursor = Cursor::new("diagnostic report", bytes)?;
+    let profile = cursor
+        .lines
+        .iter()
+        .position(|line| *line == "capture-profile diagnostic")
+        .ok_or(Refusal::RunReportGrammar)?;
+    let mut normalized = cursor.lines[..profile].join("\n");
+    normalized.push('\n');
+    cursor.index = profile;
+    cursor.exact("capture-profile diagnostic")?;
+    for phase in ["preflight", "cargo", "census", "manifest"] {
+        let wall = cursor.value("phase-wall-ms")?;
+        let digits = wall
+            .strip_prefix(phase)
+            .and_then(|tail| tail.strip_prefix(' '))
+            .ok_or(Refusal::RunReportGrammar)?;
+        number(digits).ok_or(Refusal::RunReportGrammar)?;
+    }
+    number(cursor.value("elapsed-wall-ms")?).ok_or(Refusal::RunReportGrammar)?;
+    let policy = cursor.bytes("diagnostic-policy")?;
+    let families = cursor.bytes("diagnostic-families")?;
+    let stopped = cursor.bytes("diagnostic-stopped")?;
+    cursor.exact("campaign-manifest-schema 1")?;
+    cursor.exact("campaign-manifest-count 23")?;
+    let rows = (0..23)
+        .map(|_| cursor.bytes("campaign-row"))
+        .collect::<ImportResult<Vec<_>>>()?;
+    for line in &cursor.lines[cursor.index..] {
+        normalized.push_str(line);
+        normalized.push('\n');
+    }
+    let (mut report, _) = parse_report_body_selected(
+        normalized.as_bytes(),
+        pins,
+        None,
+        Some(pins.capture_target().test()),
+    )?;
+    binding(
+        "diagnostic-node-tip",
+        report.expected_tip == RETAINED_NODE_TIP,
+    )?;
+    report.run_address = hex_bytes(&tagged::sha256(bytes));
+    let fields = DiagnosticReportFields {
+        policy,
+        families,
+        stopped,
+        rows,
+    };
+    validate_diagnostic_fields(&fields)?;
+    Ok((report, fields))
+}
+
+/// Admit the complete diagnostic archive without assigning any standing.
+/// # Errors
+/// Refuses byte, provenance, campaign, policy, route and readback disagreements.
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton or diagnostic row.
+pub fn admit_diagnostic_maturity_corpus(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: &MaturityCorpusPins<'_>,
+) -> ImportResult<ValidatedDiagnosticMaturityCorpus> {
+    admit_diagnostic_with_replay(
+        files,
+        pins,
+        crate::maturity_native::native::replay_diagnostic_routes,
+    )
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Admission follows the archive bindings before exact replay."
+)]
+fn admit_diagnostic_with_replay(
+    files: &[MaturityArchiveFile<'_>; 4],
+    pins: &MaturityCorpusPins<'_>,
+    replay: impl FnOnce(
+        CandidateDeploymentIdentity,
+        BranchContext,
+        &[(OperationStep, NativeOperationResponse)],
+    ) -> Result<
+        crate::maturity_native::native::DiagnosticRoutesPlanner,
+        crate::maturity_native::MaturityNativePlanRefusal,
+    >,
+) -> ImportResult<ValidatedDiagnosticMaturityCorpus> {
+    use crate::maturity_native::sponsored::Policy;
+    validate_census(files, pins)?;
+    validate_manifest(files, pins.manifest_sha256())?;
+    binding(
+        "diagnostic-schedule",
+        pins.schedule() == tapscript::StateWitnessSchedule::VariableMetadata,
+    )?;
+    let (report, fields) = parse_diagnostic_report(files[3].bytes, pins)?;
+    check_report_address(&report, pins)?;
+    let policy_bytes = &fields.policy;
+    let policy = Policy::parse(retained_json(policy_bytes)?).map_err(Refusal::Derivation)?;
+    validate_common_bindings(files, pins, &report)?;
+    let floors = pins.fee_floors();
+    binding(
+        "diagnostic-fee-floors",
+        floors.min_relay_tx_fee() == policy.0["relay"].as_str().unwrap_or_default()
+            && floors.block_min_tx_fee() == policy.0["block"].as_str().unwrap_or_default()
+            && floors.provenance() == MaturityPremiseProvenance::ReportedByNode
+            && floors.block_provenance() == MaturityPremiseProvenance::PinnedSourceNoOverride,
+    )?;
+    let mut cursor = Cursor::new("diagnostic capture", files[0].bytes)?;
+    parse_header(&mut cursor, &report, pins)?;
+    parse_environment(&mut cursor, &report, pins)?;
+    cursor.exact("digest-count 0")?;
+    let count = number(cursor.value("operation-count")?).ok_or_else(|| cursor.refusal())?;
+    let operations = (0..count)
+        .map(|index| parse_operation_block(&mut cursor, index, "", SubjectKind::Sponsored))
+        .collect::<ImportResult<Vec<_>>>()?;
+    let payload = parse_tail(&mut cursor, files[0].bytes)?;
+    let mut cursor = Cursor::new("diagnostic payload", &payload)?;
+    cursor.exact("maturity-diagnostic-evidence-schema 1")?;
+    let identity = CandidateDeploymentIdentity::new(
+        cursor
+            .bytes("deployment-id")?
+            .try_into()
+            .map_err(|_| cursor.refusal())?,
+        cursor
+            .bytes("genesis-id")?
+            .try_into()
+            .map_err(|_| cursor.refusal())?,
+    )
+    .map_err(|_| cursor.refusal())?;
+    binding(
+        "diagnostic-deployment",
+        hex_bytes(identity.network_id()) == report.network_id
+            && hex_bytes(identity.genesis_id()) == report.genesis_id,
+    )?;
+    let identifier = cursor
+        .bytes("branch-identifier")?
+        .try_into()
+        .map_err(|_| cursor.refusal())?;
+    let checkpoint = cursor
+        .value("branch-checkpoint")?
+        .parse::<u64>()
+        .map_err(|_| cursor.refusal())?;
+    let branch = BranchContext::new(identifier, checkpoint).map_err(|_| cursor.refusal())?;
+    binding(
+        "diagnostic-policy",
+        cursor.bytes("diagnostic-policy")? == fields.policy,
+    )?;
+    binding(
+        "diagnostic-families",
+        cursor.bytes("diagnostic-families")? == fields.families,
+    )?;
+    binding(
+        "diagnostic-stopped",
+        cursor.bytes("diagnostic-stopped")? == fields.stopped,
+    )?;
+    cursor.exact("campaign-manifest-schema 1")?;
+    cursor.exact("campaign-manifest-count 23")?;
+    for row in &fields.rows {
+        binding(
+            "diagnostic-campaign-row",
+            cursor.bytes("campaign-row")? == *row,
+        )?;
+    }
+    let mut exchanges = Vec::new();
+    for operation in operations {
+        let bytes = cursor.bytes("exchange")?;
+        let (case, subject, response): (
+            target_elements_conformance::protocol::OperationCaseId,
+            OperationSubject,
+            NativeOperationResponse,
+        ) = serde_json::from_slice(&bytes).map_err(|_| cursor.refusal())?;
+        binding(
+            "diagnostic-exchange",
+            operation.step.subject() == &subject
+                && response.case == case
+                && operation.layer == response.observed_layer
+                && operation.detail == response.observed_detail.as_deref().unwrap_or_default()
+                && operation.accepted_identity.map(|id| id.to_target_display())
+                    == response.accepted_txid,
+        )?;
+        exchanges.push((OperationStep::new(&case.step, subject), response));
+    }
+    cursor.done()?;
+    let evidence = replay(identity, branch, &exchanges).map_err(Refusal::Derivation)?;
+    binding(
+        "diagnostic-derived-families",
+        serde_json::to_vec(&evidence.families_json()).map_err(|_| Refusal::RunReportGrammar)?
+            == fields.families,
+    )?;
+    binding(
+        "diagnostic-derived-stopped",
+        serde_json::to_vec(&evidence.stopped()).map_err(|_| Refusal::RunReportGrammar)?
+            == fields.stopped,
+    )?;
+    binding(
+        "diagnostic-derived-policy",
+        evidence.policy() == Some(&policy),
+    )?;
+    binding(
+        "diagnostic-operation-census",
+        count == 48 && evidence.exchanges().len() == count,
+    )?;
+    let rows = fields
+        .rows
+        .iter()
+        .map(|row| retained_json(row))
+        .collect::<ImportResult<Vec<_>>>()?;
+    crate::maturity_native::native::DiagnosticCampaignManifest::validate(&evidence, &rows)
+        .map_err(Refusal::RetainedCampaign)?;
+    Ok(ValidatedDiagnosticMaturityCorpus {
+        report,
+        evidence,
+        fee_floors: floors,
+    })
+}
+
+/// Admit the immutable diagnostic archive once per process.
+/// # Errors
+/// Preserves the first exact admission refusal.
+/// # Panics
+/// Panics only if the fixed architecture omits its singleton or diagnostic row.
+pub fn maturity_diagnostic_run_of_record()
+-> ImportResult<&'static ValidatedDiagnosticMaturityCorpus> {
+    static CORPUS: OnceLock<ImportResult<ValidatedDiagnosticMaturityCorpus>> = OnceLock::new();
+    match CORPUS
+        .get_or_init(|| admit_diagnostic_maturity_corpus(&DIAGNOSTIC_FILES, &DIAGNOSTIC_PINS))
+    {
+        Ok(corpus) => Ok(corpus),
+        Err(error) => Err(error.clone()),
+    }
+}
+
 /// Admitted confidential observations, with the confidential family validated before any fold.
 pub struct ValidatedConfidentialMaturityCorpus {
     /// Exact four-file report provenance.
@@ -4237,6 +4603,638 @@ pub fn accepted_public_handoff(
 #[cfg(test)]
 mod tests {
 
+    fn rebound_diagnostic_payload(
+        change: impl FnOnce(&str) -> String,
+    ) -> ImportResult<ValidatedDiagnosticMaturityCorpus> {
+        let mut bytes = DIAGNOSTIC_FILES.map(|file| file.bytes.to_vec());
+        let capture = std::str::from_utf8(&bytes[0]).expect("capture");
+        let line = capture
+            .lines()
+            .find(|line| line.starts_with("legacy-rendering "))
+            .expect("payload");
+        let payload =
+            String::from_utf8(decode_hex(line.split(' ').nth(2).expect("hex")).expect("bytes"))
+                .expect("text");
+        let changed = change(&payload);
+        let changed_line = format!(
+            "legacy-rendering {} {}",
+            changed.len(),
+            hex_bytes(changed.as_bytes())
+        );
+        bytes[0] = capture.replace(line, &changed_line).into_bytes();
+        let capture = std::str::from_utf8(&bytes[0]).expect("capture");
+        let position = capture
+            .find("capture-content-sha256 ")
+            .expect("content hash");
+        let hash = hex_bytes(&tagged::sha256(&bytes[0][..position]));
+        let start = position + "capture-content-sha256 ".len();
+        bytes[0][start..start + 64].copy_from_slice(hash.as_bytes());
+        let ceremony = hex_bytes(&tagged::sha256(&bytes[0]));
+        let mut manifest = String::new();
+        for (file, value) in DIAGNOSTIC_FILES.iter().zip(&bytes).take(2) {
+            writeln!(
+                manifest,
+                "{}  {}",
+                hex_bytes(&tagged::sha256(value)),
+                file.name
+            )
+            .expect("manifest");
+        }
+        bytes[2] = manifest.into_bytes();
+        let manifest_hash = hex_bytes(&tagged::sha256(&bytes[2]));
+        let mut report = String::new();
+        for line in std::str::from_utf8(&bytes[3]).expect("report").lines() {
+            if line.starts_with("ceremony report ") {
+                writeln!(report, "ceremony report {ceremony}").expect("report");
+            } else if line.starts_with("manifest-sha256 ") {
+                writeln!(report, "manifest-sha256 {manifest_hash}").expect("report");
+            } else {
+                writeln!(report, "{line}").expect("report");
+            }
+        }
+        bytes[3] = report.into_bytes();
+        let address = hex_bytes(&tagged::sha256(&bytes[3]));
+        let pins = MaturityCorpusPins {
+            sizes: std::array::from_fn(|index| bytes[index].len()),
+            ceremony_sha256: &ceremony,
+            manifest_sha256: &manifest_hash,
+            run_address: &address,
+            ..DIAGNOSTIC_PINS
+        };
+        let files = std::array::from_fn(|index| {
+            MaturityArchiveFile::new(DIAGNOSTIC_FILES[index].name, &bytes[index])
+        });
+        admit_diagnostic_maturity_corpus(&files, &pins)
+    }
+
+    #[test]
+    fn diagnostic_payload_refuses_missing_duplicate_surplus_and_changed_records_after_rebinding() {
+        assert!(rebound_diagnostic_payload(str::to_owned).is_ok());
+        for prefix in ["diagnostic-policy ", "campaign-row ", "exchange "] {
+            for duplicate in [false, true] {
+                assert!(
+                    rebound_diagnostic_payload(|payload| {
+                        let line = payload
+                            .lines()
+                            .find(|line| line.starts_with(prefix))
+                            .expect("record");
+                        payload.replacen(
+                            &format!("{line}\n"),
+                            &if duplicate {
+                                format!("{line}\n{line}\n")
+                            } else {
+                                String::new()
+                            },
+                            1,
+                        )
+                    })
+                    .is_err(),
+                    "{prefix} duplicate={duplicate}"
+                );
+            }
+        }
+        for suffix in [
+            "refusal 4 6e756c6c\n",
+            "manifest-refusal 4 6e756c6c\n",
+            "surplus yes\n",
+        ] {
+            assert!(rebound_diagnostic_payload(|payload| format!("{payload}{suffix}")).is_err());
+        }
+        assert!(
+            rebound_diagnostic_payload(|payload| payload.replacen(
+                "branch-checkpoint 7",
+                "branch-checkpoint 8",
+                1
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn diagnostic_report_refuses_each_missing_or_duplicate_line() {
+        let original = std::str::from_utf8(DIAGNOSTIC_FILES[3].bytes).expect("report");
+        for line in original.lines() {
+            for replacement in [String::new(), format!("{line}\n{line}\n")] {
+                let changed = original.replacen(&format!("{line}\n"), &replacement, 1);
+                assert!(
+                    parse_diagnostic_report(changed.as_bytes(), &DIAGNOSTIC_PINS).is_err(),
+                    "{}",
+                    line.split(' ').next().expect("field")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn diagnostic_admission_binds_the_whole_archive_and_recordings() {
+        use crate::maturity_native::{RecordedBlockScriptError, recorded_block_script_error};
+        use std::io::Write as _;
+        let start = std::time::Instant::now();
+        let corpus = admit_diagnostic_maturity_corpus(&DIAGNOSTIC_FILES, &DIAGNOSTIC_PINS)
+            .expect("diagnostic archive");
+        writeln!(
+            std::io::stdout(),
+            "census cold diagnostic admission wall {:?}",
+            start.elapsed()
+        )
+        .expect("wall output");
+        assert_eq!(corpus.report.run_address(), MATURITY_DIAGNOSTIC_RUN_ADDRESS);
+        assert_eq!(corpus.evidence.complete(), Ok(()));
+        assert_eq!(corpus.evidence.stopped(), [] as [&str; 0]);
+        let mut counts = [0; 6];
+        let mut recorded = 0;
+        for (step, response) in corpus.evidence.exchanges() {
+            counts[0] += 1;
+            match step.subject() {
+                OperationSubject::Funding(_) => counts[1] += 1,
+                OperationSubject::Submission(_) => {
+                    counts[2] += 1;
+                    match response.observed_layer {
+                        ObservedOutcomeLayer::Accepted => counts[3] += 1,
+                        ObservedOutcomeLayer::ScriptPathRejection => counts[4] += 1,
+                        ObservedOutcomeLayer::ConsensusRejectionBeforeScript => counts[5] += 1,
+                        other => panic!("unexpected layer {other:?}"),
+                    }
+                }
+                other => panic!("unexpected operation {other:?}"),
+            }
+            let reading = recorded_block_script_error(&response).expect("recording");
+            if response.observed_layer == ObservedOutcomeLayer::Accepted {
+                assert_eq!(reading, RecordedBlockScriptError::NotRecorded);
+            } else {
+                assert!(matches!(reading, RecordedBlockScriptError::Recorded(_)));
+                recorded += 1;
+            }
+        }
+        assert_eq!(counts, [48, 17, 31, 7, 23, 1]);
+        assert_eq!(recorded, 24);
+        let (_, fields) =
+            parse_diagnostic_report(DIAGNOSTIC_FILES[3].bytes, &DIAGNOSTIC_PINS).expect("report");
+        let rows: Vec<_> = fields
+            .rows
+            .iter()
+            .map(|row| retained_json(row).expect("row"))
+            .collect();
+        assert_eq!(rows.len(), 23);
+        assert_eq!(
+            rows.iter()
+                .map(|row| row["claims"].as_array().expect("claims").len())
+                .sum::<usize>(),
+            25
+        );
+        assert!(
+            rows.iter()
+                .all(|row| !row["control"].is_null() && !row["observation"].is_null())
+        );
+        assert_eq!(
+            corpus.fee_floors.provenance(),
+            MaturityPremiseProvenance::ReportedByNode
+        );
+        assert_eq!(
+            corpus.fee_floors.block_provenance(),
+            MaturityPremiseProvenance::PinnedSourceNoOverride
+        );
+        for family in corpus.evidence.families_json() {
+            assert_eq!(family["control_accepted"], true);
+            assert_eq!(family["control"]["readback"], "matched");
+            assert_eq!(family["expectation"], "agreement");
+        }
+    }
+
+    #[test]
+    fn diagnostic_families_refuse_each_uncontrolled_or_wrong_boundary_subject() {
+        for index in 0..7 {
+            for (pointer, value) in [
+                ("/stopped", serde_json::json!(true)),
+                ("/expectation", serde_json::json!("contradiction")),
+                ("/control_accepted", serde_json::json!(false)),
+                ("/control/readback", serde_json::json!("mismatched")),
+                ("/control/layer", serde_json::json!("script_path_rejection")),
+                ("/subjects/0/observation", serde_json::Value::Null),
+                ("/subjects/0/expectation", serde_json::json!("absent")),
+                (
+                    "/subjects/0/observation/layer",
+                    serde_json::json!("key_path_rejection"),
+                ),
+            ] {
+                let (_, mut fields) =
+                    parse_diagnostic_report(DIAGNOSTIC_FILES[3].bytes, &DIAGNOSTIC_PINS)
+                        .expect("report");
+                let mut families = retained_json(&fields.families).expect("families");
+                *families[index].pointer_mut(pointer).expect("coordinate") = value;
+                fields.families = serde_json::to_vec(&families).expect("JSON");
+                assert!(
+                    validate_diagnostic_fields(&fields).is_err(),
+                    "family {index} {pointer}"
+                );
+            }
+        }
+        let (_, mut fields) =
+            parse_diagnostic_report(DIAGNOSTIC_FILES[3].bytes, &DIAGNOSTIC_PINS).expect("report");
+        fields.stopped = br#"["window"]"#.to_vec();
+        assert!(validate_diagnostic_fields(&fields).is_err());
+        let mut families = retained_json(&fields.families).expect("families");
+        families.as_array_mut().expect("array").pop();
+        fields.families = serde_json::to_vec(&families).expect("JSON");
+        assert!(validate_diagnostic_fields(&fields).is_err());
+    }
+
+    #[test]
+    fn diagnostic_campaign_refuses_changed_bindings_and_claims() {
+        use crate::maturity_native::native::DiagnosticCampaignManifest;
+        let corpus = maturity_diagnostic_run_of_record().expect("archive");
+        let (_, fields) =
+            parse_diagnostic_report(DIAGNOSTIC_FILES[3].bytes, &DIAGNOSTIC_PINS).expect("report");
+        let rows: Vec<_> = fields
+            .rows
+            .iter()
+            .map(|row| retained_json(row).expect("row"))
+            .collect();
+        assert_eq!(
+            DiagnosticCampaignManifest::validate(&corpus.evidence, &rows),
+            Ok(())
+        );
+        for (index, _) in rows.iter().enumerate() {
+            for pointer in [
+                "/claims/0/name",
+                "/claims/0/section",
+                "/control/digest",
+                "/control_id",
+                "/observation/digest",
+                "/observation/funded_outpoints/0/funding_step",
+                "/candidate/subject_pin",
+                "/expected_class",
+                "/expectation_reason",
+                "/expected_consumer",
+                "/policy",
+                "/family",
+                "/declared_boundary",
+                "/compatibility",
+            ] {
+                let mut changed = rows.clone();
+                *changed[index].pointer_mut(pointer).expect("coordinate") =
+                    serde_json::json!("changed");
+                assert!(
+                    DiagnosticCampaignManifest::validate(&corpus.evidence, &changed).is_err(),
+                    "row {index} {pointer}"
+                );
+            }
+        }
+        let mut changed = rows.clone();
+        changed[0]["surplus"] = serde_json::json!(true);
+        assert!(DiagnosticCampaignManifest::validate(&corpus.evidence, &changed).is_err());
+        assert!(DiagnosticCampaignManifest::validate(&corpus.evidence, &rows[..22]).is_err());
+    }
+
+    #[test]
+    fn diagnostic_report_address_refuses_a_grammar_valid_changed_wall() {
+        let mut bytes = DIAGNOSTIC_FILES[3].bytes.to_vec();
+        let prefix = b"phase-wall-ms preflight ";
+        let index = bytes
+            .windows(prefix.len())
+            .position(|part| part == prefix)
+            .expect("phase wall")
+            + prefix.len();
+        bytes[index] = if bytes[index] == b'1' { b'2' } else { b'1' };
+        assert!(parse_diagnostic_report(&bytes, &DIAGNOSTIC_PINS).is_ok());
+        let mut files = DIAGNOSTIC_FILES;
+        files[3] = MaturityArchiveFile::new(files[3].name, &bytes);
+        assert_eq!(
+            admit_diagnostic_maturity_corpus(&files, &DIAGNOSTIC_PINS).err(),
+            Some(Refusal::RunReportAddress)
+        );
+    }
+
+    #[test]
+    fn diagnostic_node_tip_refuses_a_consistent_different_revision() {
+        let tip = "1".repeat(40);
+        let binary = &tip[..12];
+        let version = format!("Elements Core daemon version v28.99.0-{binary}");
+        let original = std::str::from_utf8(DIAGNOSTIC_FILES[3].bytes).expect("report");
+        let lines: Vec<_> = original
+            .lines()
+            .map(|line| {
+                if line.starts_with("elementsd-expected-tip ") {
+                    return format!("elementsd-expected-tip {tip}");
+                }
+                for (field, value) in [
+                    ("elementsd-binary-reported-revision", binary),
+                    ("elementsd-intended-executed-tip", tip.as_str()),
+                    ("node-version", version.as_str()),
+                ] {
+                    if line.starts_with(&format!("{field} ")) {
+                        return format!("{field} {} {}", value.len(), hex_bytes(value.as_bytes()));
+                    }
+                }
+                line.to_owned()
+            })
+            .collect();
+        let bytes = format!("{}\n", lines.join("\n")).into_bytes();
+        assert_eq!(
+            parse_diagnostic_report(&bytes, &DIAGNOSTIC_PINS).err(),
+            Some(Refusal::CrossFileBinding {
+                field: "diagnostic-node-tip"
+            })
+        );
+    }
+
+    #[test]
+    fn diagnostic_schedule_pin_refuses_another_schedule() {
+        let pins = MaturityCorpusPins {
+            schedule: tapscript::StateWitnessSchedule::WholeMetadata,
+            ..DIAGNOSTIC_PINS
+        };
+        assert_eq!(
+            admit_diagnostic_maturity_corpus(&DIAGNOSTIC_FILES, &pins).err(),
+            Some(Refusal::CrossFileBinding {
+                field: "diagnostic-schedule"
+            })
+        );
+    }
+
+    #[test]
+    fn diagnostic_archive_pins_refuse_changed_files() {
+        for index in 0..4 {
+            let mut bytes = DIAGNOSTIC_FILES[index].bytes.to_vec();
+            bytes[0] ^= 1;
+            let mut files = DIAGNOSTIC_FILES;
+            files[index] = MaturityArchiveFile::new(files[index].name, &bytes);
+            assert!(admit_diagnostic_maturity_corpus(&files, &DIAGNOSTIC_PINS).is_err());
+            let mut longer = bytes.clone();
+            longer.push(b'\n');
+            files[index] = MaturityArchiveFile::new(files[index].name, &longer);
+            assert!(matches!(
+                validate_census(&files, &DIAGNOSTIC_PINS),
+                Err(Refusal::FileSize { .. })
+            ));
+        }
+        let mut files = DIAGNOSTIC_FILES;
+        files.swap(0, 1);
+        assert_eq!(
+            validate_census(&files, &DIAGNOSTIC_PINS),
+            Err(Refusal::CorpusCensus)
+        );
+        for pins in [
+            MaturityCorpusPins {
+                manifest_sha256: &"0".repeat(64),
+                ..DIAGNOSTIC_PINS
+            },
+            MaturityCorpusPins {
+                run_address: &"0".repeat(64),
+                ..DIAGNOSTIC_PINS
+            },
+            MaturityCorpusPins {
+                ceremony_sha256: &"0".repeat(64),
+                ..DIAGNOSTIC_PINS
+            },
+            MaturityCorpusPins {
+                cargo_path: "/wrong/cargo",
+                ..DIAGNOSTIC_PINS
+            },
+            MaturityCorpusPins {
+                capture_target: MaturityCaptureTarget::new("wrong", "wrong"),
+                ..DIAGNOSTIC_PINS
+            },
+            MaturityCorpusPins {
+                funding_count: 1,
+                ..DIAGNOSTIC_PINS
+            },
+            MaturityCorpusPins {
+                framework_revision: MaturityFrameworkRevision::Unrecorded,
+                ..DIAGNOSTIC_PINS
+            },
+            MaturityCorpusPins {
+                fee_floors: MaturityDisclosedFeeFloors::node_defaults("0.00000200", "0.00000100"),
+                ..DIAGNOSTIC_PINS
+            },
+        ] {
+            assert!(admit_diagnostic_maturity_corpus(&DIAGNOSTIC_FILES, &pins).is_err());
+        }
+    }
+
+    fn changed_diagnostic_report(field: &str, value: &str, encoded: bool) -> Vec<u8> {
+        let report = std::str::from_utf8(DIAGNOSTIC_FILES[3].bytes).expect("UTF-8");
+        let replacement = if encoded {
+            format!("{field} {} {}", value.len(), hex_bytes(value.as_bytes()))
+        } else {
+            format!("{field} {value}")
+        };
+        let mut lines: Vec<_> = report.lines().map(str::to_owned).collect();
+        let line = lines
+            .iter_mut()
+            .find(|line| line.starts_with(&format!("{field} ")))
+            .expect("field");
+        *line = replacement;
+        format!("{}\n", lines.join("\n")).into_bytes()
+    }
+
+    macro_rules! diagnostic_grammar_refusal {
+        ($name:ident, $field:literal, $value:expr, $encoded:literal) => {
+            #[test]
+            fn $name() {
+                let bytes = changed_diagnostic_report($field, $value, $encoded);
+                assert!(parse_diagnostic_report(&bytes, &DIAGNOSTIC_PINS).is_err());
+            }
+        };
+    }
+    diagnostic_grammar_refusal!(
+        diagnostic_suite_refuses_wrong_test_name,
+        "rust-test-name",
+        "another_test",
+        true
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_suite_refuses_nonexact_argv,
+        "cargo-argv",
+        "/workspace/toolchains/cargo/bin/cargo test -p tripod-vectors --test maturity_diagnostic -- --ignored --test-threads=1",
+        true
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_suite_refuses_changed_cargo_path,
+        "cargo-argv",
+        "/wrong/cargo test -p tripod-vectors --test maturity_diagnostic -- --ignored --exact the_diagnostic_maturity_routes_run_against_a_real_target --test-threads=1",
+        true
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_suite_refuses_wrong_count,
+        "observed-test-count",
+        "2",
+        false
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_suite_refuses_dirty_provenance,
+        "suite-clean",
+        "no",
+        false
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_suite_refuses_bad_source_identity,
+        "suite-tree",
+        "not-source-provenance",
+        false
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_suite_refuses_changed_revision,
+        "elementsd-binary-reported-revision",
+        "000000000000",
+        true
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_suite_refuses_wrong_revision_length,
+        "elementsd-binary-reported-revision",
+        "b7fc5d08",
+        true
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_suite_refuses_changed_intended_tip,
+        "elementsd-intended-executed-tip",
+        &"0".repeat(40),
+        true
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_suite_refuses_wrong_adapter,
+        "executor-adapter-version",
+        "2.0.0",
+        true
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_suite_refuses_wrong_protocol,
+        "protocol-revision",
+        "7",
+        false
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_suite_refuses_wrong_target,
+        "deployment-target-contract",
+        "another-target",
+        true
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_tail_refuses_wrong_profile,
+        "capture-profile",
+        "native",
+        false
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_tail_refuses_phase_order,
+        "phase-wall-ms",
+        "cargo 42",
+        false
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_tail_refuses_phase_wall,
+        "phase-wall-ms",
+        "preflight -1",
+        false
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_tail_refuses_elapsed_wall,
+        "elapsed-wall-ms",
+        "01",
+        false
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_tail_refuses_campaign_schema,
+        "campaign-manifest-schema",
+        "2",
+        false
+    );
+    diagnostic_grammar_refusal!(
+        diagnostic_tail_refuses_campaign_count,
+        "campaign-manifest-count",
+        "1",
+        false
+    );
+    diagnostic_grammar_refusal!(diagnostic_tail_refuses_ineligible, "eligible", "no", false);
+
+    #[test]
+    fn diagnostic_tail_refuses_missing_duplicate_and_surplus_lines() {
+        let original = std::str::from_utf8(DIAGNOSTIC_FILES[3].bytes).expect("report");
+        let policy = original
+            .lines()
+            .find(|line| line.starts_with("diagnostic-policy "))
+            .expect("policy");
+        for bytes in [
+            original.replace(&format!("{policy}\n"), ""),
+            original.replace(
+                "campaign-manifest-count 23\n",
+                "campaign-manifest-count 23\ncampaign-manifest-count 23\n",
+            ),
+            format!("{original}surplus yes\n"),
+        ] {
+            assert!(parse_diagnostic_report(bytes.as_bytes(), &DIAGNOSTIC_PINS).is_err());
+        }
+    }
+
+    #[test]
+    fn diagnostic_policy_requires_node_defaults_and_provenance() {
+        let (_, fields) =
+            parse_diagnostic_report(DIAGNOSTIC_FILES[3].bytes, &DIAGNOSTIC_PINS).expect("report");
+        let policy = retained_json(&fields.policy).expect("policy");
+        for (field, value) in [
+            ("unit", serde_json::json!("units")),
+            ("block_identifier", serde_json::json!("other")),
+            ("block", serde_json::json!("0.00000200")),
+            ("relay_provenance", serde_json::json!("assumed")),
+            ("block_provenance", serde_json::json!("assumed")),
+            (
+                "start_arguments",
+                serde_json::json!(["-daemon=0", "-minrelaytxfee=0"]),
+            ),
+            (
+                "start_arguments",
+                serde_json::json!(["-daemon=0", "-blockmintxfee=0"]),
+            ),
+        ] {
+            let mut changed = policy.clone();
+            changed[field] = value;
+            assert_eq!(
+                crate::maturity_native::sponsored::Policy::parse(changed),
+                Err(MaturityNativePlanRefusal::SponsoredPolicy)
+            );
+        }
+        assert!(crate::maturity_native::sponsored::Policy::parse(serde_json::Value::Null).is_err());
+    }
+
+    #[test]
+    fn diagnostic_replay_refuses_changed_routes_and_readback() {
+        for readback in [false, true] {
+            let result = admit_diagnostic_with_replay(
+                &DIAGNOSTIC_FILES,
+                &DIAGNOSTIC_PINS,
+                |identity, branch, exchanges| {
+                    let mut changed = exchanges.to_vec();
+                    let response = &mut changed[4].1;
+                    if readback {
+                        response
+                            .mined_readback
+                            .as_mut()
+                            .expect("readback")
+                            .raw_transaction[0] ^= 1;
+                    } else {
+                        let mut detail: serde_json::Value = serde_json::from_str(
+                            response.observed_detail.as_deref().expect("detail"),
+                        )
+                        .expect("JSON");
+                        detail["route"] = serde_json::json!("setup");
+                        response.observed_detail =
+                            Some(serde_json::to_string(&detail).expect("JSON"));
+                    }
+                    crate::maturity_native::native::replay_diagnostic_routes(
+                        identity, branch, &changed,
+                    )
+                },
+            );
+            assert_eq!(
+                result.err(),
+                Some(Refusal::Derivation(if readback {
+                    MaturityNativePlanRefusal::SubmissionReadbackMismatch
+                } else {
+                    MaturityNativePlanRefusal::SponsoredRoute
+                }))
+            );
+        }
+    }
     #[test]
     fn retained_admission_binds_bytes_provenance_census_routes_and_readback() {
         use std::io::Write as _;

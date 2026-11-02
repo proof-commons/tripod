@@ -2649,6 +2649,22 @@ pub mod native {
             .map_or("missing-subject", |row| row.name())
     }
 
+    /// Typed diagnostic subjects and their own family controls, without exposing inner planners.
+    pub struct DiagnosticObservation<'a> {
+        /// The bounded family owning both exchanges.
+        pub family: &'static str,
+        /// The staged coordinate, including the consensus-only subject.
+        pub subject: NativeSubject,
+        /// Every Safety claim sharing this subject.
+        pub claims: Vec<(&'static str, &'static str)>,
+        /// The family's control exchange, absent before it is observed.
+        pub control: Option<&'a (OperationStep, NativeOperationResponse)>,
+        /// Whether the control accepted with exact transaction readback.
+        pub control_accepted: bool,
+        /// The subject exchange, absent before it is observed.
+        pub observation: Option<&'a (OperationStep, NativeOperationResponse)>,
+    }
+
     /// Bounded existing schedules, retaining failed families without assigning credit.
     pub struct DiagnosticRoutesPlanner {
         native: Planner,
@@ -2691,6 +2707,51 @@ pub mod native {
                 .iter()
                 .chain(&self.retained.exchanges)
                 .cloned()
+                .collect()
+        }
+
+        /// Read typed subject-to-claim bindings beside each family's own control.
+        #[must_use]
+        pub fn observations(&self) -> Vec<DiagnosticObservation<'_>> {
+            FAMILIES[..6]
+                .iter()
+                .chain(&RETAINED_FAMILIES[..1])
+                .flat_map(|family| self.family_observations(family))
+                .collect()
+        }
+
+        fn family_observations(&self, family: &'static str) -> Vec<DiagnosticObservation<'_>> {
+            let find = |label: &str| {
+                self.native
+                    .exchanges
+                    .iter()
+                    .chain(&self.retained.exchanges)
+                    .find(|(step, _)| {
+                        let mut parts = step.case().step.split(':');
+                        parts.next() == Some(family) && parts.next() == Some(label)
+                    })
+            };
+            let control = find("control");
+            let control_accepted = control.is_some_and(|(step, response)| {
+                    response.observed_layer == ObservedOutcomeLayer::Accepted
+                        && matches!(step.subject(), OperationSubject::Submission(submission)
+                            if sponsored::check_readback(&submission.transaction_bytes, response).is_ok())
+                });
+            diagnostic_subjects()
+                .into_iter()
+                .filter(|(name, _)| *name == family)
+                .map(|(_, subject)| DiagnosticObservation {
+                    family,
+                    subject,
+                    claims: NATIVE_ROWS
+                        .iter()
+                        .filter(|row| row.standing().subject() == Some(subject))
+                        .map(|row| (row.section().section(), row.name()))
+                        .collect(),
+                    control,
+                    control_accepted,
+                    observation: find(diagnostic_name(subject)),
+                })
                 .collect()
         }
 
@@ -2760,23 +2821,16 @@ pub mod native {
         /// Seven families with claims on each subject, including the consensus-only subject.
         #[must_use]
         pub fn families_json(&self) -> Vec<serde_json::Value> {
-            let exchanges = self.exchanges();
             let stopped = self.stopped();
             FAMILIES[..6].iter().chain(&RETAINED_FAMILIES[..1]).map(|family| {
-                let find = |label: &str| exchanges.iter().find(|(step, _)| {
-                    let mut parts = step.case().step.split(':');
-                    parts.next() == Some(*family) && parts.next() == Some(label)
-                });
-                let control = find("control");
-                let control_accepted = control.is_some_and(|(step, response)| {
-                    response.observed_layer == ObservedOutcomeLayer::Accepted
-                        && matches!(step.subject(), OperationSubject::Submission(subject)
-                            if sponsored::check_readback(&subject.transaction_bytes, response).is_ok())
-                });
-                let subjects: Vec<_> = diagnostic_subjects().into_iter().filter(|(name, _)| name == family)
-                    .map(|(_, subject)| {
+                let observations = self.family_observations(family);
+                let (control, control_accepted) = observations.first()
+                    .map_or((None, false), |entry| (entry.control, entry.control_accepted));
+                let subjects: Vec<_> = observations.into_iter()
+                    .map(|entry| {
+                        let subject = entry.subject;
                         let name = diagnostic_name(subject);
-                        let observation = find(name);
+                        let observation = entry.observation;
                         let expected = if subject == NativeSubject::WrongSequence {
                             ObservedOutcomeLayer::ConsensusRejectionBeforeScript
                         } else { ObservedOutcomeLayer::ScriptPathRejection };
@@ -3823,6 +3877,11 @@ mod diagnostic_tests {
             assert_eq!(sponsored::check_reason(&changed, reason, true), Ok(()));
             assert!(sponsored::check_reason(&changed, "different reason", true).is_err());
         }
+    }
+
+    #[test]
+    fn diagnostic_compatibility_diagnostic_archive() {
+        corpus::maturity_diagnostic_run_of_record().expect("diagnostic archive");
     }
 
     #[test]

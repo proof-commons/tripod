@@ -171,9 +171,10 @@ for family in dict.fromkeys(f for f,_,_ in ROSTER):
         if scenario in ("semantic-acceptance", "both-contradictions") and family == "wrong-semantic-metadata": layer = "accepted"
         if scenario in ("successor-refusal", "both-contradictions") and name == "successor-remains-unannounced": layer = "relay_policy_rejection"
         if scenario == "other-boundary" and name == "successor-remains-unannounced": layer = "consensus_rejection_before_script"
+        if scenario == "key-path-member" and name == "successor-remains-unannounced": layer = "key_path_rejection"
         obs = {"layer":layer,"readback":"matched" if layer == "accepted" else "not-applicable","route":"refused","step":f"{family}:{name}:2"}
         subjects.append({"subject":name,"claims":claims,"observation":obs,"expectation":"agreement"})
-        facts = {"block_script_error":"unclassified"} if layer in ("script_path_rejection", "consensus_rejection_before_script") else {}
+        facts = {"block_script_error":"unclassified"} if layer in ("script_path_rejection", "consensus_rejection_before_script", "key_path_rejection") else {}
         if scenario == "consensus-absent" and name == "wrong-sequence": facts = {}
         if scenario == "missing-member" and name == "successor-remains-unannounced": facts = {}
         if scenario == "class-mismatch" and name == "successor-remains-unannounced": facts = {"block_script_error":"Script failed an OP_EQUALVERIFY operation"}
@@ -511,7 +512,7 @@ assert_ineligible_case missing-stopped missing-stopped 'invalid diagnostic stopp
 assert_ineligible_case wrong-stopped wrong-stopped 'invalid diagnostic stopped'
 assert_ineligible_case missing-row missing-row 'invalid campaign row count'
 assert_ineligible_case wrong-row wrong-row 'invalid campaign row'
-for diagnostic in semantic-acceptance successor-refusal both-contradictions other-boundary stopped-control consensus-control; do
+for diagnostic in semantic-acceptance successor-refusal both-contradictions other-boundary stopped-control consensus-control key-path-member; do
   run_case "$diagnostic" "$diagnostic" no
   [ "$case_status" -eq 0 ] || fail "$diagnostic prevented a structurally complete capture"
   grep -qx 'eligible yes' "$case_output/RUN-REPORT" || fail "$diagnostic lost structural eligibility"
