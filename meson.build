@@ -995,6 +995,14 @@ test(
 )
 
 test(
+  'live-native-maturity-diagnostic-capture-contract',
+  find_program('scripts/test-live-native-maturity-diagnostic-capture.sh'),
+  args: [meson.project_source_root()],
+  suite: 'integration',
+  timeout: 300,
+)
+
+test(
   'live-native-maturity-retained-capture-contract',
   find_program('scripts/test-live-native-maturity-retained-capture.sh'),
   args: [meson.project_source_root()],

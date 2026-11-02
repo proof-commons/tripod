@@ -1,0 +1,1095 @@
+#!/bin/sh
+# Capture driver for diagnostic maturity routes, protocol revision 8.
+#
+# Usage: scripts/live-native-maturity-diagnostic-capture.sh <new-capture-directory>
+#
+# The harness owns capture grammar and semantic assertions. This driver owns
+# the run boundary: clean source identity, one serialized invocation, the
+# fixed ceremony/file census, cross-file run identity, the manifest, and the
+# eligibility conclusion. The single report ceremony has no setup artifact.
+#
+# Invoke from a clean suite worktree. Cargo argv:
+#   cargo test -p tripod-vectors --test maturity_diagnostic -- --ignored --exact the_diagnostic_maturity_routes_run_against_a_real_target --test-threads=1
+# Required environment:
+#   TRIPOD_LIVE_EXECUTOR: absolute executable adapter path.
+#   TRIPOD_LIVE_NETWORK_ID, TRIPOD_LIVE_GENESIS_ID: 64 lower-case hex digits;
+#     genesis stays in the node's printed order.
+#   ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD, ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI:
+#     absolute executable paths; ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK: absolute directory.
+#   ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID: identical to TRIPOD_LIVE_NETWORK_ID.
+#   ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP: full lower-case expected node revision.
+#   ELEMENTS_NATIVE_EXECUTOR_ENABLE_WALLET: non-empty for native funding.
+#   ELEMENTS_NATIVE_EXECUTOR_FEE_POLICY=node-defaults.
+#   ELEMENTS_NATIVE_EXECUTOR_MATURITY_OBSERVATION=1.
+#   TMPDIR: existing writable disk-backed temporary directory.
+# Optional environment:
+#   TRIPOD_CAPTURE_CARGO (default cargo), TRIPOD_CAPTURE_SHA256SUM (default sha256sum).
+#   ELEMENTS_NATIVE_EXECUTOR_PYTHON (adapter default python3),
+#   ELEMENTS_NATIVE_EXECUTOR_ZK_LIBRARY and other adapter settings pass through.
+# The driver derives TRIPOD_LIVE_SUITE_COMMIT, TRIPOD_LIVE_SUITE_TREE and
+# TRIPOD_LIVE_SUITE_SHORT_SHA from HEAD, and sets TRIPOD_LIVE_REPORT_DIR to the
+# new capture directory. It writes MANIFEST.sha256 and RUN-REPORT, then removes
+# write permissions from the directory and its contents.
+# The loop job uses the pinned Elements development toolchain with SQLite-only
+# wallets and its src/test/functional framework, through the revision-8 adapter
+# (elements-native-executor.sh, adapter version 2.1.0). The published development
+# identities are supplied by the invoking loop, as in the operator run of record.
+# The diagnostic evidence record carries seven families and their campaign rows;
+# eligibility establishes structural consistency without assigning claim credit.
+set -eu
+
+LC_ALL=C
+export LC_ALL
+
+EXPECTED_ELEMENTSD_TIP=b7fc5d080a7e9ccc0ef48c3ba11db243e794bdb0
+EXPECTED_TEST_COUNT=1
+EXPECTED_CEREMONY_COUNT=1
+EXPECTED_SETUP_COUNT=0
+
+# The carrier writes one capture and its three-field timing sidecar.
+CEREMONY_IDS='report'
+
+script_started_ms=$(date +%s%3N)
+phase_walls=
+phase_name=startup
+phase_started_ms=$script_started_ms
+
+now_ms() {
+  date +%s%3N
+}
+
+phase_start() {
+  phase_name=$1
+  phase_started_ms=$(now_ms)
+  printf 'phase %s start\n' "$phase_name" >&2
+}
+
+phase_finish() {
+  phase_finished_ms=$(now_ms)
+  phase_elapsed_ms=$((phase_finished_ms - phase_started_ms))
+  printf 'phase %s wall-ms %s\n' "$phase_name" "$phase_elapsed_ms" >&2
+  if [ -n "$phase_walls" ]; then
+    phase_walls="$phase_walls
+phase-wall-ms $phase_name $phase_elapsed_ms"
+  else
+    phase_walls="phase-wall-ms $phase_name $phase_elapsed_ms"
+  fi
+  phase_name=
+}
+
+die() {
+  message=$1
+  if [ -n "$phase_name" ]; then
+    phase_finish
+  fi
+  script_finished_ms=$(now_ms)
+  printf 'ERROR: %s\n' "$message" >&2
+  printf 'script total wall-ms %s\n' "$((script_finished_ms - script_started_ms))" >&2
+  exit 1
+}
+
+is_lower_hex_length() {
+  value=$1
+  expected_length=$2
+  [ "${#value}" -eq "$expected_length" ] || return 1
+  case "$value" in
+    *[!0-9a-f]*) return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# The operator-declared intended tip carries all 40 hex characters
+# and is compared in full below. Elements Core's binary version string carries
+# only a short source revision (12 hex characters in the observed binary), so
+# the binary cannot emit bytes that its version carrier does not contain. Bind
+# every character it does emit: at least 12 lower-case hex characters, no more
+# than the full tip, and an exact prefix of that expected full tip.
+binary_revision_matches_expected_tip() {
+  binary_field=$1
+  case "$binary_field" in
+    *' '*) ;;
+    *) return 1 ;;
+  esac
+  binary_length=${binary_field%% *}
+  binary_hex=${binary_field#* }
+  case "$binary_hex" in
+    ''|*' '*) return 1 ;;
+  esac
+  case "$binary_length" in
+    ''|0|0*|*[!0-9]*) return 1 ;;
+  esac
+  [ "$binary_length" -ge 12 ] || return 1
+  [ "$binary_length" -le 40 ] || return 1
+  [ "${#binary_hex}" -eq "$((binary_length * 2))" ] || return 1
+  case "$binary_hex" in
+    *[!0-9a-f]*) return 1 ;;
+  esac
+
+  expected_binary_prefix=$(printf '%s\n' "$EXPECTED_ELEMENTSD_TIP" |
+    awk -v prefix_len="$binary_length" '{ print substr($0, 1, prefix_len) }')
+  expected_binary_hex=$(printf '%s' "$expected_binary_prefix" | od -An -v -tx1 | tr -d ' \n')
+  [ "$binary_hex" = "$expected_binary_hex" ]
+}
+
+require_absolute_executable() {
+  variable_name=$1
+  variable_value=$2
+  case "$variable_value" in
+    /*) ;;
+    *) die "$variable_name must be an absolute path" ;;
+  esac
+  [ -f "$variable_value" ] || die "$variable_name does not name a file"
+  [ -x "$variable_value" ] || die "$variable_name is not executable"
+}
+
+roster_contains() {
+  wanted_id=$1
+  for roster_id in $CEREMONY_IDS; do
+    [ "$roster_id" = "$wanted_id" ] && return 0
+  done
+  return 1
+}
+
+single_field() {
+  field_file=$1
+  field_name=$2
+  awk -v wanted="$field_name" '
+    $1 == wanted { count += 1; line = $0 }
+    END {
+      if (count != 1) exit 1
+      sub(/^[^ ]+ /, "", line)
+      print line
+    }
+  ' "$field_file"
+}
+
+read_field_or_missing() {
+  if field_result=$(single_field "$1" "$2"); then
+    printf '%s\n' "$field_result"
+  else
+    printf 'missing\n'
+  fi
+}
+
+validation_errors=0
+
+record_error() {
+  validation_errors=$((validation_errors + 1))
+  printf 'capture refusal: %s\n' "$1" >&2
+}
+
+capture_field_findings() {
+  checked_file=$1
+  checked_id=$2
+  awk \
+    -v ceremony="$checked_id" \
+    -v commit="$suite_commit" \
+    -v tree="$suite_tree" \
+    -v deployment_network="$expected_deployment_network" \
+    -v deployment_genesis="$expected_deployment_genesis" \
+    -v deployment_target="$expected_deployment_target" \
+    -v rust_test="$expected_rust_test" \
+    -v adapter_name="$observed_adapter_name" \
+    -v adapter_version="$observed_adapter_version" \
+    -v node_name="$observed_node_name" \
+    -v node_version="$observed_node_version" \
+    -v binary_revision="$observed_binary_revision" \
+    -v intended="$observed_intended_tip" '
+    function refuse(message) {
+      print message
+      bad = 1
+    }
+    function check(key, expected) {
+      if (count[key] != 1) {
+        refuse(key " is missing or duplicated")
+      } else if (value[key] != expected) {
+        refuse(key " differs")
+      }
+    }
+    {
+      if (NR == 1 && $0 != "native-capture-schema 2") {
+        refuse("schema is not first")
+      }
+      key = $1
+      line = $0
+      sub(/^[^ ]+ /, "", line)
+      count[key] += 1
+      value[key] = line
+      last = $0
+    }
+    END {
+      check("native-capture-schema", "2")
+      check("ceremony-id", ceremony)
+      check("suite-commit", commit)
+      check("suite-tree", tree)
+      check("fixture-digest-algorithm", "forward-v2")
+      check("rust-test-name", rust_test)
+      check("handshake-protocol-schema", "8")
+      check("environment-schema", "8")
+      check("environment-network-id", deployment_network)
+      check("environment-genesis-id", deployment_genesis)
+      check("deployment-environment", "development")
+      check("deployment-network-id", deployment_network)
+      check("deployment-genesis-id", deployment_genesis)
+      check("deployment-target-contract", deployment_target)
+      check("handshake-adapter-name", adapter_name)
+      check("handshake-adapter-version", adapter_version)
+      check("handshake-node-name", node_name)
+      check("handshake-node-version", node_version)
+      check("handshake-binary-reported-revision", binary_revision)
+      check("handshake-intended-executed-tip", intended)
+      check("terminal-state", "complete")
+      check("native-capture-end", ceremony)
+      if (last != "native-capture-end " ceremony) {
+        refuse("canonical end marker differs")
+      }
+      exit bad
+    }
+  ' "$checked_file"
+}
+
+timing_field_findings() {
+  checked_file=$1
+  checked_id=$2
+  awk -v ceremony="$checked_id" '
+    function refuse(message) {
+      print message
+      bad = 1
+    }
+    function check(key, expected) {
+      if (count[key] != 1) {
+        refuse(key " is missing or duplicated")
+      } else if (value[key] != expected) {
+        refuse(key " differs")
+      }
+    }
+    {
+      if (NR == 1 && $0 != "timing-schema 1") {
+        refuse("schema is not first")
+      }
+      key = $1
+      line = $0
+      sub(/^[^ ]+ /, "", line)
+      count[key] += 1
+      value[key] = line
+    }
+    END {
+      if (NR != 3) refuse("timing sidecar does not have three fields")
+      check("timing-schema", "1")
+      check("ceremony-id", ceremony)
+      if (count["status"] != 1) {
+        refuse("status is missing or duplicated")
+      } else if (value["status"] == "failed-after-transcript" || value["status"] == "incomplete") {
+        refuse("timing status is " value["status"])
+      } else if (value["status"] != "passed") {
+        refuse("timing status is unknown")
+      }
+      exit bad
+    }
+  ' "$checked_file"
+}
+
+if [ "$#" -ne 1 ]; then
+  die "usage: live-native-maturity-diagnostic-capture.sh <new-capture-directory>"
+fi
+
+capture_argument=$1
+
+phase_start preflight
+
+for required_tool in python3 awk cat chmod date dirname find git grep mkdir mktemp od rm sed sort tr wc; do
+  command -v "$required_tool" >/dev/null 2>&1 || die "$required_tool is required"
+done
+
+capture_cargo=${TRIPOD_CAPTURE_CARGO:-cargo}
+capture_sha256=${TRIPOD_CAPTURE_SHA256SUM:-sha256sum}
+capture_cargo=$(command -v "$capture_cargo") || die "TRIPOD_CAPTURE_CARGO is not executable"
+capture_sha256=$(command -v "$capture_sha256") || die "TRIPOD_CAPTURE_SHA256SUM is not executable"
+
+suite_root=$(git rev-parse --show-toplevel 2>/dev/null) || die "the suite is not a Git worktree"
+suite_root=$(cd "$suite_root" && pwd -P)
+cd "$suite_root"
+
+suite_status=$(git status --porcelain --untracked-files=normal)
+[ -z "$suite_status" ] || die "the suite tree is dirty"
+
+suite_commit=$(git rev-parse --verify HEAD)
+suite_tree=$(git rev-parse --verify 'HEAD^{tree}')
+suite_short_sha=$(git rev-parse --short HEAD)
+is_lower_hex_length "$suite_commit" 40 || die "the suite commit is not full lower-case SHA-1"
+is_lower_hex_length "$suite_tree" 40 || die "the suite tree is not full lower-case SHA-1"
+case "$suite_commit" in
+  "$suite_short_sha"*) ;;
+  *) die "the suite short SHA is not a prefix of the full commit" ;;
+esac
+
+roster_count=0
+previous_id=
+for roster_id in $CEREMONY_IDS; do
+  roster_count=$((roster_count + 1))
+  if [ -n "$previous_id" ] && [ "$previous_id" \> "$roster_id" ]; then
+    die "the declared ceremony roster is not sorted"
+  fi
+  previous_id=$roster_id
+done
+[ "$roster_count" -eq "$EXPECTED_CEREMONY_COUNT" ] || die "the declared ceremony roster is not 1 ID"
+
+live_executor=${TRIPOD_LIVE_EXECUTOR:-}
+[ -n "$live_executor" ] || die "TRIPOD_LIVE_EXECUTOR is required"
+require_absolute_executable TRIPOD_LIVE_EXECUTOR "$live_executor"
+
+elementsd=${ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD:-}
+elements_cli=${ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI:-}
+framework=${ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK:-}
+executor_network=${ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID:-}
+intended_tip=${ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP:-}
+live_network=${TRIPOD_LIVE_NETWORK_ID:-}
+live_genesis=${TRIPOD_LIVE_GENESIS_ID:-}
+
+[ -n "$elementsd" ] || die "ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD is required"
+[ -n "$elements_cli" ] || die "ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI is required"
+require_absolute_executable ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD "$elementsd"
+require_absolute_executable ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI "$elements_cli"
+case "$framework" in
+  /*) ;;
+  *) die "ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK must be an absolute path" ;;
+esac
+[ -d "$framework" ] || die "ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK does not name a directory"
+is_lower_hex_length "$live_network" 64 || die "TRIPOD_LIVE_NETWORK_ID must be 64 lower-case hex digits"
+is_lower_hex_length "$live_genesis" 64 || die "TRIPOD_LIVE_GENESIS_ID must be 64 lower-case hex digits"
+[ "$executor_network" = "$live_network" ] || die "executor and harness deployment IDs differ"
+is_lower_hex_length "$intended_tip" 40 || die "ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP must be a full lower-case tip"
+
+[ -n "${ELEMENTS_NATIVE_EXECUTOR_ENABLE_WALLET:-}" ] || die "ELEMENTS_NATIVE_EXECUTOR_ENABLE_WALLET is required for funding"
+[ "${ELEMENTS_NATIVE_EXECUTOR_FEE_POLICY:-}" = node-defaults ] || die "node-defaults is required"
+[ "${ELEMENTS_NATIVE_EXECUTOR_MATURITY_OBSERVATION:-}" = 1 ] || die "maturity observation is required"
+
+[ -n "${TMPDIR:-}" ] || die "TMPDIR must name disk-backed temporary storage"
+[ -d "$TMPDIR" ] || die "TMPDIR does not name a directory"
+[ -w "$TMPDIR" ] || die "TMPDIR is not writable"
+
+if [ -e "$capture_argument" ]; then
+  [ -d "$capture_argument" ] && [ ! -L "$capture_argument" ] &&
+    [ -f "$capture_argument/driver.log" ] && [ ! -L "$capture_argument/driver.log" ] &&
+    [ -z "$(find "$capture_argument" -mindepth 1 ! -name driver.log -print -quit)" ] ||
+    die "the capture directory is non-empty or already exists"
+fi
+
+capture_parent=$(dirname "$capture_argument")
+[ -d "$capture_parent" ] || die "the capture directory parent does not exist"
+[ -d "$capture_argument" ] || mkdir "$capture_argument" || die "the capture directory could not be created"
+capture_directory=$(cd "$capture_argument" && pwd -P)
+
+temporary_directory=$(mktemp -d "$TMPDIR/tripod-live-capture.XXXXXX")
+cleanup() {
+  rm -rf "$temporary_directory"
+}
+trap cleanup EXIT HUP INT TERM
+
+cargo_log=$temporary_directory/cargo.log
+seen_ids=$temporary_directory/seen-ids
+manifest_names=$temporary_directory/manifest-names
+manifest_names_sorted=$temporary_directory/manifest-names.sorted
+manifest_verification=$temporary_directory/manifest-verification
+: > "$seen_ids"
+
+phase_finish
+
+phase_start cargo
+set +e
+TRIPOD_MATURITY_CAPTURE_PROFILE=diagnostic \
+TRIPOD_LIVE_REPORT_DIR="$capture_directory" \
+TRIPOD_LIVE_SUITE_COMMIT="$suite_commit" \
+TRIPOD_LIVE_SUITE_TREE="$suite_tree" \
+TRIPOD_LIVE_SUITE_SHORT_SHA="$suite_short_sha" \
+  "$capture_cargo" test -p tripod-vectors \
+    --test maturity_diagnostic -- --ignored --exact the_diagnostic_maturity_routes_run_against_a_real_target --test-threads=1 \
+    > "$cargo_log" 2>&1
+cargo_exit_code=$?
+set -e
+sed 's/^/cargo: /' "$cargo_log" >&2
+phase_finish
+
+phase_start census
+
+test_summary=$(awk '
+  /^test result: / {
+    passed = $4
+    failed = $6
+    ignored = $8
+    found += 1
+  }
+  END { if (found == 1) print passed, failed, ignored }
+' "$cargo_log")
+set -- $test_summary
+if [ "$#" -eq 3 ]; then
+  observed_passed=$1
+  observed_failed=$2
+  observed_ignored=$3
+  case "$observed_passed$observed_failed$observed_ignored" in
+    *[!0-9]*)
+      observed_passed=0
+      observed_failed=0
+      observed_ignored=0
+      record_error "the Cargo test census is not numeric"
+      ;;
+  esac
+else
+  observed_passed=0
+  observed_failed=0
+  observed_ignored=0
+  record_error "the Cargo test census is missing"
+fi
+observed_test_count=$((observed_passed + observed_failed + observed_ignored))
+
+[ "$cargo_exit_code" -eq 0 ] || record_error "Cargo exited $cargo_exit_code"
+[ "$observed_test_count" -eq "$EXPECTED_TEST_COUNT" ] || record_error "the observed test census is not 1"
+[ "$observed_passed" -eq "$EXPECTED_TEST_COUNT" ] || record_error "the run was not 1 of 1 passed"
+[ "$observed_failed" -eq 0 ] || record_error "the run contains failed tests"
+[ "$observed_ignored" -eq 0 ] || record_error "the selected run contains ignored outcomes"
+
+expected_tip_hex=$(printf '%s' "$EXPECTED_ELEMENTSD_TIP" | od -An -v -tx1 | tr -d ' \n')
+expected_tip_field="40 $expected_tip_hex"
+
+# A single ceremony must bind its run identity to the invoking environment.
+expected_deployment_network="64 $(printf '%s' "$live_network" | od -An -v -tx1 | tr -d ' \n')"
+expected_deployment_genesis="64 $(printf '%s' "$live_genesis" | od -An -v -tx1 | tr -d ' \n')"
+expected_deployment_target="21 $(printf '%s' elements-tapscript-v2 | od -An -v -tx1 | tr -d ' \n')"
+maturity_test=the_diagnostic_maturity_routes_run_against_a_real_target
+expected_rust_test="${#maturity_test} $(printf '%s' "$maturity_test" | od -An -v -tx1 | tr -d ' \n')"
+
+reference_capture=
+for ceremony_id in $CEREMONY_IDS; do
+  candidate_capture=$capture_directory/$suite_short_sha.$ceremony_id.capture
+  if [ -f "$candidate_capture" ]; then
+    reference_capture=$candidate_capture
+    break
+  fi
+done
+
+if [ -n "$reference_capture" ]; then
+  observed_deployment_environment=$(read_field_or_missing "$reference_capture" deployment-environment)
+  observed_deployment_network=$(read_field_or_missing "$reference_capture" deployment-network-id)
+  observed_deployment_genesis=$(read_field_or_missing "$reference_capture" deployment-genesis-id)
+  observed_deployment_target=$(read_field_or_missing "$reference_capture" deployment-target-contract)
+  observed_adapter_name=$(read_field_or_missing "$reference_capture" handshake-adapter-name)
+  observed_adapter_version=$(read_field_or_missing "$reference_capture" handshake-adapter-version)
+  observed_node_name=$(read_field_or_missing "$reference_capture" handshake-node-name)
+  observed_node_version=$(read_field_or_missing "$reference_capture" handshake-node-version)
+  observed_binary_revision=$(read_field_or_missing "$reference_capture" handshake-binary-reported-revision)
+  observed_intended_tip=$(read_field_or_missing "$reference_capture" handshake-intended-executed-tip)
+else
+  observed_deployment_environment=missing
+  observed_deployment_network=missing
+  observed_deployment_genesis=missing
+  observed_deployment_target=missing
+  observed_adapter_name=missing
+  observed_adapter_version=missing
+  observed_node_name=missing
+  observed_node_version=missing
+  observed_binary_revision=missing
+  observed_intended_tip=missing
+fi
+
+physical_capture_count=0
+physical_timing_count=0
+for ceremony_id in $CEREMONY_IDS; do
+  capture_file=$capture_directory/$suite_short_sha.$ceremony_id.capture
+  timing_file=$capture_file.timing
+
+  if [ ! -f "$capture_file" ]; then
+    record_error "missing capture for $ceremony_id"
+  else
+    physical_capture_count=$((physical_capture_count + 1))
+
+    if internal_id=$(single_field "$capture_file" ceremony-id); then
+      if roster_contains "$internal_id"; then
+        if awk -v wanted="$internal_id" '$1 == wanted { found = 1 } END { exit !found }' "$seen_ids"; then
+          record_error "duplicate ceremony ID $internal_id"
+        else
+          printf '%s\n' "$internal_id" >> "$seen_ids"
+        fi
+      else
+        record_error "${capture_file##*/}: unknown ceremony ID $internal_id"
+      fi
+      [ "$internal_id" = "$ceremony_id" ] || record_error "${capture_file##*/}: ceremony ID differs from its name"
+    else
+      record_error "${capture_file##*/}: ceremony-id is missing or duplicated"
+    fi
+
+    if capture_findings=$(capture_field_findings "$capture_file" "$ceremony_id"); then
+      :
+    else
+      record_error "${capture_file##*/}: $capture_findings"
+    fi
+  fi
+
+  if [ ! -f "$timing_file" ]; then
+    record_error "missing timing sidecar for $ceremony_id"
+  else
+    physical_timing_count=$((physical_timing_count + 1))
+    if timing_findings=$(timing_field_findings "$timing_file" "$ceremony_id"); then
+      :
+    else
+      record_error "${timing_file##*/}: $timing_findings"
+    fi
+  fi
+done
+
+observed_ceremony_count=$(wc -l < "$seen_ids" | tr -d ' ')
+[ "$physical_capture_count" -eq "$EXPECTED_CEREMONY_COUNT" ] || record_error "the physical capture census is not 1"
+[ "$observed_ceremony_count" -eq "$EXPECTED_CEREMONY_COUNT" ] || record_error "the unique ceremony census is not 1"
+[ "$physical_timing_count" -eq "$EXPECTED_CEREMONY_COUNT" ] || record_error "the timing census is not 1"
+
+observed_setup_count=0
+
+diagnostics_present=no
+for entry in "$capture_directory"/* "$capture_directory"/.[!.]* "$capture_directory"/..?*; do
+  [ -e "$entry" ] || continue
+  entry_name=${entry##*/}
+  if [ "$entry_name" = driver.log ] && [ -f "$entry" ] && [ ! -L "$entry" ]; then
+    continue
+  fi
+  entry_expected=no
+  if [ "$entry_name" = diagnostics ] && [ -d "$entry" ] && [ ! -L "$entry" ]; then
+    # The adapter owns this audit-only root. Its contents are unparsed,
+    # outside the four-file evidence census and the manifest.
+    diagnostics_present=yes
+    entry_expected=yes
+  else
+    case "$entry_name" in
+      "$suite_short_sha".*.capture.timing)
+        entry_id=${entry_name#"$suite_short_sha".}
+        entry_id=${entry_id%.capture.timing}
+        roster_contains "$entry_id" && entry_expected=yes
+        ;;
+      "$suite_short_sha".*.capture)
+        entry_id=${entry_name#"$suite_short_sha".}
+        entry_id=${entry_id%.capture}
+        roster_contains "$entry_id" && entry_expected=yes
+        ;;
+    esac
+  fi
+
+  case "$entry_name" in
+    *.setup) observed_setup_count=$((observed_setup_count + 1)) ;;
+  esac
+  [ "$entry_expected" = yes ] || record_error "unexpected or noncanonical entry $entry_name"
+  if [ -f "$entry" ] && grep -q "$(printf '\r')" "$entry"; then
+    record_error "$entry_name contains a CR byte"
+  fi
+done
+
+[ "$observed_setup_count" -eq "$EXPECTED_SETUP_COUNT" ] || record_error "the setup census is not 0"
+[ "$diagnostics_present" = yes ] || record_error "missing diagnostics directory"
+
+# The intended tip is the full operator declaration. The binary-reported
+# revision follows the short-prefix rule documented at its validator above.
+binary_revision_matches_expected_tip "$observed_binary_revision" ||
+  record_error "the binary-reported elementsd revision is not a lower-hex prefix of at least 12 characters"
+[ "$observed_intended_tip" = "$expected_tip_field" ] || record_error "the intended executed elementsd tip differs from the expected full tip"
+
+phase_finish
+
+phase_start manifest
+
+decode_text_field() {
+  awk 'NF == 2 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9a-f]+$/ && length($2) == 2 * $1 {
+    for (i=1; i<=length($2); i+=2) {
+      a=index("0123456789abcdef", substr($2,i,1))-1
+      b=index("0123456789abcdef", substr($2,i+1,1))-1
+      printf "%c", a*16+b
+    }
+    valid=1
+  } END { if (!valid) exit 1 }'
+}
+native_payload=$temporary_directory/native-payload
+if [ -f "$reference_capture" ]; then
+  read_field_or_missing "$reference_capture" legacy-rendering | decode_text_field > "$native_payload" || record_error "invalid native payload encoding"
+else
+  : > "$native_payload"
+fi
+diagnostic_policy=$(read_field_or_missing "$native_payload" diagnostic-policy)
+diagnostic_families=$(read_field_or_missing "$native_payload" diagnostic-families)
+diagnostic_stopped=$(read_field_or_missing "$native_payload" diagnostic-stopped)
+grep -qx 'maturity-diagnostic-evidence-schema 1' "$native_payload" || record_error "missing diagnostic payload schema"
+[ "$(read_field_or_missing "$native_payload" campaign-manifest-schema)" = 1 ] || record_error "invalid campaign schema"
+[ "$(read_field_or_missing "$native_payload" campaign-manifest-count)" = 23 ] || record_error "invalid campaign census"
+
+# JSON syntax and the fixed record census are checked here. Exact typed claims,
+# funding, response bindings and replay remain the harness and admission's work.
+campaign_rows=$temporary_directory/campaign-rows
+awk '$1 == "campaign-row" {print}' "$native_payload" > "$campaign_rows"
+record_validation_errors=$temporary_directory/validation-errors
+python3 -c 'ROSTER = [
+  [
+    "window",
+    "successor-remains-unannounced",
+    [
+      [
+        "16.2",
+        "successor-remains-unannounced"
+      ],
+      [
+        "16.6",
+        "successor-from-predecessor-metadata-unchanged"
+      ]
+    ]
+  ],
+  [
+    "window",
+    "successor-becomes-complete",
+    [
+      [
+        "16.2",
+        "successor-becomes-complete"
+      ]
+    ]
+  ],
+  [
+    "metadata",
+    "metadata-from-another-state-object",
+    [
+      [
+        "16.3",
+        "metadata-from-another-state-object"
+      ]
+    ]
+  ],
+  [
+    "operator",
+    "empty-signature",
+    [
+      [
+        "16.4",
+        "empty-signature"
+      ]
+    ]
+  ],
+  [
+    "operator",
+    "malformed-signature",
+    [
+      [
+        "16.4",
+        "malformed-signature"
+      ]
+    ]
+  ],
+  [
+    "operator",
+    "wrong-operator",
+    [
+      [
+        "16.4",
+        "wrong-operator"
+      ],
+      [
+        "16.4",
+        "valid-signature-under-another-key"
+      ]
+    ]
+  ],
+  [
+    "operator",
+    "valid-signature-over-another-candidate",
+    [
+      [
+        "16.4",
+        "valid-signature-over-another-candidate"
+      ]
+    ]
+  ],
+  [
+    "operator",
+    "successor-metadata-changed-after-signing",
+    [
+      [
+        "16.4",
+        "successor-metadata-changed-after-signing"
+      ]
+    ]
+  ],
+  [
+    "operator",
+    "successor-program-changed-after-signing",
+    [
+      [
+        "16.4",
+        "successor-program-changed-after-signing"
+      ]
+    ]
+  ],
+  [
+    "predecessor",
+    "wrong-state-asset",
+    [
+      [
+        "16.5",
+        "wrong-state-asset"
+      ]
+    ]
+  ],
+  [
+    "predecessor",
+    "wrong-singleton-amount",
+    [
+      [
+        "16.5",
+        "wrong-singleton-amount"
+      ]
+    ]
+  ],
+  [
+    "predecessor",
+    "wrong-predecessor-program",
+    [
+      [
+        "16.5",
+        "wrong-predecessor-program"
+      ]
+    ]
+  ],
+  [
+    "predecessor",
+    "predecessor-metadata-reconstructs-another-program",
+    [
+      [
+        "16.5",
+        "predecessor-metadata-reconstructs-another-program"
+      ]
+    ]
+  ],
+  [
+    "successor",
+    "wrong-announcement-cycle",
+    [
+      [
+        "16.6",
+        "wrong-announcement-cycle"
+      ]
+    ]
+  ],
+  [
+    "successor",
+    "wrong-representation-nonce",
+    [
+      [
+        "16.6",
+        "wrong-representation-nonce"
+      ]
+    ]
+  ],
+  [
+    "successor",
+    "wrong-leaf-version",
+    [
+      [
+        "16.6",
+        "wrong-leaf-version"
+      ]
+    ]
+  ],
+  [
+    "successor",
+    "arbitrary-caller-supplied-output-program",
+    [
+      [
+        "16.6",
+        "arbitrary-caller-supplied-output-program"
+      ]
+    ]
+  ],
+  [
+    "successor",
+    "no-state-successor",
+    [
+      [
+        "16.6",
+        "no-state-successor"
+      ]
+    ]
+  ],
+  [
+    "successor",
+    "wrong-sequence",
+    [
+      [
+        "16.11",
+        "wrong-sequence"
+      ]
+    ]
+  ],
+  [
+    "abi",
+    "witness-item-reorder",
+    [
+      [
+        "16.11",
+        "witness-item-reorder"
+      ]
+    ]
+  ],
+  [
+    "abi",
+    "target-bytes-changed-after-abi-validation",
+    [
+      [
+        "16.11",
+        "target-bytes-changed-after-abi-validation"
+      ]
+    ]
+  ],
+  [
+    "abi",
+    "control-block-from-another-program",
+    [
+      [
+        "16.11",
+        "control-block-from-another-program"
+      ]
+    ]
+  ],
+  [
+    "abi",
+    "wrong-leaf-version",
+    [
+      [
+        "16.5",
+        "wrong-leaf-version"
+      ]
+    ]
+  ],
+  [
+    "wrong-semantic-metadata",
+    "successor-from-wrong-semantic-metadata",
+    [
+      [
+        "16.6",
+        "successor-from-wrong-semantic-metadata"
+      ]
+    ]
+  ]
+]
+
+import json, re, sys
+def unique(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate member")
+        result[key] = value
+    return result
+def claims(value):
+    assert isinstance(value, list)
+    keys = [(c["section"], c["name"]) for c in value if set(c) == {"section", "name"}]
+    assert len(keys) == len(value) == len(set(keys))
+    return set(keys)
+def observation(value):
+    assert value is None or (isinstance(value, dict) and set(value) == {"step", "layer", "route", "readback"})
+def validate(kind, value, index):
+    names = list(dict.fromkeys(f for f, _, _ in ROSTER))
+    if kind == "families":
+        assert isinstance(value, list) and [f["family"] for f in value] == names
+        for record in value:
+            assert set(record) == {"family", "control", "control_accepted", "stopped", "expectation", "subjects"}
+            assert type(record["stopped"]) is bool and type(record["control_accepted"]) is bool
+            assert record["expectation"] in ("agreement", "contradiction", "absent")
+            observation(record["control"])
+            expected = [(n,c) for f,n,c in ROSTER if f == record["family"]]
+            assert len(record["subjects"]) == len(expected)
+            for subject, (name, keys) in zip(record["subjects"], expected):
+                assert set(subject) == {"subject", "claims", "observation", "expectation"}
+                assert subject["subject"] == name and claims(subject["claims"]) == {tuple(key) for key in keys}
+                assert subject["expectation"] in ("agreement", "contradiction", "absent")
+                observation(subject["observation"])
+    elif kind == "stopped":
+        assert isinstance(value, list) and value == [n for n in names if n in value]
+    elif kind == "row":
+        rows = [(f,n,c) for f,n,c in ROSTER if n != "wrong-sequence"]
+        family, subject, keys = rows[int(index)-1]
+        assert value["family"] == family and value["subject"] == subject
+        assert claims(value["claims"]) == {tuple(key) for key in keys}
+        assert value["operation"] == "announce_maturity"
+        assert value["declared_boundary"] == "script_path_rejection"
+        assert value["expected_consumer"] == "diagnostic-attribution-ledger"
+        assert "expected_class" in value and "expectation_reason" in value
+    elif kind == "exchange":
+        case, subject, response = value
+        detail = json.loads(response["observed_detail"], object_pairs_hook=unique)
+        facts = detail["detail"]
+        assert isinstance(facts, dict)
+        present = "block_script_error" in facts
+        layer = response["observed_layer"]
+        if case["operation"] == "submit" and layer == "script_path_rejection":
+            assert present
+        elif case["operation"] == "submit" and layer in ("consensus_rejection_before_script", "key_path_rejection"):
+            pass
+        else:
+            assert not present
+    elif kind == "policy":
+        assert isinstance(value, dict)
+# One process checks all records; retain the first failure of each kind.
+errors = {}
+records = {kind: [] for kind in ("families", "stopped", "row", "exchange", "policy")}
+names = {"diagnostic-families":"families", "diagnostic-stopped":"stopped",
+         "campaign-row":"row", "exchange":"exchange", "diagnostic-policy":"policy"}
+with open(sys.argv[1], encoding="utf-8") as source:
+    for line in source:
+        name, _, encoded = line.rstrip("\n").partition(" ")
+        if name in names:
+            records[names[name]].append(encoded)
+for kind, encoded_records in records.items():
+    if kind in ("families", "stopped", "policy") and len(encoded_records) != 1:
+        errors.setdefault(kind, "invalid diagnostic " + kind + " encoding")
+    if kind == "row" and len(encoded_records) != 23:
+        errors.setdefault(kind, "invalid campaign row count")
+    for index, encoded in enumerate(encoded_records, 1):
+        prefix = "campaign row" if kind == "row" else "diagnostic " + kind
+        try:
+            assert re.fullmatch(r"[0-9]+ [0-9a-f]+", encoded)
+            size, hexadecimal = encoded.split(" ")
+            raw = bytes.fromhex(hexadecimal)
+            assert len(raw) == int(size)
+        except (ValueError, AssertionError):
+            errors.setdefault(kind, "invalid " + prefix + " encoding")
+            continue
+        try:
+            value = json.loads(raw, object_pairs_hook=unique)
+            validate(kind, value, index)
+            if kind == "policy":
+                premises = {"relay_provenance":"reported by the node",
+                    "block_provenance":"declared by the pinned source, no override",
+                    "block_identifier":"DEFAULT_BLOCK_MIN_TX_FEE",
+                    "block":"0.00000100", "unit":"BTC/kvB"}
+                if any(value.get(key) != expected for key, expected in premises.items()):
+                    errors.setdefault(kind, "missing diagnostic policy premise")
+                if any(flag in raw.decode() for flag in ("-minrelaytxfee", "-blockmintxfee")):
+                    errors.setdefault(kind, "default policy has an override")
+        except (ValueError, TypeError, KeyError, IndexError, AssertionError, UnicodeError):
+            suffix = "block_script_error member census" if kind == "exchange" else kind
+            message = "invalid campaign row" if kind == "row" else "invalid diagnostic " + suffix
+            errors.setdefault(kind, message)
+for message in errors.values():
+    print(message)
+' "$native_payload" > "$record_validation_errors" || record_error "diagnostic record validator failed"
+# Structural member census only: other direct-block refusal layers may carry the
+# member because the executor writes it before classifying the refusal.
+while IFS= read -r validation_error; do
+  record_error "$validation_error"
+done < "$record_validation_errors"
+
+# RUN-REPORT contains the digest of MANIFEST.sha256. Including RUN-REPORT in
+# that same manifest would create an unsatisfiable hash cycle. The manifest
+# therefore binds the capture and timing sidecar; RUN-REPORT then binds
+# the manifest. An eligible directory has four top-level evidence files.
+: > "$manifest_names"
+for entry in "$capture_directory"/* "$capture_directory"/.[!.]* "$capture_directory"/..?*; do
+  [ -f "$entry" ] || continue
+  [ "${entry##*/}" = driver.log ] && continue
+  printf '%s\n' "${entry##*/}" >> "$manifest_names"
+done
+sort "$manifest_names" > "$manifest_names_sorted"
+
+: > "$capture_directory/MANIFEST.sha256"
+while IFS= read -r manifest_name; do
+  manifest_result=$("$capture_sha256" "$capture_directory/$manifest_name")
+  manifest_digest=${manifest_result%% *}
+  printf '%s  %s\n' "$manifest_digest" "$manifest_name" >> "$capture_directory/MANIFEST.sha256"
+done < "$manifest_names_sorted"
+
+manifest_result=$("$capture_sha256" "$capture_directory/MANIFEST.sha256")
+manifest_digest=${manifest_result%% *}
+if (cd "$capture_directory" && "$capture_sha256" -c MANIFEST.sha256) > "$manifest_verification" 2>&1; then
+  manifest_verified=yes
+else
+  manifest_verified=no
+  sed 's/^/manifest: /' "$manifest_verification" >&2
+  record_error "MANIFEST.sha256 did not verify"
+fi
+phase_finish
+
+# Eligibility establishes structural completion and replay consistency. A stopped
+# control or contradictory subject remains diagnostic evidence; admission decides
+# credit for each family and never treats eligibility as an answered claim.
+if [ "$validation_errors" -eq 0 ] && [ "$manifest_verified" = yes ]; then
+  eligible=yes
+else
+  eligible=no
+fi
+
+phase_start report
+cargo_argv="$capture_cargo test -p tripod-vectors --test maturity_diagnostic -- --ignored --exact the_diagnostic_maturity_routes_run_against_a_real_target --test-threads=1"
+cargo_argv_hex=$(printf '%s' "$cargo_argv" | od -An -v -tx1 | tr -d ' \n')
+
+{
+  printf 'run-report-schema native-maturity-run-report 1\n'
+  printf 'capture-format-schema native-maturity-capture 1\n'
+  printf 'suite-commit %s\n' "$suite_commit"
+  printf 'suite-tree %s\n' "$suite_tree"
+  printf 'suite-clean yes\n'
+  printf 'rust-test-target maturity_diagnostic\n'
+  test_name=the_diagnostic_maturity_routes_run_against_a_real_target
+  test_name_hex=$(printf '%s' "$test_name" | od -An -v -tx1 | tr -d ' \n')
+  printf 'rust-test-name %s %s\n' "${#test_name}" "$test_name_hex"
+  printf 'cargo-argv %s %s\n' "${#cargo_argv}" "$cargo_argv_hex"
+  printf 'expected-test-count %s\n' "$EXPECTED_TEST_COUNT"
+  printf 'observed-test-count %s\n' "$observed_test_count"
+  printf 'expected-ceremony-count %s\n' "$EXPECTED_CEREMONY_COUNT"
+  printf 'observed-ceremony-count %s\n' "$observed_ceremony_count"
+  printf 'expected-setup-count %s\n' "$EXPECTED_SETUP_COUNT"
+  printf 'observed-setup-count %s\n' "$observed_setup_count"
+  printf 'diagnostics-present %s\n' "$diagnostics_present"
+  printf 'test-passed-count %s\n' "$observed_passed"
+  printf 'test-failed-count %s\n' "$observed_failed"
+  printf 'test-ignored-count %s\n' "$observed_ignored"
+  printf 'cargo-exit-code %s\n' "$cargo_exit_code"
+  printf 'elementsd-expected-tip %s\n' "$EXPECTED_ELEMENTSD_TIP"
+  printf 'elementsd-binary-reported-revision %s\n' "$observed_binary_revision"
+  printf 'elementsd-intended-executed-tip %s\n' "$observed_intended_tip"
+  printf 'executor-adapter-name %s\n' "$observed_adapter_name"
+  printf 'executor-adapter-version %s\n' "$observed_adapter_version"
+  printf 'node-name %s\n' "$observed_node_name"
+  printf 'node-version %s\n' "$observed_node_version"
+  printf 'protocol-revision 8\n'
+  printf 'fixture-digest-algorithm forward-v2\n'
+  printf 'deployment-environment %s\n' "$observed_deployment_environment"
+  printf 'deployment-network-id %s\n' "$observed_deployment_network"
+  printf 'deployment-genesis-id %s\n' "$observed_deployment_genesis"
+  printf 'deployment-target-contract %s\n' "$observed_deployment_target"
+  printf 'capture-profile diagnostic\n'
+  printf '%s\n' "$phase_walls"
+  printf 'elapsed-wall-ms %s\n' "$(($(now_ms) - script_started_ms))"
+  printf 'diagnostic-policy %s\n' "$diagnostic_policy"
+  printf 'diagnostic-families %s\n' "$diagnostic_families"
+  printf 'diagnostic-stopped %s\n' "$diagnostic_stopped"
+  printf 'campaign-manifest-schema 1\n'
+  printf 'campaign-manifest-count 23\n'
+  cat "$campaign_rows"
+  printf 'ceremony-roster begin\n'
+  for ceremony_id in $CEREMONY_IDS; do
+    capture_file=$capture_directory/$suite_short_sha.$ceremony_id.capture
+    if [ -f "$capture_file" ]; then
+      capture_result=$("$capture_sha256" "$capture_file")
+      capture_digest=${capture_result%% *}
+    else
+      capture_digest=missing
+    fi
+    printf 'ceremony %s %s\n' "$ceremony_id" "$capture_digest"
+  done
+  printf 'ceremony-roster end\n'
+  printf 'manifest-sha256 %s\n' "$manifest_digest"
+  printf 'eligible %s\n' "$eligible"
+} > "$capture_directory/RUN-REPORT"
+phase_finish
+
+phase_start readonly
+chmod -R a-w "$capture_directory"
+phase_finish
+
+script_finished_ms=$(now_ms)
+printf 'capture directory %s\n' "$capture_directory" >&2
+printf 'capture eligible %s\n' "$eligible" >&2
+printf 'script total wall-ms %s\n' "$((script_finished_ms - script_started_ms))" >&2
+
+[ "$eligible" = yes ]

@@ -1452,6 +1452,8 @@ pub mod native {
     /// A refused control stops only its family, so the other family's exchanges
     /// remain available; completion reports every stopped family.
     pub struct RetainedRoutesPlanner {
+        family_limit: usize,
+        diagnostic: bool,
         inner: MaturityAnnouncementPlanner,
         family: usize,
         honest: Option<MaturityFundedPredecessor>,
@@ -1485,6 +1487,8 @@ pub mod native {
                     ),
                 )?,
                 family: 0,
+                family_limit: RETAINED_SUBJECTS.len(),
+                diagnostic: false,
                 honest: None,
                 finalized: None,
                 bytes: None,
@@ -1786,7 +1790,7 @@ pub mod native {
 
         fn next_family(&mut self) -> Result<Option<OperationStep>, Refusal> {
             self.family += 1;
-            if self.family == RETAINED_SUBJECTS.len() {
+            if self.family == self.family_limit {
                 self.done = true;
                 Ok(None)
             } else {
@@ -1878,6 +1882,10 @@ pub mod native {
                             return Err(Refusal::UnexpectedResponse);
                         };
                         sponsored::check_readback(&subject.transaction_bytes, response)?;
+                        if self.diagnostic {
+                            self.stopped.push(RETAINED_FAMILIES[self.family]);
+                            return self.next_family();
+                        }
                     }
                     if RETAINED_SUBJECTS[self.family]
                         == NativeSubject::SuccessorFromWrongSemanticMetadata
@@ -1981,6 +1989,9 @@ pub mod native {
 
     /// An exact serial schedule; no acceptance is inferred from a refusal.
     pub struct Planner {
+        family_limit: usize,
+        diagnostic: bool,
+        stopped: Vec<&'static str>,
         identity: CandidateDeploymentIdentity,
         branch: BranchContext,
         inner: MaturityAnnouncementPlanner,
@@ -2019,6 +2030,9 @@ pub mod native {
                 identity,
                 branch,
                 inner,
+                family_limit: FAMILIES.len(),
+                diagnostic: false,
+                stopped: Vec::new(),
                 sponsored: None,
                 family: 0,
                 cursor: 0,
@@ -2287,6 +2301,10 @@ pub mod native {
             self.family += 1;
             self.family_start = self.exchanges.len();
             self.classification_control = false;
+            if self.diagnostic && self.family == self.family_limit {
+                self.done = true;
+                return Ok(None);
+            }
             if self.family < FAMILIES.len() {
                 self.cursor = RANGES.get(self.family).map_or(0, |range| range.0);
                 return self.start_inner().map(Some);
@@ -2346,6 +2364,9 @@ pub mod native {
             response: &NativeOperationResponse,
         ) -> Result<Option<OperationStep>, Refusal> {
             let (policy, _) = sponsored::detail(response)?;
+            if self.diagnostic && self.policy.as_ref().is_some_and(|prior| prior != &policy) {
+                return Err(Refusal::SponsoredPolicy);
+            }
             self.policy = Some(policy);
             match action {
                 Action::Inner(original) => {
@@ -2353,6 +2374,13 @@ pub mod native {
                         self.honest = Some(Self::coin(step, response)?);
                     }
                     let control = matches!(original.subject(), OperationSubject::Submission(_));
+                    if self.diagnostic
+                        && control
+                        && response.observed_layer != ObservedOutcomeLayer::Accepted
+                    {
+                        self.stopped.push(FAMILIES[self.family]);
+                        return self.next_family();
+                    }
                     let mut translated = response.clone();
                     translated.case = original.case().clone();
                     let next = self
@@ -2402,6 +2430,22 @@ pub mod native {
                     self.stage(*subject, Some(&coin)).map(Some)
                 }
                 Action::Subject => {
+                    if self.diagnostic && response.observed_layer == ObservedOutcomeLayer::Accepted
+                    {
+                        let OperationSubject::Submission(subject) = step.subject() else {
+                            return Err(Refusal::UnexpectedResponse);
+                        };
+                        sponsored::check_readback(&subject.transaction_bytes, response)?;
+                        if !matches!(
+                            NativeSubject::ALL[self.cursor],
+                            NativeSubject::WrongStateAsset
+                                | NativeSubject::WrongSingletonAmount
+                                | NativeSubject::WrongPredecessorProgram
+                        ) {
+                            self.stopped.push(FAMILIES[self.family]);
+                            return self.next_family();
+                        }
+                    }
                     if (6..=8).contains(&self.family) {
                         if response.observed_layer == ObservedOutcomeLayer::Accepted {
                             let OperationSubject::Submission(subject) = step.subject() else {
@@ -2573,9 +2617,515 @@ pub mod native {
         plan.complete()?;
         Ok(plan)
     }
+    fn diagnostic_subjects() -> Vec<(&'static str, NativeSubject)> {
+        RANGES
+            .iter()
+            .zip(FAMILIES)
+            .flat_map(|(&(start, end), family)| {
+                NativeSubject::ALL[start..end]
+                    .iter()
+                    .copied()
+                    .map(move |subject| (family, subject))
+            })
+            .chain(std::iter::once((
+                RETAINED_FAMILIES[0],
+                RETAINED_SUBJECTS[0],
+            )))
+            .collect()
+    }
+
+    fn diagnostic_claims(subject: NativeSubject) -> Vec<serde_json::Value> {
+        NATIVE_ROWS
+            .iter()
+            .filter(|row| row.standing().subject() == Some(subject))
+            .map(|row| serde_json::json!({"section":row.section().section(), "name":row.name()}))
+            .collect()
+    }
+
+    fn diagnostic_name(subject: NativeSubject) -> &'static str {
+        NATIVE_ROWS
+            .iter()
+            .find(|row| row.standing().subject() == Some(subject))
+            .map_or("missing-subject", |row| row.name())
+    }
+
+    /// Bounded existing schedules, retaining failed families without assigning credit.
+    pub struct DiagnosticRoutesPlanner {
+        native: Planner,
+        retained: RetainedRoutesPlanner,
+        retained_phase: bool,
+        done: bool,
+        refusal: Option<Refusal>,
+    }
+
+    impl DiagnosticRoutesPlanner {
+        /// Construct six native families followed by the retained semantic family.
+        /// # Errors
+        /// Preserves the inner constructors' refusals.
+        /// # Panics
+        /// Panics only if the fixed architecture omits its singleton declaration.
+        pub fn new(
+            identity: CandidateDeploymentIdentity,
+            branch: BranchContext,
+        ) -> Result<Self, Refusal> {
+            let mut native = Planner::new(identity.clone(), branch)?;
+            native.family_limit = RANGES.len();
+            native.diagnostic = true;
+            let mut retained = RetainedRoutesPlanner::new(identity, branch)?;
+            retained.family_limit = 1;
+            retained.diagnostic = true;
+            Ok(Self {
+                native,
+                retained,
+                retained_phase: false,
+                done: false,
+                refusal: None,
+            })
+        }
+
+        /// Settled exchanges preserve each inner schedule's names and ordinals.
+        #[must_use]
+        pub fn exchanges(&self) -> Vec<(OperationStep, NativeOperationResponse)> {
+            self.native
+                .exchanges
+                .iter()
+                .chain(&self.retained.exchanges)
+                .cloned()
+                .collect()
+        }
+
+        /// The current phase's validated policy; the manifest enforces one live policy.
+        #[must_use]
+        pub fn policy(&self) -> Option<&sponsored::Policy> {
+            if self.retained_phase {
+                self.retained.policy().or_else(|| self.native.policy())
+            } else {
+                self.native.policy()
+            }
+        }
+
+        /// Ordered stopped families remain diagnostic evidence.
+        #[must_use]
+        pub fn stopped(&self) -> Vec<&'static str> {
+            self.native
+                .stopped
+                .iter()
+                .chain(&self.retained.stopped)
+                .copied()
+                .collect()
+        }
+
+        /// Construction and protocol failures are retained separately from family stops.
+        #[must_use]
+        pub const fn refusal(&self) -> Option<&Refusal> {
+            self.refusal.as_ref()
+        }
+
+        /// Require a settled schedule, distinguishing stopped families from missing responses.
+        /// # Errors
+        /// Returns the construction failure, incompleteness or stopped families.
+        pub fn complete(&self) -> Result<(), Refusal> {
+            if let Some(error) = &self.refusal {
+                return Err(error.clone());
+            }
+            if !self.done || self.native.pending.is_some() || self.retained.pending.is_some() {
+                return Err(Refusal::IncompleteTranscript);
+            }
+            let families = self.stopped();
+            if !families.is_empty() {
+                return Err(Refusal::RetainedControlsRefused { families });
+            }
+            Ok(())
+        }
+
+        fn advance(
+            &mut self,
+            previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+        ) -> Result<Option<OperationStep>, Refusal> {
+            if self.done {
+                return Err(Refusal::UnexpectedResponse);
+            }
+            if !self.retained_phase {
+                if let Some(step) = self.native.advance(previous)? {
+                    return Ok(Some(step));
+                }
+                self.retained_phase = true;
+                return self.retained.advance(None);
+            }
+            let next = self.retained.advance(previous)?;
+            self.done = next.is_none();
+            Ok(next)
+        }
+
+        /// Seven families with claims on each subject, including the consensus-only subject.
+        #[must_use]
+        pub fn families_json(&self) -> Vec<serde_json::Value> {
+            let exchanges = self.exchanges();
+            let stopped = self.stopped();
+            FAMILIES[..6].iter().chain(&RETAINED_FAMILIES[..1]).map(|family| {
+                let find = |label: &str| exchanges.iter().find(|(step, _)| {
+                    let mut parts = step.case().step.split(':');
+                    parts.next() == Some(*family) && parts.next() == Some(label)
+                });
+                let control = find("control");
+                let control_accepted = control.is_some_and(|(step, response)| {
+                    response.observed_layer == ObservedOutcomeLayer::Accepted
+                        && matches!(step.subject(), OperationSubject::Submission(subject)
+                            if sponsored::check_readback(&subject.transaction_bytes, response).is_ok())
+                });
+                let subjects: Vec<_> = diagnostic_subjects().into_iter().filter(|(name, _)| name == family)
+                    .map(|(_, subject)| {
+                        let name = diagnostic_name(subject);
+                        let observation = find(name);
+                        let expected = if subject == NativeSubject::WrongSequence {
+                            ObservedOutcomeLayer::ConsensusRejectionBeforeScript
+                        } else { ObservedOutcomeLayer::ScriptPathRejection };
+                        let expectation = observation.map_or("absent", |(_, response)| {
+                            if response.observed_layer == expected { "agreement" } else { "contradiction" }
+                        });
+                        serde_json::json!({"subject":name, "claims":diagnostic_claims(subject),
+                            "observation":observation.map(retained_observation), "expectation":expectation})
+                    }).collect();
+                let expectation = if subjects.iter().any(|s| s["expectation"] == "contradiction") { "contradiction" }
+                    else if subjects.iter().any(|s| s["expectation"] == "absent") { "absent" } else { "agreement" };
+                serde_json::json!({"family":family, "control":control.map(retained_observation),
+                    "control_accepted":control_accepted, "stopped":stopped.contains(family),
+                    "expectation":expectation, "subjects":subjects})
+            }).collect()
+        }
+    }
+
+    impl TargetOperationPlanner for DiagnosticRoutesPlanner {
+        fn next_step(
+            &mut self,
+            previous: Option<(&OperationCaseId, &NativeOperationResponse)>,
+        ) -> Result<Option<OperationStep>, PlanRefused> {
+            if self.refusal.is_some() {
+                return Err(PlanRefused);
+            }
+            self.advance(previous).map_err(|error| {
+                self.refusal = Some(error);
+                PlanRefused
+            })
+        }
+    }
+
+    /// Replay both bounded phases without changing their historical requests.
+    /// # Errors
+    /// Refuses changed requests, incomplete schedules and stopped families.
+    /// # Panics
+    /// Panics only if the fixed architecture omits its singleton declaration.
+    pub fn replay_diagnostic_routes(
+        identity: CandidateDeploymentIdentity,
+        branch: BranchContext,
+        exchanges: &[(OperationStep, NativeOperationResponse)],
+    ) -> Result<DiagnosticRoutesPlanner, Refusal> {
+        let mut plan = DiagnosticRoutesPlanner::new(identity, branch)?;
+        let mut next = plan.advance(None)?;
+        for (position, (step, response)) in exchanges.iter().enumerate() {
+            if next.as_ref() != Some(step) {
+                return Err(Refusal::TranscriptStepMismatch { position });
+            }
+            next = plan.advance(Some((step.case(), response)))?;
+        }
+        plan.complete()?;
+        Ok(plan)
+    }
+
+    /// Frozen diagnostic intent plus earlier funding, never a source of row credit.
+    pub struct DiagnosticCampaignManifest {
+        /// One row per script-path subject, with every shared claim retained.
+        pub rows: Vec<serde_json::Value>,
+        /// Earlier funding responses available to bind input outpoints.
+        pub funding: Vec<(String, FundedOutput)>,
+        policy: Option<serde_json::Value>,
+    }
+
+    impl DiagnosticCampaignManifest {
+        /// Freeze all twenty-five claims on twenty-three subjects before execution.
+        /// # Panics
+        /// Panics only if the fixed staging roster loses an expectation or shared claims disagree.
+        #[must_use]
+        pub fn new(identity: &CandidateDeploymentIdentity, branch: BranchContext) -> Self {
+            let rows = diagnostic_subjects().into_iter().filter(|(_, s)| *s != NativeSubject::WrongSequence)
+                .map(|(family, subject)| {
+                    let claims = diagnostic_claims(subject);
+                    let expectations: Vec<_> = claims.iter().map(|claim| {
+                        super::DIAGNOSTIC_EXPECTED_CLASSES.iter().find(|(section, name, _, _)|
+                            claim["section"] == *section && claim["name"] == *name).expect("diagnostic expectation")
+                    }).collect();
+                    let (_, _, class, reason) = expectations[0];
+                    assert!(expectations.iter().all(|entry| entry.2 == *class && entry.3 == *reason));
+                    serde_json::json!({"subject":diagnostic_name(subject), "claims":claims,
+                        "family":family, "operation":"announce_maturity",
+                        "candidate":{"schedule":tapscript::StateWitnessSchedule::VariableMetadata.name(), "subject_pin":subject.pin()},
+                        "abi":"variable-metadata", "target":"elements-tapscript-v2",
+                        "deployment":{"network":retained_hex(identity.network_id()), "genesis":retained_hex(identity.genesis_id())},
+                        "branch":{"identifier":retained_hex(branch.identifier()), "checkpoint":branch.checkpoint()},
+                        "policy_requirement":"node-defaults", "policy":null,
+                        "constructor":"stage_live_subject", "mutation":diagnostic_name(subject),
+                        "declared_boundary":"script_path_rejection", "expected_layer":"script_path_rejection",
+                        "expected_class":class.map(|value| format!("{value:?}")), "expectation_reason":format!("{reason:?}"),
+                        "control_id":format!("{family}:control"), "compatibility":diagnostic_compatibility(subject),
+                        "control":null, "observation":null, "expected_consumer":"diagnostic-attribution-ledger"})
+                }).collect();
+            Self {
+                rows,
+                funding: Vec::new(),
+                policy: None,
+            }
+        }
+
+        /// Retain coins before the next submission can leave the wrapper.
+        pub fn retain_funding(
+            &mut self,
+            case: &OperationCaseId,
+            response: &NativeOperationResponse,
+        ) {
+            self.funding.extend(
+                response
+                    .funded_outputs
+                    .iter()
+                    .cloned()
+                    .map(|coin| (case.step.clone(), coin)),
+            );
+        }
+
+        /// Bind exact claims, retained inputs and a common policy before submission.
+        /// # Errors
+        /// Names the family and first mismatching binding.
+        pub fn bind_submission(
+            &mut self,
+            step: &OperationStep,
+            policy: Option<&sponsored::Policy>,
+        ) -> Result<(), RetainedCampaignRefusal> {
+            let family = step
+                .case()
+                .step
+                .split(':')
+                .next()
+                .unwrap_or_default()
+                .to_owned();
+            self.bind_fields(step, policy)
+                .map_err(|field| RetainedCampaignRefusal { family, field })
+        }
+
+        fn bind_fields(
+            &mut self,
+            step: &OperationStep,
+            policy: Option<&sponsored::Policy>,
+        ) -> Result<(), &'static str> {
+            let OperationSubject::Submission(subject) = step.subject() else {
+                return Ok(());
+            };
+            let parts: Vec<_> = step.case().step.split(':').collect();
+            let [family, label, ordinal] = parts.as_slice() else {
+                return Err("submission step shape");
+            };
+            if ordinal
+                .parse::<usize>()
+                .ok()
+                .is_none_or(|n| n.to_string() != *ordinal)
+            {
+                return Err("submission ordinal");
+            }
+            let roster = diagnostic_subjects();
+            if !roster.iter().any(|(name, _)| name == family) {
+                return Err("unknown family");
+            }
+            let transaction = TargetTransaction::decode(&subject.transaction_bytes)
+                .map_err(|_| "transaction encoding")?;
+            let inputs = transaction
+                .inputs()
+                .iter()
+                .map(|input| {
+                    let point = input.outpoint();
+                    let (funding_step, coin) = self
+                        .funding
+                        .iter()
+                        .find(|(_, coin)| {
+                            coin.outpoint.txid == point.txid().to_target_display()
+                                && coin.outpoint.vout == point.index()
+                        })
+                        .ok_or("submission spends an unretained outpoint")?;
+                    Ok(serde_json::json!({"funding_step":funding_step, "output":coin}))
+                })
+                .collect::<Result<Vec<_>, &'static str>>()?;
+            if inputs.len() != 1 {
+                return Err("funded input census");
+            }
+            let policy = policy.ok_or("submission has no validated policy")?;
+            if self.policy.as_ref().is_some_and(|prior| prior != &policy.0) {
+                return Err("common policy");
+            }
+            self.policy = Some(policy.0.clone());
+            if *label == "wrong-sequence" && *family == "successor" {
+                return Ok(());
+            }
+            let control = *label == "control";
+            let selected: Vec<_> = self
+                .rows
+                .iter()
+                .enumerate()
+                .filter(|(_, row)| {
+                    row["family"] == *family && (control || row["subject"] == *label)
+                })
+                .map(|(index, _)| index)
+                .collect();
+            if selected.is_empty() {
+                return Err("subject claim mapping");
+            }
+            for index in selected {
+                let row = &mut self.rows[index];
+                let typed = roster
+                    .iter()
+                    .find(|(name, s)| *name == *family && row["subject"] == diagnostic_name(*s))
+                    .map(|(_, subject)| *subject)
+                    .ok_or("subject claim mapping")?;
+                let claims = row["claims"]
+                    .as_array()
+                    .ok_or("subject claim mapping")?
+                    .clone();
+                let expected = diagnostic_claims(typed);
+                let keys = |values: &[serde_json::Value]| -> std::collections::BTreeSet<String> {
+                    values.iter().map(serde_json::Value::to_string).collect()
+                };
+                if keys(&claims).len() != claims.len() || keys(&claims) != keys(&expected) {
+                    return Err("subject claim mapping");
+                }
+                if !control {
+                    let submitted: Vec<_> = submission_rows(step).iter().map(|(section, name)|
+                        serde_json::json!({"section":section.section(), "name":name})).collect();
+                    if keys(&claims) != keys(&submitted) {
+                        return Err("subject claim mapping");
+                    }
+                } else if row["control_id"] != format!("{family}:control") {
+                    return Err("control identity");
+                }
+                let slot = if control { "control" } else { "observation" };
+                if !row[slot].is_null() {
+                    return Err("duplicate submission");
+                }
+                row["policy"] = policy.0.clone();
+                row[slot] = serde_json::json!({"step":step.case().step,
+                    "digest":retained_hex(&target_elements_conformance::constructor::tagged::sha256(&subject.transaction_bytes)),
+                    "funded_outpoints":inputs, "claims":claims});
+                diagnostic_check_compatibility(row, typed)?;
+            }
+            Ok(())
+        }
+
+        /// Rebuild the frozen manifest and bindings from the exact diagnostic replay.
+        /// # Errors
+        /// Refuses altered rows, funding, common policy or frozen expectations.
+        /// # Panics
+        /// Panics only if the fixed staging roster loses an expectation.
+        pub fn validate(
+            plan: &DiagnosticRoutesPlanner,
+            offered: &[serde_json::Value],
+        ) -> Result<(), RetainedCampaignRefusal> {
+            let mut expected = Self::new(&plan.native.identity, plan.native.branch);
+            for (step, response) in plan.exchanges() {
+                let (policy, _) =
+                    sponsored::detail(&response).map_err(|_| RetainedCampaignRefusal {
+                        family: "diagnostic".into(),
+                        field: "policy",
+                    })?;
+                expected.bind_submission(&step, Some(&policy))?;
+                expected.retain_funding(step.case(), &response);
+            }
+            if expected.rows != offered {
+                return Err(RetainedCampaignRefusal {
+                    family: "diagnostic".into(),
+                    field: "frozen manifest",
+                });
+            }
+            Ok(())
+        }
+    }
+
+    const fn diagnostic_compatibility(subject: NativeSubject) -> &'static str {
+        match subject {
+            NativeSubject::WrongStateAsset => "different-asset-same-amount-and-program",
+            NativeSubject::WrongSingletonAmount => "amount-plus-one-same-asset-and-program",
+            NativeSubject::WrongPredecessorProgram => "different-program-same-asset-and-amount",
+            _ => "same-coin",
+        }
+    }
+
+    fn diagnostic_check_compatibility(
+        row: &serde_json::Value,
+        subject: NativeSubject,
+    ) -> Result<(), &'static str> {
+        if row["control"].is_null() || row["observation"].is_null() {
+            return Ok(());
+        }
+        let control = &row["control"]["funded_outpoints"][0]["output"];
+        let observed = &row["observation"]["funded_outpoints"][0]["output"];
+        let mutated = match subject {
+            NativeSubject::WrongStateAsset => Some("asset"),
+            NativeSubject::WrongSingletonAmount => Some("amount_satoshis"),
+            NativeSubject::WrongPredecessorProgram => Some("script"),
+            _ => None,
+        };
+        for key in ["asset", "amount_satoshis", "script"] {
+            if (control[key] != observed[key]) != (mutated == Some(key)) {
+                return Err("control compatibility");
+            }
+        }
+        if subject == NativeSubject::WrongSingletonAmount
+            && control["amount_satoshis"]
+                .as_u64()
+                .and_then(|value| value.checked_add(1))
+                != observed["amount_satoshis"].as_u64()
+        {
+            return Err("control compatibility");
+        }
+        if (control["outpoint"] == observed["outpoint"]) != mutated.is_none() {
+            return Err("control outpoint relationship");
+        }
+        Ok(())
+    }
+
     #[cfg(test)]
     mod tests {
         use super::*;
+
+        #[test]
+        fn diagnostic_driver_roster_agrees_with_staging_and_expectations() {
+            let driver =
+                include_str!("../../../scripts/live-native-maturity-diagnostic-capture.sh");
+            let roster_text = driver.split_once("ROSTER = ").expect("driver roster").1;
+            let roster: serde_json::Value = serde_json::Deserializer::from_str(roster_text)
+                .into_iter()
+                .next()
+                .expect("roster JSON")
+                .expect("valid roster");
+            let mut keys = std::collections::BTreeSet::new();
+            let derived: Vec<_> = diagnostic_subjects()
+                .into_iter()
+                .map(|(family, subject)| {
+                    let claims: Vec<_> = diagnostic_claims(subject)
+                        .into_iter()
+                        .map(|claim| {
+                            let section = claim["section"].as_str().expect("section");
+                            let name = claim["name"].as_str().expect("name");
+                            if subject != NativeSubject::WrongSequence {
+                                keys.insert((section.to_owned(), name.to_owned()));
+                            }
+                            serde_json::json!([section, name])
+                        })
+                        .collect();
+                    serde_json::json!([family, diagnostic_name(subject), claims])
+                })
+                .collect();
+            assert_eq!(roster, serde_json::json!(derived));
+            let expectations = super::super::DIAGNOSTIC_EXPECTED_CLASSES
+                .iter()
+                .map(|(section, name, _, _)| ((*section).to_owned(), (*name).to_owned()))
+                .collect();
+            assert_eq!(keys, expectations);
+        }
 
         #[test]
         fn native_replay_refuses_changed_requests_and_missing_control_readback() {
@@ -2854,22 +3404,21 @@ pub enum DiagnosticExpectationReason {
 /// Diagnostic expectations keyed by the unchanged Safety section and row name.
 ///
 /// These are first-party expectations, not observations. Seven operator rows are
-/// certain, two input-recognition rows are certain as to the check, and fifteen
-/// are judgments: ten tweak checks, two commitments, one equality, one unnameable
+/// certain, two input-recognition rows are certain as to the check, and sixteen
+/// are judgments: eleven tweak checks, two commitments, one equality, one unnameable
 /// check and the retained-signature target-bytes mutation. The class partition is
-/// ten curve relations, seven invalid signatures, one empty signature, three
-/// unequal operands and three unnamed expectations, totaling twenty-four.
+/// eleven curve relations, seven invalid signatures, one empty signature, three
+/// unequal operands and three unnamed expectations, totaling twenty-five on
+/// twenty-three subjects with two shared pairs (`req:w0route:recapture-constraints`).
 ///
 /// `CheckSigVerify` precedes coordinator and input recognition; metadata
 /// authentication precedes maturity, the lead window, copy-through and successor
 /// reconstruction. Both authentication sites end in `TweakVerify`. A curve class
 /// alone therefore establishes no instruction site. Shared subjects supply one
 /// observation for both row keys.
-/// The retained archive's bare script-path refusal for
-/// `16.6 / successor-from-wrong-semantic-metadata` owes attribution on the same
-/// ground and is taken in the capture landing, where its subject joins with its
-/// own expected class and the claim and subject counts are restated; this table
-/// stays at the twenty-four claims named by `req:w0route:recapture-constraints`.
+/// The retained semantic subject is re-signed and keeps the honest predecessor.
+/// Its foreign successor metadata disagrees at successor reconstruction's
+/// `TweakVerify`; it joins the native subjects in the diagnostic capture schedule.
 ///
 /// None is not a wildcard: a recorded named class against an expected None is a
 /// finding beside the unchanged standing. Historical `NotRecorded` is not a
@@ -2972,6 +3521,12 @@ pub const DIAGNOSTIC_EXPECTED_CLASSES: &[(
     ),
     (
         "16.6",
+        "successor-from-wrong-semantic-metadata",
+        Some(ObservedFailureClass::InvalidCurveRelation),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.6",
         "successor-from-predecessor-metadata-unchanged",
         Some(ObservedFailureClass::InvalidCurveRelation),
         DiagnosticExpectationReason::ExpectedCheck,
@@ -3030,9 +3585,7 @@ pub const DIAGNOSTIC_EXPECTED_CLASSES: &[(
 mod diagnostic_tests {
     use super::*;
     use crate::maturity_corpus as corpus;
-    use crate::maturity_mutants::native_staging::{
-        NATIVE_ROWS, NativeBoundary, NativeStanding, NativeSubject,
-    };
+    use crate::maturity_mutants::native_staging::{NATIVE_ROWS, NativeBoundary, NativeStanding};
     use std::collections::{BTreeMap, BTreeSet};
 
     fn response(detail: Option<String>) -> NativeOperationResponse {
@@ -3171,11 +3724,8 @@ mod diagnostic_tests {
         let expected: BTreeSet<_> = NATIVE_ROWS
             .iter()
             .filter(|row| {
-                // The retained semantic subject joins in the capture landing;
-                // this table keeps the constraints requirement's twenty-four claims.
                 row.boundary() == NativeBoundary::ScriptPathRejection
-                    && matches!(row.standing(), NativeStanding::Staged { subject, .. }
-                    if subject != NativeSubject::SuccessorFromWrongSemanticMetadata)
+                    && matches!(row.standing(), NativeStanding::Staged { .. })
             })
             .map(|row| (row.section().section(), row.name()))
             .collect();
@@ -3183,8 +3733,8 @@ mod diagnostic_tests {
             .iter()
             .map(|(section, name, _, _)| (*section, *name))
             .collect();
-        assert_eq!(DIAGNOSTIC_EXPECTED_CLASSES.len(), 24);
-        assert_eq!(actual.len(), 24);
+        assert_eq!(DIAGNOSTIC_EXPECTED_CLASSES.len(), 25);
+        assert_eq!(actual.len(), 25);
         assert_eq!(actual, expected);
         let mut subjects = BTreeMap::new();
         let mut classes = BTreeMap::new();
@@ -3219,11 +3769,11 @@ mod diagnostic_tests {
                 assert_eq!(*reason, expected_reason);
             }
         }
-        assert_eq!(subjects.len(), 22);
+        assert_eq!(subjects.len(), 23);
         assert_eq!(
             classes,
             BTreeMap::from([
-                (Some(ObservedFailureClass::InvalidCurveRelation), 10),
+                (Some(ObservedFailureClass::InvalidCurveRelation), 11),
                 (Some(ObservedFailureClass::InvalidSignature), 7),
                 (Some(ObservedFailureClass::EmptySignature), 1),
                 (Some(ObservedFailureClass::UnequalOperands), 3),

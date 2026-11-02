@@ -347,6 +347,7 @@ vectors_excluded_files = vectors_fixture_files + files(
   'tests/maturity_continuity.rs',
   'tests/maturity_native.rs',
   'tests/maturity_retained.rs',
+  'tests/maturity_diagnostic.rs',
   'tests/maturity_confidential.rs',
   'tests/maturity_observer.rs',
   'tests/maturity_observer_boundaries.rs',
