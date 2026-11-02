@@ -12,7 +12,7 @@ use crate::maturity_observer::decode_hex;
 
 /// Exact source identity of the adapter whose request entries were compared.
 pub const ADAPTER_SOURCE_SHA256: &str =
-    "e66098105621c671e342e51c6fa91e58c4ca761816870b7ecd00a5a5d4818925";
+    "a0edebf53cdfa4c95e4658711ced62be280b5891ea49140edfce32776a768b00";
 const MAXIMUM: usize = 4 * 1024 * 1024;
 const FIXTURE: &[u8] = include_bytes!("../fixtures/adapter-request-comparisons/COMPARISONS");
 static ADMITTED: LazyLock<Result<Vec<MaturityAdapterComparison>, MaturityAdapterRefusal>> =

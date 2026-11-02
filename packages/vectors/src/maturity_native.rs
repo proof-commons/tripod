@@ -17,9 +17,9 @@ use target_elements::EncodingClass;
 use target_elements_conformance::constructor::tagged::sha256;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
-    FundedOutput, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse, ObservedOutcomeLayer,
-    OperationCaseId, OperationSubject, ResponseShapeDefect, TargetFundingSubject,
-    TargetSubmissionSubject,
+    FundedOutput, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse, ObservedFailureClass,
+    ObservedOutcomeLayer, OperationCaseId, OperationSubject, ResponseShapeDefect,
+    TargetFundingSubject, TargetSubmissionSubject,
 };
 use target_elements_conformance::test_material::TestSigningDefect;
 use transaction::bytes::{AssetField, AssetId, Outpoint, TargetTransaction, Txid, ValueField};
@@ -2643,6 +2643,692 @@ pub mod native {
                 );
             }
         }
+    }
+}
+
+/// Historical absence is distinct from a recorded error without a named class.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecordedBlockScriptError {
+    /// The observation detail or its diagnostic member is absent.
+    NotRecorded,
+    /// A whitelisted key's class, or an explicitly unclassified error.
+    Recorded(Option<ObservedFailureClass>),
+}
+
+/// A malformed diagnostic recording, independent of the observed refusal layer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlockScriptErrorRefusal {
+    /// The detail is not a JSON object.
+    DetailJson,
+    /// The nested facts container is missing or is not an object.
+    Facts,
+    /// The recorded member is not a whitelisted string or the sentinel.
+    Value,
+}
+
+const BLOCK_SCRIPT_ERROR_CLASSES: &[(&str, ObservedFailureClass)] = &[
+    (
+        "Script evaluated without error but finished with a false/empty top stack element",
+        ObservedFailureClass::EvaluatedFalse,
+    ),
+    (
+        "Operation not valid with the current stack size",
+        ObservedFailureClass::StackUnderflow,
+    ),
+    (
+        "Operation not valid with the current altstack size",
+        ObservedFailureClass::StackUnderflow,
+    ),
+    (
+        "Arithmetic opcodes expect 8 bytes operands",
+        ObservedFailureClass::InvalidOperandWidth,
+    ),
+    (
+        "Opcode missing or not understood",
+        ObservedFailureClass::UnknownOpcode,
+    ),
+    (
+        "Attempted to use a disabled opcode",
+        ObservedFailureClass::UnknownOpcode,
+    ),
+    (
+        "Data push larger than necessary",
+        ObservedFailureClass::MalformedPush,
+    ),
+    ("Negative locktime", ObservedFailureClass::NegativeTimelock),
+    (
+        "Locktime requirement not satisfied",
+        ObservedFailureClass::UnsatisfiedTimelock,
+    ),
+    (
+        "Invalid Sha256 context object read",
+        ObservedFailureClass::HashContextLoad,
+    ),
+    (
+        "Invalid Sha256 context object write",
+        ObservedFailureClass::HashContextWrite,
+    ),
+    (
+        "Introspection opcode used without correct evaluation context",
+        ObservedFailureClass::IntrospectionContextUnavailable,
+    ),
+    (
+        "Introspection index out of bounds",
+        ObservedFailureClass::IntrospectionIndexOutOfRange,
+    ),
+    (
+        "EC scalar mult verify fail",
+        ObservedFailureClass::InvalidCurveRelation,
+    ),
+    (
+        "Invalid Schnorr signature",
+        ObservedFailureClass::InvalidSignature,
+    ),
+    (
+        "Signature must be zero for failed CHECK(MULTI)SIG operation",
+        ObservedFailureClass::InvalidSignature,
+    ),
+    (
+        "Public key is neither compressed or uncompressed",
+        ObservedFailureClass::InvalidPublicKeyEncoding,
+    ),
+    (
+        "Too much signature validation relative to witness weight",
+        ObservedFailureClass::ValidationBudgetExhausted,
+    ),
+    (
+        "Taproot version reserved for soft-fork upgrades",
+        ObservedFailureClass::LeafVersionRejected,
+    ),
+    (
+        "OP_CHECKMULTISIG(VERIFY) is not available in tapscript",
+        ObservedFailureClass::UnsupportedExecutionDomain,
+    ),
+    (
+        "Stack size must be exactly one after execution",
+        ObservedFailureClass::NonSingletonFinalStack,
+    ),
+    (
+        "Push value size limit exceeded",
+        ObservedFailureClass::MalformedPush,
+    ),
+    ("unknown error", ObservedFailureClass::MalformedScriptNumber),
+    (
+        "Invalid Schnorr signature size",
+        ObservedFailureClass::InvalidSignature,
+    ),
+    (
+        "Script failed an OP_CHECKSIGVERIFY operation",
+        ObservedFailureClass::EmptySignature,
+    ),
+    (
+        "Arithmetic opcode error",
+        ObservedFailureClass::FixedWidthConversionRefused,
+    ),
+    (
+        "Script failed an OP_EQUALVERIFY operation",
+        ObservedFailureClass::UnequalOperands,
+    ),
+    (
+        "Script failed an OP_NUMEQUALVERIFY operation",
+        ObservedFailureClass::UnequalOperands,
+    ),
+    (
+        "Script failed an OP_VERIFY operation",
+        ObservedFailureClass::FalseVerification,
+    ),
+    (
+        "Stack size limit exceeded",
+        ObservedFailureClass::StackSizeLimitExceeded,
+    ),
+    (
+        "Script is too big",
+        ObservedFailureClass::ScriptSizeLimitExceeded,
+    ),
+    (
+        "Operation limit exceeded",
+        ObservedFailureClass::ScriptOperationLimitExceeded,
+    ),
+    (
+        "Invalid Schnorr signature hash type",
+        ObservedFailureClass::InvalidSignatureHashType,
+    ),
+    (
+        "Invalid Taproot control block size",
+        ObservedFailureClass::MalformedControlBlock,
+    ),
+];
+
+/// Read the optional diagnostic without changing any admission predicate.
+///
+/// Only adapter vocabulary keys are admitted, never serialized enum names.
+/// Existing reason checks and the six-key outer detail grammar stay separate.
+/// A recording is meaningful only beside a script-path or key-path layer on a
+/// refused route; consumers bind the layer and route before comparing a class.
+/// Mempool precedence can retain a key under a consensus layer, and a block
+/// refusal without the script wrapper records `unclassified`.
+///
+/// # Errors
+/// Refuses malformed JSON, malformed facts and values outside the closed vocabulary.
+pub fn recorded_block_script_error(
+    response: &NativeOperationResponse,
+) -> Result<RecordedBlockScriptError, BlockScriptErrorRefusal> {
+    let Some(detail) = response.observed_detail.as_deref() else {
+        return Ok(RecordedBlockScriptError::NotRecorded);
+    };
+    let value: serde_json::Value =
+        serde_json::from_str(detail).map_err(|_| BlockScriptErrorRefusal::DetailJson)?;
+    let object = value
+        .as_object()
+        .ok_or(BlockScriptErrorRefusal::DetailJson)?;
+    let facts = object
+        .get("detail")
+        .and_then(serde_json::Value::as_object)
+        .ok_or(BlockScriptErrorRefusal::Facts)?;
+    let Some(recorded) = facts.get("block_script_error") else {
+        return Ok(RecordedBlockScriptError::NotRecorded);
+    };
+    let key = recorded.as_str().ok_or(BlockScriptErrorRefusal::Value)?;
+    if key == "unclassified" {
+        return Ok(RecordedBlockScriptError::Recorded(None));
+    }
+    BLOCK_SCRIPT_ERROR_CLASSES
+        .iter()
+        .find_map(|(name, class)| {
+            (*name == key).then_some(RecordedBlockScriptError::Recorded(Some(*class)))
+        })
+        .ok_or(BlockScriptErrorRefusal::Value)
+}
+
+/// Why an expected diagnostic class can or cannot be named before recapture.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DiagnosticExpectationReason {
+    /// Instruction order and the staged coordinate name a candidate check.
+    ExpectedCheck,
+    /// Taproot commitment fails before the leaf; its error has no adapter key.
+    UnmappedCommitment,
+    /// The changed witness does not establish which instruction refuses first.
+    UnnameableFirstCheck,
+}
+
+/// Diagnostic expectations keyed by the unchanged Safety section and row name.
+///
+/// These are first-party expectations, not observations. Seven operator rows are
+/// certain, two input-recognition rows are certain as to the check, and fifteen
+/// are judgments: ten tweak checks, two commitments, one equality, one unnameable
+/// check and the retained-signature target-bytes mutation. The class partition is
+/// ten curve relations, seven invalid signatures, one empty signature, three
+/// unequal operands and three unnamed expectations, totaling twenty-four.
+///
+/// `CheckSigVerify` precedes coordinator and input recognition; metadata
+/// authentication precedes maturity, the lead window, copy-through and successor
+/// reconstruction. Both authentication sites end in `TweakVerify`. A curve class
+/// alone therefore establishes no instruction site. Shared subjects supply one
+/// observation for both row keys.
+/// The retained archive's bare script-path refusal for
+/// `16.6 / successor-from-wrong-semantic-metadata` owes attribution on the same
+/// ground and is taken in the capture landing, where its subject joins with its
+/// own expected class and the claim and subject counts are restated; this table
+/// stays at the twenty-four claims named by `req:w0route:recapture-constraints`.
+///
+/// None is not a wildcard: a recorded named class against an expected None is a
+/// finding beside the unchanged standing. Historical `NotRecorded` is not a
+/// recorded unclassified error. Capture binding and admission are separate work.
+pub const DIAGNOSTIC_EXPECTED_CLASSES: &[(
+    &str,
+    &str,
+    Option<ObservedFailureClass>,
+    DiagnosticExpectationReason,
+)] = &[
+    (
+        "16.2",
+        "successor-remains-unannounced",
+        Some(ObservedFailureClass::InvalidCurveRelation),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.2",
+        "successor-becomes-complete",
+        Some(ObservedFailureClass::InvalidCurveRelation),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.3",
+        "metadata-from-another-state-object",
+        Some(ObservedFailureClass::InvalidCurveRelation),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.4",
+        "empty-signature",
+        Some(ObservedFailureClass::EmptySignature),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.4",
+        "malformed-signature",
+        Some(ObservedFailureClass::InvalidSignature),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.4",
+        "wrong-operator",
+        Some(ObservedFailureClass::InvalidSignature),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.4",
+        "valid-signature-under-another-key",
+        Some(ObservedFailureClass::InvalidSignature),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.4",
+        "valid-signature-over-another-candidate",
+        Some(ObservedFailureClass::InvalidSignature),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.4",
+        "successor-metadata-changed-after-signing",
+        Some(ObservedFailureClass::InvalidSignature),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.4",
+        "successor-program-changed-after-signing",
+        Some(ObservedFailureClass::InvalidSignature),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.5",
+        "wrong-state-asset",
+        Some(ObservedFailureClass::UnequalOperands),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.5",
+        "wrong-singleton-amount",
+        Some(ObservedFailureClass::UnequalOperands),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.5",
+        "wrong-predecessor-program",
+        Some(ObservedFailureClass::InvalidCurveRelation),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.5",
+        "predecessor-metadata-reconstructs-another-program",
+        Some(ObservedFailureClass::InvalidCurveRelation),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.5",
+        "wrong-leaf-version",
+        None,
+        DiagnosticExpectationReason::UnmappedCommitment,
+    ),
+    (
+        "16.6",
+        "successor-from-predecessor-metadata-unchanged",
+        Some(ObservedFailureClass::InvalidCurveRelation),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.6",
+        "wrong-announcement-cycle",
+        Some(ObservedFailureClass::InvalidCurveRelation),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.6",
+        "wrong-representation-nonce",
+        Some(ObservedFailureClass::InvalidCurveRelation),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.6",
+        "wrong-leaf-version",
+        Some(ObservedFailureClass::InvalidCurveRelation),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.6",
+        "arbitrary-caller-supplied-output-program",
+        Some(ObservedFailureClass::InvalidCurveRelation),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.6",
+        "no-state-successor",
+        Some(ObservedFailureClass::UnequalOperands),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+    (
+        "16.11",
+        "witness-item-reorder",
+        None,
+        DiagnosticExpectationReason::UnnameableFirstCheck,
+    ),
+    (
+        "16.11",
+        "control-block-from-another-program",
+        None,
+        DiagnosticExpectationReason::UnmappedCommitment,
+    ),
+    (
+        "16.11",
+        "target-bytes-changed-after-abi-validation",
+        Some(ObservedFailureClass::InvalidSignature),
+        DiagnosticExpectationReason::ExpectedCheck,
+    ),
+];
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    use crate::maturity_corpus as corpus;
+    use crate::maturity_mutants::native_staging::{
+        NATIVE_ROWS, NativeBoundary, NativeStanding, NativeSubject,
+    };
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn response(detail: Option<String>) -> NativeOperationResponse {
+        let mut response = corpus::maturity_variable_run_of_record()
+            .expect("admitted variable archive")
+            .exchanges()[0]
+            .1
+            .clone();
+        response.observed_detail = detail;
+        response
+    }
+
+    fn recording(value: serde_json::Value) -> NativeOperationResponse {
+        let mut detail = serde_json::json!({"detail":{}});
+        detail["detail"]["block_script_error"] = value;
+        response(Some(detail.to_string()))
+    }
+
+    #[test]
+    fn diagnostic_reader_agrees_with_every_executor_key_and_class() {
+        let source = include_str!("../../../scripts/elements-native-executor.py");
+        let block = source
+            .split_once("FAILURE_CLASS_BY_SCRIPT_ERROR = {")
+            .expect("mapping start")
+            .1
+            .split_once("\n}")
+            .expect("mapping end")
+            .0;
+        let python: BTreeMap<String, String> = block
+            .lines()
+            .filter_map(|line| {
+                let line = line.trim();
+                if !line.starts_with('"') {
+                    return None;
+                }
+                let (key, class) = line
+                    .trim_end_matches(',')
+                    .split_once(": ")
+                    .expect("mapping entry");
+                Some((
+                    serde_json::from_str(key).expect("key"),
+                    serde_json::from_str(class).expect("class"),
+                ))
+            })
+            .collect();
+        let rust: BTreeMap<_, _> = BLOCK_SCRIPT_ERROR_CLASSES
+            .iter()
+            .map(|(key, class)| {
+                let serde_json::Value::String(class) = serde_json::to_value(class).expect("class")
+                else {
+                    panic!("class serializes as a string");
+                };
+                ((*key).to_owned(), class)
+            })
+            .collect();
+        assert_eq!(python.len(), 34);
+        assert_eq!(rust.len(), BLOCK_SCRIPT_ERROR_CLASSES.len());
+        assert_eq!(rust, python);
+        assert_eq!(rust.values().collect::<BTreeSet<_>>().len(), 28);
+        for (key, class) in BLOCK_SCRIPT_ERROR_CLASSES {
+            assert_eq!(
+                recorded_block_script_error(&recording(serde_json::json!(key))),
+                Ok(RecordedBlockScriptError::Recorded(Some(*class)))
+            );
+        }
+        for class in rust.values().map(String::as_str).chain([
+            "script_number_range_exceeded",
+            "arithmetic_overflow",
+            "division_by_zero",
+            "result_size_exceeded",
+            "slice_out_of_range",
+            "mismatched_operand_widths",
+        ]) {
+            assert_eq!(
+                recorded_block_script_error(&recording(serde_json::json!(class))),
+                Err(BlockScriptErrorRefusal::Value)
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostic_reader_distinguishes_absence_from_unclassified() {
+        for detail in [
+            None,
+            Some(r#"{"detail":{}}"#.to_owned()),
+            Some(r#"{"route":"setup","detail":{"calls":[]}}"#.to_owned()),
+        ] {
+            assert_eq!(
+                recorded_block_script_error(&response(detail)),
+                Ok(RecordedBlockScriptError::NotRecorded)
+            );
+        }
+        assert_eq!(
+            recorded_block_script_error(&recording(serde_json::json!("unclassified"))),
+            Ok(RecordedBlockScriptError::Recorded(None))
+        );
+    }
+
+    #[test]
+    fn diagnostic_reader_refuses_malformed_recordings() {
+        for value in [
+            serde_json::Value::Null,
+            serde_json::json!(17),
+            serde_json::json!(true),
+            serde_json::json!([]),
+            serde_json::json!({}),
+            serde_json::json!("not a key"),
+        ] {
+            assert_eq!(
+                recorded_block_script_error(&recording(value)),
+                Err(BlockScriptErrorRefusal::Value)
+            );
+        }
+        for detail in ["{", "null", "[]", "17", r#""text""#] {
+            assert_eq!(
+                recorded_block_script_error(&response(Some(detail.to_owned()))),
+                Err(BlockScriptErrorRefusal::DetailJson)
+            );
+        }
+        for detail in [
+            "{}",
+            r#"{"detail":null}"#,
+            r#"{"detail":[]}"#,
+            r#"{"detail":5}"#,
+            r#"{"detail":"text"}"#,
+        ] {
+            assert_eq!(
+                recorded_block_script_error(&response(Some(detail.to_owned()))),
+                Err(BlockScriptErrorRefusal::Facts)
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostic_expectations_match_exact_staged_keys_and_shared_subjects() {
+        let expected: BTreeSet<_> = NATIVE_ROWS
+            .iter()
+            .filter(|row| {
+                // The retained semantic subject joins in the capture landing;
+                // this table keeps the constraints requirement's twenty-four claims.
+                row.boundary() == NativeBoundary::ScriptPathRejection
+                    && matches!(row.standing(), NativeStanding::Staged { subject, .. }
+                    if subject != NativeSubject::SuccessorFromWrongSemanticMetadata)
+            })
+            .map(|row| (row.section().section(), row.name()))
+            .collect();
+        let actual: BTreeSet<_> = DIAGNOSTIC_EXPECTED_CLASSES
+            .iter()
+            .map(|(section, name, _, _)| (*section, *name))
+            .collect();
+        assert_eq!(DIAGNOSTIC_EXPECTED_CLASSES.len(), 24);
+        assert_eq!(actual.len(), 24);
+        assert_eq!(actual, expected);
+        let mut subjects = BTreeMap::new();
+        let mut classes = BTreeMap::new();
+        for (section, name, class, reason) in DIAGNOSTIC_EXPECTED_CLASSES {
+            let row = NATIVE_ROWS
+                .iter()
+                .find(|row| row.section().section() == *section && row.name() == *name)
+                .expect("staged key");
+            let subject = row.standing().subject().expect("staged subject");
+            if let Some(prior) = subjects.insert(subject, (*class, *reason)) {
+                assert_eq!(prior, (*class, *reason), "shared subject");
+            }
+            *classes.entry(*class).or_insert(0) += 1;
+            if let Some(class) = class {
+                assert!(
+                    BLOCK_SCRIPT_ERROR_CLASSES
+                        .iter()
+                        .any(|(_, value)| value == class)
+                );
+                assert_eq!(*reason, DiagnosticExpectationReason::ExpectedCheck);
+            } else {
+                let expected_reason = match (*section, *name) {
+                    ("16.5", "wrong-leaf-version")
+                    | ("16.11", "control-block-from-another-program") => {
+                        DiagnosticExpectationReason::UnmappedCommitment
+                    }
+                    ("16.11", "witness-item-reorder") => {
+                        DiagnosticExpectationReason::UnnameableFirstCheck
+                    }
+                    _ => panic!("unnamed expectation needs its own reason"),
+                };
+                assert_eq!(*reason, expected_reason);
+            }
+        }
+        assert_eq!(subjects.len(), 22);
+        assert_eq!(
+            classes,
+            BTreeMap::from([
+                (Some(ObservedFailureClass::InvalidCurveRelation), 10),
+                (Some(ObservedFailureClass::InvalidSignature), 7),
+                (Some(ObservedFailureClass::EmptySignature), 1),
+                (Some(ObservedFailureClass::UnequalOperands), 3),
+                (None, 3),
+            ])
+        );
+    }
+
+    #[test]
+    fn diagnostic_member_preserves_existing_detail_and_reason_checks() {
+        let native = corpus::maturity_native_run_of_record().expect("native archive");
+        let retained = corpus::maturity_retained_run_of_record().expect("retained archive");
+        let confidential =
+            corpus::maturity_confidential_run_of_record().expect("confidential archive");
+        let sponsored = corpus::maturity_sponsored_run_of_record().expect("sponsored archive");
+        let mut checked = 0;
+        for (_, original) in native
+            .evidence
+            .exchanges()
+            .iter()
+            .chain(retained.evidence.exchanges())
+            .chain(confidential.evidence.exchanges())
+            .chain(sponsored.evidence.exchanges())
+        {
+            assert_eq!(
+                recorded_block_script_error(original),
+                Ok(RecordedBlockScriptError::NotRecorded)
+            );
+            let before = sponsored::detail(original).expect("historical detail");
+            let mut changed = original.clone();
+            let mut detail: serde_json::Value =
+                serde_json::from_str(changed.observed_detail.as_deref().expect("detail"))
+                    .expect("JSON");
+            detail["detail"]["block_script_error"] = serde_json::json!("Invalid Schnorr signature");
+            changed.observed_detail = Some(detail.to_string());
+            assert_eq!(sponsored::detail(&changed), Ok(before));
+            checked += 1;
+        }
+        assert!(checked > 0);
+        for reason in sponsored::NEGATIVE_REASONS {
+            let mut detail = serde_json::json!({
+                "route":"refused","relay_detail":reason,"detail":{"verdict_reason":reason}});
+            let original = response(Some(detail.to_string()));
+            assert_eq!(sponsored::check_reason(&original, reason, true), Ok(()));
+            detail["detail"]["block_script_error"] = serde_json::json!("unclassified");
+            let changed = response(Some(detail.to_string()));
+            assert_eq!(sponsored::check_reason(&changed, reason, true), Ok(()));
+            assert!(sponsored::check_reason(&changed, "different reason", true).is_err());
+        }
+    }
+
+    #[test]
+    fn diagnostic_compatibility_whole_item_archive() {
+        corpus::maturity_run_of_record().expect("historical archive still admits");
+    }
+
+    #[test]
+    fn diagnostic_compatibility_variable_archive() {
+        corpus::maturity_variable_run_of_record().expect("historical archive still admits");
+    }
+
+    #[test]
+    fn diagnostic_compatibility_predecessor_mutant_archive() {
+        corpus::maturity_predecessor_mutant_run_of_record()
+            .expect("historical archive still admits");
+    }
+
+    #[test]
+    fn diagnostic_compatibility_successor_mutant_archive() {
+        corpus::maturity_successor_mutant_run_of_record().expect("historical archive still admits");
+    }
+
+    #[test]
+    fn diagnostic_compatibility_sponsored_archive() {
+        corpus::maturity_sponsored_run_of_record().expect("historical archive still admits");
+    }
+
+    #[test]
+    fn diagnostic_compatibility_native_archive() {
+        corpus::maturity_native_run_of_record().expect("historical archive still admits");
+    }
+
+    #[test]
+    fn diagnostic_compatibility_retained_archive() {
+        corpus::maturity_retained_run_of_record().expect("historical archive still admits");
+    }
+
+    #[test]
+    fn diagnostic_compatibility_confidential_archive() {
+        corpus::maturity_confidential_run_of_record().expect("historical archive still admits");
+    }
+
+    #[test]
+    fn diagnostic_compatibility_observer_archive() {
+        corpus::maturity_observer_run_of_record().expect("historical archive still admits");
+    }
+
+    #[test]
+    fn diagnostic_compatibility_compact_first_archive() {
+        crate::compact_corpus::run_of_record().expect("historical archive still admits");
+    }
+
+    #[test]
+    fn diagnostic_compatibility_compact_second_archive() {
+        crate::compact_corpus::second_run_of_record().expect("historical archive still admits");
     }
 }
 

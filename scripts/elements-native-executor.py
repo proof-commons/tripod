@@ -4979,6 +4979,9 @@ class OperationExecutor:
                     return waiting(getattr(error, "observation", "block-call-without-validation-verdict"))
                 block_reason = matched.group(1)
                 script_failure = script_error_in(error.client_detail, CONSENSUS_SCRIPT_PREFIX)
+                facts["block_script_error"] = (
+                    script_failure if script_failure in FAILURE_CLASS_BY_SCRIPT_ERROR
+                    else "unclassified")
                 consensus_reason = reason if reason.startswith("bad-txns-") else (
                     None if script_failure is not None else block_reason)
                 refused = self.refused_at_consensus(

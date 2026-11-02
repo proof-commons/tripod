@@ -51,6 +51,7 @@ Run standalone (`python3 scripts/test-executor-boundaries.py`) or as the
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import io
 import json
@@ -804,6 +805,42 @@ def test_a_wrong_revision_is_refused_before_any_node(failures) -> int:
 
 
 # --------------------------------------------------------------------------
+# Direct-block response envelopes
+# --------------------------------------------------------------------------
+
+
+def test_direct_block_response_keeps_both_key_sets(failures) -> int:
+    """Serialize a real direct-block result without widening either closed envelope."""
+    path = os.path.join(REPOSITORY_ROOT, "scripts", "test-executor-classification.py")
+    spec = importlib.util.spec_from_file_location("classification_subject", path)
+    subject = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(subject)
+    module = executor_module()
+    body, _ = subject.maturity_submission(
+        module, "TestBlockValidity failed: " + module.CONSENSUS_SCRIPT_PREFIX
+        + "Invalid Schnorr signature)")
+    body.update(issued_asset=None, funded_outputs=[])
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        module.write_operation_response({"step": "diagnostic"}, body)
+    response = json.loads(output.getvalue())
+    failures.equal(set(response), {
+        "schema", "case", "observed_layer", "observed_detail", "issued_asset",
+        "funded_outputs", "confidential_funded_outputs", "mined_readback",
+        "accepted_txid", "sponsor_witness", "signature_bound_to", "script_path_witness",
+        "signer_public_key", "signed_profile", "signing_genesis", "resources",
+    }, "revision-eight response keys")
+    detail = json.loads(response["observed_detail"])
+    failures.equal(set(detail), {
+        "schema", "policy", "route", "relay_allowed", "relay_detail", "detail",
+    }, "six outer detail keys")
+    failures.equal(detail["detail"]["block_script_error"], "Invalid Schnorr signature",
+                   "only the nested facts carry the key")
+    failures.equal(response["schema"], 8, "revision unchanged")
+    return 4
+
+
+# --------------------------------------------------------------------------
 # The cross-language agreement the bounds rest on
 # --------------------------------------------------------------------------
 
@@ -1321,6 +1358,7 @@ TESTS = (
         test_zk_paths_and_loader_exceptions_reach_neither_file,
     ),
     ("the previous revision is refused before any node", test_a_wrong_revision_is_refused_before_any_node),
+    ("direct block response keeps both key sets", test_direct_block_response_keeps_both_key_sets),
     ("schema constants agree at revision eight", test_the_schema_constants_agree_at_revision_eight),
     ("revision seven producer shapes are static", test_revision_seven_producer_shapes_are_stated_at_the_boundary),
     ("the request bounds agree across implementations", test_the_request_bounds_agree_across_the_two_implementations),

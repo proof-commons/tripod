@@ -14,6 +14,8 @@ data, so the whole lane runs without a node, without a network, and without
 a Rust or TeX toolchain -- which is why it can be an ordinary meson test
 rather than a live-node lane.
 
+This file also drives `submit_maturity` over a scripted in-memory node.
+
 What this proves, and why it is worth a lane
 --------------------------------------------
 The G12-R07 repair replaced a parser that took the substring up to the
@@ -46,8 +48,10 @@ the `executor-classification` meson test.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import sys
+from types import SimpleNamespace
 
 REPOSITORY_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXECUTOR_PATH = os.path.join(REPOSITORY_ROOT, "scripts", "elements-native-executor.py")
@@ -285,7 +289,123 @@ def test_a_mempool_conservation_reason_is_not_upgraded_to_a_script_verdict(
     return checks
 
 
+def maturity_submission(executor, block_error=None, relay_reason="min relay fee not met"):
+    """Drive the real submission and classifier over a scripted node, without RPC."""
+    txid = "11" * 32
+    block_hash = "22" * 32
+
+    class Block:
+        vtx = []
+
+        def deserialize(self, stream):
+            assert stream.read() == b"\x00"
+
+        def get_weight(self):
+            return 400
+
+    class Node:
+        fee_policy = "node-defaults"
+        start_arguments = []
+
+        def __init__(self):
+            self.call_observations = []
+            self.methods = []
+
+        def call(self, method, *args, **kwargs):
+            self.methods.append(method)
+            self.call_observations.append({"method": method})
+            if method == "getmempoolinfo":
+                return {"size": 0, "minrelaytxfee": "0.00000100",
+                        "mempoolminfee": "0.00000100"}
+            if method == "decoderawtransaction":
+                return {"txid": txid, "vin": [{"txinwitness": ["01", "02", "03"]}]}
+            if method == "testmempoolaccept":
+                return [{"txid": txid, "allowed": False, "reject-reason": relay_reason}]
+            if method == "getnewblockhex":
+                return "00"
+            if method == "getrawtransaction":
+                raise executor.AdapterError("not included")
+            if method == "generateblock":
+                if block_error is not None:
+                    raise executor.AdapterError("block refused", client_detail=block_error)
+                return {"hash": block_hash}
+            raise AssertionError("unexpected scripted call: " + method)
+
+    node = Node()
+    operations = executor.OperationExecutor.__new__(executor.OperationExecutor)
+    operations.executor = SimpleNamespace(
+        node=node, messages=SimpleNamespace(CBlock=Block), weight_of=lambda raw: 400)
+    operations.read_back_confirmed = lambda mined, identity: {
+        "block_hash": block_hash, "transaction_id": identity}
+    return operations.submit_maturity({"transaction_bytes": b"\x00"}), node.methods
+
+
+def test_direct_block_records_only_vocabulary_keys(executor, failures):
+    """The direct-block branch retains keys, not client text or class values."""
+    checked = 0
+    for key in executor.FAILURE_CLASS_BY_SCRIPT_ERROR:
+        client = ("CLIENT_PREFIX TestBlockValidity failed: "
+                  + executor.CONSENSUS_SCRIPT_PREFIX + key + ") CLIENT_SUFFIX")
+        body, methods = maturity_submission(executor, client)
+        detail = json.loads(body["observed_detail"])
+        failures.equal(detail["detail"]["block_script_error"], key, "recorded key")
+        failures.equal(body["observed_layer"], "script_path_rejection", "layer retained")
+        failures.equal(detail["detail"]["verdict_reason"],
+                       "mandatory-script-verify-flag-failed", "bare verdict retained")
+        failures.equal(body["transaction_weight"], 400, "weight retained")
+        failures.check("CLIENT_PREFIX" not in body["observed_detail"]
+                       and "CLIENT_SUFFIX" not in body["observed_detail"], "client text absent")
+        failures.equal(methods.count("generateblock"), 1, "one direct-block attempt")
+        checked += 6
+    for key in ("Witness program hash mismatch", "arbitrary unrecognized client text"):
+        body, _ = maturity_submission(executor, "TestBlockValidity failed: "
+                                     + executor.CONSENSUS_SCRIPT_PREFIX + key + ")")
+        detail = json.loads(body["observed_detail"])
+        failures.equal(detail["detail"]["block_script_error"], "unclassified", "unmapped key")
+        failures.check(key not in body["observed_detail"], "unmapped client text absent")
+        checked += 2
+    body, _ = maturity_submission(executor, "TestBlockValidity failed: bad-txns-inputs-missingorspent")
+    failures.equal(json.loads(body["observed_detail"])["detail"]["block_script_error"],
+                   "unclassified", "no script wrapper")
+    return checked + 1
+
+
+def test_direct_block_preserves_other_routes(executor, failures):
+    """Acceptance, relay-only refusal, waiting and mempool precedence stay distinct."""
+    body, methods = maturity_submission(executor)
+    detail = json.loads(body["observed_detail"])
+    failures.equal(body["observed_layer"], "accepted", "accepted direct block")
+    failures.equal(detail["route"], "direct-block", "accepted route")
+    failures.check("block_script_error" not in detail["detail"], "accepted recording absent")
+    failures.equal(methods.count("generateblock"), 1, "accepted block attempted")
+    relay = executor.CONSENSUS_SCRIPT_PREFIX + "Invalid Schnorr signature)"
+    body, methods = maturity_submission(executor, relay_reason=relay)
+    detail = json.loads(body["observed_detail"])
+    failures.equal(body["observed_layer"], "script_path_rejection", "relay refusal")
+    failures.equal(detail["detail"]["verdict_reason"], relay, "relay reason retained")
+    failures.check("block_script_error" not in detail["detail"], "relay recording absent")
+    failures.check("generateblock" not in methods, "relay refusal never submits a block")
+    body, _ = maturity_submission(executor, "not a validation verdict")
+    detail = json.loads(body["observed_detail"])
+    failures.equal(body["observed_layer"], "executor_infrastructure_failure", "waiting layer")
+    failures.equal(detail["route"], "undecided", "waiting route")
+    failures.equal(detail["detail"]["reason"], "block-call-without-validation-verdict",
+                   "waiting reason")
+    failures.check("block_script_error" not in detail["detail"], "waiting recording absent")
+    failures.equal(body["transaction_weight"], None, "waiting has no weight verdict")
+    body, _ = maturity_submission(executor, "TestBlockValidity failed: " + relay,
+                                  "bad-txns-in-ne-out")
+    detail = json.loads(body["observed_detail"])
+    failures.equal(body["observed_layer"], "consensus_rejection_before_script", "mempool wins")
+    failures.equal(detail["detail"]["verdict_reason"], "bad-txns-in-ne-out", "mempool reason wins")
+    failures.equal(detail["detail"]["block_script_error"], "Invalid Schnorr signature",
+                   "recording does not decide the layer")
+    return 16
+
+
 TESTS = [
+    ("direct block records only vocabulary keys", test_direct_block_records_only_vocabulary_keys),
+    ("direct block preserves other routes", test_direct_block_preserves_other_routes),
     ("every mapped message survives both wrappers", test_every_mapped_message_survives_both_wrappers),
     ("every mapped message classifies", test_every_mapped_message_classifies),
     ("parenthesised messages are not truncated", test_parenthesised_messages_are_not_truncated),
