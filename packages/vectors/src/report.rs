@@ -39,6 +39,7 @@ use target_elements_conformance::protocol::{
 };
 use target_elements_conformance::provenance::{ProvenanceDefect, ValidatedExecutorProvenance};
 
+use crate::compact_corpus::{AdmittedCompactSubmission, schedule};
 use crate::comparison::{compare, read_accepted};
 use crate::fixture::{OPERATION, positive_semantic_census};
 use crate::materialize::{TargetVectorId, vector_id};
@@ -446,6 +447,182 @@ pub fn validate_operation_report<'run>(
     validate_bound_run(&binding, planner)
 }
 
+/// The outcome claimed by an offered substrate report.
+///
+/// A rejected claim does not alter the retained accepted control's evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CompactSubstrateOutcome {
+    Accepted,
+    Rejected,
+}
+
+/// One coherent transaction coordinate in an offered report.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompactSubstrateTransactionBinding {
+    /// Exact submitted bytes, including witnesses.
+    pub submitted_bytes: Vec<u8>,
+    /// Accepted identity supported by the settlement evidence.
+    pub transaction_id: String,
+    /// Readback whose bytes and both identities must agree with the offered submitted bytes.
+    pub readback: target_elements_conformance::protocol::MinedFundingReadback,
+}
+
+/// An offered claim, not an admitted submission or coverage observation.
+///
+/// The claimed outcome is separate from the transaction's retained settlement
+/// evidence so a rejected claim changes exactly one report coordinate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompactSubstrateReport {
+    /// The external requirement this report claims to answer.
+    pub requirement: realization::ExternalEvidenceRequirement,
+    /// The required external capability.
+    pub capability: compiler::operation_plan::RequiredCapability,
+    /// The requirement's sponsor identity.
+    pub sponsor: compiler::operation_plan::SponsorCase,
+    /// Network, genesis and target contract, in archive order.
+    pub deployment: [String; 3],
+    /// Canonical merkle root, output key and constructor program.
+    pub candidate_pins: [[u8; 32]; 3],
+    /// Commitments to the programs reconstructed during replay.
+    pub programs: BTreeSet<[u8; 32]>,
+    /// The report's claimed outcome at the external boundary.
+    pub outcome: CompactSubstrateOutcome,
+    /// The internally consistent transaction described by the report.
+    pub transaction: CompactSubstrateTransactionBinding,
+}
+
+/// Invalid operands never receive one of the three external row classes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CompactSubstrateReportPreparationRefusal {
+    /// The report names another external requirement or capability.
+    Requirement,
+    /// The report names another sponsor identity.
+    Sponsor,
+    /// The report names another deployment or candidate.
+    Premises,
+    /// Submitted bytes, identities or readback contradict each other.
+    MalformedTransactionBinding,
+}
+
+/// Immutable operands that passed preparation, without any row credit.
+#[derive(Debug)]
+pub struct CompactSubstrateReportComparison<'submission, 'report> {
+    submission: &'submission AdmittedCompactSubmission,
+    offered: Option<&'report CompactSubstrateReport>,
+}
+
+/// Exactly the three external-report mutations, separate from malformed operands.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CompactSubstrateReportRefusal {
+    ExternalEvidenceMissing,
+    ExternalEvidenceFailed,
+    ExternalEvidenceIdentityMismatch,
+}
+
+/// Project the accepted control offline from an admitted exact submission.
+///
+/// Source provenance remains on the admitted operand and is not candidate
+/// identity. Projection changes neither the external evidence role nor closure
+/// accounting; it supplies only an offered report for comparison.
+#[must_use]
+pub fn project_compact_substrate_report(
+    submission: &AdmittedCompactSubmission,
+) -> CompactSubstrateReport {
+    CompactSubstrateReport {
+        requirement: submission.requirement().clone(),
+        capability: submission.capability(),
+        sponsor: submission.sponsor(),
+        deployment: submission.candidate().deployment.clone(),
+        candidate_pins: submission.candidate().pins,
+        programs: submission.candidate().programs.clone(),
+        outcome: CompactSubstrateOutcome::Accepted,
+        transaction: CompactSubstrateTransactionBinding {
+            submitted_bytes: submission.submitted_bytes().to_vec(),
+            transaction_id: submission.transaction_id().to_owned(),
+            readback: submission.readback().clone(),
+        },
+    }
+}
+
+/// Check operand structure and premises before the external-report comparison.
+///
+/// Absence, rejection and a coherent different transaction are permitted here.
+/// The settlement check runs over the offered binding alone. For the admitted
+/// transaction, its complete readback must also match the retained settlement.
+/// The claimed outcome is kept separate from the binding and compared by the
+/// entry, not by preparation.
+///
+/// # Errors
+/// Returns a preparation refusal for mismatched premises or malformed evidence,
+/// never an external row refusal and never an archive admission result.
+pub fn prepare_compact_substrate_report_comparison<'submission, 'report>(
+    submission: &'submission AdmittedCompactSubmission,
+    offered: Option<&'report CompactSubstrateReport>,
+) -> Result<
+    CompactSubstrateReportComparison<'submission, 'report>,
+    CompactSubstrateReportPreparationRefusal,
+> {
+    use CompactSubstrateReportPreparationRefusal as Refusal;
+    if let Some(report) = offered {
+        if report.requirement != *submission.requirement()
+            || report.capability != submission.capability()
+        {
+            return Err(Refusal::Requirement);
+        }
+        if report.sponsor != submission.sponsor() {
+            return Err(Refusal::Sponsor);
+        }
+        if report.deployment != submission.candidate().deployment
+            || report.candidate_pins != submission.candidate().pins
+            || report.programs != submission.candidate().programs
+        {
+            return Err(Refusal::Premises);
+        }
+        let mut evidence = submission.response().clone();
+        evidence.accepted_txid = Some(report.transaction.transaction_id.clone());
+        evidence.mined_readback = Some(report.transaction.readback.clone());
+        schedule::verify_readback(&report.transaction.submitted_bytes, &evidence)
+            .map_err(|_| Refusal::MalformedTransactionBinding)?;
+        if report.transaction.submitted_bytes == submission.submitted_bytes()
+            && report.transaction.readback != *submission.readback()
+        {
+            return Err(Refusal::MalformedTransactionBinding);
+        }
+    }
+    Ok(CompactSubstrateReportComparison {
+        submission,
+        offered,
+    })
+}
+
+/// Compare an offered report with one admitted exact submission.
+///
+/// These are observations at the external-report boundary. They do not change
+/// the external evidence role, admission, derivation or closure accounting.
+/// A coherent report for another transaction is an identity refusal even when
+/// its claimed outcome is rejection. No target execution is performed here.
+///
+/// # Errors
+/// Returns absence first, exact transaction mismatch second, or failed claimed
+/// outcome third. Malformed operands cannot construct this comparison.
+#[allow(
+    clippy::elidable_lifetime_names,
+    reason = "the public comparison contract names its two independent operand lifetimes"
+)]
+pub fn validate_compact_substrate_report<'submission, 'report>(
+    comparison: &CompactSubstrateReportComparison<'submission, 'report>,
+) -> Result<(), CompactSubstrateReportRefusal> {
+    use CompactSubstrateReportRefusal as Refusal;
+    let report = comparison.offered.ok_or(Refusal::ExternalEvidenceMissing)?;
+    if report.transaction.submitted_bytes != comparison.submission.submitted_bytes() {
+        return Err(Refusal::ExternalEvidenceIdentityMismatch);
+    }
+    if report.outcome == CompactSubstrateOutcome::Rejected {
+        return Err(Refusal::ExternalEvidenceFailed);
+    }
+    Ok(())
+}
+
 /// The validation proper, over the extracted binding.
 ///
 /// Split from [`validate_operation_report`] so the crate's own tests can
@@ -821,8 +998,11 @@ fn compare_projections(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::{
-        ExecutionBinding, ExecutorSelfDescription, ObservedAnswer, ReportValidationRefusal,
-        ValidatedCompactAshOperationReport, validate_bound_run,
+        CompactSubstrateOutcome, CompactSubstrateReport, CompactSubstrateReportPreparationRefusal,
+        CompactSubstrateReportRefusal, ExecutionBinding, ExecutorSelfDescription, ObservedAnswer,
+        ReportValidationRefusal, ValidatedCompactAshOperationReport,
+        prepare_compact_substrate_report_comparison, project_compact_substrate_report,
+        validate_bound_run, validate_compact_substrate_report,
     };
     use crate::fixture::positive_semantic_census;
     use crate::materialize::{TargetVectorId, vector_id};
@@ -848,6 +1028,374 @@ pub(crate) mod tests {
         validate_executor_provenance,
     };
     use target_elements_conformance::report::{ExecutorDeclaration, ExecutorProvenance};
+
+    fn substrate_submission(
+        step: &str,
+    ) -> &'static crate::compact_corpus::AdmittedCompactSubmission {
+        let corpus = crate::compact_corpus::run_of_record().expect("admitted archive");
+        &corpus.submissions()[&(
+            crate::compact_corpus::COMPACT_RUN_ADDRESS.to_owned(),
+            OperationCaseId {
+                operation: OperationStepKind::Submit,
+                step: step.to_owned(),
+            },
+        )]
+    }
+
+    const SUBSTRATE_CONTROLS: [(&str, &str, compiler::operation_plan::SponsorCase); 2] = [
+        (
+            "job-0/submit-control",
+            "job-9/submit-control",
+            compiler::operation_plan::SponsorCase::Absent,
+        ),
+        (
+            "job-3/submit-control",
+            "job-11/submit-control",
+            compiler::operation_plan::SponsorCase::Present,
+        ),
+    ];
+
+    fn compare_substrate(
+        submission: &crate::compact_corpus::AdmittedCompactSubmission,
+        report: Option<&CompactSubstrateReport>,
+    ) -> Result<(), CompactSubstrateReportRefusal> {
+        let comparison = prepare_compact_substrate_report_comparison(submission, report)
+            .expect("well-formed report operand");
+        validate_compact_substrate_report(&comparison)
+    }
+
+    #[test]
+    fn projected_compact_substrate_controls_are_accepted_for_both_sponsors() {
+        let bundle = crate::bundle::fixture_bundle().expect("bundle");
+        for (step, _, sponsor) in SUBSTRATE_CONTROLS {
+            let submission = substrate_submission(step);
+            assert_eq!(submission.sponsor(), sponsor);
+            assert_eq!(
+                submission.family().name(),
+                if sponsor == compiler::operation_plan::SponsorCase::Absent {
+                    "A2"
+                } else {
+                    "N2"
+                }
+            );
+            assert_eq!(
+                submission.requirement(),
+                &realization::ExternalEvidenceRequirement::SubstrateConservation {
+                    operation: architecture::OperationId::CompactAsh,
+                    asset: architecture::AssetId::Lbtc,
+                }
+            );
+            let role = compiler::operation_plan::EvidenceRole::ExternalReport {
+                requirement: submission.requirement().clone(),
+                capability: submission.capability(),
+            };
+            assert_eq!(
+                bundle
+                    .plan()
+                    .coverage()
+                    .filter(|r| r.id.case.sponsor == sponsor
+                        && r.role == role
+                        && matches!(
+                            r.obligation,
+                            compiler::operation_plan::TargetCoverageObligation::Negative(_)
+                        ))
+                    .count(),
+                3
+            );
+            let report = project_compact_substrate_report(submission);
+            assert_eq!(compare_substrate(submission, Some(&report)), Ok(()));
+        }
+    }
+
+    #[test]
+    fn compact_substrate_absence_has_only_the_missing_class() {
+        for (step, _, _) in SUBSTRATE_CONTROLS {
+            let submission = substrate_submission(step);
+            let control = project_compact_substrate_report(submission);
+            assert_eq!(compare_substrate(submission, Some(&control)), Ok(()));
+            assert_eq!(
+                compare_substrate(submission, None),
+                Err(CompactSubstrateReportRefusal::ExternalEvidenceMissing)
+            );
+            assert_eq!(compare_substrate(submission, Some(&control)), Ok(()));
+        }
+    }
+
+    #[test]
+    fn compact_substrate_failed_outcome_changes_only_the_claim() {
+        for (step, _, _) in SUBSTRATE_CONTROLS {
+            let submission = substrate_submission(step);
+            let control = project_compact_substrate_report(submission);
+            assert_eq!(compare_substrate(submission, Some(&control)), Ok(()));
+            let mut subject = control.clone();
+            subject.outcome = CompactSubstrateOutcome::Rejected;
+            assert_eq!(
+                subject,
+                CompactSubstrateReport {
+                    outcome: CompactSubstrateOutcome::Rejected,
+                    ..control.clone()
+                }
+            );
+            assert_eq!(
+                compare_substrate(submission, Some(&subject)),
+                Err(CompactSubstrateReportRefusal::ExternalEvidenceFailed)
+            );
+            subject.outcome = control.outcome;
+            assert_eq!(subject, control);
+            assert_eq!(compare_substrate(submission, Some(&subject)), Ok(()));
+        }
+    }
+
+    #[test]
+    fn compact_substrate_identity_changes_only_the_coherent_transaction() {
+        for (step, replacement, _) in SUBSTRATE_CONTROLS {
+            let submission = substrate_submission(step);
+            let other = substrate_submission(replacement);
+            assert_eq!(submission.family(), other.family());
+            let control = project_compact_substrate_report(submission);
+            let replacement = project_compact_substrate_report(other);
+            assert_eq!(compare_substrate(other, Some(&replacement)), Ok(()));
+            assert_ne!(
+                control.transaction.submitted_bytes,
+                replacement.transaction.submitted_bytes
+            );
+            assert_ne!(
+                control.transaction.transaction_id,
+                replacement.transaction.transaction_id
+            );
+            let mut subject = control.clone();
+            subject.transaction = replacement.transaction;
+            assert_eq!(
+                subject,
+                CompactSubstrateReport {
+                    transaction: subject.transaction.clone(),
+                    ..control.clone()
+                }
+            );
+            assert_eq!(
+                compare_substrate(submission, Some(&subject)),
+                Err(CompactSubstrateReportRefusal::ExternalEvidenceIdentityMismatch)
+            );
+            subject.transaction = control.transaction.clone();
+            assert_eq!(subject, control);
+            assert_eq!(compare_substrate(submission, Some(&subject)), Ok(()));
+        }
+    }
+
+    #[test]
+    fn compact_substrate_wrong_transaction_precedes_failed_outcome() {
+        for (step, replacement, _) in SUBSTRATE_CONTROLS {
+            let submission = substrate_submission(step);
+            let mut subject = project_compact_substrate_report(submission);
+            subject.transaction =
+                project_compact_substrate_report(substrate_submission(replacement)).transaction;
+            subject.outcome = CompactSubstrateOutcome::Rejected;
+            assert_eq!(
+                compare_substrate(submission, Some(&subject)),
+                Err(CompactSubstrateReportRefusal::ExternalEvidenceIdentityMismatch)
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_substrate_operands_never_reach_the_row_comparison() {
+        for (step, _, _) in SUBSTRATE_CONTROLS {
+            let submission = substrate_submission(step);
+            let control = project_compact_substrate_report(submission);
+            for defect in 0..6 {
+                let mut subject = control.clone();
+                match defect {
+                    0 => subject.transaction.transaction_id.replace_range(..1, "z"),
+                    1 => subject.transaction.submitted_bytes.clear(),
+                    2 => subject.transaction.readback.raw_transaction[0] ^= 1,
+                    3 => subject
+                        .transaction
+                        .readback
+                        .witness_transaction_id
+                        .replace_range(..1, "z"),
+                    4 => subject.transaction.readback.block_height ^= 1,
+                    _ => {
+                        let hash = &mut subject.transaction.readback.block_hash;
+                        let first = if hash.starts_with('0') { "1" } else { "0" };
+                        hash.replace_range(..1, first);
+                    }
+                }
+                assert_eq!(
+                    prepare_compact_substrate_report_comparison(submission, Some(&subject)).err(),
+                    Some(CompactSubstrateReportPreparationRefusal::MalformedTransactionBinding)
+                );
+            }
+            assert_eq!(compare_substrate(submission, Some(&control)), Ok(()));
+        }
+    }
+
+    #[test]
+    fn substrate_requirement_sponsor_and_candidate_defects_are_preparation_refusals() {
+        use CompactSubstrateReportPreparationRefusal as Refusal;
+        for (step, _, sponsor) in SUBSTRATE_CONTROLS {
+            let submission = substrate_submission(step);
+            let control = project_compact_substrate_report(submission);
+            for (defect, expected) in [
+                (0, Refusal::Requirement),
+                (1, Refusal::Requirement),
+                (2, Refusal::Sponsor),
+                (3, Refusal::Premises),
+                (4, Refusal::Premises),
+                (5, Refusal::Premises),
+            ] {
+                let mut subject = control.clone();
+                match defect {
+                    0 => {
+                        subject.requirement =
+                            realization::ExternalEvidenceRequirement::SubstrateConservation {
+                                operation: architecture::OperationId::CompactAsh,
+                                asset: architecture::AssetId::U,
+                            }
+                    }
+                    1 => {
+                        subject.capability =
+                            compiler::operation_plan::RequiredCapability::OperatorAuthorization;
+                    }
+                    2 => {
+                        subject.sponsor =
+                            if sponsor == compiler::operation_plan::SponsorCase::Absent {
+                                compiler::operation_plan::SponsorCase::Present
+                            } else {
+                                compiler::operation_plan::SponsorCase::Absent
+                            }
+                    }
+                    3 => subject.deployment[0].push('0'),
+                    4 => subject.candidate_pins[0][0] ^= 1,
+                    _ => subject.programs.clear(),
+                }
+                assert_eq!(
+                    prepare_compact_substrate_report_comparison(submission, Some(&subject)).err(),
+                    Some(expected)
+                );
+            }
+        }
+    }
+
+    #[derive(Clone, Debug, Eq, PartialEq)]
+    struct SubstrateReading {
+        key: compiler::operation_plan::CoverageRequirementId,
+        control: CompactSubstrateReport,
+        subject: Option<CompactSubstrateReport>,
+        observed: CompactSubstrateReportRefusal,
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    enum SubstrateJoinRefusal {
+        CampaignJoin,
+    }
+
+    fn substrate_step(
+        sponsor: compiler::operation_plan::SponsorCase,
+    ) -> (&'static str, &'static str) {
+        if sponsor == compiler::operation_plan::SponsorCase::Absent {
+            ("job-0/submit-control", "job-9/submit-control")
+        } else {
+            ("job-3/submit-control", "job-11/submit-control")
+        }
+    }
+
+    fn substrate_pairs() -> Vec<SubstrateReading> {
+        use CompactSubstrateReportRefusal as Refusal;
+        use compiler::operation_plan::RelationMutation as Mutation;
+        let bundle = crate::bundle::fixture_bundle().expect("bundle");
+        crate::compact_negative_manifest::compact_negative_manifest(&bundle)
+            .expect("manifest")
+            .into_values()
+            .filter(|row| {
+                row.boundary
+                    == crate::compact_negative_manifest::CompactNegativeBoundary::ExternalReport
+            })
+            .map(|row| {
+                let (step, replacement) = substrate_step(row.requirement.case.sponsor);
+                let control = project_compact_substrate_report(substrate_submission(step));
+                let mut subject = control.clone();
+                let (subject, observed) = match row.mutation {
+                    Mutation::ExternalEvidenceMissing => (None, Refusal::ExternalEvidenceMissing),
+                    Mutation::ExternalEvidenceFailed => {
+                        subject.outcome = CompactSubstrateOutcome::Rejected;
+                        (Some(subject), Refusal::ExternalEvidenceFailed)
+                    }
+                    Mutation::ExternalEvidenceIdentityMismatch => {
+                        subject.transaction =
+                            project_compact_substrate_report(substrate_submission(replacement))
+                                .transaction;
+                        (Some(subject), Refusal::ExternalEvidenceIdentityMismatch)
+                    }
+                    _ => panic!("external manifest has only three mutations"),
+                };
+                SubstrateReading {
+                    key: row.requirement,
+                    control,
+                    subject,
+                    observed,
+                }
+            })
+            .collect()
+    }
+
+    fn join_substrate_readings(readings: &[SubstrateReading]) -> Result<(), SubstrateJoinRefusal> {
+        let expected = substrate_pairs();
+        let mut seen = BTreeSet::new();
+        for reading in readings {
+            if !seen.insert(reading.key.clone()) || !expected.contains(reading) {
+                return Err(SubstrateJoinRefusal::CampaignJoin);
+            }
+            let submission = substrate_submission(substrate_step(reading.key.case.sponsor).0);
+            let control =
+                prepare_compact_substrate_report_comparison(submission, Some(&reading.control))
+                    .map_err(|_| SubstrateJoinRefusal::CampaignJoin)?;
+            let subject =
+                prepare_compact_substrate_report_comparison(submission, reading.subject.as_ref())
+                    .map_err(|_| SubstrateJoinRefusal::CampaignJoin)?;
+            if validate_compact_substrate_report(&control) != Ok(())
+                || validate_compact_substrate_report(&subject) != Err(reading.observed)
+            {
+                return Err(SubstrateJoinRefusal::CampaignJoin);
+            }
+        }
+        if expected.iter().any(|reading| !seen.contains(&reading.key)) {
+            return Err(SubstrateJoinRefusal::CampaignJoin);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn substrate_test_readings_join_all_six_exact_keys_in_both_directions() {
+        let readings = substrate_pairs();
+        assert_eq!(readings.len(), 6);
+        assert_eq!(join_substrate_readings(&readings), Ok(()));
+    }
+
+    #[test]
+    fn substrate_test_join_defects_never_receive_a_row_class() {
+        let control = substrate_pairs();
+        for defect in 0..5 {
+            let mut changed = control.clone();
+            match defect {
+                0 => {
+                    changed.pop();
+                }
+                1 => changed.push(changed[0].clone()),
+                2 => {
+                    let mut surplus = changed[0].clone();
+                    surplus.key.case.operation = architecture::OperationId::Clear;
+                    changed.push(surplus);
+                }
+                3 => changed[0].key.case.operation = architecture::OperationId::Clear,
+                _ => changed[0].subject = Some(changed[0].control.clone()),
+            }
+            assert_eq!(
+                join_substrate_readings(&changed),
+                Err(SubstrateJoinRefusal::CampaignJoin)
+            );
+        }
+        assert_eq!(join_substrate_readings(&control), Ok(()));
+    }
 
     const NETWORK: [u8; 32] = [0x11; 32];
     const GENESIS: [u8; 32] = [0x22; 32];

@@ -95,6 +95,7 @@ pub mod violation;
 pub use abi_validation::{
     AbiValidationOutcome, AbiValidationRow, index_abi_validation, precedes_the_target,
 };
+pub use compact_corpus::AdmittedCompactSubmission;
 pub use comparison::{
     ObservedProjection, ProjectionRefusal, ProjectionTerm, compare, read_accepted,
 };
@@ -237,8 +238,12 @@ pub use plan::{
 pub use recorded_acceptance::RecordedAcceptance;
 pub use render::{render_refused_run, render_validated_report};
 pub use report::{
-    OPERATION_REPORT_SCHEMA, ProjectionVerdict, ReportValidationRefusal,
-    ValidatedCompactAshOperationReport, validate_operation_report,
+    CompactSubstrateOutcome, CompactSubstrateReport, CompactSubstrateReportComparison,
+    CompactSubstrateReportPreparationRefusal, CompactSubstrateReportRefusal,
+    CompactSubstrateTransactionBinding, OPERATION_REPORT_SCHEMA, ProjectionVerdict,
+    ReportValidationRefusal, ValidatedCompactAshOperationReport,
+    prepare_compact_substrate_report_comparison, project_compact_substrate_report,
+    validate_compact_substrate_report, validate_operation_report,
 };
 pub use subject::{CanonicalSubject, ExperimentalSubject, SubjectStanding};
 pub use violation::{

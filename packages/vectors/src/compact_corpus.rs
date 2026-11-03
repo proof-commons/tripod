@@ -5,14 +5,16 @@ use crate::compact_campaign::{
 };
 use crate::historical_candidate::{CandidateStanding, CurrentCandidate};
 use crate::matrix::EvidenceBoundary;
-use compiler::operation_plan::CoverageRequirementId;
+use compiler::operation_plan::{CoverageRequirementId, RequiredCapability, SponsorCase};
+use realization::ExternalEvidenceRequirement;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt::Write as _;
 use std::sync::OnceLock;
 use target_elements_conformance::constructor::tagged::sha256;
 use target_elements_conformance::executor::TargetOperationPlanner;
 use target_elements_conformance::protocol::{
-    FundedOutput, NativeOperationResponse, ObservedOutcomeLayer, OperationSubject,
+    FundedOutput, MinedFundingReadback, NativeOperationResponse, ObservedOutcomeLayer,
+    OperationCaseId, OperationSubject,
 };
 use transaction::{
     AssetField, AssetId, InputWitness, Outpoint, TargetInput, TargetOutput, TargetTransaction,
@@ -119,12 +121,107 @@ pub enum NativeDisposition {
     Suspended(ControlFamily),
 }
 
+/// An accepted control retained only after complete archive replay.
+///
+/// The transaction identities and readback have passed the schedule's exact
+/// byte comparison. This immutable operand supplies premises for an external
+/// report comparison; retaining it does not discharge any requirement.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdmittedCompactSubmission {
+    archive: String,
+    family: ControlFamily,
+    submitted: Vec<u8>,
+    response: NativeOperationResponse,
+    readback: MinedFundingReadback,
+    requirement: ExternalEvidenceRequirement,
+    candidate: CurrentCandidate,
+}
+
+impl AdmittedCompactSubmission {
+    /// The admitted archive address, separate from the exact case key.
+    #[must_use]
+    pub fn archive(&self) -> &str {
+        &self.archive
+    }
+
+    /// The exact submission case within that archive.
+    #[must_use]
+    pub const fn case(&self) -> &OperationCaseId {
+        &self.response.case
+    }
+
+    /// The construction family replayed for this control.
+    #[must_use]
+    pub const fn family(&self) -> ControlFamily {
+        self.family
+    }
+
+    /// The sponsor identity established by schedule replay.
+    #[must_use]
+    pub const fn sponsor(&self) -> SponsorCase {
+        if self.family.sponsored {
+            SponsorCase::Present
+        } else {
+            SponsorCase::Absent
+        }
+    }
+
+    /// The exact submitted bytes, including witnesses.
+    #[must_use]
+    pub fn submitted_bytes(&self) -> &[u8] {
+        &self.submitted
+    }
+
+    /// The transaction identity recomputed and matched during settlement.
+    #[must_use]
+    pub fn transaction_id(&self) -> &str {
+        &self.readback.transaction_id
+    }
+
+    /// The witness identity recomputed and matched during settlement.
+    #[must_use]
+    pub fn witness_transaction_id(&self) -> &str {
+        &self.readback.witness_transaction_id
+    }
+
+    /// The accepted response, retained independently of any offered report.
+    #[must_use]
+    pub const fn response(&self) -> &NativeOperationResponse {
+        &self.response
+    }
+
+    /// Settlement evidence for these exact submitted bytes.
+    #[must_use]
+    pub const fn readback(&self) -> &MinedFundingReadback {
+        &self.readback
+    }
+
+    /// The declared external substrate obligation for Compact.
+    #[must_use]
+    pub const fn requirement(&self) -> &ExternalEvidenceRequirement {
+        &self.requirement
+    }
+
+    /// The capability required by that external obligation.
+    #[must_use]
+    pub const fn capability(&self) -> RequiredCapability {
+        RequiredCapability::WholeTransactionValueConservation
+    }
+
+    /// Candidate and deployment premises, with source provenance separate.
+    #[must_use]
+    pub const fn candidate(&self) -> &CurrentCandidate {
+        &self.candidate
+    }
+}
+
 /// Only complete archive replay constructs this value.
 #[derive(Debug)]
 pub struct CompactCorpus {
     standing: CandidateStanding,
     rows: BTreeMap<CoverageRequirementId, NativeDisposition>,
     controls: BTreeSet<ControlFamily>,
+    submissions: BTreeMap<(String, OperationCaseId), AdmittedCompactSubmission>,
 }
 impl CompactCorpus {
     #[must_use]
@@ -138,6 +235,14 @@ impl CompactCorpus {
     #[must_use]
     pub const fn controls(&self) -> &BTreeSet<ControlFamily> {
         &self.controls
+    }
+
+    /// Accepted controls keyed by archive address and exact submission case.
+    #[must_use]
+    pub const fn submissions(
+        &self,
+    ) -> &BTreeMap<(String, OperationCaseId), AdmittedCompactSubmission> {
+        &self.submissions
     }
 }
 
@@ -856,6 +961,7 @@ fn replay(
         .next_step(None)
         .map_err(|_| CompactImportRefusal::Schedule)?;
     let mut observations = BTreeMap::new();
+    let mut accepted_controls = Vec::new();
     let mut pending = None;
     for operation in operations {
         let step = next.take().ok_or(CompactImportRefusal::Schedule)?;
@@ -863,6 +969,11 @@ fn replay(
             step.subject() == &operation.subject && step.case() == &operation.response.case,
             CompactImportRefusal::Schedule,
         )?;
+        if step.case().step.as_str().ends_with("/submit-control")
+            && operation.response.observed_layer == ObservedOutcomeLayer::Accepted
+        {
+            accepted_controls.push((operation, planner.jobs[planner.index].family));
+        }
         if step.case().step.as_str().ends_with("/submit-mutant") {
             pending = Some((
                 planner.jobs[planner.index]
@@ -935,16 +1046,62 @@ fn replay(
             .entry(row.manifest.requirement.clone())
             .or_insert_with(|| disposition_without_observation(row, specification.schedule));
     }
-    let standing = CandidateStanding::CurrentCandidate(CurrentCandidate::selected(
+    let candidate = CurrentCandidate::selected(
         deployment,
         BTreeSet::from([sha256(&planner.program)]),
         Some(source),
-    ));
+    );
+    let submissions = accepted_controls
+        .into_iter()
+        .map(|(operation, family)| {
+            let submission =
+                retain_submission(specification.address, operation, family, &candidate);
+            (
+                (submission.archive.clone(), submission.case().clone()),
+                submission,
+            )
+        })
+        .collect();
+    let standing = CandidateStanding::CurrentCandidate(candidate);
     Ok(CompactCorpus {
         standing,
         rows: observations,
         controls: planner.accepted_families,
+        submissions,
     })
+}
+
+/// Copy an accepted control after every replay predicate has passed.
+///
+/// # Panics
+/// Panics only if a replayed accepted control is not a submission subject or lacks
+/// the settlement readback already required by replay, which successful replay
+/// cannot arrange.
+fn retain_submission(
+    archive: &str,
+    operation: &Recorded,
+    family: ControlFamily,
+    candidate: &CurrentCandidate,
+) -> AdmittedCompactSubmission {
+    let OperationSubject::Submission(subject) = &operation.subject else {
+        panic!("replayed control is a submission")
+    };
+    AdmittedCompactSubmission {
+        archive: archive.to_owned(),
+        family,
+        submitted: subject.transaction_bytes.clone(),
+        response: operation.response.clone(),
+        readback: operation
+            .response
+            .mined_readback
+            .clone()
+            .expect("settled control has readback"),
+        requirement: ExternalEvidenceRequirement::SubstrateConservation {
+            operation: architecture::OperationId::CompactAsh,
+            asset: architecture::AssetId::Lbtc,
+        },
+        candidate: candidate.clone(),
+    }
 }
 
 fn disposition_without_observation(
@@ -1031,6 +1188,12 @@ fn join(first: &CompactCorpus, second: &CompactCorpus) -> Result<CompactCorpus> 
         standing: first.standing.clone(),
         rows,
         controls: first.controls.union(&second.controls).copied().collect(),
+        submissions: first
+            .submissions
+            .iter()
+            .chain(&second.submissions)
+            .map(|(key, submission)| (key.clone(), submission.clone()))
+            .collect(),
     })
 }
 
@@ -1051,6 +1214,111 @@ mod tests {
     use super::*;
     use target_elements_conformance::protocol::WireOutpoint;
     use transaction::Txid;
+
+    #[test]
+    fn retained_controls_bind_exact_submissions_and_settlement_after_admission() {
+        for corpus in [
+            run_of_record().expect("first"),
+            second_run_of_record().expect("second"),
+        ] {
+            let mut families = BTreeSet::new();
+            for ((archive, case), submission) in corpus.submissions() {
+                assert_eq!(archive, submission.archive());
+                assert_eq!(case, submission.case());
+                assert!(case.step.ends_with("/submit-control"));
+                assert_eq!(
+                    submission.response().observed_layer,
+                    ObservedOutcomeLayer::Accepted
+                );
+                assert_eq!(
+                    submission.response().mined_readback.as_ref(),
+                    Some(submission.readback())
+                );
+                assert_eq!(
+                    submission.response().accepted_txid.as_deref(),
+                    Some(submission.transaction_id())
+                );
+                assert_eq!(
+                    submission.readback().raw_transaction,
+                    submission.submitted_bytes()
+                );
+                assert_eq!(
+                    submission.readback().witness_transaction_id,
+                    submission.witness_transaction_id()
+                );
+                assert_eq!(
+                    schedule::verify_readback(submission.submitted_bytes(), submission.response()),
+                    Ok(())
+                );
+                assert_eq!(
+                    Some(submission.candidate()),
+                    corpus.standing().current_candidate()
+                );
+                assert_eq!(
+                    submission.capability(),
+                    RequiredCapability::WholeTransactionValueConservation
+                );
+                families.insert(submission.family());
+            }
+            assert_eq!(&families, corpus.controls());
+        }
+        assert_eq!(run_of_record().expect("first").submissions().len(), 25);
+    }
+
+    #[test]
+    fn joined_submissions_preserve_archive_qualified_cases() {
+        let first = run_of_record().expect("first");
+        let second = second_run_of_record().expect("second");
+        let joined = joined_campaign().expect("joined");
+        assert_eq!(
+            joined.submissions().len(),
+            first.submissions().len() + second.submissions().len()
+        );
+        for (key, submission) in first.submissions().iter().chain(second.submissions()) {
+            assert_eq!(&joined.submissions()[key], submission);
+        }
+        let case = OperationCaseId {
+            operation: target_elements_conformance::protocol::OperationStepKind::Submit,
+            step: "job-0/submit-control".to_owned(),
+        };
+        assert!(
+            joined
+                .submissions()
+                .contains_key(&(COMPACT_RUN_ADDRESS.to_owned(), case.clone()))
+        );
+        assert!(
+            joined
+                .submissions()
+                .contains_key(&(COMPACT_SECOND_RUN_ADDRESS.to_owned(), case))
+        );
+    }
+
+    #[test]
+    fn archive_digest_failure_produces_no_substrate_operand() {
+        let admitted = run_of_record().expect("admission");
+        let mut changed = CAPTURE.to_owned();
+        changed.push('\n');
+        assert!(matches!(
+            admit_files(&changed, TIMING, MANIFEST, REPORT),
+            Err(CompactImportRefusal::Manifest)
+        ));
+        assert!(std::ptr::eq(
+            admitted,
+            run_of_record().expect("unchanged cached admission")
+        ));
+        for submission in admitted.submissions().values() {
+            let report = crate::report::project_compact_substrate_report(submission);
+            let comparison = crate::report::prepare_compact_substrate_report_comparison(
+                submission,
+                Some(&report),
+            )
+            .expect("projected report");
+            assert_eq!(
+                crate::report::validate_compact_substrate_report(&comparison),
+                Ok(())
+            );
+        }
+    }
 
     #[test]
     fn current_archive_replays_sixteen_rows_after_their_paired_controls() {
@@ -1236,6 +1504,7 @@ mod tests {
             standing: swapped_pins,
             rows: second.rows.clone(),
             controls: second.controls.clone(),
+            submissions: second.submissions.clone(),
         };
         assert_eq!(
             join(first, &altered).err(),
@@ -1247,6 +1516,7 @@ mod tests {
             standing: second.standing.clone(),
             rows: fewer,
             controls: second.controls.clone(),
+            submissions: second.submissions.clone(),
         };
         assert_eq!(
             join(first, &truncated).err(),
