@@ -89,7 +89,7 @@ The accepted Phase-4 compact candidate has twelve accepted and matched submissio
 
 **Caveat (Compact acceptance does not complete negative coverage)** · `cav:guide15-exec:compact-acceptance-scope`
 
-Those figures establish neither complete negative coverage nor final calibration; the negative half remains an inherited obligation under (`T4-009`), and candidate bounds retain (`rule:guide15:candidate-only`).
+Those figures establish neither complete negative coverage nor final calibration; the inherited negative half closes separately at (`rec:backlog:wave0-compact-inherited-closure`), and candidate bounds retain (`rule:guide15:candidate-only`).
 
 **Setting (Review basis and authoritative contracts)** · `setup:guide15-exec:review-basis`
 
@@ -546,7 +546,7 @@ All 74 rows under the current 48 / 20 / 6 partition, with 72 / 48 / 18 / 6 retai
 
 **Record (bite-0-4 — Closure carrier)** · `rec:guide15-exec:bite-0-4-closure-carrier`
 
-`T12-004` closes the native half at its recorded 48-requirement scope; `T4-009`'s remaining obligations close through their own evidence before `T12-007` consolidates them, with observed and formally closed counts reported separately (`rec:guide15-exec:bite-0-7-closure-carrier`), so no closure claims 74 observed refusals, as none claimed 72.
+(`T12-004`) closes the native half at its recorded 48-requirement scope; (`T4-009`) closes its remaining obligations through the separate evidence at (`rec:backlog:wave0-compact-inherited-closure`), with 51 observed and 23 formally closed requirements. (`T12-007`) still consolidates those records under (`rec:guide15-exec:bite-0-7-closure-carrier`); no closure claims 74 observed refusals, as none claimed 72.
 
 **Requirement (Current compact pipeline regressions)** · `req:guide15-exec:compact-regressions`
 
