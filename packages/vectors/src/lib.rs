@@ -104,8 +104,11 @@ pub use divergence::{
 };
 pub use error::{FixtureBundleRefusal, VectorError};
 pub use first_party::{
-    FirstPartyEvidenceRefusal, FirstPartyNegativeCase, FirstPartyRefusal, FirstPartyValidator,
-    ValidatedFirstPartyNegativeEvidence, validate_first_party_negative,
+    AdmittedCompactClosure, CompactClosureKind, CompactClosureReading, CompactClosureRefusal,
+    CompactFirstPartyComparisonEvidence, CompactFirstPartyFormalEvidence, CompactFormalReason,
+    CompactObservedRefusal, FirstPartyEvidenceRefusal, FirstPartyNegativeCase, FirstPartyRefusal,
+    FirstPartyValidator, ValidatedFirstPartyNegativeEvidence, admit_compact_closure_readings,
+    stage_compact_closure_readings, validate_first_party_negative,
 };
 pub use live_capability::{OracleFixtureValues, OracleLiveCurve};
 pub use live_comparison::{

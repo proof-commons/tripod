@@ -34,10 +34,14 @@ pub enum FixtureBundleRefusal {
     Compile(CompileError),
     /// A deployment or placeholder symbol was not the reviewed width.
     Symbols(TapscriptError),
+    /// A comparison operand could not be constructed as a tapscript program.
+    ProgramConstruction(TapscriptError),
     /// The backend refused to emit the candidate bundle.
     Emission(BundleRefusal),
     /// The linker refused to link.
     Link(LinkRefusal),
+    /// The reconstructed linked bundle differs from the retained fixture.
+    LinkedBundleMismatch,
     /// The ABI refused to derive from the linked bundle.
     Abi(TransactionRefusal),
     /// The taproot tweak of this bundle's own tree is not a key.
@@ -57,6 +61,8 @@ pub enum FixtureBundleRefusal {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum VectorError {
+    /// Explicit closure admission failed without changing derived standing.
+    CompactClosure(Box<crate::first_party::CompactClosureRefusal>),
     /// The compact negative inventory could not preserve its exact joins.
     CompactNegativeManifest(crate::compact_negative_manifest::ManifestRefusal),
     /// The fixture bundle could not be built at all.

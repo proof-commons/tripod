@@ -1526,9 +1526,9 @@ mod tests {
     #[test]
     fn the_negative_half_splits_into_three_kinds_that_sum_to_it() {
         // The classification, pinned. Forty-eight requirements
-        // a live target must refuse, twenty first-party code refuses
-        // before any transaction exists, and six whose evidence is an
-        // external report nobody has written.
+        // at native boundaries, twenty with first-party closure, and six
+        // answered by external-report comparisons. Formal dispositions
+        // remain distinct from observations in the explicit closure ledger.
         //
         // The sum is asserted against the negative total rather than
         // against 74 alone, so a requirement that gained a new kind of
@@ -1652,6 +1652,22 @@ mod tests {
         assert_eq!(plan.discharged_rows(), 2);
         assert_eq!(plan.discharged_positive_rows(), 0);
         assert_eq!(plan.discharged_negative_rows(), 2);
+    }
+
+    #[test]
+    fn explicit_compact_closure_does_not_change_the_two_derived_discharges() {
+        let derived = plan();
+        assert_eq!(derived.discharged_negative_rows(), 2);
+        let bundle = crate::bundle::fixture_bundle().expect("bundle");
+        let corpus = crate::compact_corpus::joined_campaign().expect("archive");
+        let readings =
+            crate::first_party::stage_compact_closure_readings(&bundle, corpus).expect("pairs");
+        let ledger = crate::first_party::admit_compact_closure_readings(&bundle, corpus, readings)
+            .expect("ledger");
+        assert_eq!(ledger.records().len(), 26);
+        assert_eq!(derived.discharged_negative_rows(), 2);
+        assert_eq!(derived.observed_rows(), 2);
+        assert_eq!(plan().discharged_negative_rows(), 2);
     }
 
     #[test]

@@ -623,6 +623,89 @@ pub fn validate_compact_substrate_report<'submission, 'report>(
     Ok(())
 }
 
+/// Resolve an exact retained submission without re-admitting its archive.
+pub(crate) fn compact_substrate_submission<'a>(
+    corpus: &'a crate::compact_corpus::CompactCorpus,
+    id: &compiler::operation_plan::CoverageRequirementId,
+    replacement: bool,
+) -> Result<&'a AdmittedCompactSubmission, crate::first_party::CompactClosureRefusal> {
+    use compiler::operation_plan::{CoveragePurpose, SponsorCase};
+    use target_elements_conformance::protocol::{OperationCaseId, OperationStepKind};
+    let step = match (id.case.sponsor, replacement) {
+        (SponsorCase::Absent, false) => "job-0/submit-control",
+        (SponsorCase::Absent, true) => "job-9/submit-control",
+        (SponsorCase::Present, false) => "job-3/submit-control",
+        (SponsorCase::Present, true) => "job-11/submit-control",
+    };
+    let refuse = || crate::first_party::CompactClosureRefusal::EvidenceBindingMismatch(id.clone());
+    let submission = corpus
+        .submissions()
+        .get(&(
+            crate::compact_corpus::COMPACT_RUN_ADDRESS.to_owned(),
+            OperationCaseId {
+                operation: OperationStepKind::Submit,
+                step: step.to_owned(),
+            },
+        ))
+        .ok_or_else(refuse)?;
+    let CoveragePurpose::ExternalEvidenceRejected { requirement, .. } = &id.purpose else {
+        return Err(refuse());
+    };
+    if submission.sponsor() != id.case.sponsor || submission.requirement() != requirement {
+        return Err(refuse());
+    }
+    Ok(submission)
+}
+
+/// Canonical offered reports, separate from comparison and closure admission.
+pub(crate) fn stage_compact_substrate_pair(
+    corpus: &crate::compact_corpus::CompactCorpus,
+    id: &compiler::operation_plan::CoverageRequirementId,
+) -> Result<
+    (
+        CompactSubstrateReport,
+        Option<CompactSubstrateReport>,
+        CompactSubstrateReportRefusal,
+    ),
+    crate::first_party::CompactClosureRefusal,
+> {
+    use CompactSubstrateReportRefusal as R;
+    use compiler::operation_plan::{CoveragePurpose, RelationMutation as M};
+    let submission = compact_substrate_submission(corpus, id, false)?;
+    let control = project_compact_substrate_report(submission);
+    let mut subject = control.clone();
+    let CoveragePurpose::ExternalEvidenceRejected { mutation, .. } = id.purpose else {
+        return Err(crate::first_party::CompactClosureRefusal::PairMismatch(
+            id.clone(),
+        ));
+    };
+    let (subject, refusal) = match mutation {
+        M::ExternalEvidenceMissing => (None, R::ExternalEvidenceMissing),
+        M::ExternalEvidenceFailed => {
+            subject.outcome = CompactSubstrateOutcome::Rejected;
+            (Some(subject), R::ExternalEvidenceFailed)
+        }
+        M::ExternalEvidenceIdentityMismatch => {
+            let other = compact_substrate_submission(corpus, id, true)?;
+            if other.family() != submission.family()
+                || other.submitted_bytes() == submission.submitted_bytes()
+            {
+                return Err(
+                    crate::first_party::CompactClosureRefusal::EvidenceBindingMismatch(id.clone()),
+                );
+            }
+            subject.transaction = project_compact_substrate_report(other).transaction;
+            (Some(subject), R::ExternalEvidenceIdentityMismatch)
+        }
+        _ => {
+            return Err(crate::first_party::CompactClosureRefusal::PairMismatch(
+                id.clone(),
+            ));
+        }
+    };
+    Ok((control, subject, refusal))
+}
+
 /// The validation proper, over the extracted binding.
 ///
 /// Split from [`validate_operation_report`] so the crate's own tests can
@@ -1369,6 +1452,53 @@ pub(crate) mod tests {
         let readings = substrate_pairs();
         assert_eq!(readings.len(), 6);
         assert_eq!(join_substrate_readings(&readings), Ok(()));
+    }
+
+    #[test]
+    fn substrate_closure_admits_six_observed_and_zero_retained_report_rows() {
+        // Before explicit closure admission: six external rows retained.
+        let bundle = crate::bundle::fixture_bundle().expect("bundle");
+        let corpus = crate::compact_corpus::run_of_record().expect("archive");
+        let staged =
+            crate::first_party::stage_compact_closure_readings(&bundle, corpus).expect("staged");
+        let ledger = crate::first_party::admit_compact_closure_readings(&bundle, corpus, staged)
+            .expect("ledger");
+        let external: Vec<_> = ledger
+            .records()
+            .values()
+            .filter(|r| {
+                matches!(
+                    r.refusal(),
+                    crate::first_party::CompactObservedRefusal::Substrate(_)
+                )
+            })
+            .collect();
+        assert_eq!(external.len(), 6);
+        assert_eq!(
+            external
+                .iter()
+                .filter(|r| r.kind() == crate::first_party::CompactClosureKind::ObservedRefusal)
+                .count(),
+            6
+        );
+        assert_eq!(
+            external
+                .iter()
+                .filter(|r| r.kind() != crate::first_party::CompactClosureKind::ObservedRefusal)
+                .count(),
+            0
+        );
+        for reading in substrate_pairs() {
+            let (control, subject, refusal) =
+                super::stage_compact_substrate_pair(corpus, &reading.key).expect("shared pair");
+            assert_eq!(control, reading.control);
+            assert_eq!(subject, reading.subject);
+            assert_eq!(refusal, reading.observed);
+            assert_eq!(
+                ledger.records()[&reading.key].refusal(),
+                &crate::first_party::CompactObservedRefusal::Substrate(refusal)
+            );
+        }
     }
 
     #[test]

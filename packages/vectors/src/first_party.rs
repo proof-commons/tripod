@@ -1,11 +1,11 @@
 //! What discharges a negative requirement no target can answer.
 //!
-//! Twenty of the plan's seventy-four negative requirements are answered
-//! by first-party code refusing a condition, because their boundary is
-//! the compiler's own analysis or the emitted structure and no
-//! transaction exists at either. §19.2's conditions — a complete mutated
+//! Twenty of the plan's seventy-four negative requirements have first-party
+//! boundaries, with eighteen observed comparisons and two formal dispositions.
+//! Their boundary is the compiler's own analysis or the emitted structure
+//! and no transaction exists at either. §19.2's conditions — a complete mutated
 //! target transaction, an executed carrier, an observed target rejection
-//! — cannot be met by any of them, and none had ever been discharged.
+//! — cannot be met by any of them; explicit closure uses their own boundaries.
 //!
 //! # The policy, and why it needs six things rather than one
 //!
@@ -830,17 +830,931 @@ pub enum CompactFirstPartySubject {
     Emitted(Box<linker::CandidateLinkedBundle>),
 }
 
-/// An observed refusal or an explicit retained obligation; no retirement arm.
+/// Explicit closure distinguishes exact observations from checked arguments.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CompactFirstPartyDisposition {
     Discharged(Box<ValidatedFirstPartyNegativeEvidence>),
+    /// A newly supplied exact comparison, including declaration comparisons.
+    Compared(Box<CompactFirstPartyComparisonEvidence>),
+    /// Candidate-specific unreachability with its supporting comparison.
+    FormallyClosed(Box<CompactFirstPartyFormalEvidence>),
     Retained {
         owner: crate::compact_negative_manifest::OwnerEntryMissing,
         subject: CompactFirstPartySubject,
     },
 }
 
-/// Retain all eighteen keyed subjects and admit only matching dependency evidence.
+impl CompactFirstPartyDisposition {
+    /// Closure includes checked formal arguments without calling them observations.
+    #[must_use]
+    pub const fn is_closed(&self) -> bool {
+        !matches!(self, Self::Retained { .. })
+    }
+
+    /// Only exact comparisons count as observations.
+    #[must_use]
+    pub const fn is_observed(&self) -> bool {
+        matches!(self, Self::Discharged(_) | Self::Compared(_))
+    }
+}
+
+/// The claim established by an explicitly admitted compact reading.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CompactClosureKind {
+    ObservedRefusal,
+    ObservedDeclarationRefusal,
+    Formal,
+}
+
+/// Exact errors returned by the landed comparison entries.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompactObservedRefusal {
+    Compiler(CompileError),
+    Multiplicity(compiler::SponsorEnvelopeMultiplicityError),
+    Secret(tapscript::CompactSecretFreePathRefusal),
+    Representation(tapscript::CompactEmittedRepresentationRefusal),
+    Lifecycle(tapscript::CompactEmittedLifecycleRefusal),
+    Substrate(crate::report::CompactSubstrateReportRefusal),
+}
+
+/// Checked candidate-specific argument; its supporting comparison is opaque.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompactFormalReason {
+    UnavailableWitnessUnderPermissionlessAuthorization {
+        operation: OperationId,
+        authorization: realization::ConstructibilityAuthorization,
+        requested: RelationMutation,
+        supporting: Box<CompactFirstPartyComparisonEvidence>,
+        ruling: (&'static str, u16),
+    },
+}
+
+/// Admission failures never stand in for an observed row refusal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CompactClosureRefusal {
+    MissingReading(CoverageRequirementId),
+    DuplicateReading(CoverageRequirementId),
+    SurplusReading(CoverageRequirementId),
+    WrongKey(CoverageRequirementId),
+    SubjectEqualsControl(CoverageRequirementId),
+    PairMismatch(CoverageRequirementId),
+    ControlRefused(CoverageRequirementId),
+    SubjectAccepted(CoverageRequirementId),
+    WrongRefusal(CoverageRequirementId),
+    /// Any kind or reason disagreement with the canonical reading.
+    FormalPremiseMismatch(CoverageRequirementId),
+    EvidenceBindingMismatch(CoverageRequirementId),
+    /// Failure to construct the retained comparison context.
+    Construction(Box<crate::error::FixtureBundleRefusal>),
+    /// The manifest could not preserve its keys.
+    Manifest(crate::compact_negative_manifest::ManifestRefusal),
+    /// A report operand did not reach the comparison boundary.
+    Preparation(crate::report::CompactSubstrateReportPreparationRefusal),
+    /// Dependency preparation failed before a comparison could be made.
+    Dependency(FirstPartyEvidenceRefusal),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct EmittedOffer {
+    leaves: std::collections::BTreeMap<tapscript::LeafRole, tapscript::TapscriptProgram>,
+    declarations: BTreeSet<compiler::operation_plan::LifecycleRequirement>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CompactOperand {
+    Dependency {
+        operation: OperationId,
+        authorization: realization::ConstructibilityAuthorization,
+        node: ConstructibilityNodeId,
+    },
+    Selection(realization::RepresentationMode),
+    Projection(Box<realization::LifecycleGraphProjection>),
+    Envelopes(Box<realization::OperationObservation>),
+    Secret(tapscript::TapscriptProgram),
+    Recognition(tapscript::TapscriptProgram),
+    Emitted(Box<EmittedOffer>),
+    Report(Option<Box<crate::report::CompactSubstrateReport>>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CompactRecord {
+    requirement: CoverageRequirementId,
+    control: CompactOperand,
+    subject: CompactOperand,
+    refusal: CompactObservedRefusal,
+    kind: CompactClosureKind,
+    reason: Option<CompactFormalReason>,
+}
+
+/// An exact accepted-control/refused-subject comparison, constructed privately.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompactFirstPartyComparisonEvidence {
+    record: CompactRecord,
+}
+
+impl CompactFirstPartyComparisonEvidence {
+    /// Observed refusal or observed declaration refusal, kept distinct.
+    #[must_use]
+    pub const fn kind(&self) -> CompactClosureKind {
+        self.record.kind
+    }
+
+    /// Complete requirement answered by this comparison.
+    #[must_use]
+    pub const fn requirement(&self) -> &CoverageRequirementId {
+        &self.record.requirement
+    }
+
+    /// Exact returned refusal, without a semantic-class relabelling.
+    #[must_use]
+    pub const fn refusal(&self) -> &CompactObservedRefusal {
+        &self.record.refusal
+    }
+}
+
+/// A checked argument with supporting evidence, never an observed requested class.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompactFirstPartyFormalEvidence {
+    requirement: CoverageRequirementId,
+    reason: CompactFormalReason,
+}
+
+impl CompactFirstPartyFormalEvidence {
+    /// Complete requirement formally resolved.
+    #[must_use]
+    pub const fn requirement(&self) -> &CoverageRequirementId {
+        &self.requirement
+    }
+
+    /// Candidate premise and the exact supporting comparison.
+    #[must_use]
+    pub const fn reason(&self) -> &CompactFormalReason {
+        &self.reason
+    }
+}
+
+/// A staged reading bound to immutable evidence sources; not yet a complete join.
+#[derive(Clone, Debug)]
+pub struct CompactClosureReading<'e> {
+    requirement: CoverageRequirementId,
+    evidence: CompactRecord,
+    bundle: &'e crate::bundle::FixtureBundle,
+    corpus: &'e crate::compact_corpus::CompactCorpus,
+}
+
+impl CompactClosureReading<'_> {
+    /// The complete envelope key.
+    #[must_use]
+    pub const fn requirement(&self) -> &CoverageRequirementId {
+        &self.requirement
+    }
+
+    /// Observed comparison or formal disposition, kept distinct.
+    #[must_use]
+    pub const fn kind(&self) -> CompactClosureKind {
+        self.evidence.kind
+    }
+
+    /// Supporting refusal; formal rows do not credit it as their requested class.
+    #[must_use]
+    pub const fn refusal(&self) -> &CompactObservedRefusal {
+        &self.evidence.refusal
+    }
+
+    /// Checked formal argument, present only for the unavailable-witness pair.
+    #[must_use]
+    pub const fn formal_reason(&self) -> Option<&CompactFormalReason> {
+        self.evidence.reason.as_ref()
+    }
+}
+
+/// Complete explicit admission of the nonnative compact negative population.
+#[derive(Debug)]
+pub struct AdmittedCompactClosure<'e> {
+    bundle: &'e crate::bundle::FixtureBundle,
+    corpus: &'e crate::compact_corpus::CompactCorpus,
+    readings: std::collections::BTreeMap<CoverageRequirementId, CompactClosureReading<'e>>,
+}
+
+impl<'e> AdmittedCompactClosure<'e> {
+    /// Immutable records, each bound to its complete requirement.
+    #[must_use]
+    pub const fn records(
+        &self,
+    ) -> &std::collections::BTreeMap<CoverageRequirementId, CompactClosureReading<'e>> {
+        &self.readings
+    }
+
+    /// The retained fixture; admission never mutates its plan.
+    #[must_use]
+    pub const fn bundle(&self) -> &'e crate::bundle::FixtureBundle {
+        self.bundle
+    }
+
+    /// The retained corpus; admission adds no archive predicate.
+    #[must_use]
+    pub const fn corpus(&self) -> &'e crate::compact_corpus::CompactCorpus {
+        self.corpus
+    }
+}
+
+struct CompactContext<'a> {
+    bundle: &'a crate::bundle::FixtureBundle,
+    input: compiler::BoundCompilerInput,
+    emitted: tapscript::CandidateRelocatableTapscriptBundle,
+}
+
+fn compact_limits() -> compiler::operation_plan::PlacementSearchLimits {
+    use std::num::NonZeroU64;
+    compiler::operation_plan::PlacementSearchLimits::new(
+        NonZeroU64::new(10_000_000).unwrap_or(NonZeroU64::MIN),
+        NonZeroU64::new(1_000_000).unwrap_or(NonZeroU64::MIN),
+    )
+}
+
+fn closure_construction(cause: crate::error::FixtureBundleRefusal) -> CompactClosureRefusal {
+    CompactClosureRefusal::Construction(Box::new(cause))
+}
+
+fn compact_context(
+    bundle: &crate::bundle::FixtureBundle,
+) -> Result<CompactContext<'_>, CompactClosureRefusal> {
+    use crate::bundle::{INTERNAL_KEY, SPONSOR_CHANGE_PROGRAM, fee_program_digest};
+    use crate::error::FixtureBundleRefusal as F;
+    use tapscript::CompactAshSymbols;
+    let input = crate::bundle::bind_compact_ash_input().map_err(closure_construction)?;
+    let target = bundle.target();
+    let placeholders = CompactAshSymbols::new(
+        target,
+        vec![0x11; 32],
+        vec![0x22; 32],
+        vec![0x44; 20],
+        0,
+        vec![0x55; 32],
+    )
+    .map_err(|e| closure_construction(F::Symbols(e)))?;
+    let emitted = tapscript::emit_candidate_bundle(
+        target,
+        bundle.plan(),
+        tapscript::demonstration_policy(),
+        placeholders,
+    )
+    .map_err(|e| closure_construction(F::Emission(e)))?;
+    let resolved = CompactAshSymbols::new(
+        target,
+        bundle.closed_asset().to_vec(),
+        bundle.reserve_asset().to_vec(),
+        SPONSOR_CHANGE_PROGRAM.to_vec(),
+        0,
+        fee_program_digest().to_vec(),
+    )
+    .map_err(|e| closure_construction(F::Symbols(e)))?;
+    let deployment = linker::LinkDeploymentParameters::new(
+        target,
+        resolved,
+        INTERNAL_KEY.to_vec(),
+        linker::SelfCommitmentStrategy::IdentityIntrospection,
+        std::num::NonZeroU32::new(8).unwrap_or(std::num::NonZeroU32::MIN),
+    )
+    .map_err(|e| closure_construction(F::Link(e)))?;
+    let linked = linker::link_candidate(target, &emitted, &deployment)
+        .map_err(|e| closure_construction(F::Link(e)))?;
+    if &linked != bundle.linked() {
+        return Err(closure_construction(F::LinkedBundleMismatch));
+    }
+    Ok(CompactContext {
+        bundle,
+        input,
+        emitted,
+    })
+}
+
+fn compact_rows(
+    bundle: &crate::bundle::FixtureBundle,
+) -> Result<Vec<crate::compact_negative_manifest::CompactNegativeRow>, CompactClosureRefusal> {
+    use crate::compact_negative_manifest::{NegativeClass, compact_negative_manifest};
+    Ok(compact_negative_manifest(bundle)
+        .map_err(CompactClosureRefusal::Manifest)?
+        .into_values()
+        .filter(|row| row.class != NegativeClass::TargetExecutable)
+        .collect())
+}
+
+fn compact_coordinator(
+    context: &CompactContext<'_>,
+    id: &CoverageRequirementId,
+) -> Result<tapscript::LeafRole, CompactClosureRefusal> {
+    use compiler::operation_plan::SponsorCase;
+    context
+        .emitted
+        .constructor()
+        .leaves()
+        .keys()
+        .find(|key| {
+            matches!(key, tapscript::LeafRole::Coordinator { shape }
+            if shape.ash_inputs() == 2
+                && shape.sponsor_inputs() == u8::from(id.case.sponsor != SponsorCase::Absent)
+                && shape.sponsor_change() == tapscript::SponsorChangePresence::Absent)
+        })
+        .copied()
+        .ok_or_else(|| CompactClosureRefusal::EvidenceBindingMismatch(id.clone()))
+}
+
+fn emitted_offer(context: &CompactContext<'_>) -> EmittedOffer {
+    EmittedOffer {
+        leaves: context
+            .emitted
+            .constructor()
+            .leaves()
+            .iter()
+            .map(|(key, leaf)| (*key, leaf.program().clone()))
+            .collect(),
+        declarations: context
+            .emitted
+            .outstanding_lifecycle()
+            .requirements()
+            .cloned()
+            .collect(),
+    }
+}
+
+fn dependency_operands(
+    context: &CompactContext<'_>,
+) -> Result<(CompactOperand, CompactOperand), CompactClosureRefusal> {
+    let FirstPartyNegativeCase::PrivateRequiredDependency {
+        operation,
+        published,
+        availability,
+    } = compact_ash_permissionless_private_dependency_case()
+        .map_err(CompactClosureRefusal::Dependency)?;
+    let cases = context
+        .input
+        .realization()
+        .constructibility_authorizations(operation)
+        .map_err(|_| {
+            CompactClosureRefusal::Dependency(FirstPartyEvidenceRefusal::RealizationUnavailable)
+        })?;
+    let [authorization] = cases else {
+        return Err(CompactClosureRefusal::Dependency(
+            FirstPartyEvidenceRefusal::AuthorizationCaseUnderdetermined,
+        ));
+    };
+    let malformed = with_availability(&published, availability).ok_or(
+        CompactClosureRefusal::Dependency(FirstPartyEvidenceRefusal::ControlHasNoAvailabilityClass),
+    )?;
+    Ok((
+        CompactOperand::Dependency {
+            operation,
+            authorization: authorization.clone(),
+            node: published,
+        },
+        CompactOperand::Dependency {
+            operation,
+            authorization: authorization.clone(),
+            node: malformed,
+        },
+    ))
+}
+
+fn compact_envelope_control() -> realization::OperationObservation {
+    use architecture::{AssetId, BoundId, DeltaKind, OpenFlowKind, ProjectionId};
+    use realization::{
+        Count, ObservedAsset, ObservedCanonicalFlow, ObservedCanonicalPartition, ObservedObject,
+        ObservedObjectKind, ObservedObjectRef, ObservedOpenFlow, ObservedOperationRegion,
+        ObservedSide, ObservedValue, OperationObservation, OwnerId, ProtocolAmount,
+        RepresentationMode,
+    };
+    use std::collections::BTreeMap;
+    let sponsor = OwnerId([3; 32]);
+    let input0 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 0,
+    };
+    let input1 = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 1,
+    };
+    let output = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 0,
+    };
+    let sponsor_input = ObservedObjectRef {
+        side: ObservedSide::Input,
+        ordinal: 2,
+    };
+    let sponsor_output = ObservedObjectRef {
+        side: ObservedSide::Output,
+        ordinal: 1,
+    };
+    let mut objects: Vec<_> = [(input0, 40), (input1, 60), (output, 100)]
+        .into_iter()
+        .map(|(reference, amount)| ObservedObject {
+            reference,
+            kind: ObservedObjectKind::Declared(ObjectId::Ash),
+            asset: ObservedAsset::Declared(AssetId::U),
+            value: ObservedValue::Protocol(
+                ProtocolAmount::new(amount).unwrap_or(ProtocolAmount::ZERO),
+            ),
+            owner: None,
+            representation: RepresentationMode::Explicit,
+        })
+        .collect();
+    objects.extend(
+        [sponsor_input, sponsor_output]
+            .into_iter()
+            .map(|reference| ObservedObject {
+                reference,
+                kind: ObservedObjectKind::Declared(ObjectId::PlainLbtc),
+                asset: ObservedAsset::Declared(AssetId::Lbtc),
+                value: ObservedValue::SponsorOpaque,
+                owner: Some(sponsor),
+                representation: RepresentationMode::Explicit,
+            }),
+    );
+    OperationObservation {
+        operation: OperationId::CompactAsh,
+        protocol_signers: BTreeSet::new(),
+        sponsor_signers: BTreeSet::from([sponsor]),
+        region: ObservedOperationRegion {
+            members: objects.iter().map(|o| o.reference).collect(),
+            canonical_partition: ObservedCanonicalPartition {
+                issuances: Vec::new(),
+                flows: vec![ObservedCanonicalFlow {
+                    asset: AssetId::U,
+                    sources: vec![input0, input1],
+                    destinations: vec![output],
+                    movement_kind: Some(DeltaKind::OwnerlessLateral),
+                    destructions: Vec::new(),
+                }],
+            },
+            open_flows: vec![ObservedOpenFlow {
+                kind: OpenFlowKind::FeeSponsor,
+                sources: vec![sponsor_input],
+                destinations: vec![sponsor_output],
+                fee: ProtocolAmount::new(3).unwrap_or(ProtocolAmount::ZERO),
+            }],
+        },
+        other_regions: Vec::new(),
+        objects,
+        root_effects: Vec::new(),
+        projections: BTreeSet::from([ProjectionId::TransitionCertificate]),
+        bounds: BTreeMap::from([
+            (BoundId::AshBatchMax, Count::new(64)),
+            (BoundId::FeeSponsorInputMax, Count::new(16)),
+        ]),
+    }
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the exhaustive mutation table retains each exact pair beside its refusal"
+)]
+fn record_pair(
+    context: &CompactContext<'_>,
+    corpus: Option<&crate::compact_corpus::CompactCorpus>,
+    row: &crate::compact_negative_manifest::CompactNegativeRow,
+) -> Result<CompactRecord, CompactClosureRefusal> {
+    use CompactObservedRefusal as R;
+    use CompactOperand as O;
+    use RelationMutation as M;
+    use compiler::operation_plan::CoverageBoundary;
+    use realization::{
+        LifecycleDependencyProjection, LifecycleEdge, LifecycleNodeId, RepresentationMode,
+    };
+    let id = &row.requirement;
+    let (control, subject, refusal) = match row.mutation {
+        M::PermissionlessPrivateDependency | M::ConstructibilityWitnessUnavailable => {
+            let (control, subject) = dependency_operands(context)?;
+            let O::Dependency { node, .. } = &subject else {
+                return Err(CompactClosureRefusal::PairMismatch(id.clone()));
+            };
+            (
+                control,
+                subject.clone(),
+                R::Compiler(CompileError::PermissionlessPrivateDependency {
+                    operation: OperationId::CompactAsh,
+                    node: node.clone(),
+                    path: Vec::new(),
+                }),
+            )
+        }
+        M::UnsupportedRepresentation => (
+            O::Selection(RepresentationMode::Explicit),
+            O::Selection(RepresentationMode::PrivateCommitted),
+            R::Compiler(CompileError::TargetPlanRepresentationMismatch {
+                object: ObjectId::Ash,
+            }),
+        ),
+        M::RequiredLifecycleExitMissing if id.boundary == CoverageBoundary::CompilerStatic => {
+            let realization::RelationSubject::LifecycleExit { exit, .. } = id.relation.subject()
+            else {
+                return Err(CompactClosureRefusal::PairMismatch(id.clone()));
+            };
+            let control = context.input.realization().project().lifecycle;
+            let mut subject = control.clone();
+            let edge = LifecycleDependencyProjection {
+                source: LifecycleNodeId::Representation {
+                    object: ObjectId::Ash,
+                    mode: RepresentationMode::Explicit,
+                },
+                target: LifecycleNodeId::RequiredExit {
+                    object: ObjectId::Ash,
+                    operation: *exit,
+                },
+                edge: LifecycleEdge::RequiresExit,
+            };
+            let position = subject
+                .edges
+                .iter()
+                .position(|e| e == &edge)
+                .ok_or_else(|| CompactClosureRefusal::PairMismatch(id.clone()))?;
+            subject.edges.remove(position);
+            (
+                O::Projection(Box::new(control)),
+                O::Projection(Box::new(subject)),
+                R::Compiler(CompileError::MissingLifecyclePath {
+                    object: ObjectId::Ash,
+                    representation: RepresentationMode::Explicit,
+                    exit: *exit,
+                }),
+            )
+        }
+        M::SponsorEnvelopeMultiplicityExceeded => {
+            let control = compact_envelope_control();
+            let mut subject = control.clone();
+            subject
+                .region
+                .open_flows
+                .push(realization::ObservedOpenFlow {
+                    kind: architecture::OpenFlowKind::FeeSponsor,
+                    sources: Vec::new(),
+                    destinations: Vec::new(),
+                    fee: realization::ProtocolAmount::ZERO,
+                });
+            (
+                O::Envelopes(Box::new(control)),
+                O::Envelopes(Box::new(subject)),
+                R::Multiplicity(compiler::SponsorEnvelopeMultiplicityError::Refused(
+                    realization::RelationVerdict {
+                        relation: id.relation.clone(),
+                        status: realization::RelationStatus::Failed {
+                            reason: realization::RelationFailure::SponsorEnvelopeMultiplicity,
+                        },
+                    },
+                )),
+            )
+        }
+        M::UnexpectedProtocolSecret => {
+            let key = compact_coordinator(context, id)?;
+            let control = context.emitted.constructor().leaves()[&key]
+                .program()
+                .clone();
+            let mut instructions = control.instructions().to_vec();
+            instructions.insert(
+                0,
+                tapscript::TapscriptInstruction::Opcode(target_elements::OpcodeId::CheckSig),
+            );
+            let subject = tapscript::TapscriptProgram::new(instructions).map_err(|e| {
+                closure_construction(crate::error::FixtureBundleRefusal::ProgramConstruction(e))
+            })?;
+            (
+                O::Secret(control),
+                O::Secret(subject),
+                R::Secret(tapscript::CompactSecretFreePathRefusal::UnexpectedProtocolSecret),
+            )
+        }
+        M::UnauthenticatedRepresentation => {
+            let control = tapscript::pattern::ash_input_recognition_fragment(
+                context.bundle.target(),
+                context.emitted.unresolved_symbols(),
+                0,
+            )
+            .map_err(|e| closure_construction(crate::error::FixtureBundleRefusal::Symbols(e)))?;
+            let mut instructions = control.instructions().to_vec();
+            let index = instructions
+                .iter()
+                .position(|i| {
+                    *i == tapscript::TapscriptInstruction::Opcode(
+                        target_elements::OpcodeId::InspectInputValue,
+                    )
+                })
+                .ok_or_else(|| CompactClosureRefusal::PairMismatch(id.clone()))?
+                + 2;
+            if instructions.get(index)
+                != Some(&tapscript::TapscriptInstruction::Opcode(
+                    target_elements::OpcodeId::EqualVerify,
+                ))
+            {
+                return Err(CompactClosureRefusal::PairMismatch(id.clone()));
+            }
+            instructions.remove(index);
+            let subject = tapscript::TapscriptProgram::new(instructions).map_err(|e| {
+                closure_construction(crate::error::FixtureBundleRefusal::ProgramConstruction(e))
+            })?;
+            (O::Recognition(control), O::Recognition(subject),
+                R::Representation(tapscript::CompactEmittedRepresentationRefusal::MissingExplicitValueAuthentication))
+        }
+        M::RequiredLifecycleExitMissing => {
+            let control = emitted_offer(context);
+            let mut subject = control.clone();
+            let refusal = match id.relation.subject() {
+                realization::RelationSubject::LifecycleExit {
+                    exit: OperationId::CompactAsh,
+                    ..
+                } => {
+                    let leaf = compact_coordinator(context, id)?;
+                    subject.leaves.remove(&leaf);
+                    tapscript::CompactEmittedLifecycleRefusal::MissingCompactExit { leaf }
+                }
+                realization::RelationSubject::LifecycleExit {
+                    exit: OperationId::Clear,
+                    ..
+                } => {
+                    let requirement = control
+                        .declarations
+                        .iter()
+                        .find(|r| r.exit == OperationId::Clear)
+                        .ok_or_else(|| CompactClosureRefusal::PairMismatch(id.clone()))?
+                        .clone();
+                    subject.declarations.remove(&requirement);
+                    tapscript::CompactEmittedLifecycleRefusal::MissingClearDeclaration {
+                        requirement,
+                    }
+                }
+                _ => return Err(CompactClosureRefusal::PairMismatch(id.clone())),
+            };
+            (
+                O::Emitted(Box::new(control)),
+                O::Emitted(Box::new(subject)),
+                R::Lifecycle(refusal),
+            )
+        }
+        M::ExternalEvidenceMissing
+        | M::ExternalEvidenceFailed
+        | M::ExternalEvidenceIdentityMismatch => {
+            let corpus =
+                corpus.ok_or_else(|| CompactClosureRefusal::EvidenceBindingMismatch(id.clone()))?;
+            let (control, subject, refusal) =
+                crate::report::stage_compact_substrate_pair(corpus, id)?;
+            (
+                O::Report(Some(Box::new(control))),
+                O::Report(subject.map(Box::new)),
+                R::Substrate(refusal),
+            )
+        }
+        _ => return Err(CompactClosureRefusal::PairMismatch(id.clone())),
+    };
+    let mut record = CompactRecord {
+        requirement: id.clone(),
+        control,
+        subject,
+        refusal,
+        kind: CompactClosureKind::ObservedRefusal,
+        reason: None,
+    };
+    if matches!(
+        record.refusal,
+        R::Lifecycle(tapscript::CompactEmittedLifecycleRefusal::MissingClearDeclaration { .. })
+    ) {
+        record.kind = CompactClosureKind::ObservedDeclarationRefusal;
+    }
+    if row.mutation == M::ConstructibilityWitnessUnavailable {
+        let O::Dependency {
+            operation,
+            authorization,
+            ..
+        } = &record.control
+        else {
+            return Err(CompactClosureRefusal::FormalPremiseMismatch(id.clone()));
+        };
+        if !matches!(
+            authorization,
+            realization::ConstructibilityAuthorization::Permissionless
+                | realization::ConstructibilityAuthorization::CadencePermissionless
+        ) {
+            return Err(CompactClosureRefusal::FormalPremiseMismatch(id.clone()));
+        }
+        let mut supporting = record.clone();
+        supporting.requirement.purpose = compiler::operation_plan::CoveragePurpose::FocusedReject(
+            M::PermissionlessPrivateDependency,
+        );
+        if context
+            .bundle
+            .plan()
+            .coverage_requirement(&supporting.requirement)
+            .is_none()
+        {
+            return Err(CompactClosureRefusal::FormalPremiseMismatch(id.clone()));
+        }
+        record.reason = Some(
+            CompactFormalReason::UnavailableWitnessUnderPermissionlessAuthorization {
+                operation: *operation,
+                authorization: authorization.clone(),
+                requested: row.mutation,
+                supporting: Box::new(CompactFirstPartyComparisonEvidence { record: supporting }),
+                ruling: ("rule:phase7:wave0-rulings", 137),
+            },
+        );
+        record.kind = CompactClosureKind::Formal;
+    }
+    Ok(record)
+}
+
+fn read_compact_operand(
+    context: &CompactContext<'_>,
+    corpus: Option<&crate::compact_corpus::CompactCorpus>,
+    id: &CoverageRequirementId,
+    operand: &CompactOperand,
+) -> Result<Result<(), CompactObservedRefusal>, CompactClosureRefusal> {
+    use CompactObservedRefusal as R;
+    use CompactOperand as O;
+    Ok(match operand {
+        O::Dependency {
+            operation,
+            authorization,
+            node,
+        } => validate_required_dependency(*operation, authorization, node, Vec::new)
+            .map_err(R::Compiler),
+        O::Selection(offered) => compiler::operation_plan::validate_compact_representation(
+            &context.input,
+            compact_limits(),
+            context.bundle.plan(),
+            *offered,
+        )
+        .map_err(R::Compiler),
+        O::Projection(offered) => {
+            compiler::validate_compact_lifecycle_projection(&context.input, offered)
+                .map_err(R::Compiler)
+        }
+        O::Envelopes(offered) => {
+            compiler::validate_sponsor_envelope_multiplicity(context.input.realization(), offered)
+                .map_err(R::Multiplicity)
+        }
+        O::Secret(offered) => {
+            tapscript::validate_compact_secret_free_path(offered).map_err(R::Secret)
+        }
+        O::Recognition(offered) => tapscript::validate_compact_emitted_representation(
+            context.bundle.target(),
+            &context.emitted,
+            offered,
+        )
+        .map_err(R::Representation),
+        O::Emitted(offered) => tapscript::validate_compact_emitted_lifecycle(
+            &context.emitted,
+            &offered.leaves,
+            &offered.declarations,
+        )
+        .map_err(R::Lifecycle),
+        O::Report(offered) => {
+            let corpus =
+                corpus.ok_or_else(|| CompactClosureRefusal::EvidenceBindingMismatch(id.clone()))?;
+            let submission = crate::report::compact_substrate_submission(corpus, id, false)?;
+            let comparison = crate::report::prepare_compact_substrate_report_comparison(
+                submission,
+                offered.as_deref(),
+            )
+            .map_err(CompactClosureRefusal::Preparation)?;
+            crate::report::validate_compact_substrate_report(&comparison).map_err(R::Substrate)
+        }
+    })
+}
+
+fn check_compact_pair(
+    context: &CompactContext<'_>,
+    corpus: Option<&crate::compact_corpus::CompactCorpus>,
+    record: &CompactRecord,
+) -> Result<(), CompactClosureRefusal> {
+    let id = &record.requirement;
+    if record.control == record.subject {
+        return Err(CompactClosureRefusal::SubjectEqualsControl(id.clone()));
+    }
+    if matches!(
+        id.purpose,
+        compiler::operation_plan::CoveragePurpose::FocusedReject(
+            RelationMutation::PermissionlessPrivateDependency
+        )
+    ) {
+        let case = compact_ash_permissionless_private_dependency_case()
+            .map_err(CompactClosureRefusal::Dependency)?;
+        let evidence = validate_first_party_negative(context.bundle.plan(), id, &case)
+            .map_err(CompactClosureRefusal::Dependency)?;
+        if let (
+            CompactOperand::Dependency { node: control, .. },
+            CompactOperand::Dependency { node: subject, .. },
+        ) = (&record.control, &record.subject)
+            && control == evidence.control()
+            && subject == evidence.malformed()
+            && record.refusal
+                == CompactObservedRefusal::Compiler(CompileError::PermissionlessPrivateDependency {
+                    operation: OperationId::CompactAsh,
+                    node: subject.clone(),
+                    path: Vec::new(),
+                })
+        {
+            return Ok(());
+        }
+        return Err(CompactClosureRefusal::PairMismatch(id.clone()));
+    }
+    if read_compact_operand(context, corpus, id, &record.control)?.is_err() {
+        return Err(CompactClosureRefusal::ControlRefused(id.clone()));
+    }
+    match read_compact_operand(context, corpus, id, &record.subject)? {
+        Ok(()) => Err(CompactClosureRefusal::SubjectAccepted(id.clone())),
+        Err(refusal) if refusal != record.refusal => {
+            Err(CompactClosureRefusal::WrongRefusal(id.clone()))
+        }
+        Err(_) => Ok(()),
+    }
+}
+
+/// Stage exact compact pairs without changing plan or archive standing.
+///
+/// # Errors
+/// Returns construction, binding or exact-pair failures before any ledger exists.
+pub fn stage_compact_closure_readings<'e>(
+    bundle: &'e crate::bundle::FixtureBundle,
+    corpus: &'e crate::compact_corpus::CompactCorpus,
+) -> Result<Vec<CompactClosureReading<'e>>, CompactClosureRefusal> {
+    let context = compact_context(bundle)?;
+    compact_rows(bundle)?
+        .iter()
+        .map(|row| {
+            let evidence = record_pair(&context, Some(corpus), row)?;
+            check_compact_pair(&context, Some(corpus), &evidence)?;
+            Ok(CompactClosureReading {
+                requirement: row.requirement.clone(),
+                evidence,
+                bundle,
+                corpus,
+            })
+        })
+        .collect()
+}
+
+/// Admit precisely the nonnative negative keys through a bidirectional join.
+///
+/// Each canonical pair is rebuilt and executed at its declared entry. Formal
+/// evidence retains its checked argument instead of claiming the requested error.
+/// Neither the derived plan nor archive admission is changed.
+///
+/// # Errors
+/// Returns distinct key, pair, premise and operand failures; no partial ledger.
+pub fn admit_compact_closure_readings<'e>(
+    bundle: &'e crate::bundle::FixtureBundle,
+    corpus: &'e crate::compact_corpus::CompactCorpus,
+    readings: Vec<CompactClosureReading<'e>>,
+) -> Result<AdmittedCompactClosure<'e>, CompactClosureRefusal> {
+    let context = compact_context(bundle)?;
+    let expected: std::collections::BTreeMap<_, _> = compact_rows(bundle)?
+        .into_iter()
+        .map(|row| (row.requirement.clone(), row))
+        .collect();
+    let mut admitted = std::collections::BTreeMap::new();
+    for reading in readings {
+        let id = &reading.requirement;
+        if id != &reading.evidence.requirement {
+            return Err(CompactClosureRefusal::WrongKey(id.clone()));
+        }
+        if admitted.contains_key(id) {
+            return Err(CompactClosureRefusal::DuplicateReading(id.clone()));
+        }
+        let row = expected
+            .get(id)
+            .ok_or_else(|| CompactClosureRefusal::SurplusReading(id.clone()))?;
+        if !std::ptr::eq(bundle, reading.bundle) || !std::ptr::eq(corpus, reading.corpus) {
+            return Err(CompactClosureRefusal::EvidenceBindingMismatch(id.clone()));
+        }
+        let canonical = record_pair(&context, Some(corpus), row)?;
+        if reading.evidence.control == reading.evidence.subject {
+            return Err(CompactClosureRefusal::SubjectEqualsControl(id.clone()));
+        }
+        if reading.evidence.reason != canonical.reason || reading.evidence.kind != canonical.kind {
+            return Err(CompactClosureRefusal::FormalPremiseMismatch(id.clone()));
+        }
+        if reading.evidence.control != canonical.control
+            || reading.evidence.subject != canonical.subject
+        {
+            return Err(CompactClosureRefusal::PairMismatch(id.clone()));
+        }
+        if reading.evidence.refusal != canonical.refusal {
+            return Err(CompactClosureRefusal::WrongRefusal(id.clone()));
+        }
+        check_compact_pair(&context, Some(corpus), &reading.evidence)?;
+        admitted.insert(id.clone(), reading);
+    }
+    for id in expected.keys() {
+        if !admitted.contains_key(id) {
+            return Err(CompactClosureRefusal::MissingReading(id.clone()));
+        }
+    }
+    Ok(AdmittedCompactClosure {
+        bundle,
+        corpus,
+        readings: admitted,
+    })
+}
+
+/// Explicitly close twenty first-party keys, retaining observed and formal kinds.
 ///
 /// # Errors
 /// Returns manifest or evidence failures instead of silently omitting a row.
@@ -850,40 +1764,38 @@ pub fn compact_first_party_dispositions(
     std::collections::BTreeMap<CoverageRequirementId, CompactFirstPartyDisposition>,
     crate::VectorError,
 > {
-    use crate::compact_negative_manifest::{
-        NegativeClass, NegativeOwner, compact_negative_manifest,
-    };
-    let manifest =
-        compact_negative_manifest(bundle).map_err(crate::VectorError::CompactNegativeManifest)?;
+    use crate::compact_negative_manifest::NegativeClass;
+    let wrap = |error| crate::VectorError::CompactClosure(Box::new(error));
+    let context = compact_context(bundle).map_err(wrap)?;
+    let manifest = compact_rows(bundle).map_err(wrap)?;
     let staging = CompactDependencyTestStaging::new()
         .map_err(|cause| crate::VectorError::FirstPartyEvidenceRefused { cause })?;
     let mut rows = std::collections::BTreeMap::new();
-    for (id, row) in manifest {
+    for row in manifest {
         if row.class != NegativeClass::FirstParty {
             continue;
         }
-        let disposition = match row.owner {
-            NegativeOwner::CompilerRequiredDependency => {
-                CompactFirstPartyDisposition::Discharged(Box::new(
-                    staging
-                        .validate(bundle.plan(), &id)
-                        .map_err(|cause| crate::VectorError::FirstPartyEvidenceRefused { cause })?,
+        let id = row.requirement.clone();
+        let disposition = if row.mutation == RelationMutation::PermissionlessPrivateDependency {
+            CompactFirstPartyDisposition::Discharged(Box::new(
+                staging
+                    .validate(bundle.plan(), &id)
+                    .map_err(|cause| crate::VectorError::FirstPartyEvidenceRefused { cause })?,
+            ))
+        } else {
+            let record = record_pair(&context, None, &row).map_err(wrap)?;
+            check_compact_pair(&context, None, &record).map_err(wrap)?;
+            if let Some(reason) = record.reason {
+                CompactFirstPartyDisposition::FormallyClosed(Box::new(
+                    CompactFirstPartyFormalEvidence {
+                        requirement: id.clone(),
+                        reason,
+                    },
                 ))
-            }
-            NegativeOwner::OwnerEntryMissing(owner) => CompactFirstPartyDisposition::Retained {
-                owner,
-                subject: if row.boundary
-                    == crate::compact_negative_manifest::CompactNegativeBoundary::EmittedStructure
-                {
-                    CompactFirstPartySubject::Emitted(Box::new(bundle.linked().clone()))
-                } else {
-                    CompactFirstPartySubject::Analysis(Box::new(bundle.plan().clone()))
-                },
-            },
-            NegativeOwner::NativeCarrier { .. } => {
-                return Err(crate::VectorError::CompactNegativeManifest(
-                    crate::compact_negative_manifest::ManifestRefusal::UnknownFirstPartyClass,
-                ));
+            } else {
+                CompactFirstPartyDisposition::Compared(Box::new(
+                    CompactFirstPartyComparisonEvidence { record },
+                ))
             }
         };
         rows.insert(id, disposition);
@@ -972,11 +1884,13 @@ mod tests {
 
     #[test]
     fn compact_first_party_dispositions_retain_all_twenty_subjects() {
-        use super::{CompactFirstPartyDisposition as D, CompactFirstPartySubject as S};
+        use super::CompactFirstPartyDisposition as D;
         let bundle = fixture_bundle().expect("bundle");
         let rows = super::compact_first_party_dispositions(&bundle).expect("dispositions");
         // Before scope-only multiplicity: 18 rows, with 16 retained.
+        // Before explicit closure admission: 2 discharged / 18 retained.
         assert_eq!(rows.len(), 20);
+        assert_eq!(rows.values().filter(|r| r.is_closed()).count(), 20);
         assert_eq!(
             rows.values()
                 .filter(|r| matches!(r, D::Discharged(_)))
@@ -987,23 +1901,40 @@ mod tests {
             rows.values()
                 .filter(|r| matches!(r, D::Retained { .. }))
                 .count(),
-            18
+            0
         );
         let mut names = std::collections::BTreeSet::new();
         for (id, disposition) in &rows {
             assert!(names.insert(super::compact_first_party_name(id).expect("named")));
             match disposition {
                 D::Discharged(evidence) => assert_eq!(evidence.requirement(), id),
-                D::Retained {
-                    subject: S::Analysis(plan),
-                    ..
-                } => assert_eq!(plan.as_ref(), bundle.plan()),
-                D::Retained {
-                    subject: S::Emitted(linked),
-                    ..
-                } => assert_eq!(linked.as_ref(), bundle.linked()),
+                D::Compared(evidence) => assert_eq!(evidence.requirement(), id),
+                D::FormallyClosed(evidence) => assert_eq!(evidence.requirement(), id),
+                D::Retained { .. } => panic!("explicit staging retains no unanswered key"),
             }
         }
+        assert_eq!(rows.values().filter(|row| row.is_observed()).count(), 18);
+        assert_eq!(
+            rows.values()
+                .filter(|row| matches!(row, D::FormallyClosed(_)))
+                .count(),
+            2
+        );
+        assert_eq!(rows.values().filter(|row| matches!(row, D::Compared(e) if e.kind() == super::CompactClosureKind::ObservedDeclarationRefusal)).count(), 2);
+        let manifest =
+            crate::compact_negative_manifest::compact_negative_manifest(&bundle).expect("manifest");
+        assert_eq!(
+            rows.keys()
+                .cloned()
+                .collect::<std::collections::BTreeSet<_>>(),
+            manifest
+                .into_values()
+                .filter(
+                    |row| row.class == crate::compact_negative_manifest::NegativeClass::FirstParty
+                )
+                .map(|row| row.requirement)
+                .collect()
+        );
         for suffix in ["sponsorless", "sponsored"] {
             for base in [
                 "permissionless-private-dependency",
@@ -1020,6 +1951,474 @@ mod tests {
                 assert!(names.contains(&format!("{base}-{suffix}")));
             }
         }
+    }
+
+    #[test]
+    fn compact_envelope_control_is_conformant() {
+        let input = crate::bundle::bind_compact_ash_input().expect("input");
+        assert!(
+            input
+                .realization()
+                .evaluate_operation(&super::compact_envelope_control())
+                .expect("evaluation")
+                .is_conformant()
+        );
+    }
+
+    fn ledger_sources() -> (
+        &'static crate::bundle::FixtureBundle,
+        &'static crate::compact_corpus::CompactCorpus,
+    ) {
+        static BUNDLE: std::sync::OnceLock<crate::bundle::FixtureBundle> =
+            std::sync::OnceLock::new();
+        (
+            BUNDLE.get_or_init(|| fixture_bundle().expect("fixture")),
+            crate::compact_corpus::joined_campaign().expect("admitted corpus"),
+        )
+    }
+
+    fn ledger_readings() -> Vec<super::CompactClosureReading<'static>> {
+        static READINGS: std::sync::OnceLock<Vec<super::CompactClosureReading<'static>>> =
+            std::sync::OnceLock::new();
+        READINGS
+            .get_or_init(|| {
+                let (bundle, corpus) = ledger_sources();
+                super::stage_compact_closure_readings(bundle, corpus).expect("exact pairs")
+            })
+            .clone()
+    }
+
+    fn admit_readings(
+        readings: Vec<super::CompactClosureReading<'static>>,
+    ) -> Result<super::AdmittedCompactClosure<'static>, super::CompactClosureRefusal> {
+        let (bundle, corpus) = ledger_sources();
+        super::admit_compact_closure_readings(bundle, corpus, readings)
+    }
+
+    #[test]
+    fn compact_closure_joins_all_twenty_six_keys_and_the_native_forty_eight() {
+        use super::CompactClosureKind as K;
+        let (bundle, corpus) = ledger_sources();
+        let ledger = admit_readings(ledger_readings()).expect("ledger");
+        assert!(std::ptr::eq(ledger.bundle(), bundle));
+        assert!(std::ptr::eq(ledger.corpus(), corpus));
+        assert_eq!(ledger.records().len(), 26);
+        let count = |kind| {
+            ledger
+                .records()
+                .values()
+                .filter(|r| r.kind() == kind)
+                .count()
+        };
+        assert_eq!(
+            [
+                count(K::ObservedRefusal),
+                count(K::ObservedDeclarationRefusal),
+                count(K::Formal)
+            ],
+            [22, 2, 2]
+        );
+        let expected: std::collections::BTreeSet<_> = super::compact_rows(bundle)
+            .expect("manifest")
+            .into_iter()
+            .map(|row| row.requirement)
+            .collect();
+        assert_eq!(
+            ledger
+                .records()
+                .keys()
+                .cloned()
+                .collect::<std::collections::BTreeSet<_>>(),
+            expected
+        );
+        let native = corpus.rows();
+        assert_eq!(native.len(), 48);
+        assert!(native.keys().all(|key| !ledger.records().contains_key(key)));
+        let mut keys = expected;
+        keys.extend(native.keys().cloned());
+        let manifest =
+            crate::compact_negative_manifest::compact_negative_manifest(bundle).expect("manifest");
+        assert_eq!(keys, manifest.keys().cloned().collect());
+        let native_observed = native
+            .values()
+            .filter(|r| matches!(r, crate::compact_corpus::NativeDisposition::Observed { .. }))
+            .count();
+        let native_formal = native
+            .values()
+            .filter(|r| {
+                matches!(
+                    r,
+                    crate::compact_corpus::NativeDisposition::FormallyClosed(_)
+                )
+            })
+            .count();
+        assert_eq!((native_observed, native_formal), (27, 21));
+        let count_evidence = |kind, substrate| {
+            ledger
+                .records()
+                .values()
+                .filter(|r| {
+                    r.kind() == kind
+                        && matches!(r.refusal(), super::CompactObservedRefusal::Substrate(_))
+                            == substrate
+                })
+                .count()
+        };
+        let report_observed = count_evidence(K::ObservedRefusal, true);
+        let first_party_observed = count_evidence(K::ObservedRefusal, false)
+            + count_evidence(K::ObservedDeclarationRefusal, false);
+        let first_party_formal = count_evidence(K::Formal, false);
+        assert_eq!(
+            (first_party_observed, first_party_formal, report_observed),
+            (18, 2, 6)
+        );
+        // 74 = 27 native observed + 21 native formal + 18 first-party observed
+        // + 2 first-party formal + 6 report observed; zero retained or unresolved.
+        assert_eq!(
+            keys.len(),
+            native_observed
+                + native_formal
+                + first_party_observed
+                + first_party_formal
+                + report_observed
+        );
+        assert_eq!(
+            native_observed + count(K::ObservedRefusal) + count(K::ObservedDeclarationRefusal),
+            51
+        );
+        assert_eq!(native_formal + count(K::Formal), 23);
+        let mut permuted = ledger_readings();
+        permuted.reverse();
+        let permuted = admit_readings(permuted).expect("permutation");
+        assert_eq!(
+            ledger.records().keys().collect::<Vec<_>>(),
+            permuted.records().keys().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn compact_closure_join_defects_have_four_distinct_key_classes() {
+        use super::CompactClosureRefusal as R;
+        let base = ledger_readings();
+        let mut missing = base.clone();
+        let absent = missing.pop().expect("last").requirement;
+        assert_eq!(
+            admit_readings(missing).err(),
+            Some(R::MissingReading(absent))
+        );
+        let mut duplicate = base.clone();
+        duplicate.push(base[0].clone());
+        assert_eq!(
+            admit_readings(duplicate).err(),
+            Some(R::DuplicateReading(base[0].requirement.clone()))
+        );
+        let mut surplus = base.clone();
+        let mut extra = base[0].clone();
+        extra.requirement.case.operation = OperationId::Clear;
+        extra.evidence.requirement = extra.requirement.clone();
+        let extra_key = extra.requirement.clone();
+        surplus.push(extra);
+        assert_eq!(
+            admit_readings(surplus).err(),
+            Some(R::SurplusReading(extra_key))
+        );
+        let mut wrong = base;
+        wrong[0].requirement.case.operation = OperationId::Clear;
+        let wrong_key = wrong[0].requirement.clone();
+        assert_eq!(admit_readings(wrong).err(), Some(R::WrongKey(wrong_key)));
+    }
+
+    #[test]
+    fn compact_closure_pair_and_formal_defects_cannot_receive_row_credit() {
+        use super::{CompactClosureKind as K, CompactClosureRefusal as R, CompactOperand as O};
+        let base = ledger_readings();
+        let mut same = base.clone();
+        same[0].evidence.subject = same[0].evidence.control.clone();
+        assert_eq!(
+            admit_readings(same).err(),
+            Some(R::SubjectEqualsControl(base[0].requirement.clone()))
+        );
+        let mut wrong = base.clone();
+        wrong[0].evidence.refusal = super::CompactObservedRefusal::Substrate(
+            crate::report::CompactSubstrateReportRefusal::ExternalEvidenceMissing,
+        );
+        assert_eq!(
+            admit_readings(wrong).err(),
+            Some(R::WrongRefusal(base[0].requirement.clone()))
+        );
+        let formal = base
+            .iter()
+            .position(|r| r.kind() == K::Formal)
+            .expect("formal");
+        let mut changed = base.clone();
+        changed[formal].evidence.kind = K::ObservedRefusal;
+        assert_eq!(
+            admit_readings(changed).err(),
+            Some(R::FormalPremiseMismatch(base[formal].requirement.clone()))
+        );
+        let mut changed = base.clone();
+        let Some(super::CompactFormalReason::UnavailableWitnessUnderPermissionlessAuthorization {
+            operation,
+            ..
+        }) = &mut changed[formal].evidence.reason
+        else {
+            panic!("argument")
+        };
+        *operation = OperationId::TransferLive;
+        assert_eq!(
+            admit_readings(changed).err(),
+            Some(R::FormalPremiseMismatch(base[formal].requirement.clone()))
+        );
+        let mut changed = base.clone();
+        let O::Dependency { operation, .. } = &mut changed[formal].evidence.subject else {
+            panic!("dependency")
+        };
+        *operation = OperationId::TransferLive;
+        assert_eq!(
+            admit_readings(changed).err(),
+            Some(R::PairMismatch(base[formal].requirement.clone()))
+        );
+        let (bundle, corpus) = ledger_sources();
+        let other = bundle.clone();
+        let mut changed = ledger_readings();
+        changed[0].bundle = &other;
+        assert_eq!(
+            super::admit_compact_closure_readings(&other, corpus, changed).err(),
+            Some(R::EvidenceBindingMismatch(base[1].requirement.clone()))
+        );
+    }
+
+    #[test]
+    fn compact_closure_formal_authorization_must_match_the_canonical_premise() {
+        let mut readings = ledger_readings();
+        let reading = readings
+            .iter_mut()
+            .find(|r| r.kind() == super::CompactClosureKind::Formal)
+            .expect("formal");
+        let key = reading.requirement.clone();
+        let Some(super::CompactFormalReason::UnavailableWitnessUnderPermissionlessAuthorization {
+            authorization,
+            ..
+        }) = &mut reading.evidence.reason
+        else {
+            panic!("argument")
+        };
+        *authorization = realization::ConstructibilityAuthorization::Operator;
+        assert_eq!(
+            admit_readings(readings).err(),
+            Some(super::CompactClosureRefusal::FormalPremiseMismatch(key))
+        );
+    }
+
+    #[test]
+    fn compact_closure_declaration_kind_must_match_the_canonical_reading() {
+        let mut readings = ledger_readings();
+        let reading = readings
+            .iter_mut()
+            .find(|r| r.kind() == super::CompactClosureKind::ObservedDeclarationRefusal)
+            .expect("declaration");
+        let key = reading.requirement.clone();
+        reading.evidence.kind = super::CompactClosureKind::ObservedRefusal;
+        assert_eq!(
+            admit_readings(readings).err(),
+            Some(super::CompactClosureRefusal::FormalPremiseMismatch(key))
+        );
+    }
+
+    #[test]
+    fn compact_closure_neighbouring_emitted_omission_is_not_a_compact_exit() {
+        use super::{CompactClosureRefusal as R, CompactOperand as O};
+        let mut readings = ledger_readings();
+        let index = readings
+            .iter()
+            .position(|r| {
+                matches!(
+                    r.evidence.refusal,
+                    super::CompactObservedRefusal::Lifecycle(
+                        tapscript::CompactEmittedLifecycleRefusal::MissingCompactExit { .. }
+                    )
+                )
+            })
+            .expect("compact exit");
+        let O::Emitted(control) = &readings[index].evidence.control else {
+            panic!("emitted")
+        };
+        let mut subject = control.clone();
+        subject
+            .leaves
+            .remove(&tapscript::LeafRole::Member { ash_inputs: 2 });
+        readings[index].evidence.subject = O::Emitted(subject);
+        let id = readings[index].requirement.clone();
+        assert_eq!(admit_readings(readings).err(), Some(R::PairMismatch(id)));
+    }
+
+    #[test]
+    fn compact_closure_checks_control_acceptance_and_subject_refusal_separately() {
+        use super::{CompactClosureRefusal as R, CompactOperand as O};
+        let (bundle, corpus) = ledger_sources();
+        let context = super::compact_context(bundle).expect("context");
+        let readings = ledger_readings();
+        let original = readings
+            .iter()
+            .find(|r| matches!(r.evidence.control, O::Selection(_)))
+            .expect("selection");
+        let mut record = original.evidence.clone();
+        record.control = O::Selection(realization::RepresentationMode::PrivateCommitted);
+        record.subject = O::Selection(realization::RepresentationMode::Explicit);
+        assert_eq!(
+            super::check_compact_pair(&context, Some(corpus), &record),
+            Err(R::ControlRefused(record.requirement.clone()))
+        );
+        let original = readings
+            .iter()
+            .find(|r| matches!(r.evidence.control, O::Secret(_)))
+            .expect("secret");
+        let mut record = original.evidence.clone();
+        let O::Secret(control) = &record.control else {
+            panic!("program")
+        };
+        let mut instructions = control.instructions().to_vec();
+        instructions.insert(
+            0,
+            tapscript::TapscriptInstruction::Opcode(target_elements::OpcodeId::Drop),
+        );
+        record.subject =
+            O::Secret(tapscript::TapscriptProgram::new(instructions).expect("program"));
+        assert_eq!(
+            super::check_compact_pair(&context, Some(corpus), &record),
+            Err(R::SubjectAccepted(record.requirement.clone()))
+        );
+    }
+
+    #[test]
+    fn compact_closure_every_pair_restores_exactly_one_coordinate_and_accepts() {
+        let (bundle, corpus) = ledger_sources();
+        let context = super::compact_context(bundle).expect("context");
+        for reading in ledger_readings() {
+            let record = &reading.evidence;
+            let restored = restore_compact_coordinate(record);
+            assert_eq!(restored, record.control);
+            assert_ne!(record.subject, record.control);
+            assert_eq!(
+                super::read_compact_operand(&context, Some(corpus), &record.requirement, &restored),
+                Ok(Ok(()))
+            );
+            assert_eq!(
+                super::read_compact_operand(
+                    &context,
+                    Some(corpus),
+                    &record.requirement,
+                    &record.subject
+                ),
+                Ok(Err(record.refusal.clone()))
+            );
+        }
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "each operand restores only its declared coordinate"
+    )]
+    fn restore_compact_coordinate(record: &super::CompactRecord) -> super::CompactOperand {
+        use super::CompactOperand as O;
+        let mut restored = record.subject.clone();
+        match (&record.control, &mut restored) {
+            (O::Dependency { node: control, .. }, O::Dependency { node, .. }) => {
+                let availability = match control {
+                    ConstructibilityNodeId::Fact { availability, .. }
+                    | ConstructibilityNodeId::Witness { availability, .. } => *availability,
+                    ConstructibilityNodeId::Operation(_) => panic!("availability"),
+                };
+                *node = super::with_availability(node, availability).expect("availability");
+            }
+            (O::Selection(control), O::Selection(subject)) => *subject = *control,
+            (O::Projection(control), O::Projection(subject)) => {
+                assert_eq!(control.nodes, subject.nodes);
+                assert_eq!(control.edges.len(), subject.edges.len() + 1);
+                let missing = control
+                    .edges
+                    .iter()
+                    .find(|e| !subject.edges.contains(e))
+                    .expect("one edge")
+                    .clone();
+                let index = control
+                    .edges
+                    .iter()
+                    .position(|e| e == &missing)
+                    .expect("index");
+                subject.edges.insert(index, missing);
+            }
+            (O::Envelopes(control), O::Envelopes(subject)) => {
+                assert_eq!(
+                    subject.region.open_flows.len(),
+                    control.region.open_flows.len() + 1
+                );
+                subject.region.open_flows.pop().expect("one envelope");
+            }
+            (O::Secret(control), O::Secret(subject)) => {
+                let mut instructions = subject.instructions().to_vec();
+                assert_eq!(
+                    instructions.remove(0),
+                    tapscript::TapscriptInstruction::Opcode(target_elements::OpcodeId::CheckSig)
+                );
+                *subject = tapscript::TapscriptProgram::new(instructions).expect("restored");
+                assert_eq!(subject, control);
+            }
+            (O::Recognition(control), O::Recognition(subject)) => {
+                let index = control
+                    .instructions()
+                    .iter()
+                    .position(|i| {
+                        *i == tapscript::TapscriptInstruction::Opcode(
+                            target_elements::OpcodeId::InspectInputValue,
+                        )
+                    })
+                    .expect("inspection")
+                    + 2;
+                let mut instructions = subject.instructions().to_vec();
+                instructions.insert(index, control.instructions()[index].clone());
+                *subject = tapscript::TapscriptProgram::new(instructions).expect("restored");
+            }
+            (O::Emitted(control), O::Emitted(subject)) => match &record.refusal {
+                super::CompactObservedRefusal::Lifecycle(
+                    tapscript::CompactEmittedLifecycleRefusal::MissingCompactExit { leaf },
+                ) => {
+                    assert_eq!(subject.declarations, control.declarations);
+                    assert_eq!(control.leaves.len(), subject.leaves.len() + 1);
+                    assert_eq!(
+                        subject.leaves.insert(*leaf, control.leaves[leaf].clone()),
+                        None
+                    );
+                }
+                super::CompactObservedRefusal::Lifecycle(
+                    tapscript::CompactEmittedLifecycleRefusal::MissingClearDeclaration {
+                        requirement,
+                    },
+                ) => {
+                    assert_eq!(subject.leaves, control.leaves);
+                    assert_eq!(control.declarations.len(), subject.declarations.len() + 1);
+                    assert!(subject.declarations.insert(requirement.clone()));
+                }
+                _ => panic!("exact lifecycle class"),
+            },
+            (O::Report(Some(control)), O::Report(subject)) => match &record.refusal {
+                super::CompactObservedRefusal::Substrate(
+                    crate::report::CompactSubstrateReportRefusal::ExternalEvidenceMissing,
+                ) => {
+                    assert_eq!(*subject, None);
+                    *subject = Some(control.clone());
+                }
+                super::CompactObservedRefusal::Substrate(
+                    crate::report::CompactSubstrateReportRefusal::ExternalEvidenceFailed,
+                ) => subject.as_mut().expect("report").outcome = control.outcome,
+                super::CompactObservedRefusal::Substrate(
+                    crate::report::CompactSubstrateReportRefusal::ExternalEvidenceIdentityMismatch,
+                ) => subject.as_mut().expect("report").transaction = control.transaction.clone(),
+                _ => panic!("exact report class"),
+            },
+            _ => panic!("matching operand kinds"),
+        }
+        restored
     }
 
     /// The first-party requirement of one class, in one sponsor case.
@@ -1096,8 +2495,8 @@ mod tests {
         // raised by the same validator, and this case cannot reach it:
         // compact-ASH publishes only a permissionless authorization,
         // and that is the arm the error's own construction selects on.
-        // The row therefore stays outstanding rather than being filled
-        // by whichever refusal was nearest.
+        // This route supplies no requested-class observation. The separate
+        // closure ledger checks the formal argument of ruling 137.
         let bundle = fixture_bundle().expect("the fixture bundle builds");
         let plan = bundle.plan();
         let id = requirement(

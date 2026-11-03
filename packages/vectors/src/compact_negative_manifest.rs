@@ -34,46 +34,81 @@ pub enum CompactNegativeBoundary {
     ExternalReport,
 }
 
-/// An exact entry still needed for a retained obligation.
+/// Historical missing-entry inventory, retained after explicit resolution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OwnerEntryMissing {
     /// The existing dependency entry selects another refusal for compact ASH.
     CompactUnavailableWitness,
-    /// Private compiler plan validator and private analyzed subject.
+    /// Resolved by the immutable offered-representation comparison.
     CompilerRepresentation,
-    /// Private compiler lifecycle validator and private analysis inputs.
+    /// Resolved by the offered-lifecycle-projection comparison.
     CompilerLifecycle,
-    /// Scope classification exists, but no malformed-envelope validation entry exists.
+    /// Resolved by the typed owned-envelope multiplicity comparison.
     CompilerSponsorMultiplicity,
-    /// A predicate exists, but no typed emitted-path refusal entry exists.
+    /// Resolved by the typed emitted secret-free-path comparison.
     EmittedSecretFreePath,
-    /// No malformed emitted-representation validation entry exists.
+    /// Resolved by the typed recognition-fragment comparison.
     EmittedRepresentation,
-    /// No malformed emitted-exit validation entry exists.
+    /// Resolved by the typed constructor and declaration comparison.
     EmittedLifecycle,
-    /// No compact substrate report consumer supplies this evidence.
+    /// Resolved by the prepared substrate-report comparison.
     SubstrateReport,
 }
 
 impl OwnerEntryMissing {
-    /// Existing private entry, or explicitly required future entry.
+    /// Supplied entry; the unavailable-witness class still needs its formal argument.
     #[must_use]
     pub const fn entry(self) -> &'static str {
         match self {
             Self::CompactUnavailableWitness => "compiler::validate_required_dependency",
             Self::CompilerRepresentation => {
-                "compiler::operation_plan::validate_target_operation_plan"
+                "compiler::operation_plan::validate_compact_representation"
             }
-            Self::CompilerLifecycle => "compiler::lifecycle::build_lifecycle_analysis",
-            Self::CompilerSponsorMultiplicity => {
-                "required: compiler::validate_sponsor_envelope_multiplicity"
-            }
-            Self::EmittedSecretFreePath => "required: tapscript::validate_compact_secret_free_path",
-            Self::EmittedRepresentation => {
-                "required: tapscript::validate_compact_emitted_representation"
-            }
-            Self::EmittedLifecycle => "required: tapscript::validate_compact_emitted_lifecycle",
-            Self::SubstrateReport => "required: vectors::validate_compact_substrate_report",
+            Self::CompilerLifecycle => "compiler::validate_compact_lifecycle_projection",
+            Self::CompilerSponsorMultiplicity => "compiler::validate_sponsor_envelope_multiplicity",
+            Self::EmittedSecretFreePath => "tapscript::validate_compact_secret_free_path",
+            Self::EmittedRepresentation => "tapscript::validate_compact_emitted_representation",
+            Self::EmittedLifecycle => "tapscript::validate_compact_emitted_lifecycle",
+            Self::SubstrateReport => "vectors::validate_compact_substrate_report",
+        }
+    }
+}
+
+/// Supplied comparison routes, distinct from historical missing-entry names.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CompactValidationEntry {
+    /// Required-dependency comparison supporting the formal argument.
+    RequiredDependency,
+    /// Offered compact representation comparison.
+    Representation,
+    /// Offered lifecycle projection comparison.
+    LifecycleProjection,
+    /// Owned sponsor-envelope multiplicity comparison.
+    SponsorMultiplicity,
+    /// Emitted secret-free-path comparison.
+    SecretFreePath,
+    /// Emitted recognition-fragment comparison.
+    Recognition,
+    /// Emitted constructor and lifecycle declaration comparison.
+    LifecycleDeclaration,
+    /// Prepared substrate-report comparison.
+    SubstrateComparison,
+}
+
+impl OwnerEntryMissing {
+    /// Exhaustive resolution of the historical entry inventory.
+    #[must_use]
+    pub const fn supplied(self) -> CompactValidationEntry {
+        use CompactValidationEntry as E;
+        match self {
+            Self::CompactUnavailableWitness => E::RequiredDependency,
+            Self::CompilerRepresentation => E::Representation,
+            Self::CompilerLifecycle => E::LifecycleProjection,
+            Self::CompilerSponsorMultiplicity => E::SponsorMultiplicity,
+            Self::EmittedSecretFreePath => E::SecretFreePath,
+            Self::EmittedRepresentation => E::Recognition,
+            Self::EmittedLifecycle => E::LifecycleDeclaration,
+            Self::SubstrateReport => E::SubstrateComparison,
         }
     }
 }
@@ -89,6 +124,10 @@ pub enum NegativeOwner {
     /// `compiler::validate_required_dependency`.
     CompilerRequiredDependency,
     OwnerEntryMissing(OwnerEntryMissing),
+    /// A callable comparison; availability alone supplies no closure evidence.
+    Supplied(CompactValidationEntry),
+    /// The dependency entry supports the checked argument of ruling 137.
+    FormallyResolved(CompactValidationEntry),
 }
 
 /// A concrete existing mutation route, without claiming it answers the row.
@@ -151,7 +190,7 @@ impl CompactNegativeRow {
                 "retained protocol program versus inserted authorization instruction"
             }
             M::RequiredLifecycleExitMissing => {
-                "retained lifecycle subject versus removal of the exact keyed exit; Clear has no accepting emitted control"
+                "retained lifecycle subject versus removal of the exact keyed exit or outstanding Clear declaration"
             }
             M::ExternalEvidenceMissing => "retained exact substrate subject with its report absent",
             M::ExternalEvidenceFailed => "retained exact substrate subject with a failed report",
@@ -220,7 +259,7 @@ pub fn compact_negative_manifest(
             EvidenceRole::ExternalReport { .. } => (
                 NegativeClass::Unreachable,
                 CompactNegativeBoundary::ExternalReport,
-                NegativeOwner::OwnerEntryMissing(OwnerEntryMissing::SubstrateReport),
+                NegativeOwner::Supplied(OwnerEntryMissing::SubstrateReport.supplied()),
             ),
             EvidenceRole::InactiveCaseAcceptance => return Err(ManifestRefusal::UnknownRole),
         };
@@ -285,7 +324,12 @@ const fn first_party_owner(
         (R::RequiredLifecycleExitMissing, true) => (B::EmittedStructure, M::EmittedLifecycle),
         _ => return Err(ManifestRefusal::UnknownFirstPartyClass),
     };
-    Ok((boundary, NegativeOwner::OwnerEntryMissing(missing)))
+    let resolved = if matches!(missing, M::CompactUnavailableWitness) {
+        NegativeOwner::FormallyResolved(missing.supplied())
+    } else {
+        NegativeOwner::Supplied(missing.supplied())
+    };
+    Ok((boundary, resolved))
 }
 
 #[cfg(test)]
@@ -329,13 +373,15 @@ mod tests {
             assert_eq!(row.boundary, CompactNegativeBoundary::CompilerAnalysis);
             assert_eq!(
                 row.owner,
-                NegativeOwner::OwnerEntryMissing(OwnerEntryMissing::CompilerSponsorMultiplicity)
+                NegativeOwner::Supplied(CompactValidationEntry::SponsorMultiplicity)
             );
         }
     }
 
     #[test]
     fn compact_negative_manifest_pins_missing_owners() {
+        use CompactValidationEntry as E;
+        use OwnerEntryMissing as M;
         let bundle = crate::bundle::fixture_bundle().expect("bundle");
         let rows = compact_negative_manifest(&bundle).expect("manifest");
         let missing: Vec<_> = rows
@@ -343,28 +389,127 @@ mod tests {
             .filter(|r| matches!(r.owner, NegativeOwner::OwnerEntryMissing(_)))
             .collect();
         // Before scope-only multiplicity: 22 missing owners, 16 first-party.
-        assert_eq!(missing.len(), 24);
+        // Before compact closure: 24 = 18 first-party + 6 external.
+        assert_eq!(missing.len(), 0);
         assert_eq!(
             missing
                 .iter()
                 .filter(|r| r.class == NegativeClass::FirstParty)
                 .count(),
-            18
+            0
         );
         assert_eq!(
             missing
                 .iter()
                 .filter(|r| r.class == NegativeClass::Unreachable)
                 .count(),
-            6
+            0
         );
-        for row in missing {
-            let NegativeOwner::OwnerEntryMissing(owner) = row.owner else {
+        let resolved: Vec<_> = rows
+            .values()
+            .filter(|r| {
+                matches!(
+                    r.owner,
+                    NegativeOwner::Supplied(_) | NegativeOwner::FormallyResolved(_)
+                )
+            })
+            .collect();
+        assert_eq!(resolved.len(), 24);
+        for row in resolved {
+            let (NegativeOwner::Supplied(entry) | NegativeOwner::FormallyResolved(entry)) =
+                row.owner
+            else {
                 unreachable!()
+            };
+            let owner = match entry {
+                E::RequiredDependency => M::CompactUnavailableWitness,
+                E::Representation => M::CompilerRepresentation,
+                E::LifecycleProjection => M::CompilerLifecycle,
+                E::SponsorMultiplicity => M::CompilerSponsorMultiplicity,
+                E::SecretFreePath => M::EmittedSecretFreePath,
+                E::Recognition => M::EmittedRepresentation,
+                E::LifecycleDeclaration => M::EmittedLifecycle,
+                E::SubstrateComparison => M::SubstrateReport,
             };
             assert_ne!(owner.entry(), "");
             assert_ne!(row.subject_recipe(), "");
         }
+    }
+
+    #[test]
+    fn all_eight_historical_missing_entries_have_explicit_resolutions() {
+        use CompactValidationEntry as E;
+        use OwnerEntryMissing as M;
+        let mappings = [
+            (
+                M::CompactUnavailableWitness,
+                E::RequiredDependency,
+                "compiler::validate_required_dependency",
+            ),
+            (
+                M::CompilerRepresentation,
+                E::Representation,
+                "compiler::operation_plan::validate_compact_representation",
+            ),
+            (
+                M::CompilerLifecycle,
+                E::LifecycleProjection,
+                "compiler::validate_compact_lifecycle_projection",
+            ),
+            (
+                M::CompilerSponsorMultiplicity,
+                E::SponsorMultiplicity,
+                "compiler::validate_sponsor_envelope_multiplicity",
+            ),
+            (
+                M::EmittedSecretFreePath,
+                E::SecretFreePath,
+                "tapscript::validate_compact_secret_free_path",
+            ),
+            (
+                M::EmittedRepresentation,
+                E::Recognition,
+                "tapscript::validate_compact_emitted_representation",
+            ),
+            (
+                M::EmittedLifecycle,
+                E::LifecycleDeclaration,
+                "tapscript::validate_compact_emitted_lifecycle",
+            ),
+            (
+                M::SubstrateReport,
+                E::SubstrateComparison,
+                "vectors::validate_compact_substrate_report",
+            ),
+        ];
+        assert_eq!(mappings.len(), 8);
+        for (historical, supplied, entry) in mappings {
+            assert_eq!(historical.supplied(), supplied);
+            assert_eq!(historical.entry(), entry);
+        }
+        let bundle = crate::bundle::fixture_bundle().expect("bundle");
+        let rows = compact_negative_manifest(&bundle).expect("manifest");
+        assert_eq!(
+            rows.values()
+                .filter(|r| matches!(r.owner, NegativeOwner::Supplied(_)))
+                .count(),
+            22
+        );
+        assert_eq!(
+            rows.values()
+                .filter(|r| matches!(
+                    r.owner,
+                    NegativeOwner::FormallyResolved(E::RequiredDependency)
+                ))
+                .count(),
+            2
+        );
+        assert_eq!(
+            rows.values()
+                .filter(|r| matches!(r.owner, NegativeOwner::CompilerRequiredDependency))
+                .count(),
+            2
+        );
     }
 
     #[test]

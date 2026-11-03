@@ -1321,6 +1321,32 @@ mod tests {
     }
 
     #[test]
+    fn closure_failure_leaves_archive_admission_and_its_predicates_unchanged() {
+        let admitted = run_of_record().expect("archive");
+        let bundle = crate::bundle::fixture_bundle().expect("bundle");
+        let mut readings =
+            crate::first_party::stage_compact_closure_readings(&bundle, admitted).expect("pairs");
+        let missing = readings.pop().expect("reading").requirement().clone();
+        assert_eq!(
+            crate::first_party::admit_compact_closure_readings(&bundle, admitted, readings).err(),
+            Some(crate::first_party::CompactClosureRefusal::MissingReading(
+                missing
+            ))
+        );
+        assert!(std::ptr::eq(
+            admitted,
+            run_of_record().expect("unchanged archive")
+        ));
+        let mut changed = CAPTURE.to_owned();
+        changed.push('\n');
+        assert!(matches!(
+            admit_files(&changed, TIMING, MANIFEST, REPORT),
+            Err(CompactImportRefusal::Manifest)
+        ));
+        assert_eq!(census(joined_campaign().expect("joined")), [27, 21, 0, 0]);
+    }
+
+    #[test]
     fn current_archive_replays_sixteen_rows_after_their_paired_controls() {
         let corpus = run_of_record().expect("admission");
         assert!(std::ptr::eq(corpus, run_of_record().expect("cached")));
