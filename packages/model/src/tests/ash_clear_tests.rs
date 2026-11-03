@@ -90,6 +90,73 @@ fn clear_decrements_y_l_and_ash_equally() {
 }
 
 #[test]
+fn clear_changes_only_the_stored_y_l_and_the_derived_total() {
+    let world = world_with_two_ash();
+
+    let old_state = world.state().unwrap().1;
+    let PoolState {
+        omega: old_omega,
+        y_l: old_y_l,
+        y_t: old_y_t,
+        q: old_q,
+        cycle: old_cycle,
+        maturity: old_maturity,
+    } = old_state;
+    let ash = find_ash(&world);
+    let ash_total = ash
+        .iter()
+        .map(|outpoint| world.utxo(*outpoint).unwrap().value)
+        .try_fold(Sat::ZERO, |acc, value| acc.checked_add(value))
+        .unwrap();
+
+    let next = apply_checked(
+        &world,
+        &ClearAsh {
+            ash_inputs: ash,
+            fee_envelope: FeeEnvelope::default(),
+        },
+        next_order(&world),
+    );
+
+    let new_state = next.state().unwrap().1;
+    let PoolState {
+        omega,
+        y_l,
+        y_t,
+        q,
+        cycle,
+        maturity,
+    } = new_state;
+    let remaining_ash = find_ash(&next)
+        .iter()
+        .map(|outpoint| next.utxo(*outpoint).unwrap().value)
+        .try_fold(Sat::ZERO, |acc, value| acc.checked_add(value))
+        .unwrap();
+    let cleared = old_y_l.checked_sub(y_l).unwrap();
+
+    assert!(!cleared.is_zero());
+    assert_eq!(omega, old_omega);
+    assert_eq!(y_t, old_y_t);
+    assert_eq!(q, old_q);
+    assert_eq!(cycle, old_cycle);
+    assert_eq!(maturity, old_maturity);
+    assert_eq!(cleared, ash_total.checked_sub(remaining_ash).unwrap());
+    assert_eq!(
+        old_state
+            .y()
+            .unwrap()
+            .checked_sub(new_state.y().unwrap())
+            .unwrap(),
+        cleared,
+    );
+    assert_eq!(ash_total.checked_sub(cleared).unwrap(), remaining_ash);
+    assert_eq!(
+        new_state.is_sealed().unwrap(),
+        old_state.is_sealed().unwrap()
+    );
+}
+
+#[test]
 fn clear_never_reaches_zero_total_supply() {
     let (world, receipt) = sealing_world();
 
