@@ -10,7 +10,7 @@ Node-free by construction. Both subjects are reachable before any node is
 up -- the diagnostic split shows itself the first time `elements-cli` is
 run at all, and every request-framing case is posed at the handshake, which
 this adapter reads before it boots anything. The `elementsd` and
-`elements-cli` the tests configure are two-line stand-ins, and the upstream
+`elements-cli` the tests configure are shell stand-ins, and the upstream
 functional-test framework is a stub package holding the two module names
 the adapter imports.
 
@@ -52,11 +52,13 @@ Run standalone (`python3 scripts/test-executor-boundaries.py`) or as the
 from __future__ import annotations
 
 import contextlib
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
 import io
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -115,7 +117,9 @@ class Fixture:
     in one temporary directory that the fixture removes.
     """
 
-    def __init__(self, client_body: str, node_seconds: float) -> None:
+    def __init__(
+        self, client_body: str, node_seconds: float, *, stop_on_rpc: bool = False
+    ) -> None:
         self.root = tempfile.mkdtemp(prefix="tripod-executor-boundaries-")
         framework = os.path.join(self.root, "framework", "test_framework")
         os.makedirs(framework)
@@ -126,27 +130,49 @@ class Fixture:
             open(os.path.join(framework, name), "w").close()
         self.framework = os.path.dirname(framework)
 
-        # A node that answers `--version` and then stays up for a bounded
-        # while. It has to outlive the boot attempt: an `elementsd` that
-        # exited first would be reported as a node that died during
+        # A node that answers `--version` and then stays up until stopped
+        # or its bounded lifetime ends. It has to outlive the boot attempt:
+        # an `elementsd` that exited first would be reported as dead during
         # startup, and the client would never be run at all.
+        lifetime = "sleep %.2f\n" % node_seconds
+        if stop_on_rpc:
+            # Signing tests need a live node, not a fixed teardown delay.
+            # The FIFO belongs to this fixture; the stop client wakes the
+            # node's bounded read, and the adapter still waits for its exit.
+            stop_fifo = os.path.join(self.root, "node-stop")
+            os.mkfifo(stop_fifo)
+            quoted_stop = shlex.quote(stop_fifo)
+            lifetime = "exec 3<>%s\nread -r -t %.2f stop <&3\n" % (
+                quoted_stop, node_seconds
+            )
+            client_body = (
+                'for arg in "$@"; do\n'
+                '  if [ "$arg" = "stop" ]; then\n'
+                "    exec 3<>%s\n"
+                "    printf 'stop\\n' >&3\n"
+                "    printf 'null\\n'\n"
+                "    exit 0\n"
+                "  fi\n"
+                "done\n" % quoted_stop
+            ) + client_body
         self.elementsd = self.script(
             "elementsd",
             'if [ "$1" = "--version" ]; then\n'
             '  echo "Elements Core Daemon version v23.99.0-0000000000000000000000000000000000000000"\n'
             "  exit 0\n"
             "fi\n"
-            "sleep %.2f\n" % node_seconds,
+            + lifetime,
+            shell="/bin/bash" if stop_on_rpc else "/bin/sh",
         )
         self.elements_cli = self.script("elements-cli", client_body)
         self.output = os.path.join(self.root, "executor-diagnostics.txt")
         self.elements_output = os.path.join(self.root, "executor-child-output.txt")
 
-    def script(self, name: str, body: str) -> str:
+    def script(self, name: str, body: str, *, shell: str = "/bin/sh") -> str:
         """Writes one executable stand-in binary."""
         path = os.path.join(self.root, name)
         with open(path, "w", encoding="utf-8") as handle:
-            handle.write("#!/bin/sh\n" + body)
+            handle.write("#!%s\n" % shell + body)
         os.chmod(path, 0o755)
         return path
 
@@ -1000,7 +1026,7 @@ def signing_fixture(available=True):
     for method, response in replies.items():
         body += "%s) printf '%%s\\n' '%s'; exit 0;;\n" % (method, response)
     body += 'esac\ndone\nexit 1\n'
-    fixture = Fixture(body, node_seconds=2.0)
+    fixture = Fixture(body, node_seconds=2.0, stop_on_rpc=True)
     framework = os.path.join(fixture.framework, "test_framework")
     with open(os.path.join(framework, "messages.py"), "w", encoding="utf-8") as out:
         out.write('''class CTransaction:
@@ -1367,22 +1393,54 @@ TESTS = (
 )
 
 
+# Module-loading and stream-redirection tests must run on the main thread.
+# Keep source-only checks here too: only subprocess-driven tests use the pool.
+SERIAL_TESTS = frozenset((
+    test_an_extra_execution_field_cannot_inject_a_typed_line,
+    test_the_typed_sink_rejects_line_bearing_content,
+    test_an_unknown_diagnostic_outcome_is_fatal,
+    test_the_diagnostic_outcome_inventory_is_closed,
+    test_zk_paths_and_loader_exceptions_reach_neither_file,
+    test_direct_block_response_keeps_both_key_sets,
+    test_the_schema_constants_agree_at_revision_eight,
+    test_revision_seven_producer_shapes_are_stated_at_the_boundary,
+    test_the_request_bounds_agree_across_the_two_implementations,
+))
+
+
+def timed_test(item):
+    """Run one test with its own assertions and measure its entire fixture life."""
+    name, test = item
+    failures = Failures()
+    started = time.monotonic()
+    checked = test(failures)
+    return name, failures, checked, time.monotonic() - started
+
+
 def main() -> int:
     global SCHEMA
     SCHEMA = adapter_schema()
     print("adapter protocol revision: %d" % SCHEMA)
     failed = 0
     started = time.monotonic()
-    for name, test in TESTS:
-        failures = Failures()
-        checked = test(failures)
+    # Finish in-process work before starting workers, so stream redirection
+    # cannot intercept another test. Report in TESTS order after both groups.
+    results = {
+        name: timed_test((name, test))
+        for name, test in TESTS if test in SERIAL_TESTS
+    }
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        parallel = (item for item in TESTS if item[1] not in SERIAL_TESTS)
+        results.update((result[0], result) for result in pool.map(timed_test, parallel))
+    for name, _test in TESTS:
+        _name, failures, checked, seconds = results[name]
         if failures.notes:
             failed += 1
-            print("FAIL %s" % name)
+            print("FAIL %s (%.3fs)" % (name, seconds), flush=True)
             for note in failures.notes:
                 print("     %s" % note)
         else:
-            print("ok   %s (%d assertions)" % (name, checked))
+            print("ok   %s (%d assertions, %.3fs)" % (name, checked, seconds), flush=True)
     elapsed = time.monotonic() - started
     print(
         "test result: %d tests %s in %.1fs"

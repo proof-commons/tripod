@@ -9,6 +9,8 @@
 # the Rust harness and importer.
 set -eu
 
+script_started=$(date +%s%N)
+
 LC_ALL=C
 export LC_ALL
 
@@ -28,6 +30,10 @@ driver=$root/scripts/live-native-v2-r7-capture.sh
 
 work=$(mktemp -d "$TMPDIR/live-native-capture-contract.XXXXXX")
 cleanup() {
+  # Join outstanding cases before removing any of their fixtures.
+  for cleanup_job in ${case_jobs:-}; do
+    wait "${cleanup_job%%:*}" 2>/dev/null || true
+  done
   chmod -R u+w "$work" 2>/dev/null || true
   rm -rf "$work"
 }
@@ -123,6 +129,29 @@ text_field() {
   printf '%s %s %s\n' "$text_key" "${#text_value}" "$(hex_text "$text_value")"
 }
 
+binary_tip=$binary_tip_prefix
+intended_tip=$expected_tip
+[ "$scenario" = non-prefix-revision ] && binary_tip=$non_prefix_revision
+[ "$scenario" = short-revision ] && binary_tip=$short_revision
+[ "$scenario" = non-hex-revision ] && binary_tip=$non_hex_revision
+[ "$scenario" = no-diagnostics ] && binary_tip=$expected_tip
+[ "$scenario" = intended-tip-mismatch ] && intended_tip=$wrong_tip
+
+# These fields are identical across ceremonies within this scenario. Encode
+# them once, retaining the same bytes and the scenario's changed revision.
+capture_fields=$(
+  text_field deployment-network-id "$TRIPOD_LIVE_NETWORK_ID"
+  text_field deployment-genesis-id "$TRIPOD_LIVE_GENESIS_ID"
+  text_field deployment-target-contract elements-tapscript-v2
+  printf 'handshake-protocol-schema 7\n'
+  text_field handshake-adapter-name mock-adapter
+  text_field handshake-adapter-version 1.0.0
+  text_field handshake-node-name elementsd
+  text_field handshake-node-version 23.2.1
+  text_field handshake-binary-reported-revision "$binary_tip"
+  text_field handshake-intended-executed-tip "$intended_tip"
+)
+
 for ceremony_id in $ceremony_ids; do
   if [ "$scenario" = missing-ceremony ] && [ "$ceremony_id" = report ]; then
     continue
@@ -137,16 +166,9 @@ for ceremony_id in $ceremony_ids; do
     capture_name=$TRIPOD_LIVE_RUN_ADDRESS.Report.capture
   capture_file=$TRIPOD_LIVE_REPORT_DIR/$capture_name
 
-  binary_tip=$binary_tip_prefix
-  intended_tip=$expected_tip
   terminal_state=complete
   deployment_environment=development
   capture_schema=1
-  [ "$scenario" = non-prefix-revision ] && binary_tip=$non_prefix_revision
-  [ "$scenario" = short-revision ] && binary_tip=$short_revision
-  [ "$scenario" = non-hex-revision ] && binary_tip=$non_hex_revision
-  [ "$scenario" = no-diagnostics ] && binary_tip=$expected_tip
-  [ "$scenario" = intended-tip-mismatch ] && intended_tip=$wrong_tip
   [ "$scenario" = incomplete-transcript ] && [ "$ceremony_id" = report ] && terminal_state=incomplete
   [ "$scenario" = deployment-mismatch ] && [ "$ceremony_id" = report ] && deployment_environment=staging
   [ "$scenario" = capture-schema ] && [ "$ceremony_id" = report ] && capture_schema=2
@@ -160,16 +182,7 @@ for ceremony_id in $ceremony_ids; do
     printf 'architecture-behavioural-identity %s\n' "$mock_behavioural_identity"
     printf 'fixture-digest-algorithm forward-v2\n'
     printf 'deployment-environment %s\n' "$deployment_environment"
-    text_field deployment-network-id "$TRIPOD_LIVE_NETWORK_ID"
-    text_field deployment-genesis-id "$TRIPOD_LIVE_GENESIS_ID"
-    text_field deployment-target-contract elements-tapscript-v2
-    printf 'handshake-protocol-schema 7\n'
-    text_field handshake-adapter-name mock-adapter
-    text_field handshake-adapter-version 1.0.0
-    text_field handshake-node-name elementsd
-    text_field handshake-node-version 23.2.1
-    text_field handshake-binary-reported-revision "$binary_tip"
-    text_field handshake-intended-executed-tip "$intended_tip"
+    printf '%s\n' "$capture_fields"
     if [ "$scenario" = cr-byte ] && [ "$ceremony_id" = report ]; then
       printf 'legacy-rendering 1 00\r\n'
     else
@@ -304,105 +317,202 @@ assert_ineligible_case() {
   grep -q "$refusal_pattern" "$case_stderr" || fail "$ineligible_name did not report its refusal"
 }
 
-run_case happy happy no
-if [ "$case_status" -ne 0 ]; then
-  sed 's/^/happy driver: /' "$case_stderr" >&2
-  fail "happy path exited $case_status"
-fi
-[ -f "$case_output/RUN-REPORT" ] || fail "happy path did not emit RUN-REPORT"
-if [ -f "$case_output/RUN-REPORT" ]; then
-  grep -qx 'eligible yes' "$case_output/RUN-REPORT" || fail "happy path is not eligible"
-  grep -qx 'run-report-schema native-v2-r7-run-report 1' "$case_output/RUN-REPORT" || fail "happy path report schema differs"
-  grep -qx 'capture-format-schema native-v2-r7-capture 1' "$case_output/RUN-REPORT" || fail "happy path capture schema differs"
-  grep -qx 'observed-test-count 40' "$case_output/RUN-REPORT" || fail "happy path test census differs"
-  grep -qx 'observed-ceremony-count 39' "$case_output/RUN-REPORT" || fail "happy path ceremony census differs"
-  grep -qx 'observed-setup-count 1' "$case_output/RUN-REPORT" || fail "happy path setup census differs"
-  grep -qx 'cargo-exit-code 0' "$case_output/RUN-REPORT" || fail "happy path Cargo exit differs"
-  grep -qx 'protocol-revision 7' "$case_output/RUN-REPORT" || fail "happy path protocol differs"
-  grep -qx 'fixture-digest-algorithm forward-v2' "$case_output/RUN-REPORT" || fail "happy path digest algorithm differs"
-  grep -qx "elementsd-expected-tip $expected_tip" "$case_output/RUN-REPORT" || fail "happy path expected tip differs"
-  grep -qx 'diagnostics-present yes' "$case_output/RUN-REPORT" || fail "happy path diagnostics presence differs"
-fi
+run_timed_case() {
+  timed_name=$1
+  shift
+  timed_started=$(date +%s%N)
+  timed_failures=$failures
+  case_stderr=/dev/null
+  "$@"
+  timed_elapsed=$(( $(date +%s%N) - timed_started ))
+  timed_status=ok
+  [ "$failures" -eq "$timed_failures" ] || timed_status=FAIL
+  awk -v name="$timed_name" -v status="$timed_status" -v ns="$timed_elapsed" '
+    BEGIN { printf "%s case %s wall-s %.3f\n", status, name, ns / 1000000000 }
+    /^phase .* wall-ms / { phases = phases sprintf(" %s=%.3f", $2, $4 / 1000) }
+    END { if (phases != "") printf "phases %s%s\n", name, phases }
+  ' "$case_stderr"
+}
 
-happy_files=$(find "$case_output" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')
-[ "$happy_files" -eq 81 ] || fail "happy path has $happy_files files, expected 81"
-happy_directories=$(find "$case_output" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
-[ "$happy_directories" -eq 1 ] || fail "happy path has $happy_directories top-level directories, expected diagnostics only"
-manifest_lines=$(wc -l < "$case_output/MANIFEST.sha256" | tr -d ' ')
-[ "$manifest_lines" -eq 79 ] || fail "manifest has $manifest_lines entries, expected 79 harness artifacts"
-if ! (cd "$case_output" && "$real_sha256sum" -c MANIFEST.sha256 >/dev/null); then
-  fail "happy path manifest does not independently verify"
-fi
-if grep -q 'RUN-REPORT' "$case_output/MANIFEST.sha256"; then
-  fail "manifest creates a cycle by naming RUN-REPORT"
-fi
-if grep -q 'diagnostics' "$case_output/MANIFEST.sha256"; then
-  fail "manifest includes audit-only diagnostics"
-fi
-[ ! -w "$case_output/RUN-REPORT" ] || fail "happy path files remain writable"
-[ ! -w "$case_output" ] || fail "happy path directory remains writable"
-for phase in preflight cargo census manifest report readonly; do
-  grep -q "phase $phase wall-ms" "$case_stderr" || fail "happy path omitted $phase timing"
-done
+check_happy() {
+  run_case happy happy no
+  if [ "$case_status" -ne 0 ]; then
+    sed 's/^/happy driver: /' "$case_stderr" >&2
+    fail "happy path exited $case_status"
+  fi
+  [ -f "$case_output/RUN-REPORT" ] || fail "happy path did not emit RUN-REPORT"
+  if [ -f "$case_output/RUN-REPORT" ]; then
+    grep -qx 'eligible yes' "$case_output/RUN-REPORT" || fail "happy path is not eligible"
+    grep -qx 'run-report-schema native-v2-r7-run-report 1' "$case_output/RUN-REPORT" || fail "happy path report schema differs"
+    grep -qx 'capture-format-schema native-v2-r7-capture 1' "$case_output/RUN-REPORT" || fail "happy path capture schema differs"
+    grep -qx 'observed-test-count 40' "$case_output/RUN-REPORT" || fail "happy path test census differs"
+    grep -qx 'observed-ceremony-count 39' "$case_output/RUN-REPORT" || fail "happy path ceremony census differs"
+    grep -qx 'observed-setup-count 1' "$case_output/RUN-REPORT" || fail "happy path setup census differs"
+    grep -qx 'cargo-exit-code 0' "$case_output/RUN-REPORT" || fail "happy path Cargo exit differs"
+    grep -qx 'protocol-revision 7' "$case_output/RUN-REPORT" || fail "happy path protocol differs"
+    grep -qx 'fixture-digest-algorithm forward-v2' "$case_output/RUN-REPORT" || fail "happy path digest algorithm differs"
+    grep -qx "elementsd-expected-tip $expected_tip" "$case_output/RUN-REPORT" || fail "happy path expected tip differs"
+    grep -qx 'diagnostics-present yes' "$case_output/RUN-REPORT" || fail "happy path diagnostics presence differs"
+  fi
 
-run_case no-diagnostics no-diagnostics no
-[ "$case_status" -eq 0 ] || fail "no-diagnostics path exited $case_status"
-[ -f "$case_output/RUN-REPORT" ] || fail "no-diagnostics path did not emit RUN-REPORT"
-if [ -f "$case_output/RUN-REPORT" ]; then
-  grep -qx 'eligible yes' "$case_output/RUN-REPORT" || fail "no-diagnostics path is not eligible"
-  grep -qx 'diagnostics-present no' "$case_output/RUN-REPORT" || fail "no-diagnostics presence differs"
-fi
+  happy_files=$(find "$case_output" -mindepth 1 -maxdepth 1 -type f | wc -l | tr -d ' ')
+  [ "$happy_files" -eq 81 ] || fail "happy path has $happy_files files, expected 81"
+  happy_directories=$(find "$case_output" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+  [ "$happy_directories" -eq 1 ] || fail "happy path has $happy_directories top-level directories, expected diagnostics only"
+  manifest_lines=$(wc -l < "$case_output/MANIFEST.sha256" | tr -d ' ')
+  [ "$manifest_lines" -eq 79 ] || fail "manifest has $manifest_lines entries, expected 79 harness artifacts"
+  if ! (cd "$case_output" && "$real_sha256sum" -c MANIFEST.sha256 >/dev/null); then
+    fail "happy path manifest does not independently verify"
+  fi
+  if grep -q 'RUN-REPORT' "$case_output/MANIFEST.sha256"; then
+    fail "manifest creates a cycle by naming RUN-REPORT"
+  fi
+  if grep -q 'diagnostics' "$case_output/MANIFEST.sha256"; then
+    fail "manifest includes audit-only diagnostics"
+  fi
+  [ ! -w "$case_output/RUN-REPORT" ] || fail "happy path files remain writable"
+  [ ! -w "$case_output" ] || fail "happy path directory remains writable"
+  for phase in preflight cargo census manifest report readonly; do
+    grep -q "phase $phase wall-ms" "$case_stderr" || fail "happy path omitted $phase timing"
+  done
+}
 
-assert_ineligible_case missing-ceremony missing-ceremony 'missing capture for report'
-assert_ineligible_case duplicate-ceremony duplicate-ceremony 'duplicate ceremony ID'
-assert_ineligible_case missing-timing missing-timing 'missing timing sidecar for report'
-assert_ineligible_case missing-setup missing-setup 'predecessor setup artifact is missing'
-assert_ineligible_case unexpected-file unexpected-file 'unexpected or noncanonical entry unexpected'
-assert_ineligible_case cr-byte cr-byte 'contains a CR byte'
-assert_ineligible_case noncanonical-name noncanonical-name 'unexpected or noncanonical entry'
-assert_ineligible_case incomplete-transcript incomplete-transcript 'terminal-state differs'
-assert_ineligible_case test-count test-count 'observed test census is not 40'
-assert_ineligible_case non-prefix-revision non-prefix-revision 'binary-reported elementsd revision'
-assert_ineligible_case short-revision short-revision 'binary-reported elementsd revision'
-assert_ineligible_case non-hex-revision non-hex-revision 'binary-reported elementsd revision'
-assert_ineligible_case intended-tip-mismatch intended-tip-mismatch 'intended executed elementsd tip differs'
-assert_ineligible_case deployment-mismatch deployment-mismatch 'deployment-environment differs'
-assert_ineligible_case capture-schema capture-schema 'native-capture-schema differs'
-assert_ineligible_case second-unexpected-directory second-unexpected-directory 'unexpected or noncanonical entry other-diagnostics'
+check_no_diagnostics() {
+  run_case no-diagnostics no-diagnostics no
+  [ "$case_status" -eq 0 ] || fail "no-diagnostics path exited $case_status"
+  [ -f "$case_output/RUN-REPORT" ] || fail "no-diagnostics path did not emit RUN-REPORT"
+  if [ -f "$case_output/RUN-REPORT" ]; then
+    grep -qx 'eligible yes' "$case_output/RUN-REPORT" || fail "no-diagnostics path is not eligible"
+    grep -qx 'diagnostics-present no' "$case_output/RUN-REPORT" || fail "no-diagnostics presence differs"
+  fi
+}
 
-run_case cargo-failure cargo-failure no
-[ "$case_status" -ne 0 ] || fail "Cargo failure unexpectedly exited zero"
-[ -f "$case_output/RUN-REPORT" ] || fail "Cargo failure did not emit RUN-REPORT"
-if [ -f "$case_output/RUN-REPORT" ]; then
-  grep -qx 'eligible no' "$case_output/RUN-REPORT" || fail "Cargo failure did not report eligible no"
-  grep -qx 'cargo-exit-code 7' "$case_output/RUN-REPORT" || fail "Cargo failure exit was not retained"
-fi
+check_cargo_failure() {
+  run_case cargo-failure cargo-failure no
+  [ "$case_status" -ne 0 ] || fail "Cargo failure unexpectedly exited zero"
+  [ -f "$case_output/RUN-REPORT" ] || fail "Cargo failure did not emit RUN-REPORT"
+  if [ -f "$case_output/RUN-REPORT" ]; then
+    grep -qx 'eligible no' "$case_output/RUN-REPORT" || fail "Cargo failure did not report eligible no"
+    grep -qx 'cargo-exit-code 7' "$case_output/RUN-REPORT" || fail "Cargo failure exit was not retained"
+  fi
+}
 
-run_case manifest-verification happy yes
-[ "$case_status" -ne 0 ] || fail "manifest verification failure unexpectedly exited zero"
-[ -f "$case_output/RUN-REPORT" ] || fail "manifest verification failure did not emit RUN-REPORT"
-if [ -f "$case_output/RUN-REPORT" ]; then
-  grep -qx 'eligible no' "$case_output/RUN-REPORT" || fail "manifest verification failure did not report eligible no"
-fi
-grep -q 'MANIFEST.sha256 did not verify' "$case_stderr" || fail "manifest verification failure was not reported"
+check_manifest_verification() {
+  run_case manifest-verification happy yes
+  [ "$case_status" -ne 0 ] || fail "manifest verification failure unexpectedly exited zero"
+  [ -f "$case_output/RUN-REPORT" ] || fail "manifest verification failure did not emit RUN-REPORT"
+  if [ -f "$case_output/RUN-REPORT" ]; then
+    grep -qx 'eligible no' "$case_output/RUN-REPORT" || fail "manifest verification failure did not report eligible no"
+  fi
+  grep -q 'MANIFEST.sha256 did not verify' "$case_stderr" || fail "manifest verification failure was not reported"
+}
 
-dirty_output=$results/dirty-tree
-printf '# dirty\n' >> "$suite/Cargo.toml"
-if (cd "$suite" && "$driver" "$dirty_output") > "$results/dirty.stdout" 2> "$results/dirty.stderr"; then
-  fail "dirty tree unexpectedly exited zero"
-fi
-[ ! -e "$dirty_output" ] || fail "dirty tree created a capture directory"
-grep -q 'suite tree is dirty' "$results/dirty.stderr" || fail "dirty tree refusal was not reported"
-git -C "$suite" restore Cargo.toml
+check_dirty_tree() {
+  dirty_output=$results/dirty-tree
+  printf '# dirty\n' >> "$suite/Cargo.toml"
+  if (cd "$suite" && "$driver" "$dirty_output") > "$results/dirty.stdout" 2> "$results/dirty.stderr"; then
+    fail "dirty tree unexpectedly exited zero"
+  fi
+  [ ! -e "$dirty_output" ] || fail "dirty tree created a capture directory"
+  grep -q 'suite tree is dirty' "$results/dirty.stderr" || fail "dirty tree refusal was not reported"
+  git -C "$suite" restore Cargo.toml
+  case_stderr=$results/dirty.stderr
+}
 
-nonempty_output=$results/nonempty
-mkdir "$nonempty_output"
-printf 'sentinel\n' > "$nonempty_output/sentinel"
-if (cd "$suite" && "$driver" "$nonempty_output") > "$results/nonempty.stdout" 2> "$results/nonempty.stderr"; then
-  fail "non-empty directory unexpectedly exited zero"
-fi
-grep -q 'capture directory is non-empty' "$results/nonempty.stderr" || fail "non-empty directory refusal was not reported"
-[ ! -e "$nonempty_output/RUN-REPORT" ] || fail "preflight refusal overwrote the non-empty directory"
+check_nonempty() {
+  nonempty_output=$results/nonempty
+  mkdir "$nonempty_output"
+  printf 'sentinel\n' > "$nonempty_output/sentinel"
+  if (cd "$suite" && "$driver" "$nonempty_output") > "$results/nonempty.stdout" 2> "$results/nonempty.stderr"; then
+    fail "non-empty directory unexpectedly exited zero"
+  fi
+  grep -q 'capture directory is non-empty' "$results/nonempty.stderr" || fail "non-empty directory refusal was not reported"
+  [ ! -e "$nonempty_output/RUN-REPORT" ] || fail "preflight refusal overwrote the non-empty directory"
+  case_stderr=$results/nonempty.stderr
+}
+
+# Four independent cases at a time; each owns its Git tree, outputs and tmp.
+# Replay their logs in roster order after joining every child in the batch.
+case_jobs=
+case_count=0
+seed_suite=$suite
+mkdir "$work/cases"
+
+finish_batch() {
+  for case_job in $case_jobs; do
+    case_pid=${case_job%%:*}
+    case_label=${case_job#*:}
+    case_root=$work/cases/$case_label
+    case_exit=0
+    wait "$case_pid" || case_exit=$?
+    cat "$case_root/log"
+    if [ "$case_exit" -eq 0 ] && [ -f "$case_root/failures" ]; then
+      case_failures=$(cat "$case_root/failures")
+      failures=$((failures + case_failures))
+    else
+      fail "$case_label worker exited $case_exit before completing its assertions"
+    fi
+  done
+  case_jobs=
+  case_count=0
+}
+
+time_case() {
+  case_root=$work/cases/$1
+  mkdir "$case_root"
+  (
+    trap - EXIT
+    suite=$case_root/suite
+    results=$case_root/results
+    mock_tmp=$case_root/tmp
+    cp -R "$seed_suite" "$suite"
+    mkdir "$results" "$mock_tmp"
+    mock_sha256sum=$suite/mock-sha256sum
+    export TMPDIR=$mock_tmp
+    export TRIPOD_CAPTURE_CARGO=$suite/mock-cargo
+    export TRIPOD_LIVE_EXECUTOR=$suite/mock-program
+    export ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD=$suite/mock-program
+    export ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI=$suite/mock-program
+    export ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK=$suite/framework
+    failures=0
+    run_timed_case "$@"
+    printf '%s\n' "$failures" > "$case_root/failures"
+  ) > "$case_root/log" 2>&1 &
+  case_jobs="$case_jobs $!:$1"
+  case_count=$((case_count + 1))
+  if [ "$case_count" -eq 4 ]; then
+    finish_batch
+  fi
+}
+
+time_case happy check_happy
+time_case no-diagnostics check_no_diagnostics
+time_case missing-ceremony assert_ineligible_case missing-ceremony missing-ceremony 'missing capture for report'
+time_case duplicate-ceremony assert_ineligible_case duplicate-ceremony duplicate-ceremony 'duplicate ceremony ID'
+time_case missing-timing assert_ineligible_case missing-timing missing-timing 'missing timing sidecar for report'
+time_case missing-setup assert_ineligible_case missing-setup missing-setup 'predecessor setup artifact is missing'
+time_case unexpected-file assert_ineligible_case unexpected-file unexpected-file 'unexpected or noncanonical entry unexpected'
+time_case cr-byte assert_ineligible_case cr-byte cr-byte 'contains a CR byte'
+time_case noncanonical-name assert_ineligible_case noncanonical-name noncanonical-name 'unexpected or noncanonical entry'
+time_case incomplete-transcript assert_ineligible_case incomplete-transcript incomplete-transcript 'terminal-state differs'
+time_case test-count assert_ineligible_case test-count test-count 'observed test census is not 40'
+time_case non-prefix-revision assert_ineligible_case non-prefix-revision non-prefix-revision 'binary-reported elementsd revision'
+time_case short-revision assert_ineligible_case short-revision short-revision 'binary-reported elementsd revision'
+time_case non-hex-revision assert_ineligible_case non-hex-revision non-hex-revision 'binary-reported elementsd revision'
+time_case intended-tip-mismatch assert_ineligible_case intended-tip-mismatch intended-tip-mismatch 'intended executed elementsd tip differs'
+time_case deployment-mismatch assert_ineligible_case deployment-mismatch deployment-mismatch 'deployment-environment differs'
+time_case capture-schema assert_ineligible_case capture-schema capture-schema 'native-capture-schema differs'
+time_case second-unexpected-directory assert_ineligible_case second-unexpected-directory second-unexpected-directory 'unexpected or noncanonical entry other-diagnostics'
+time_case cargo-failure check_cargo_failure
+time_case manifest-verification check_manifest_verification
+time_case dirty-tree check_dirty_tree
+time_case nonempty check_nonempty
+finish_batch
+
+total_elapsed=$(( $(date +%s%N) - script_started ))
+awk -v ns="$total_elapsed" -v failures="$failures" 'BEGIN {
+  printf "total: 22 cases, %d failure(s), wall-s %.3f\n", failures, ns / 1000000000
+}'
 
 if [ "$failures" -ne 0 ]; then
   echo "live-native capture contract: $failures failure(s)" >&2

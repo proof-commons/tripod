@@ -972,9 +972,11 @@ test(
 
 live_native_capture_test = find_program('scripts/test-live-native-v2-r7-capture.sh')
 
-# Budget: 1:05, tolerance 1:30. Pure shell with a synthetic Git suite and
-# mock Cargo; no Rust toolchain, target binary, node, or network. The time is
-# hashing and parsing 79 artifacts across the isolated refusal cases.
+# Budget: 0:30, tolerance 1:00 (gate node: direct 8.4s, Meson 24.8s).
+# Four isolated cases run at a time; mock Cargo encodes common fields once
+# per case. The driver still hashes and parses 79 artifacts per complete
+# capture. Pure shell with synthetic Git suites; no Rust toolchain, target
+# binary, node, or network. The harness bound allows shared-node contention.
 test(
   'live-native-v2-r7-capture-contract',
   live_native_capture_test,
@@ -986,9 +988,11 @@ test(
 
 live_native_r8_capture_test = find_program('scripts/test-live-native-v2-r8-capture.sh')
 
-# Budget: 1:05, tolerance 1:30. Pure shell with a synthetic Git suite and
-# mock Cargo; no Rust toolchain, target binary, node, or network. The time is
-# hashing and parsing 85 artifacts across the isolated refusal cases.
+# Budget: 0:30, tolerance 1:00 (gate node: direct 23.1s, Meson 27.1s).
+# Four isolated cases run at a time; mock Cargo encodes common fields once
+# per case. The driver still hashes and parses 85 artifacts per complete
+# capture. Pure shell with synthetic Git suites; no Rust toolchain, target
+# binary, node, or network. The harness bound allows shared-node contention.
 test(
   'live-native-v2-r8-capture-contract',
   live_native_r8_capture_test,
@@ -1152,16 +1156,18 @@ test(
 # split shows itself the first time the client is run at all, and every
 # request-framing case is posed at the handshake, which the adapter reads
 # before it boots anything. The `elementsd` and `elements-cli` it configures
-# are two-line stand-ins and the framework is a stub package.
-# Budget: 0:05, tolerance 0:20 (measured 0:04.8). Twelve adapter processes,
-# two of which wait out a stand-in node's bounded lifetime.
+# are shell stand-ins and the framework is a stub package.
+# Budget: 0:10, tolerance 0:20 (measured 0:05.6 on the node of record).
+# Seventy-six adapter processes across four test workers; signing stand-ins
+# exit on stop rather than a fixed sleep, with a bounded lifetime as fallback.
+# Two failed-startup cases retain the stand-in node's bounded lifetime.
 test(
   'executor-boundaries',
   python3,
   priority: 1,
   args: [meson.project_source_root() / 'scripts' / 'test-executor-boundaries.py'],
   suite: 'lint',
-  timeout: 180,
+  timeout: 60,
 )
 
 gate_cargo_audit = find_program('scripts/gate-cargo-audit.sh')
