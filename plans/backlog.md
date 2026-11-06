@@ -2660,9 +2660,11 @@ The five request-entry comparisons complete (`step:wave0:bite-0-5-first-party-en
 | Adapter | `elements-native-executor` |
 | Adapter version / protocol revision | `2.1.0` / `8` |
 | Adapter source SHA-256 | `a0edebf53cdfa4c95e4658711ced62be280b5891ea49140edfce32776a768b00` |
-| Interpreter version | `3.12.3`; carried as a reading, not a Rust identity pin |
+| Interpreter version | `3.14.10`; carried as a reading, not a Rust identity pin |
 
 Every adapter source change requires deliberate re-pinning of `ADAPTER_SOURCE_SHA256` and the Python source pin, followed by a fresh `--emit` and both admission checks. An interpreter reading change also requires refreshing the fixture after a successful comparison; no interpreter patch version is an operand-validity premise. The source identity belongs to this admission and does not rewrite historical capture provenance.
+
+The five comparisons are re-admitted on the node of record's gate interpreter under this record's interpreter rule.
 
 All reader calls use maximum 4194304 and phase `request`. Bytes below are ASCII with a final line-feed where stated. The field comparison decodes each record with `RequestReader.read_object` and then uses the allowed tuple `schema`, `case`, `subject`. These controls establish acceptance at their named entries, not transaction execution or acceptance by later request semantics.
 

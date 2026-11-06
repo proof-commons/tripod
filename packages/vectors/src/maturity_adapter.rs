@@ -398,7 +398,7 @@ mod tests {
         }
         let source = std::str::from_utf8(FIXTURE).unwrap();
         assert_eq!(
-            admit(source.replacen("6 332e31322e33\n", "0 \n", 1).as_bytes()),
+            admit(source.replacen("7 332e31342e3130\n", "0 \n", 1).as_bytes()),
             Err(R::Grammar)
         );
         let lines: Vec<_> = source.lines().collect();
