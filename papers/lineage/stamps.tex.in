@@ -1,0 +1,5 @@
+% Generated provenance; the placeholder vocabulary belongs to the build helper.
+\newcommand{\LineageDate}{@ATTESTATION_DATE@}
+\newcommand{\LineageTimestamp}{@ATTESTATION_TIMESTAMP@}
+\newcommand{\LineageDocumentUUID}{@ATTESTATION_DOCUMENT_UUID@}
+\newcommand{\LineageInstanceUUID}{@ATTESTATION_INSTANCE_UUID@}

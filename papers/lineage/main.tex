@@ -1,0 +1,137 @@
+\listfiles
+\documentclass{article}
+
+% Fonts and mathematics.
+\usepackage{fontspec}
+\usepackage{mathtools}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{stmaryrd}
+\usepackage{unicode-math}
+\usepackage{upgreek}
+% Layout and margin notes use the house paper defaults.
+\usepackage{geometry}
+\usepackage{microtype}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{marginnote}
+\usepackage{marginfix}
+\usepackage{graphicx}
+\usepackage{longtable}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{siunitx}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{subfiles}
+\usepackage{shellesc}
+\usepackage{todonotes}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage{algpseudocode}
+\usepackage[english]{babel}
+\usepackage{csquotes}
+\usepackage[style=verbose,backend=biber]{biblatex}
+\addbibresource{references.bib}
+\usepackage{hyperref}
+\usepackage{zref-clever}
+\usepackage{zref-titleref}
+\usepackage{hyperxmp}
+
+% Committed-source provenance supplies the visible date and XMP identities.
+\input{stamps.tex}
+\newcommand{\pdfmetaversion}{1.0.0}
+\hypersetup{
+    bookmarksnumbered=true,
+    bookmarksopen=true,
+    bookmarksopenlevel=1,
+    breaklinks=true,
+    citecolor=blue,
+    colorlinks=true,
+    filecolor=magenta,
+    linkcolor=red,
+    linktoc=all,
+    urlcolor=cyan,
+    pdfborder={0 0 0},
+    pdftitle={Keyed Provenance Covenant},
+    pdfauthor={Proof Commons},
+    pdfsubject={Keyed source records and handle membership},
+    pdfkeywords={Covenant, Source, Merge, Confluence, Membership},
+    pdfdate={\LineageDate},
+    pdfcreationdate={\LineageTimestamp},
+    pdfmoddate={\LineageTimestamp},
+    pdfmetadate={\LineageTimestamp},
+    pdfdocumentid={uuid:\LineageDocumentUUID},
+    pdfinstanceid={uuid:\LineageInstanceUUID},
+    pdfsource=\jobname.tex,
+    pdfcontacturl={https://github.com/proof-commons},
+    pdfcopyright={Dedicated to the public domain by Proof Commons under CC0 1.0 Universal. No rights reserved.},
+    pdflicenseurl={https://creativecommons.org/publicdomain/zero/1.0/},
+    pdfmetalang={en-US},
+    pdfpubstatus={VoR},
+    pdfpubtype={whitepaper},
+    pdfrendition={default},
+    pdfversionid={\pdfmetaversion},
+    pdfcreator={LaTeX with hyperref and xetex},
+    pdfdisplaydoctitle=true,
+    pdffitwindow=true,
+    pdfpagemode=UseOutlines,
+    pdfproducer={XeLaTeX},
+    pdfstartpage=1,
+    pdfstartview=FitH,
+    unicode=true,
+}
+
+\setmainfont{TeX Gyre Termes}
+\setsansfont{TeX Gyre Heros}
+\setmonofont{TeX Gyre Cursor}
+\setmathfont{STIX Two Math}
+\geometry{
+    a4paper,
+    top=1in,
+    bottom=1in,
+    inner=0.55in,
+    outer=2.2in,
+    marginparwidth=1.5in,
+    marginparsep=20pt,
+}
+\setlength{\marginparpush}{12pt}
+
+% The macro file is expl3 source; reference-name setup uses normal catcodes.
+\ExplSyntaxOn
+\input{macros_lineage.tex}
+\ExplSyntaxOff
+\zcLanguageSetup{english}{type=theorem,Name-sg=Theorem,name-sg=Theorem,Name-pl=Theorems,name-pl=Theorems}
+\zcLanguageSetup{english}{type=proposition,Name-sg=Proposition,name-sg=Proposition,Name-pl=Propositions,name-pl=Propositions}
+\zcLanguageSetup{english}{type=corollary,Name-sg=Corollary,name-sg=Corollary,Name-pl=Corollaries,name-pl=Corollaries}
+\zcLanguageSetup{english}{type=remark,Name-sg=Remark,name-sg=Remark,Name-pl=Remarks,name-pl=Remarks}
+\zcLanguageSetup{english}{type=definition,Name-sg=Definition,name-sg=Definition,Name-pl=Definitions,name-pl=Definitions}
+\zcLanguageSetup{english}{type=operation,Name-sg=Operation,name-sg=Operation,Name-pl=Operations,name-pl=Operations}
+\zcLanguageSetup{english}{type=section,Name-sg=Section,name-sg=Section,Name-pl=Sections,name-pl=Sections}
+\zcLanguageSetup{english}{type=equation,Name-sg=Equation,name-sg=Equation,Name-pl=Equations,name-pl=Equations}
+
+\begin{document}
+\subfile{sections/00_title.tex}
+\clearpage
+\hypersetup{linkcolor=black}
+\tableofcontents
+\hypersetup{linkcolor=red}
+\clearpage
+\subfile{sections/01_interface.tex}
+\clearpage
+\subfile{sections/02_model.tex}
+\clearpage
+\subfile{sections/03_operations.tex}
+\clearpage
+\subfile{sections/04_invariants.tex}
+\clearpage
+\subfile{sections/10_limitations.tex}
+\clearpage
+\appendix
+\subfile{sections/A1_verification.tex}
+\clearpage
+\subfile{sections/B1_symbols.tex}
+% No entries are printed: the references file has no external citations.
+\end{document}

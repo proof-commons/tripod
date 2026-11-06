@@ -1,0 +1,53 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Two mechanics}
+\label{sec:kpc:operations}
+
+SOURCE and MERGE define $C_k(x)$ of every handle by recursion in dependency
+order. Their cases depend only on the creating event's consumed handles.
+
+\begin{operation}[SOURCE]
+\label{op:kpc-operations:source}
+An event $e$ with $I_k(e)=\varnothing$ that creates a handle
+$s=O(e)_0\in K_k$ is a SOURCE. The handle itself identifies the new record
+$r_k(s)=(k,s)$ and receives $C_k(s)=\{r_k(s)\}$.
+Call $s$ the SOURCE handle of that record. Its fresh identity binds its
+creating event, so no other event introduces that record.
+\end{operation}
+
+\begin{operation}[MERGE]
+\label{op:kpc-operations:merge}
+If $I_k(e)\ne\varnothing$, continue-first supplies $s=O(e)_0\in K_k$.
+MERGE assigns $C_k(s)=\bigcup_{x\in I_k(e)}C_k(x)$ and introduces no record.
+The consumed handles' covenant places no condition on the event's other
+outputs.
+\end{operation}
+
+\begin{definition}[Record sets and classification]
+\label{def:kpc-operations:classification}
+Every event creating a handle $s\in K_k$ satisfies exactly one of these
+two cases, with the defining recurrence
+\[
+ C_k(s)=
+ \begin{cases}
+ \{r_k(s)\},&\text{if }I_k(e)=\varnothing,\\
+ \displaystyle\bigcup_{x\in I_k(e)}C_k(x),&\text{otherwise}.
+ \end{cases}
+\]
+An event creating no handle of $K_k$ has no set to define and cannot
+consume a handle of $K_k$, by continue first. This classifies every event of every valid
+history without imposing any further validity condition.
+\end{definition}
+
+\begin{definition}[Continuation]
+\label{def:kpc-operations:continuation}
+When an event consumes a handle $x$, its first output is the
+\emph{successor} of $x$. Write $x\preceq y$ when $y$ is reached from $x$
+by zero or more successor steps.
+\end{definition}
+
+Record sets and successors are derived from $H$ and are not carried by
+handles. The system has no counter or accumulator and no designated head or terminal.
+
+\end{document}

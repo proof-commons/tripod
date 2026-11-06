@@ -1,0 +1,69 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Invariants}
+\label{sec:kpc:invariants}
+
+Fix a key and a history.
+
+\begin{theorem}[Unique source provenance]
+\label{thm:kpc-invariants:source-provenance}
+Every member of $C_k(x)$ is $r_k(c)$ for exactly one SOURCE handle $c$
+with $c\preceq x$. The sets are finite and uniquely determined by the
+dependency history. MERGE introduces no record.
+\end{theorem}
+\begin{proof}
+Induct in dependency order. A SOURCE handle $c$ receives only $r_k(c)$;
+its fresh identity fixes the unique source, and $c\preceq c$.
+At a MERGE every member comes from an input whose successor is the new
+handle, extending the asserted path. The finite union preserves provenance
+and introduces no identity. These two cases uniquely determine each set.
+\end{proof}
+
+\begin{theorem}[Unique continuation]
+\label{thm:kpc-invariants:unique-successor}
+Every handle has at most one successor, and a consumed handle has exactly
+one, itself a handle. For every handle $g$, at every prefix containing
+$g$ exactly one $y$ with $g\preceq y$ is live. For a SOURCE handle $c$,
+$r_k(c)\in C_k(y)$ exactly when $c\preceq y$, so distinct live handles
+have disjoint sets.
+\end{theorem}
+\begin{proof}
+Single consumption gives at most one consuming event; continue-first
+makes its first output a handle, and \zcref{prop:kpc-model:single-birth} makes it the only one.
+Only the SOURCE creating $c$ introduces $r_k(c)$. In dependency order,
+$r_k(c)\in C_k(y)$ exactly when $y=c$ or some input containing $r_k(c)$
+has successor $y$. Induction gives exactly $c\preceq y$. The successor
+path from any handle is unique and finite and ends at an unconsumed,
+hence live, handle; every earlier handle on that path has been consumed.
+Two distinct live handles therefore cannot contain the same record.
+\end{proof}
+
+\begin{theorem}[Growth and disjoint gathering]
+\label{thm:kpc-invariants:set-membership-growth}
+If $x\preceq y$, then $C_k(x)\subseteq C_k(y)$, and the sets a MERGE
+gathers are pairwise disjoint.
+\end{theorem}
+\begin{proof}
+By \zcref{thm:kpc-invariants:unique-successor}, a record at $x$ has its
+SOURCE handle preceding $x$, hence also $y$, so it belongs to $C_k(y)$.
+Immediately before a MERGE its consumed handles are distinct and live;
+the same theorem makes their sets disjoint.
+\end{proof}
+
+\begin{theorem}[Separation of keys]
+\label{thm:kpc-invariants:key-isolation}
+For $k\ne\ell$, handles and records of $\ell$ contribute neither inputs
+nor new records to the sets $C_k$. A handle of one key never has a
+successor of the other.
+\end{theorem}
+\begin{proof}
+Disjoint membership excludes $K_\ell$ from $I_k(e)$ and prevents an
+$\ell$-handle from continuing a $k$-handle. A SOURCE handle belongs to
+only one key, fixing the key of its record. Induction on the recurrence
+preserves separation. An event consuming handles of both keys would
+require its first output in both disjoint classes, contrary to validity.
+Separate events can coexist in one history.
+\end{proof}
+
+\end{document}

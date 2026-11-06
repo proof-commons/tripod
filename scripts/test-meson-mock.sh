@@ -84,6 +84,20 @@ if grep -q '@ATTESTATION_' "$stamps"; then
 fi
 grep -q 'MOCK TRIPOD ATTESTATION PDF' "$pdf"
 
+# The second paper uses the same stamp and bibliography chain.
+# Its named target must render and publish through that graph too.
+meson compile -C "$build" lineage >/dev/null
+lineage_pdf="$mock_root/archive/rendered/Tripod_Keyed_Provenance_Covenant_v1.0.0.pdf"
+lineage_flat="$mock_root/archive/flattened/Tripod_Keyed_Provenance_Covenant_v1.0.0_flat.tex"
+test -s "$lineage_flat"
+lineage_stamps="$build/papers/lineage/stamps.tex"
+grep -q 'MOCK TRIPOD ATTESTATION PDF' "$lineage_pdf"
+grep -q 'LineageInstanceUUID' "$lineage_stamps"
+if grep -q '@ATTESTATION_' "$lineage_stamps"; then
+  echo "lineage stamps.tex has an unresolved placeholder" >&2
+  exit 1
+fi
+
 # Byte equality alone cannot tell "the edge did not run" from "the edge
 # reran and restat restored identical bytes". Ninja's build log appends a
 # line every time an output edge executes, so counting an output's lines
@@ -129,6 +143,33 @@ flat_runs_after="$(ninja_runs_for "$flat_output")"
   || { echo "no-op build reran the mock document render" >&2; exit 1; }
 [ "$flat_runs_before" = "$flat_runs_after" ] \
   || { echo "no-op build reran the LaTeX flattener" >&2; exit 1; }
+
+echo "==> lineage mirror repair and restat" >&2
+lineage_render_output="$(
+  awk -F '\t' '$4 ~ /papers\/lineage\/main[.]pdf$/ { output = $4 } END { print output }' "$ninja_log"
+)"
+lineage_flat_output="$(
+  awk -F '\t' '$4 ~ /papers\/lineage\/Tripod_Keyed_Provenance_Covenant_.*_flat[.]tex$/ { output = $4 } END { print output }' "$ninja_log"
+)"
+test -n "$lineage_render_output"
+test -n "$lineage_flat_output"
+cp "$lineage_pdf" "$mock_root/expected-lineage.pdf"
+cp "$lineage_flat" "$mock_root/expected-lineage.tex"
+printf 'corrupted\n' > "$lineage_pdf"
+printf 'corrupted\n' > "$lineage_flat"
+meson compile -C "$build" lineage >/dev/null
+cmp -s "$lineage_pdf" "$mock_root/expected-lineage.pdf" || { echo "lineage PDF mirror not repaired" >&2; exit 1; }
+cmp -s "$lineage_flat" "$mock_root/expected-lineage.tex" || { echo "lineage flat mirror not repaired" >&2; exit 1; }
+lineage_before="$(sha256sum "$lineage_pdf" "$lineage_flat")"
+lineage_render_before="$(ninja_runs_for "$lineage_render_output")"
+lineage_flat_before="$(ninja_runs_for "$lineage_flat_output")"
+meson compile -C "$build" lineage >/dev/null
+[ "$lineage_before" = "$(sha256sum "$lineage_pdf" "$lineage_flat")" ] \
+  || { echo "lineage no-op changed mirror bytes" >&2; exit 1; }
+[ "$lineage_render_before" = "$(ninja_runs_for "$lineage_render_output")" ] \
+  || { echo "lineage no-op reran render" >&2; exit 1; }
+[ "$lineage_flat_before" = "$(ninja_runs_for "$lineage_flat_output")" ] \
+  || { echo "lineage no-op reran flatten" >&2; exit 1; }
 
 echo "==> generator repair (replaces generator-repair)" >&2
 meson compile -C "$build" generate-artifacts >/dev/null
@@ -182,6 +223,14 @@ echo "==> failure propagation (injected mock latexmk failure blocks publish)" >&
 meson configure "$build" -Dattestation:mock_fail_child=latexmk >/dev/null
 if meson compile -C "$build" attestation >/dev/null 2>&1; then
   echo "publication succeeded despite an injected render failure" >&2
+  exit 1
+fi
+
+# Control: the attestation render failure must not affect lineage.
+meson compile -C "$build" lineage >/dev/null
+meson configure "$build" -Dlineage:mock_fail_child=latexmk >/dev/null
+if meson compile -C "$build" lineage >/dev/null 2>&1; then
+  echo "lineage publication succeeded despite an injected render failure" >&2
   exit 1
 fi
 

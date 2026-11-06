@@ -30,7 +30,7 @@ weight rule in [the plans README](../README.md).
 | [guide_twelve.md](guide_twelve.md) | Guide-12 preflight register and end-to-end compact ASH |
 | [guide_thirteen.md](guide_thirteen.md) | Guide-13 preflight register and end-to-end live receipt transfer |
 | [guide_fourteen.md](guide_fourteen.md) | Guide-14 Wave 0 tenth-review disposition and Phase-5 handoff revalidation; Waves 1–13 bound by the conceptual register, in execution |
-| [guide_fifteen.md](guide_fifteen.md) | Guide-15 Phase-7 execution charter; Wave 0 closes inherited debt and preflight, Wave 1 carries destruction lineage, and Waves 2–14 deliver burn, ASH, and clear; entry and exit gates control execution |
+| [guide_fifteen.md](guide_fifteen.md) | Guide-15 Phase-7 execution charter; Wave 0 closes inherited debt and preflight, Wave 1 carries the Keyed Provenance Covenant, and Waves 2–14 deliver burn, ASH, and clear; entry and exit gates control execution |
 | [guide_confidential_funding.md](guide_confidential_funding.md) | Intermediate confidential test materialization and funding, executed to the Wave-5 typed stop |
 
 ## Concept guides · `tab:guides:concepts`

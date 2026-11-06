@@ -1,0 +1,25 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+\setversion{v1.0.0}
+\title{Keyed Provenance Covenant}
+\author{Proof Commons \\ \docversion}
+\date{\LineageDate}
+\maketitle
+\begin{center}
+Specification; no realization claim
+\end{center}
+
+\begin{abstract}
+\label{abst:kpc:abstract}
+A keyed covenant requires first-position birth and continuation into a
+first output bearing the same keyed covenant. An event creating a handle
+is a SOURCE if it consumes no handle of the key: the new handle identifies a record and receives its
+singleton set. Otherwise it is a MERGE, gathering its input sets without
+introducing a record. There is no counter or accumulator. The exported
+reading is membership in a handle's dependency-derived record set.
+We prove single birth, unique source provenance, unique continuation,
+growth with disjoint merge inputs, separation of keys and faithful
+reconstruction.
+\end{abstract}
+
+\end{document}

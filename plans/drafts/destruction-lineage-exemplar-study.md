@@ -1,5 +1,7 @@
 # Study: A second exemplar, public destruction with a settlement lineage
 
+**Status:** Superseded as Wave 1’s contract by the Keyed Provenance Covenant paper (`[A-abst:kpc:abstract]`); (`[A-def:kpc-model:first-output]`). Retained as the record of the reduction, including its former requirements and alternatives; those statements do not prescribe the current Wave-1 contract. Current delivery obligations are (`task:guide15-exec:wave1`).
+
 **Abstract (Status and scope)** · `abst:lineage:scope`
 
 This labeled design study states a public-destruction exemplar's own contract and requirements, maps them onto the compiler pipeline and reviewed Elements target, specifies measurements, compares the attestation exemplar and retains open alternatives. Destruction writes magnitude in native consensus value and destination as an opaque datum; a positively funded claim token connects it to a settlement lineage whose covenant checks only the successor script. Readers reconstruct ancestry and consumers publish recognition rules. Positive spendable funding is required by (`fact:lineage:positive-funding`); relay floors and execution costs remain the experiments of (`sec:lineage:measurements`). The study supplies planning input under (`rule:drafts:authority`); the charter separately admits independence evidence inside Phase 7 (`sec:phase7:change-statement`).

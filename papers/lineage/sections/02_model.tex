@@ -1,0 +1,55 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Objects and the covenant}
+\label{sec:kpc:model}
+
+\begin{definition}[History and outputs]
+\label{def:kpc-model:history}
+A history $H$ is a finite, dependency-ordered sequence of valid events;
+validity includes the covenant of every spent output. Each event $e$ has
+finitely many inputs and an ordered output sequence $O(e)$. Positions start at zero. Output
+identities bind their creating event and position; event identities bind
+immutable contents and dependencies. Outputs are fresh and can be consumed
+at most once, by a later event. Every prefix of a history is itself a
+history: dependencies and the validity of each retained event are unchanged.
+\end{definition}
+
+\begin{definition}[Keyed membership]
+\label{def:kpc-model:keyed-membership}
+Fix a key $k$ at covenant generation. A handle in $K_k$ is exactly an
+output bearing this keyed covenant at the first position in its creating
+event. Its carried value is immaterial to the covenant.
+Let $I_k(e)$ be the set of handles of $K_k$ that $e$ consumes.
+An unconsumed handle is live.
+A realization assumption gives immutable, authenticated, disjoint keyed
+membership.
+The covenant is assumed able to authenticate and read the spent output's
+own birth position and the membership in $K_k$ of the spending event's
+first output. No concrete mechanism is presumed.
+\end{definition}
+
+\begin{definition}[The whole covenant]
+\label{def:kpc-model:first-output}
+``I can only be spent into an event whose first output is like me.''
+In addition: ``I must have been the first output of my own creating event.''
+For output $x$ bearing the covenant under $k$, let $b$ be its creating
+event and $e$ its spending event. ``Like me'' means the same covenant
+under $k$. The exact spending condition is
+\[
+ x=O(b)_0\quad\land\quad O(e)_0\in K_k.
+\]
+Both clauses are required: born first, continue first. There is no other
+covenant condition: no authorization, no comparison of carried resources,
+and no condition on other inputs or outputs.
+\end{definition}
+
+\begin{proposition}[Single birth]
+\label{prop:kpc-model:single-birth}
+Every event creates at most one handle of $K_k$, since only its first
+output can belong. A later covenant-shaped output has an immutable birth
+position making the first clause false forever: it is never spendable
+and has no record set.
+\end{proposition}
+
+\end{document}

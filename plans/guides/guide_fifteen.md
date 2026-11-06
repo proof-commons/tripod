@@ -3,12 +3,12 @@
 > **Status:** Chartered execution guide of Phase 7; entry is governed by (`gate:guide15-exec:guide-entry`) and (`task:guide15-exec:wave0`), and new semantics remain held until (`gate:guide15-exec:wave0`).
 > **Phase:** Phase 7 — Burn, ASH, and Clear (`phase:roadmap:burn-clear`).
 > **Entry:** The amended Phase-6 exit (`gate:phase6:exit`), the accepted public-declassification policy (`sec:public-opening:result`), and the accepted Phase-4 compact-ASH candidate at its recorded scope (`phase:roadmap:compact-ash`), subject to the entry register below.
-> **Operations:** `burn`, `compact-ash`, and `clear`; the second exemplar's `BURN` and `MERGE` are Wave-1 declarations whose exact typed spellings Wave 1 fixes.
+> **Operations:** `burn`, `compact-ash`, and `clear`; the second exemplar's `SOURCE` and `MERGE` are Wave-1 declarations whose exact typed spellings Wave 1 fixes.
 > **Affected packages:** `architecture`, `realization`, `compiler`, `target-elements`, `tapscript`, `linker`, `transaction`, and `vectors`; `target-elements-conformance` only for a demonstrated missing target-generic fact; `model` supplies independent conformance evidence and `labels` checks registrations.
 > **Supersedes as execution direction:** `plans/guides/guide_fifteen_concept.md`; its rules, gates, questions, and semantic chapters remain the cited semantic reference, and its artifact changes only by the mints of its entry conditions and record fields.
 > **Does not implement:** Redemption, request admission, attestation settlement, cycle, entitlement issuance, distribution construction, RESV or PACE succession, production key custody, production opening custody, production deployment, final calibration, or release.
 > **Required result:** The Phase-7 exit gate met on its text (`gate:phase7:exit`), with a second compiled contract carried through the same pipeline as independence evidence.
-> **Authority:** Attestation, Realization, typed architecture, implemented ADRs, accepted decisions, and accepted research and phase results take precedence as in `plans/guides/guide_fourteen.md`; the Phase-6 closeout is accepted only at its amended scope (`sec:phase6:exit-assessment`); (`abst:admission:scope`) and (`abst:lineage:scope`) supply planning input.
+> **Authority:** Attestation, Realization, typed architecture, implemented ADRs, accepted decisions, and accepted research and phase results take precedence as in `plans/guides/guide_fourteen.md`; the Phase-6 closeout is accepted only at its amended scope (`sec:phase6:exit-assessment`); (`abst:admission:scope`) supplies admission planning input; the Keyed Provenance Covenant paper is the second contract of record (`[A-abst:kpc:abstract]`).
 > **Trust boundary:** Repository source and selected executors run only within the established execution trust boundary; public disposable fixtures retain the security requirements of `adr/015-public-data-and-execution-trust.md`.
 
 ## 1. Why this order · `sec:guide15-exec:order`
@@ -39,7 +39,7 @@ The performance row gates new semantics because the debt wave closes every inher
 
 **Condition (Shared target provision and exact subjects)** · `cond:guide15-exec:shared-target`
 
-The 35 native-run-required rows and the second contract's measurements require the pinned target on the node of record; one environment, once provisioned and recorded, supports both, while each observation retains its own exact subject and evidence boundary (`sec:phase6:exit-assessment`); (`sec:lineage:measurements`).
+The 35 native-run-required rows and the second contract's measurements require the pinned target on the node of record; one environment, once provisioned and recorded, supports both, while each observation retains its own exact subject and evidence boundary (`sec:phase6:exit-assessment`); (`task:guide15-exec:bite-1-0`).
 
 **Argument (A separately gated debt baseline isolates later changes)** · `arg:guide15-exec:baseline-order`
 
@@ -47,15 +47,15 @@ A debt wave with its own exit turns the inherited figures into an explicit basel
 
 **Argument (The minimal second contract tests semantic boundaries)** · `arg:guide15-exec:second-contract-order`
 
-The second exemplar's two declarations test the architecture-to-realization boundary with the smallest contract before the larger Phase-7 declarations; its requirements and package mapping are stated in (`sec:lineage:contract`), (`sec:lineage:requirements`), (`sec:lineage:traps`), (`sec:lineage:pipeline`) and (`sec:lineage:measurements`).
+The second exemplar's SOURCE and MERGE declarations test the architecture-to-realization boundary before the larger Phase-7 declarations; its contract is the paper and its delivery requirements, package mapping and measurements are re-derived in Wave 1 (`[A-def:kpc-model:first-output]`); (`task:guide15-exec:wave1`).
 
-**Caveat (Later carrier measurements are regression evidence)** · `cav:guide15-exec:carrier-order`
+**Caveat (Carrier measurements remain required)** · `cav:guide15-exec:carrier-order`
 
-The carrier forms Wave 1 will measure supply later regression evidence for the provisional carrier selected at bite 0.7; they cannot justify that earlier selection or choose an attestation record law by analogy, and a refusal of its encoded size or policy under measurements (b) or (f) reopens it by a Wave-4 ruling before declarations (`q:guide15:burn-record-carrier`); (`expt:lineage:data-output`); (`expt:lineage:weight-bound`).
+Wave 1 measures its own two-clause covenants and cannot establish the attestation record carrier's data-output policy. The carrier provisionally selected at 0.7 still requires its exact size and policy measurements in Wave 4 before declarations; refusal reopens selection by a Wave-4 ruling (`q:guide15:burn-record-carrier`); (`cond:guide15-exec:carrier-reopening`).
 
 **Justification (Architectural failure is tested before native cost)** · `just:guide15-exec:early-boundary-test`
 
-An independence failure is cheapest to find before burn and clear depend on the same seams; bite 1.1 tests that boundary before or beside the native campaign, and the result names which seams moved, why they moved, and which laws remained specific to each contract (`obs:lineage:finding-architecture`); (`def:lineage:independence`); (`rule:roadmap:parallel`).
+An independence failure is cheapest to find before burn and clear depend on the same seams; bite 1.1 tests that boundary before or beside the native campaign, and the result names which seams moved, why they moved, and which laws remained specific to each contract (`task:guide15-exec:bite-1-6`); (`crit:guide15-exec:wave1-independent`); (`rule:roadmap:parallel`).
 
 **Record (Admission inside Phase 7)** · `rec:guide15-exec:admitted-second-contract`
 
@@ -93,7 +93,7 @@ Those figures establish neither complete negative coverage nor final calibration
 
 **Setting (Review basis and authoritative contracts)** · `setup:guide15-exec:review-basis`
 
-The review basis comprises (`sec:admission:entry`), (`sec:admission:preflight`), (`sec:admission:findings`), (`abst:lineage:scope`), the concept (`sec:guide15:rulings`), the Phase-7 card (`phase:roadmap:burn-clear`), the amended Phase-6 assessment and gate record (`sec:phase6:exit-assessment`); (`sec:phase6:gate-record`), Guide-11 and Guide-12 results (`sec:public-opening:result`); (`tab:guide12-exec:preflight`), typed architecture in `packages/architecture/README.md`, model transitions, realization declarations, the reviewed target, and the affected package contracts `packages/model/README.md`; (`pkg:realization:contract`); (`pkg:compiler:contract`); (`pkg:target-elements:contract`); (`pkg:tapscript:contract`); (`pkg:linker:contract`); (`pkg:transaction:contract`); (`pkg:vectors:contract`).
+The review basis comprises (`sec:admission:entry`), (`sec:admission:preflight`), (`sec:admission:findings`), (`[A-abst:kpc:abstract]`), the concept (`sec:guide15:rulings`), the Phase-7 card (`phase:roadmap:burn-clear`), the amended Phase-6 assessment and gate record (`sec:phase6:exit-assessment`); (`sec:phase6:gate-record`), Guide-11 and Guide-12 results (`sec:public-opening:result`); (`tab:guide12-exec:preflight`), typed architecture in `packages/architecture/README.md`, model transitions, realization declarations, the reviewed target, and the affected package contracts `packages/model/README.md`; (`pkg:realization:contract`); (`pkg:compiler:contract`); (`pkg:target-elements:contract`); (`pkg:tapscript:contract`); (`pkg:linker:contract`); (`pkg:transaction:contract`); (`pkg:vectors:contract`).
 
 **Rule (The concept remains the semantic reference)** · `rule:guide15-exec:semantic-reference`
 
@@ -131,7 +131,7 @@ Wave 0 identifies the complete model-law and field-owner census before any new o
 
 **Task (Compiler-facing declarations belong to Wave 2)** · `task:guide15-exec:declaration-entry`
 
-Wave 2 delivers and validates the missing typed burn and clear declarations against architecture and independent model conformance; model support alone does not make unsupported realization dispatch supported (`task:guide15:wave1`); (`fact:lineage:declaration-boundary`).
+Wave 2 delivers and validates the missing typed burn and clear declarations against architecture and independent model conformance; model support alone does not make unsupported realization dispatch supported (`task:guide15:wave1`); (`pkg:realization:contract`).
 
 **Obligation (Authoritative relation and assignment censuses)** · `obl:guide15-exec:entry-censuses`
 
@@ -173,11 +173,11 @@ Wave 5 proves fresh, compacted, and residual equality on actual linked subjects 
 
 **Task (Disposition 5 — Provisional burn-record carrier)** · `task:guide15-exec:disposition-5`
 
-Bite 0.7 selects a canonical, publicly recoverable carrier with exact association and ordering, accepted provisionally by a numbered Phase-7 ruling; later Wave-1 form measurements cannot substitute for this preflight disposition (`q:guide15:burn-record-carrier`).
+Bite 0.7 selects a canonical, publicly recoverable carrier with exact association and ordering, accepted provisionally by a numbered Phase-7 ruling; Wave-4 carrier measurements cannot substitute for this preflight disposition (`q:guide15:burn-record-carrier`).
 
 **Condition (Carrier selection reopens before Wave-4 declarations)** · `cond:guide15-exec:carrier-reopening`
 
-If Wave 1's data-output measurement (b) or weight measurement (f) refuses the selected carrier's encoded size or policy, its selection reopens as a Wave-4 ruling before Wave 4's declarations; otherwise those measurements remain regression evidence for the selected form (`expt:lineage:data-output`); (`expt:lineage:weight-bound`).
+Wave 4 must measure the complete attestation carrier selected at 0.7, including the multiple-data-output standardness premise and exact zero-value 53-byte N-output form, with all outputs, proofs, weight and fees. Refusal of encoded size or policy reopens selection by a Wave-4 ruling before declarations. Wave-1 measurements (b) and (f) concern the two-clause covenant and do not discharge it (`q:guide15:burn-record-carrier`); (`task:guide15-exec:wave4`).
 
 **Task (Disposition 6 — Burn-record cardinality and value law)** · `task:guide15-exec:disposition-6`
 
@@ -402,7 +402,7 @@ The bindings below retain each limit or assign its exact observable discharge; a
 
 **Specification (Inherited scope without new operations)** · `spec:guide15-exec:wave0-scope`
 
-Wave 0 owns inherited evidence closure and the concept's preparatory work; it introduces no new burn, clear, BURN, or MERGE declaration and preserves every historical gate record as evidence of its own scope. (`task:guide15:wave0`).
+Wave 0 owns inherited evidence closure and the concept's preparatory work; it introduces no new burn, clear, SOURCE, or MERGE declaration and preserves every historical gate record as evidence of its own scope. (`task:guide15:wave0`).
 
 **Precondition (Provisioned target and provenance)** · `pre:guide15-exec:wave0-target`
 
@@ -688,7 +688,7 @@ The clear census records `y_l` as stored and Y as derived; it must not turn the 
 
 **Specification (Carrier disposition fields)** · `spec:guide15-exec:carrier-fields`
 
-The carrier disposition specifies canonical bytes, ordering, record identity, public recovery, association with fresh ASH, and value/cardinality law; later OP_RETURN measurements can challenge the selected form but cannot backdate its proof, and a size or policy refusal under measurement (b) or (f) reopens the selection by a Wave-4 ruling before declarations (`cond:guide15-exec:carrier-reopening`).
+The carrier disposition specifies canonical bytes, ordering, record identity, public recovery, association with fresh ASH, and value/cardinality law; Wave-4 OP_RETURN measurements can challenge the selected form but cannot backdate its proof, and a size or policy refusal reopens the selection by a Wave-4 ruling before declarations (`cond:guide15-exec:carrier-reopening`).
 
 **Specification (Generation disposition fields)** · `spec:guide15-exec:generation-fields`
 
@@ -748,395 +748,219 @@ The full repository gate, including the required document and lint surfaces, run
 
 `plans: record inherited debt closure and the Phase-7 preflight baseline`. (`gate:guide15:batch`).
 
-## 4. Wave 1 — The second exemplar: destruction lineage · `task:guide15-exec:wave1`
+## 4. Wave 1 — The Keyed Provenance Covenant · `task:guide15-exec:wave1`
 
 **Precondition (Wave-1 entry and compilation scope)** · `pre:guide15-exec:wave1-entry`
 
-Wave 1 opens only on the Wave-0 exit and carries the contract in (`sec:lineage:contract`), (`sec:lineage:requirements`), (`sec:lineage:traps`), (`sec:lineage:pipeline`), (`sec:lineage:measurements`) and (`sec:lineage:decisions`) through declaration, analysis, emission, linking, construction, and translation-validation evidence.
+Wave 1 opens only on the Wave-0 exit. The contract of record is the Keyed Provenance Covenant paper, beginning with its reading interface (`[A-sec:kpc:interface]`), followed by its objects and whole covenant (`[A-sec:kpc:model]`), operations (`[A-sec:kpc:operations]`) and invariants (`[A-sec:kpc:invariants]`). The wave carries that specification through declaration, analysis, emission, linking, construction and translation-validation evidence; publication of the specification alone discharges none of this implementation work.
 
-**Definition (Positive explicit destruction)** · `def:guide15-exec:destruction-output`
+**Specification (Exactly two covenant clauses)** · `spec:guide15-exec:whole-covenant`
 
-The contract destroys a positive explicit native amount in an OP_RETURN output containing exactly one opaque 32-byte address; its magnitude is consensus value, not a quantity encoded in the address data. (`def:lineage:destruction-output`).
+Born first requires that the spent output was output 0 of its creating transaction. Continue first requires that the spending transaction's output 0 bears the same keyed covenant. These are the entire covenant; both must be checked for every consumed covenant output (`[A-def:kpc-model:first-output]`). The key is fixed at generation; incompatible systems coexist on one ledger, while an event consuming handles of different keys cannot satisfy their disjoint continuations (`[A-def:kpc-model:keyed-membership]`); (`[A-thm:kpc-invariants:key-isolation]`).
 
-**Specification (BURN pair and open carrier)** · `spec:guide15-exec:burn-pair`
+**Definition (SOURCE, MERGE and record sets)** · `def:guide15-exec:record-sets`
 
-BURN creates the minimal-value claim token at output 0 beside the destruction output at output 1; the pair fixes association without constraining unrelated inputs, outputs, authorization, or carrier purpose beyond target validity. (`op:lineage:burn`); (`def:lineage:claim-token`).
+An event creating an output-0 handle and consuming no handle of its key is a SOURCE: the handle itself is its record and receives the singleton set. An event consuming handles is a MERGE: output 0 receives their union and introduces no record, whatever else the event creates. An event without a handle has no set to define. A later covenant-shaped output is not a handle and is never spendable; there is at most one handle of a key born per event (`[A-op:kpc-operations:source]`); (`[A-op:kpc-operations:merge]`); (`[A-def:kpc-operations:classification]`); (`[A-prop:kpc-model:single-birth]`).
 
-**Specification (MERGE successor-only condition)** · `spec:guide15-exec:merge-successor`
+**Rule (Reading and acceptance)** · `rule:guide15-exec:record-reading`
 
-MERGE consumes one or more outputs carrying the fixed covenant and produces output 0 carrying the same covenant; each covenant input checks only that successor script, without a signature, value comparison, asset comparison, or closure over other outputs. (`op:lineage:merge`).
+Membership is in the dependency-derived set of the read handle; no designated head or terminal selects the system. Each handle has a unique continuation, and distinct live handles have disjoint record sets. Acceptance of amount, attribution and eligibility belongs to a reader's published rule and changes no record set. A fixed predicate on immutable SOURCE contents preserves accepted-set growth along a path; arbitrary reader policies need not do so. Inclusion, retrieval and finality are named evidence assumptions, and a final reading requires finality outside the covenant (`[A-thm:kpc-invariants:unique-successor]`); (`[A-cor:kpc-interface:path-reading]`); (`[A-rem:kpc-interface:record-evidence]`); (`[A-sec:kpc:interface]`).
 
-**Definition (Genesis and settled ancestry)** · `def:guide15-exec:settled-ancestry`
+**Specification (Covenant exclusions)** · `spec:guide15-exec:covenant-exclusions`
 
-The designated genesis outpoint contributes no destruction record; a descendant lineage point settles the set of valid token-outpoint records in its ancestry, including a newly valid pair when BURN and MERGE coincide. (`def:lineage:genesis`).
+There is no destruction output, burn requirement, counter, accumulator, magnitude or depth inside the system, and no designated head or terminal (`[A-sec:kpc:operations]`). Other target-valid inputs and outputs remain open; no value-preservation, authorization or record-acceptance relation is added to the covenant (`[A-def:kpc-model:first-output]`); (`[A-sec:kpc:operations]`).
 
-**Rule (Side piles and duplicate credit)** · `rule:guide15-exec:side-pile-rule`
+**Inventory (Wave-1 recount)** · `reg:guide15-exec:wave1-recount`
 
-Side piles may merge into the designated head later, but their depth does not designate the canonical lineage; record identity prevents duplicate credit through shared ancestry, and malformed pairs contribute nothing. (`def:lineage:side-pile`).
+The wave has seven bites, 1.0–1.6, and two operation declarations, SOURCE and MERGE. The former thirteen destruction-study requirement standings are replaced by eight delivery requirements: (1) born first and single birth, (2) continue first and unique continuation, (3) fixed-key separation, (4) SOURCE record identity, (5) MERGE recurrence and disjoint growth, (6) faithful membership reconstruction, (7) reader-side acceptance, and (8) explicitly published evidence assumptions including finality. Only requirements 1 and 2 are covenant clauses; the other six describe the system or its reading boundary. These requirements cite the paper above and its verification appendix (`[A-app:kpc:verification]`).
 
-**Invariant (Monotone bounded consumer acceptance)** · `inv:guide15-exec:consumer-bound`
+**Record (Study decision dispositions)** · `rec:guide15-exec:study-dispositions`
 
-Consumer acceptance obeys A(previous) ⊆ A(this) ⊆ L(this), with eligibility, timing, and boundary recognition in the consumer's published rule rather than the covenant; a cached commitment has no settlement authority. (`inv:lineage:accepted-sets`).
+The old nine study decisions reduce to six realization decisions: semantic home (1.1), incidental funding and construction input bound (1.0), authenticated recurrence strategy (1.3), reader rule and evidence/report format (1.5). The old value-preservation choice is fixed by the whole covenant, genesis designation is retired because there is no designated head, and roadmap admission is already recorded by the phase change statement. The semantic-home decision still compares three options: another declaration set, a semantic profile, or a separate realization crate with a shared typed compiler input. The six decisions select realization/evidence details and cannot revise the paper's two clauses (`sec:phase7:change-statement`); (`[A-def:kpc-model:first-output]`).
 
-**Specification (Absent covenant laws)** · `spec:guide15-exec:covenant-exclusions`
+**Record (Evidence and measurement recount)** · `rec:guide15-exec:evidence-recount`
 
-The covenant carries no amount accumulator, count, index, aggregate commitment, ownership role, or redemption entitlement; incidental funding is not record magnitude and no third operation is introduced. (`spec:lineage:exclusions`).
+Six evidence families remain, with new subjects: birth, continuation/key separation, record recurrence, reading/evidence assumptions, reader acceptance, and resources. Six target measurements remain, now (a) spent-output birth position, (b) authenticated same-key output-0 script comparison, (c) keyed constructor and spend-path closure, (d) composed clause costs, (e) transaction standardness/funding, and (f) scaling over the admitted input range. The old pair, designated-ancestry, replacement-head and bounded-consumer subjects are retired. The four old destruction-study trap arguments are retired as contract obligations; the new families test the paper's own statements. No inherited count certifies the new subjects (`[A-app:kpc:verification]`).
 
 **Rule (Wave-1 failure route)** · `rule:guide15-exec:wave1-failure`
 
-If the second contract cannot be carried through Wave 1's exit, the fail-closed law stops Phase 7 until it can be carried; Wave 1 has no other failure route (`rule:roadmap:laws`); (`rule:guide15-exec:second-contract-dependency`).
+If this contract cannot pass the Wave-1 exit, Phase 7 stops until it can; adding a covenant clause or replacing a missing observation with a paper proof is not a failure route (`rule:roadmap:laws`); (`rule:guide15-exec:second-contract-dependency`).
 
-### 1.0 Measure the six target obligations · `task:guide15-exec:bite-1-0`
+### 1.0 Measure the two clauses' target obligations · `task:guide15-exec:bite-1-0`
 
 **Task (bite-1-0 — Deliverables)** · `task:guide15-exec:bite-1-0-deliverables`
 
-Perform the six measurements from (`sec:lineage:measurements`) on the Wave-0 pinned target using isolated target experiments permitted by (`rule:roadmap:parallel`), before selecting stable declarations or ABI bounds, after or alongside the architecture-to-realization boundary test in bite 1.1.
+Run six isolated experiments on the Wave-0 pinned Elements target before choosing stable declarations or ABI bounds, after or alongside 1.1's boundary test. Each record binds exact bytes, target, policy, accepted controls, one-coordinate negative subjects, observation boundary, outcome and absent dimensions. Prototype observations are provisional: 1.6 repeats them on final compiler artifacts (`rule:roadmap:parallel`).
 
-**Caveat (Prototype evidence does not certify final artifacts)** · `cav:guide15-exec:prototype-evidence`
+**Experiment (Measurement a — born first)** · `expt:guide15-exec:measurement-a`
 
-The experiments may prototype the recurrence and carrier forms without claiming a delivered compiler path; bite 1.6 re-executes the final compiled forms and no prototype observation certifies a later artifact. (`gate:lineage:measurement-evidence`).
+Establish how an input authenticates and reads the output position of its own spent output in its creating transaction. Spend an output-0 control and refuse an otherwise matching later-output subject; distinguish the spent-output position from the current input index. Missing authentic position evidence blocks the realization, even if successor equality works (`[A-def:kpc-model:first-output]`).
+
+**Experiment (Measurement b — continue first)** · `expt:guide15-exec:measurement-b`
+
+Establish how output 0's complete script, including type/version and the fixed key, is compared with the spending input's authenticated covenant program. Refuse wrong-key, wrong-program and displaced-successor subjects beside a valid control. An unauthenticated caller-supplied comparison script is not the reference (`[A-def:kpc-model:first-output]`); (`[A-thm:kpc-invariants:key-isolation]`).
+
+**Experiment (Measurement c — constructor closure)** · `expt:guide15-exec:measurement-c`
+
+Generate two keyed covenants and establish public reconstruction, key separation, authenticated control paths and the absence of alternative spend paths bypassing either clause. Retain conditional NUMS assumptions where applicable; finite negative observations do not prove discrete-log impossibility (`judg:guide15-exec:nums-standing`).
+
+**Experiment (Measurement d — composed clause cost)** · `expt:guide15-exec:measurement-d`
+
+Execute both clauses together, recording program bytes, witness items, control depth, stack peaks and available execution costs. Compare predicted and observed resources, retaining mismatches as findings and unavailable dimensions as absent; separate per-input cost from fixed constructor overhead (`[A-sec:kpc:limitations]`).
+
+**Experiment (Measurement e — transaction standardness)** · `expt:guide15-exec:measurement-e`
+
+The reviewed target's `ExplicitZeroValueRule::SpendableRefused` refuses explicit zero-valued spendable outputs; the experiment measures the positive relay floor rather than reopening consensus positivity. Measure SOURCE and MERGE standardness with exact funding, fee outputs and policy. Check the funded accepted control and boundary cases around the relay minimum, and any proposed unrelated confidential outputs with their balance proofs. Consensus and relay outcomes remain distinct. Incidental funding and fee floors belong to the realization, never to record identity or covenant acceptance.
+
+**Experiment (Measurement f — scaling and construction bound)** · `expt:guide15-exec:measurement-f`
+
+Measure complete SOURCE and MERGE transaction weight and execution costs over the proposed input range, with worst-case witnesses and required fee funding. Select a measured construction bound and funding policy provisionally until 1.6; neither creates a covenant count or value comparison. The system's derived record set is not carried in the witness or stored in the handle.
 
 **Setting (bite-1-0 — Files and packages)** · `setup:guide15-exec:bite-1-0-files-and-packages`
 
-Experimental fixtures and evidence in `packages/vectors/`, reviewed assessments in `packages/target-elements/`, isolated recurrence work in `packages/tapscript/`, and retained measurement records in the wave's backlog gate record. (`pkg:target-elements:contract`); (`pkg:tapscript:contract`); (`pkg:vectors:contract`).
-
-**Experiment (Measurement a — relay funding floor)** · `expt:guide15-exec:measurement-a`
-
-Measure exact token and successor constructor admission immediately below and at the positive relay minimum, deciding incidental funding and the selected relay route. (`expt:lineage:relay-floor`).
-
-**Fact (Reviewed consensus positivity)** · `fact:guide15-exec:consensus-positivity`
-
-Explicit zero-valued spendable outputs are already refused by the reviewed target's `ExplicitZeroValueRule::SpendableRefused`; this experiment measures the positive relay floor, not an unresolved consensus zero-value question. (`fact:lineage:reviewed-positivity`).
-
-**Experiment (Measurement b — destruction data-output admission)** · `expt:guide15-exec:measurement-b`
-
-Measure the exact explicit positive native OP_RETURN output with its 32-byte datum and encoding overhead, deciding whether the BURN pair relays and which carrier limits must be published. (`expt:lineage:data-output`).
-
-**Definition (Separate data and witness limits)** · `def:guide15-exec:distinct-limits`
-
-The data-output limit is independent of the reviewed 80-byte tapscript witness-item limit; reader refusal of malformed data is distinguished from target consensus or relay refusal. (`bound:lineage:witness-item`).
-
-**Experiment (Measurement c — conflicting head spends)** · `expt:guide15-exec:measurement-c`
-
-Establish exact replacement conditions and fee increments or first-seen behavior, deciding the admitted per-head contention argument under the observed policy. (`expt:lineage:head-conflicts`).
-
-**Caveat (Replacement does not establish inclusion)** · `cav:guide15-exec:replacement-limit`
-
-Replacement admission never proves eventual inclusion or a universal censorship bound; block inclusion, historical availability, and finality remain declared assumptions with exact limits. (`cav:lineage:replacement-evidence`).
-
-**Experiment (Measurement d — mixed representations)** · `expt:guide15-exec:measurement-d`
-
-Execute explicit native destruction and token funding with confidential unrelated outputs, binding encodings, balance proofs, and fee outputs to decide which mixed carrier forms are admitted. (`expt:lineage:mixed-representations`).
-
-**Caveat (Mixed forms authenticate no unsupported opening)** · `cav:guide15-exec:mixed-limit`
-
-The result cannot substitute a disclosed scalar for authenticated destruction value or claim a confidential-opening primitive absent from the reviewed target. (`obl:lineage:mixed-evidence`).
-
-**Experiment (Measurement e — one-check implementation)** · `expt:guide15-exec:measurement-e`
-
-Execute script introspection and equality with authenticated current-program reference, constructor control path, final stack, and wrong-script/wrong-version controls, deciding faithful target recurrence. (`expt:lineage:one-check`).
-
-**Requirement (Recurrence measurement dimensions)** · `req:guide15-exec:recurrence-dimensions`
-
-Record program bytes, witness items, control depth, stack peaks, and available execution costs; primitive vocabulary alone does not prove the composed recurrence pattern. (`spec:lineage:recurrence-evidence`).
-
-**Experiment (Measurement f — transaction weight and N)** · `expt:guide15-exec:measurement-f`
-
-Measure BURN and MERGE carriers over a proposed input range with fee funding, optional confidential outputs, and worst-case witnesses, deciding the construction bound and sweep costs. (`expt:lineage:weight-bound`).
-
-**Verification (Predictions against observed resources)** · `verif:guide15-exec:resource-comparison`
-
-Compare backend/linker predictions with observed weight and resources, state absent dimensions as absent, and retain prediction mismatches as findings rather than rewriting predictions to match observations. (`obl:lineage:resource-evidence`).
-
-**Decision (Decision 2 — incidental funding)** · `dec:guide15-exec:decision-2`
-
-Choose provisionally, until final-form remeasurement in bite 1.6, the measured default-relay floor or a separately admitted positive-value route with its deployment dependence stated; no draft minimum enters code as a fact. (`q:lineage:funding-floor`).
-
-**Decision (Decision 4 — input bound)** · `dec:guide15-exec:decision-4`
-
-Choose measured N provisionally until final-form remeasurement in bite 1.6 as an ABI construction bound unless an independently justified contract change requires a covenant count check; report the aggregation and worst-case-cost tradeoff. (`q:lineage:input-bound`).
+Use `packages/vectors/` for subjects and evidence, `packages/target-elements/` for reviewed capability/form assessments, and `packages/tapscript/` for isolated clause and constructor experiments; retain measurements in the research home below and dispositions in the wave's backlog gate record (`pkg:vectors:contract`); (`pkg:target-elements:contract`); (`pkg:tapscript:contract`).
 
 **Gate (bite-1-0 — Gate)** · `gate:guide15-exec:bite-1-0-gate`
 
-Six distinct measurement records bind target, policy, exact subject, accepted controls, negative outcomes, and deciding consequences; unresolved forms block the consuming bite. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+All six measurement records have complete subject bindings and observed controls, with the funding and input-bound decisions stated; an unavailable primitive or unresolved form blocks its consuming bite. No paper-level realization claim follows from these prototype results.
+
+**Proposal (bite-1-0 — Suggested commit)** · `proposal:guide15-exec:bite-1-0-suggested-commit`
+
+`test(vectors): measure Keyed Provenance Covenant target obligations`.
 
 ### 1.1 Choose the realization home and declare the contract · `task:guide15-exec:bite-1-1`
 
 **Task (bite-1-1 — Deliverables)** · `task:guide15-exec:bite-1-1-deliverables`
 
-Run the architecture-to-realization boundary test before the native campaign of bite 1.0, or alongside it under (`rule:roadmap:parallel`), so the cheapest informative failure is reached first; choose the semantic home from the study's three options using measured and read evidence, declare typed BURN and MERGE with exact spellings, and weld the declarations to an authoritative architecture description.
+Test the architecture-to-realization boundary early; compare the three semantic-home options and their costs, select the smallest justified change, and validate typed SOURCE and MERGE declarations welded to the paper's objects and laws. SOURCE classification and its singleton record belong to semantic/evidence relations, with no fictitious covenant input. MERGE declares both clauses for each covenant input and a reader-derived union, not an emitted history traversal (`[A-def:kpc-operations:classification]`).
 
 **Setting (bite-1-1 — Files and packages)** · `setup:guide15-exec:bite-1-1-files-and-packages`
 
-`packages/architecture/src/`, `packages/realization/src/`, their contracts and tests, and any separately admitted realization interface required by the selected home. (`pkg:realization:contract`).
-
-**Decision (Decision 1 — realization home)** · `dec:guide15-exec:decision-1`
-
-Another declaration set shares infrastructure but broadens identifier assumptions; a semantic profile needs a selector of semantics beyond deployment evidence; a second realization crate makes separation explicit but requires a shared typed compiler input interface and maintenance. (`q:lineage:realization-home`).
-
-**Criterion (A sufficient semantic home)** · `crit:guide15-exec:semantic-home-criterion`
-
-The choice must demonstrate the current attestation-specific manifest boundary, validate the new operation/object/observable vocabulary, and state the smallest necessary generalization; existing deployment profiles are not a second-contract selector. (`cond:lineage:validated-input`).
-
-**Specification (BURN relation placement)** · `spec:guide15-exec:burn-relations`
-
-BURN declarations separate pair recognition, fixed positions, positive explicit native value, exact datum, token recognition, and immutable association from any relation actually enforced by a spending script. (`spec:lineage:burn-relations`).
-
-**Specification (MERGE reader and emitted roles)** · `spec:guide15-exec:merge-relations`
-
-MERGE declares successor-at-0 for every covenant input and an ancestry-set projection owned by its reader; the emitted leaf neither traverses history nor computes the union of records. (`spec:lineage:merge-relations`).
-
-**Decision (Decision 3 — value preservation)** · `dec:guide15-exec:decision-3`
-
-Record the charter's adoption of the contract's default of no value-preservation rule; incidental inputs may fund fees, the successor, or other outputs, and the sweep bounty is the disposition of incidental value available to a permitted sweep, not record credit or a new entitlement. (`q:lineage:value-preservation`).
-
-**Argument (Value preservation changes the contract)** · `arg:guide15-exec:no-value-preservation`
-
-Greater-or-equal or equality rules would change the one-check contract by adding a comparison base and introspection without authenticating record magnitude; neither is imported into these declarations. (`case:lineage:decision-value-preservation`).
+Change `packages/architecture/src/`, `packages/realization/src/`, their contracts and tests, and only the shared typed interface required by the selected semantic home. Keep model conformance independent of compiler-facing declarations (`pkg:realization:contract`); `packages/model/README.md`.
 
 **Gate (bite-1-1 — Gate)** · `gate:guide15-exec:bite-1-1-gate`
 
-Both declarations validate against the selected architecture boundary, contain no fictitious attestation roots or receipt classes, preserve public constructibility, and introduce no third operation. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+Both declarations validate with their exact typed spellings, no fictitious attestation roots or receipt classes, and exactly the paper's two clauses. Record changed seams and justify unchanged ones with concrete reuse evidence.
+
+**Proposal (bite-1-1 — Suggested commit)** · `proposal:guide15-exec:bite-1-1-suggested-commit`
+
+`feat(realization): declare Keyed Provenance Covenant SOURCE and MERGE`.
 
 ### 1.2 Compile validated operation plans · `task:guide15-exec:bite-1-2`
 
 **Task (bite-1-2 — Deliverables)** · `task:guide15-exec:bite-1-2-deliverables`
 
-Reuse the compiler's graph, fact-source, constructibility, lifecycle, proof-planning, placement, and coverage responsibilities to derive new validated plans for the two declarations. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+Reuse graph analysis, fact sources, constructibility, lifecycle, proof planning, placement and coverage for both declarations. Place born-first and continue-first checks at each consumed covenant output; keep SOURCE recognition, record-set reconstruction, acceptance and finality at their honest evidence boundaries. SOURCE has no covenant-input execution carrier merely because its output will later be spendable (`[A-sec:kpc:interface]`); (`[A-sec:kpc:operations]`).
 
 **Setting (bite-1-2 — Files and packages)** · `setup:guide15-exec:bite-1-2-files-and-packages`
 
-`packages/compiler/src/`, its plan validators and tests, `plans/packages/compiler.md`, and the semantic input boundary selected in bite 1.1. (`pkg:compiler:contract`).
-
-**Justification (No fictitious BURN execution carrier)** · `just:guide15-exec:burn-carrier`
-
-BURN may have no covenant input, so its record recognition cannot be attributed to an emitted leaf that never executes; pair and ancestry predicates need honest reader/evidence carriers while actual destruction relies on target consensus. (`just:lineage:burn-placement`).
-
-**Obligation (Honest placement for every relation)** · `obl:guide15-exec:merge-placement`
-
-MERGE's successor condition has one emitted carrier per covenant input, while consumer acceptance remains a reader obligation; placement must account for both without inventing a coordinator role (`rule:compiler:placement`). (`obl:lineage:relation-carriers`).
-
-**Precondition (Public witness availability)** · `pre:guide15-exec:public-witness`
-
-Public inputs are previous-output data, the fixed public constructor and spend recipe, and carrier funding; no creator secret or owner signature enters covenant witness availability. (`pre:lineage:public-construction`).
+Use `packages/compiler/src/`, plan validators and tests, `plans/packages/compiler.md`, and the selected typed semantic boundary (`pkg:compiler:contract`).
 
 **Gate (bite-1-2 — Gate)** · `gate:guide15-exec:bite-1-2-gate`
 
-Each active relation has a reachable, named carrier or explicit external-evidence obligation; corruption tests reject missing, duplicate, unreachable, and mismatched assignments and preserve exact lifecycle closure. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+Every active relation has a reachable named carrier or explicit evidence obligation. Focused corruptions reject missing, duplicate, unreachable and mismatched assignments. Public construction requires no creator secret; hand-written transactions bypassing analysis supply no compiled-contract evidence.
 
-**Criterion (Compilation rather than handwritten execution)** · `crit:guide15-exec:compiled-evidence`
+**Proposal (bite-1-2 — Suggested commit)** · `proposal:guide15-exec:bite-1-2-suggested-commit`
 
-The gate records which compiler seams changed and why; a handwritten target transaction that bypasses validated analysis does not count as a compiled second contract. (`cav:lineage:compiler-interface`).
+`feat(compiler): plan Keyed Provenance Covenant relations`.
 
-### 1.3 Emit target forms and authenticated recurrence · `task:guide15-exec:bite-1-3`
+### 1.3 Emit both clauses and authenticated recurrence · `task:guide15-exec:bite-1-3`
 
 **Task (bite-1-3 — Deliverables)** · `task:guide15-exec:bite-1-3-deliverables`
 
-Admit exact BURN and MERGE forms against the reviewed target and emit the one-check successor pattern with a public authenticated recurrence constructor in tapscript. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+Emit the authenticated spent-output position check and the full same-key output-0 program comparison. Choose and justify authenticated current-input introspection or a supported linker-reference strategy, proving constructor closure and excluding alternative paths bypassing either clause. Carry the fixed key through generation and every successor; no literal fixed point is presumed. Keep any NUMS satisfaction conditional on the named assumptions (`judg:guide15-exec:nums-standing`).
 
 **Setting (bite-1-3 — Files and packages)** · `setup:guide15-exec:bite-1-3-files-and-packages`
 
-`packages/target-elements/src/transaction_form.rs`, the reviewed capability assessments, `packages/tapscript/src/`, and their target and constructor tests. (`pkg:target-elements:contract`); (`pkg:tapscript:contract`).
-
-**Requirement (Complete program representation)** · `req:guide15-exec:program-representation`
-
-The output-script comparison binds the full reviewed program representation, including type or version; a superficially similar witness program from another constructor must not pass. (`obl:lineage:script-representation`).
-
-**Invariant (Authenticated comparison target)** · `inv:guide15-exec:comparison-authentication`
-
-The leaf checks output 0 against the actual authenticated covenant program, never an unauthenticated caller-supplied script; it performs no output-value or output-asset comparison. (`obl:lineage:constructor-paths`).
-
-**Decision (Decision 7 — recurrence strategy)** · `dec:guide15-exec:decision-7`
-
-An authenticated current-input program reference avoids an assumed literal fixed point but needs an exact introspection/control-path proof; a linker reference strategy must instead prove supported closure and its resource cost. If selected, that strategy owes its own recurrence execution and resource measurement under obligation (e), with final-form remeasurement at 1.6 (`expt:lineage:one-check`). (`q:lineage:recurrence-strategy`).
-
-**Obligation (No bypass of recurrence)** · `obl:guide15-exec:recurrence-bypass`
-
-Either strategy must exclude alternative spend paths that bypass recurrence, including a usable key path, while retaining conditional NUMS satisfaction under the two named assumptions where applicable (`judg:guide15-exec:nums-standing`); no finite refusal is promoted into a discrete-log proof. (`obl:lineage:constructor-paths`).
+Use `packages/target-elements/src/transaction_form.rs`, capability assessments, `packages/tapscript/src/`, target/constructor tests and their contracts (`pkg:target-elements:contract`); (`pkg:tapscript:contract`).
 
 **Gate (bite-1-3 — Gate)** · `gate:guide15-exec:bite-1-3-gate`
 
-The emitted schedule has valid stack behavior, exact constructor authentication and complete resource formulas, and its wrong-program, wrong-version, and wrong-control cases refuse at their declared boundaries. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+The emitted schedule has valid stack behavior and complete resource formulas. Later-born outputs, wrong-key successors, wrong scripts, versions and control recipes refuse at declared boundaries beside valid controls. Target form admission adds no covenant law and each clause has independent evidence.
 
-**Rule (Form admission does not add covenant laws)** · `rule:guide15-exec:form-admission`
+**Proposal (bite-1-3 — Suggested commit)** · `proposal:guide15-exec:bite-1-3-suggested-commit`
 
-The integrated form assessments distinguish consensus from relay admission and preserve measured incidental-value and N limits without turning them into added covenant laws. (`spec:lineage:form-assessments`).
+`feat(tapscript): emit born-first and continue-first covenants`.
 
 ### 1.4 Link references and construct transactions · `task:guide15-exec:bite-1-4`
 
 **Task (bite-1-4 — Deliverables)** · `task:guide15-exec:bite-1-4-deliverables`
 
-Link one deterministic lineage bundle, resolve every relocation once, retain the recurrence strategy and control recipe, and derive BURN and MERGE construction through the shared transaction pipeline. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+Link one deterministic keyed bundle, resolve every relocation once, retain the authenticated constructor/control recipe, and construct SOURCE and MERGE through typed requests. Both forms place the new handle at output 0; SOURCE consumes no handle of the key and MERGE consumes one or more. There is no designated genesis, and the first SOURCE handle is already a record. Other target-valid inputs and outputs remain open. Funding signatures stay separate from the covenant, which requires none (`[A-def:kpc-model:first-output]`); (`[A-def:kpc-operations:classification]`).
 
 **Setting (bite-1-4 — Files and packages)** · `setup:guide15-exec:bite-1-4-files-and-packages`
 
-`packages/linker/src/`, `packages/transaction/src/`, their candidate bundle, ABI and construction tests, and their package contracts. (`pkg:linker:contract`); (`pkg:transaction:contract`).
-
-**Specification (Exact positional ABI boundaries)** · `spec:guide15-exec:lineage-abi`
-
-The BURN ABI fixes token output 0 and destruction output 1, while the MERGE ABI fixes only covenant successor output 0; unrelated target-valid carrier inputs and outputs stay open. (`spec:lineage:layouts`).
-
-**Definition (Builder ordering and witness roles)** · `def:guide15-exec:lineage-witness`
-
-The predecessor's input ordering is a builder choice rather than a protocol rule; funding signatures and optional consumer signatures remain separate witness roles and introduce no covenant authorization. (`def:lineage:witness-roles`).
-
-**Decision (Decision 5 — genesis designation)** · `dec:guide15-exec:decision-5`
-
-Choose a publicly distributed designated outpoint or a reproducible deployment procedure with chain binding, stating the distribution or reconstruction cost; neither longest history nor arbitrary same-script outputs can designate genesis. (`q:lineage:genesis-designation`).
-
-**Invariant (One genesis and recurrence constructor)** · `inv:guide15-exec:genesis-constructor`
-
-The genesis output uses the same script but has no destruction sibling and contributes no record; token creation and successor recognition must use the same authenticated constructor. (`obl:lineage:constructor-identity`).
+Use `packages/linker/src/`, `packages/transaction/src/`, their bundle, ABI and construction tests and contracts (`pkg:linker:contract`); (`pkg:transaction:contract`).
 
 **Gate (bite-1-4 — Gate)** · `gate:guide15-exec:bite-1-4-gate`
 
-Constructor/reference closure is exact, transactions finalize deterministically through typed requests, positive and malformed pair forms are distinct, and caller-supplied totals or ad hoc script literals cannot bypass the pipeline. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+Constructor/reference closure is exact; a fresh process using public data reproduces both forms. Wrong-key and wrong-position requests refuse at their declared boundaries; caller-supplied scripts or record totals cannot bypass typed construction. Reused assembly introduces no STATE law or owner authorization.
 
-**Caveat (Assembly reuse imports no STATE law)** · `cav:guide15-exec:assembly-reuse`
+**Proposal (bite-1-4 — Suggested commit)** · `proposal:guide15-exec:bite-1-4-suggested-commit`
 
-The record identifies inherited construction mechanisms and any changed interface without importing STATE codecs, STATE generations, or every-receipt-owner signing as universal requirements. (`cav:lineage:assembly-reuse`).
+`feat(transaction): construct keyed SOURCE and MERGE forms`.
 
 ### 1.5 Build vectors and six evidence families · `task:guide15-exec:bite-1-5`
 
 **Task (bite-1-5 — Deliverables)** · `task:guide15-exec:bite-1-5-deliverables`
 
-Build public semantic fixtures, focused mutations, independent ancestry reconstruction, and distinct pair, successor, ancestry, replacement-history, consumer-rule, and resource evidence. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+Build independent fixtures and validators for the six families in the paper's verification appendix (`[A-app:kpc:verification]`). Birth checks output-0 membership and later-output unspendability. Continuation checks every consumed handle, unique continuation, mixed-key refusal and independent coexistence. Record recurrence checks SOURCE singleton identity, single-input and multi-input MERGE, no new record on MERGE, provenance and disjoint growth. Reading checks reconstruction, path growth, missing evidence as incomplete, conflicting identities or cycles as invalid, and the published inclusion/retrieval/finality assumptions. Acceptance checks that different reader rules change only accepted readings, including immutable-rule monotonicity and a time-varying rule with no monotonicity claim. Resources compare predicted and observed costs on exact subjects. Every negative names its own boundary; an evidence failure is not a covenant refusal.
+
+**Decision (Reader rule and evidence format)** · `dec:guide15-exec:reader-evidence`
+
+Publish the candidate reader's amount, attribution and eligibility rule separately from covenant membership, and select internal fixture reports unless an actual external consumer requires a maintained interchange contract under `adr/022-interchange-conventions.md`. Finality is an explicit named assumption for a final reading; no observation proves it universally. The reader rule and report format are the final two of the six realization decisions (`rec:guide15-exec:study-dispositions`).
 
 **Setting (bite-1-5 — Files and packages)** · `setup:guide15-exec:bite-1-5-files-and-packages`
 
-`packages/vectors/src/`, its public fixtures and report validators, realization-owned explanatory documentation, and target-generic execution support only where a missing fact requires it. (`pkg:vectors:contract`).
+Use `packages/vectors/src/`, fixtures and report validators, independent model conformance, and realization-owned documentation; extend `packages/target-elements-conformance/` only for a demonstrated missing target-generic fact (`pkg:vectors:contract`); `packages/model/README.md`.
 
-**Criterion (Authenticated pair evidence)** · `crit:guide15-exec:pair-evidence`
+**Obligation (Measurement home)** · `obl:guide15-exec:measurement-home`
 
-Pair evidence verifies the same transaction, fixed indices, token script, exact opaque address, and explicit positive native destruction value; wrong asset, committed value, malformed sibling, and fake token contribute zero credit. (`crit:lineage:valid-pair`).
-
-**Criterion (Successor evidence and refusal boundary)** · `crit:guide15-exec:successor-evidence`
-
-Successor evidence proves the common output-0 program at each covenant input and keeps script refusal distinct from malformed-pair reader refusal. (`op:lineage:merge`).
-
-**Requirement (Complete ancestry and inclusion evidence)** · `req:guide15-exec:ancestry-evidence`
-
-Ancestry evidence verifies inclusion proofs binding the point and its ancestry to the selected history, and covers a single token, many tokens, side-pile sweep, combined BURN/MERGE, multiple successive points in one block, shared ancestors, duplicate traversal, and missing ancestors; missing ancestry is incomplete proof. (`inv:lineage:replacement-history`).
-
-**Requirement (Pinned replacement histories)** · `req:guide15-exec:replacement-evidence`
-
-Replacement-history evidence binds competing spends and alternative histories to the exact pinned lineage point and policy, retaining explicit finality and availability assumptions. (`assum:lineage:finality`).
-
-**Decision (Decision 8 — consumer publication)** · `dec:guide15-exec:decision-8`
-
-Choose acceptance equal to L or a published monotone subset rule, and pins-only or earlier readings with their additional evidence and downward-revision behavior; enforce the consumer's own inclusion bound. (`q:lineage:consumer-publication`).
-
-**Criterion (Consumer evidence rejects unbounded readings)** · `crit:guide15-exec:consumer-evidence`
-
-Consumer-rule evidence rejects accepted records outside the settled set and a decrease of previously accepted records along the selected history, without moving eligibility or timing into the covenant. (`obl:lineage:consumer-readings`).
-
-**Decision (Decision 9 — evidence consumption)** · `dec:guide15-exec:decision-9`
-
-Use internal fixture reports unless an actual external ancestry/record consumer requires a maintained format and availability contract under `adr/022-interchange-conventions.md`; a cache remains non-authoritative either way. (`q:lineage:evidence-consumption`).
-
-**Requirement (Resource subjects and absent dimensions)** · `req:guide15-exec:resource-evidence`
-
-Resource evidence binds exact bundle, ABI, target, policy, and input bound; an unavailable dimension is absent, a failed child is infrastructure failure, and a policy refusal is not automatically a consensus refusal. (`obl:lineage:resource-evidence`).
-
-**Obligation (Four arguments from the contract laws)** · `obl:guide15-exec:trap-arguments`
-
-The realization's own documentation must argue each of the four traps using its own laws rather than a borrowed assurance claim. (`sec:lineage:traps`).
-
-**Argument (Trap argument 1)** · `arg:guide15-exec:trap-argument-1`
-
-Accumulator trap: no total, count, index, or commitment is stored; ancestry reconstruction computes figures and does not remove head contention (`arg:lineage:accumulator`).
-
-**Argument (Trap argument 2)** · `arg:guide15-exec:trap-argument-2`
-
-Burn-flag trap: the token alone supplies no credit; only the verified sibling's positive explicit native destruction amount supplies magnitude (`arg:lineage:burn-flag`).
-
-**Argument (Trap argument 3)** · `arg:guide15-exec:trap-argument-3`
-
-Data-ledger trap: address data never supplies quantity, and a record becomes settled through token ancestry rather than arbitrary data scanning (`arg:lineage:data-ledger`).
-
-**Argument (Trap argument 4)** · `arg:guide15-exec:trap-argument-4`
-
-Event-anchor trap: pair shape establishes the event while the destruction output's actual value establishes its magnitude with equality; inherited records keep their original anchors (`arg:lineage:event-anchor`).
-
-**Task (Candidate publication artifacts for all thirteen requirements)** · `task:guide15-exec:publication-artifacts`
-
-Bite 1.5 produces pinned-target candidate fixture artifacts for bootstrap zero with its empty-interval reason, unit cost with fees separate, and operator accrual with incidental funding distinguished from destroyed magnitude (`req:lineage:bootstrap`); (`req:lineage:unit-cost`); (`req:lineage:operator-accrual`). It also produces the candidate deployment publication set: settlement depth, finality assumptions, historical availability assumption, and the conflict policy established by measurement (c), without claiming production deployment (`obl:lineage:deployment-assumptions`).
-
-**Criterion (The complete requirement set is exercised)** · `crit:guide15-exec:thirteen-requirements`
-
-The Wave-1 evidence addresses all thirteen requirements: eight construction standings, three candidate publication standings, and two consumer-rule standings; fixture publications remain candidate artifacts and do not establish a production deployment (`tab:lineage:requirement-standings`); (`req:lineage:exogenous-magnitude`); (`req:lineage:neutrality`); (`req:lineage:non-transferability`); (`req:lineage:opaque-addresses`); (`req:lineage:non-negativity`); (`req:lineage:auditability`); (`req:lineage:instant-cost`); (`req:lineage:lineage`); (`req:lineage:monotone-reading`); (`req:lineage:consumer-acceptance`).
-
-**Obligation (A durable home for the six measurement results)** · `obl:guide15-exec:measurement-home`
-
-Retain all six target measurement records in `plans/research/state-constructor.md` as a distinct second-contract constructor-and-carrier evidence set, separating recurrence from relay floor, data-output policy, conflict policy, mixed representations, and weight; link the relevant public-representation findings to (`sec:public-opening:measurements`) and keep gate performance in (`tab:test-performance:register`). This assignment extends the research record at implementation time and does not claim those measurements already exist (`sec:state-constructor:measurements`); (`sec:lineage:measurements`).
+Retain all six target measurement records in `plans/research/state-constructor.md` as a distinct keyed-covenant constructor evidence set, with public-representation findings linked to (`sec:public-opening:measurements`) where applicable; keep gate performance in (`tab:test-performance:register`). This assignment creates no claim that measurements already exist (`sec:state-constructor:measurements`).
 
 **Gate (bite-1-5 — Gate)** · `gate:guide15-exec:bite-1-5-gate`
 
-All six evidence families have independent subjects and validators, all thirteen requirement standings have candidate evidence under (`crit:guide15-exec:thirteen-requirements`), and the four trap arguments appear in the selected realization's documentation with executable positive and negative cases where applicable. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+All six families validate independently and trace all eight delivery requirements to the paper's statements, with positive and focused negative cases and separately published reader/evidence premises. The documentation explains why no extra clause, carried accumulator or record on MERGE is admitted.
 
-### 1.6 Execute the compiled forms and record independence · `task:guide15-exec:bite-1-6`
+**Proposal (bite-1-5 — Suggested commit)** · `proposal:guide15-exec:bite-1-5-suggested-commit`
+
+`test(vectors): verify Keyed Provenance Covenant evidence families`.
+
+### 1.6 Execute final forms and record independence · `task:guide15-exec:bite-1-6`
 
 **Task (bite-1-6 — Deliverables)** · `task:guide15-exec:bite-1-6-deliverables`
 
-Execute final compiler-derived BURN and MERGE forms against the pinned target, independently reconstruct accepted records, and write the wave gate and architecture-independence findings. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+Execute final compiler-derived SOURCE and MERGE forms on the pinned target and independently reconstruct their record sets and reader-filtered readings. Repeat all six measurements on the emitted, linked and constructed subjects; changed bytes, control paths, funding, bounds or policy require remeasurement. Record all six realization decisions and the retirement/fixing of the other three old study decisions, with a seam-by-seam independence account for architecture, realization, compiler, target, tapscript, linker, transaction and vectors.
 
 **Setting (bite-1-6 — Files and packages)** · `setup:guide15-exec:bite-1-6-files-and-packages`
 
-`packages/vectors/`, the selected realization's documentation, affected package contracts, and the Phase-7 gate record in `plans/backlog.md`. (`pkg:vectors:contract`).
-
-**Verification (Final-form remeasurement)** · `verif:guide15-exec:final-measurements`
-
-Re-execute all six measurement obligations on the actual emitted, linked, and constructed artifacts; changed bytes, control depth, funding, input bound, or policy invalidate any unqualified transfer of prototype observations. (`spec:lineage:evidence-package`).
-
-**Decision (Decision 6 — admission and first gate)** · `dec:guide15-exec:decision-6`
-
-Record the charter's admission of the second contract inside Phase 7 without changing phase order, with its accepted dependency under (`rule:guide15-exec:second-contract-dependency`); the first gate requires both typed declarations, authenticated recurrence, separately assessed forms, and all six measurement obligations disposed on final subjects. (`q:lineage:admission`).
-
-**Report (Independence findings and reuse evidence)** · `rep:guide15-exec:independence-report`
-
-Record the exact seams that moved in architecture, realization, compiler, target, tapscript, linker, transaction, and vectors, with a reason and regression evidence for each change; unchanged seams need concrete reuse evidence. (`def:lineage:independence`).
+Use `packages/vectors/`, realization documentation, affected package contracts and the Phase-7 gate record in `plans/backlog.md`. Each moved seam needs its engineering reason and regression evidence; each unchanged seam needs a concrete reuse argument.
 
 **Gate (bite-1-6 — Gate)** · `gate:guide15-exec:bite-1-6-gate`
 
-Public deterministic inputs reproduce both final forms and their accepted projections, focused negatives refuse at their own boundaries, all six report families validate, and the full repository gate is green on the completed clean tree. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+Public deterministic inputs reproduce both final forms and their projections; all six evidence families validate and all eight requirements have final-subject evidence. Keep construction admission, consensus, relay, reconstruction and reader acceptance distinct. Record commands, outcomes, exit codes, durations, retained artifacts and absent dimensions, with the clean full repository gate green.
 
-**Rule (Five distinct acceptance questions)** · `rule:guide15-exec:acceptance-boundaries`
+**Proposal (bite-1-6 — Suggested commit)** · `proposal:guide15-exec:bite-1-6-suggested-commit`
 
-The record must distinguish construction admission, target consensus, relay policy, historical reconstruction, and consumer recognition; no single successful transaction can stand for the entire contract. (`crit:lineage:evidence-families`).
+`test(vectors): execute compiled Keyed Provenance Covenant forms`.
 
 ### Wave-1 exit · `gate:guide15-exec:wave1`
 
-**Condition (wave1-exit condition 1)** · `cond:guide15-exec:wave1-exit-condition-1`
+**Criterion (Compiled contract and evidence)** · `crit:guide15-exec:wave1-compiled`
 
-- A second contract is compiled and executed through the same pipeline, with validated declarations, plans, target forms, constructor/reference closure, typed construction, all six evidence families, and candidate publication artifacts addressing all thirteen requirements (`crit:guide15-exec:thirteen-requirements`). (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+SOURCE and MERGE pass the same pipeline with validated declarations, plans, target forms, constructor/reference closure, typed construction and all six evidence families, covering all eight delivery requirements. The paper remains the contract of record and claims no realization by publication alone (`[A-sec:kpc:limitations]`).
 
-**Condition (wave1-exit condition 2)** · `cond:guide15-exec:wave1-exit-condition-2`
+**Criterion (Final measurements and decisions)** · `crit:guide15-exec:wave1-measured`
 
-- Measurements (a)–(f) bind the final subjects and selected target policy; incidental minimum and input bound are measured facts rather than draft defaults. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+Measurements (a)–(f) bind final subjects and policy, all six realization decisions have retained dispositions, and the old nine-decision mapping is complete. No draft default supplies funding or an input bound; both are realization choices supported by observations.
 
-**Condition (wave1-exit condition 3)** · `cond:guide15-exec:wave1-exit-condition-3`
+**Criterion (Faithful independence and baseline)** · `crit:guide15-exec:wave1-independent`
 
-- All nine study decisions have a retained disposition at the bite assigned above, including the three realization-home options and their costs. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
-
-**Condition (wave1-exit condition 4)** · `cond:guide15-exec:wave1-exit-condition-4`
-
-- No attestation law is imported: no aggregate equation, no output closure over the carrier, and no consumer authorization in the covenant. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
-
-**Condition (wave1-exit condition 5)** · `cond:guide15-exec:wave1-exit-condition-5`
-
-- No third operation or value-preservation relation is introduced; incidental funding and its sweep bounty remain separate from destruction credit. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
-
-**Condition (wave1-exit condition 6)** · `cond:guide15-exec:wave1-exit-condition-6`
-
-- Independence findings name the seams that moved and why, and the realization's own documentation argues all four cited traps. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
-
-**Condition (wave1-exit condition 7)** · `cond:guide15-exec:wave1-exit-condition-7`
-
-- The wave's figures are compared with the Wave-0 baseline, with regressions treated as findings and the clean full repository gate recorded. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+Exactly two covenant clauses remain. SOURCE introduces its handle record; MERGE introduces none. Key separation, reader-side acceptance and finality as evidence are preserved without a designated head, terminal or carried counter. The seam record explains changes and reuse, compares figures with the Wave-0 baseline, disposes regressions and records the full repository gate on a clean tree.
 
 **Proposal (wave1-exit — Suggested commit)** · `proposal:guide15-exec:wave1-exit-suggested-commit`
 
-`plans: record the compiled destruction-lineage contract and independence evidence`. (`sec:lineage:pipeline`); (`crit:lineage:evidence-families`).
+`docs(plans): record Keyed Provenance Covenant independence evidence`.
 
 ## 5. Waves 2 to 14 · `sec:guide15-exec:remaining-waves`
 
@@ -1284,11 +1108,11 @@ The retained semantic and delivery reference is (`task:guide15:wave3`); the impl
 
 **Assumption (wave4 — Inherited inputs)** · `assum:guide15-exec:wave4-inherited-inputs`
 
-Wave 0 supplies explicit-only policy, arithmetic assessment, and the pinned target from 0.1 and 0.7; Wave 1 supplies the records of carrier, mixed-form, and data-output measurements from 1.0 and 1.6, requiring assessment of the actual attestation forms and any reopening under (`cond:guide15-exec:carrier-reopening`). (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave3`).
+Wave 0 supplies explicit-only policy, arithmetic assessment, and the pinned target from 0.1 and 0.7; Wave 1 supplies clause-cost and standardness methods from 1.0 and 1.6. (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave3`).
 
 **Gate (wave4 — Gate)** · `gate:guide15-exec:wave4-gate`
 
-Each selected form and capability has a reviewed assessment and exact evidence role; unsupported opening and unadmitted private routes remain explicit refusals or non-claims. (`task:guide15:wave3`).
+Each selected form and capability has a reviewed assessment and exact evidence role; unsupported opening and unadmitted private routes remain explicit refusals or non-claims. Measurement records must bind the complete attestation carrier transactions under (`cond:guide15-exec:carrier-reopening`), including all outputs, proofs, weight, fees and policy outcomes, including any confidential change outputs with their proofs; any refusal requires a Wave-4 ruling before target declarations, naming the Wave-2 typed declarations and Wave-3 plans it reopens. (`task:guide15:wave3`).
 
 **Proposal (wave4 — Suggested commit)** · `proposal:guide15-exec:wave4-suggested-commit`
 
@@ -1388,7 +1212,7 @@ The retained semantic and delivery reference is (`task:guide15:wave5`); the impl
 
 **Assumption (wave6 — Inherited inputs)** · `assum:guide15-exec:wave6-inherited-inputs`
 
-Wave 0 supplies exact burn law, region-refit evidence, and carrier disposition from 0.2 and 0.7; Wave 1 supplies measured carrier forms and data-output policy records from 1.0 and 1.6, never owner authorization or record-credit semantics. (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave5`).
+Wave 0 supplies exact burn law, region-refit evidence, and carrier disposition from 0.2 and 0.7; Wave 1 supplies clause-cost and standardness methods from 1.0 and 1.6; Wave 4 supplies the actual attestation carrier measurements. Neither supplies owner authorization or record-credit semantics. (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave5`).
 
 **Gate (wave6 — Gate)** · `gate:guide15-exec:wave6-gate`
 
@@ -1562,7 +1386,7 @@ The retained semantic and delivery reference is (`task:guide15:wave8`); the impl
 
 **Assumption (wave9 — Inherited inputs)** · `assum:guide15-exec:wave9-inherited-inputs`
 
-Wave 0 supplies public-construction and signing-profile dispositions from 0.7; Wave 1 supplies the typed open-carrier ABI and construction requests from 1.4, while all-owner burn signing and exact sponsor consistency remain attestation obligations. (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave8`).
+Wave 0 supplies public-construction and signing-profile dispositions from 0.7; Wave 1 supplies the typed output-0 handle ABI and construction requests from 1.4, while all-owner burn signing and exact sponsor consistency remain attestation obligations. (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave8`).
 
 **Gate (wave9 — Gate)** · `gate:guide15-exec:wave9-gate`
 
@@ -1604,7 +1428,7 @@ The retained semantic and delivery reference is (`task:guide15:wave9`); the impl
 
 **Assumption (wave10 — Inherited inputs)** · `assum:guide15-exec:wave10-inherited-inputs`
 
-Wave 0 supplies the event-role census and exact record rule from 0.7; the native route is inherited from Phase 6 and revalidated at 0.1. Wave 1 supplies the distinct validated evidence-family reports from 1.5, without substituting ancestry settlement for burn provenance (`sec:phase6:gate-record`). (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave9`).
+Wave 0 supplies the event-role census and exact record rule from 0.7; the native route is inherited from Phase 6 and revalidated at 0.1. Wave 1 supplies the distinct validated evidence-family reports from 1.5, without substituting SOURCE membership for burn provenance (`sec:phase6:gate-record`). (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave9`).
 
 **Gate (wave10 — Gate)** · `gate:guide15-exec:wave10-gate`
 
@@ -1742,7 +1566,7 @@ The retained semantic and delivery reference is (`task:guide15:wave12`); the imp
 
 **Assumption (wave13 — Inherited inputs)** · `assum:guide15-exec:wave13-inherited-inputs`
 
-Wave 0 supplies the gate-performance register from 0.6 and the distinct inherited target-resource subjects retained at 0.5 (`data:guide15-exec:resource-subjects`); Wave 1 supplies measured carrier forms, mixed representations, and data-output limits from 1.0 and 1.6. Complete attestation subjects require remeasurement; gate wall time is not target-resource evidence. (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave12`).
+Wave 0 supplies the gate-performance register from 0.6 and the distinct inherited target-resource subjects retained at 0.5 (`data:guide15-exec:resource-subjects`); Wave 1 supplies keyed-covenant cost and standardness records from 1.0 and 1.6; Wave 4 supplies attestation carrier measurements. Complete attestation subjects require remeasurement; gate wall time is not target-resource evidence. (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave12`).
 
 **Gate (wave13 — Gate)** · `gate:guide15-exec:wave13-gate`
 
@@ -1887,11 +1711,11 @@ Neither the charter nor a planned target run proves unavailable evidence; no mis
 
 **Caveat (Second-contract exclusions)** · `cav:guide15-exec:second-contract-limits`
 
-The second contract supplies independence evidence inside Phase 7; it introduces no third operation, aggregate covenant equation, incidental-value preservation, carrier-output closure, or consumer authorization in the covenant (`spec:lineage:exclusions`); (`crit:lineage:faithful-reuse`).
+The second contract supplies independence evidence inside Phase 7 under exactly born first and continue first. It has no destruction requirement, carried counter, accumulator, magnitude, depth, designated head or terminal; reader acceptance is outside the covenant (`[A-def:kpc-model:first-output]`); (`[A-rem:kpc-interface:record-evidence]`).
 
 **Caveat (Measured subjects and published premises)** · `cav:guide15-exec:measurement-limits`
 
-Its exact funding floor, input bound, relay forms, replacement premises, recurrence costs, historical availability, and finality remain bound to measured subjects and published assumptions, never universal deployment guarantees (`sec:lineage:measurements`); (`assum:lineage:availability`); (`assum:lineage:finality`).
+Its funding, construction bound, transaction standardness and clause costs remain measured realization facts. Inclusion, retrieval and finality are evidence assumptions, and acceptance is a reader's published rule. None is a universal deployment guarantee or an extra covenant clause (`task:guide15-exec:bite-1-0`); (`[A-sec:kpc:interface]`); (`[A-sec:kpc:limitations]`).
 
 **Record (Unchanged product thesis and accepted dependency)** · `rec:guide15-exec:roadmap-position`
 
@@ -1899,4 +1723,4 @@ The roadmap's thesis is unchanged: the attestation remains the exemplar by which
 
 **Rule (Execution authority remains subordinate)** · `rule:guide15-exec:authority-boundary`
 
-The concept remains unchanged as semantic reference, the two studies remain planning input, and this execution guide cannot override a package contract, phase card, ADR, or accepted decision (`rule:guides:authority`); (`rule:drafts:authority`).
+The concept remains the attestation semantic reference, the admission study remains planning input, and the earlier second-exemplar study is retained only as the record of the reduction. The Keyed Provenance Covenant paper supplies Wave 1's contract; this execution guide cannot override it, a package contract, phase card, ADR or accepted decision (`[A-abst:kpc:abstract]`); (`rule:guides:authority`); (`rule:drafts:authority`).

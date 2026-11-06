@@ -27,9 +27,11 @@ Imported labels are authoritative references and are linted under
 
 | Register | Owner | Source |
 |---|---|---|
-| [Specification](specification.md) | the Attestation specification | `papers/attestation/main.tex` and `sections/*.tex` |
+| [Specification](specification.md) | the Attestation and Keyed Provenance Covenant specifications | `papers/attestation/` and `papers/lineage/`, each with `main.tex` and `sections/*.tex` |
 | [Realization](realization.md) | the realization document | `docs/attestation/realization.md` |
 | [Attestation](attestation.md) | This repository, as acceptee | `adr/020-environment-kinds.md` and the corpus census |
+
+The specification census retains its historical `attestation` argument names; the source-file column identifies each paper. The Keyed Provenance Covenant uses areas `kpc`, `kpc-model`, `kpc-operations`, `kpc-invariants` and `kpc-interface`, disjoint from the attestation paper and the retained planning study.
 
 The registers are derivative indexes. Their source documents remain
 authoritative.
@@ -45,7 +47,7 @@ a citation source.
 Use:
 
 ```text
-A-      the Attestation specification
+A-      the specification papers (attestation and Keyed Provenance Covenant)
 RZ-     the realization document
 ```
 

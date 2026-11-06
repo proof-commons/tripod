@@ -1,0 +1,82 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Reading and evidence}
+\label{sec:kpc:interface}
+
+\begin{definition}[Exported membership]
+\label{def:kpc-interface:membership-reading}
+For a handle $x$ the interface answers whether a record belongs to $C_k(x)$.
+Handles are defined in \zcref{def:kpc-model:keyed-membership}; records and
+their sets in \zcref{def:kpc-operations:classification}, and paths in
+\zcref{def:kpc-operations:continuation}.
+\end{definition}
+
+\begin{corollary}[Reading along a path]
+\label{cor:kpc-interface:path-reading}
+For a handle $g$, at each prefix containing $g$ the live handle $y$ with
+$g\preceq y$ is unique, and along extensions of one history the readings
+$C_k(y)$ grow.
+\end{corollary}
+\begin{proof}
+\zcref{thm:kpc-invariants:unique-successor} gives the unique live end at
+each prefix. An earlier end $y$ lies on the same path as a later end $y'$,
+so $y\preceq y'$ and $C_k(y)\subseteq C_k(y')$ by
+\zcref{thm:kpc-invariants:set-membership-growth}; each set is fixed by its
+dependencies (\zcref{thm:kpc-invariants:source-provenance}).
+\end{proof}
+
+\begin{remark}[Record evidence]
+\label{rem:kpc-interface:record-evidence}
+A record exposes its SOURCE handle's creating event; a reader's own
+published recognition rule may read data of that event, such as what it
+carries and to which party it is attributed, to decide which records it
+accepts, while the covenant checks none of it.
+Acceptance filters a reading and changes no set $C_k$; a fixed rule that
+depends only on the SOURCE event's immutable contents keeps accepted
+readings monotone along a path by \zcref{cor:kpc-interface:path-reading}.
+\end{remark}
+
+\paragraph{Named evidence assumptions.}
+\emph{Inclusion} authenticates that the events and dependencies belong
+to one valid history with the identity and single-consumption properties
+of \zcref{sec:kpc:model}.
+\emph{Retrieval} supplies the finite dependency closure, complete input
+classification, each spent output's birth position and output order.
+\emph{Finality} holds for a read handle once it lies beyond the depth the
+realization publishes, a quantity of the realization and not of this
+system: no history replacing the one that contains it is then accepted.
+A reading claimed final requires it.
+These assumptions concern access to authentic history and its permanence;
+disjoint keyed membership and readable covenant clauses remain the
+realization
+assumptions of \zcref{def:kpc-model:keyed-membership}.
+
+\paragraph{Reconstruction.}
+Authenticate the key and the handle $x$. For each reached handle $s$,
+authenticate its creating event $e$, first-output birth position, inclusion
+and every input's membership. Check both covenant clauses for consumed
+handles. If $I_k(e)=\varnothing$, return the singleton $\{r_k(s)\}$.
+Otherwise recursively reconstruct all handles in $I_k(e)$ and return
+their union. Successive readings may reuse completed handles.
+
+Missing evidence yields \emph{incomplete}, not a set by default.
+Conflicting identities or cyclic dependencies yield \emph{invalid}: they
+establish no valid history. A later covenant-shaped output is not a handle
+and has no set to read. These are evidence distinctions; the recurrence defines a set
+for every handle of every valid history.
+
+\begin{theorem}[Faithful reading]
+\label{thm:kpc-interface:membership-correctness}
+With inclusion and retrieval evidence, reconstruction terminates and
+returns exactly $C_k(x)$ for every handle $x$.
+\end{theorem}
+\begin{proof}
+Finite acyclic dependencies permit induction. At a leaf, complete input
+classification establishes a SOURCE and the reader returns its defined
+singleton. At a MERGE, classification supplies precisely $I_k(e)$ and
+the recursively obtained input sets give exactly the defining union.
+Complete evidence establishes every branch, so the return equals $C_k(x)$.
+\end{proof}
+
+\end{document}

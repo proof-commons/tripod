@@ -14,7 +14,7 @@ use crate::{
 
 pub fn specification_register(registry: &LabelRegistry) -> String {
     let mut output = String::from(
-        "# Specification Upstream Label Register\n\n> Generated from the specification LaTeX sources by `tripod-labels`.\n> Do not edit by hand.\n> The Attestation specification owns these labels.\n> Displayed tokens are nonparticipating examples.\n\n| Plan citation | Owner-local label | Source file |\n|---|---|---|\n",
+        "# Specification Upstream Label Register\n\n> Generated from the specification LaTeX sources by `tripod-labels`.\n> Do not edit by hand.\n> The specification paper named in each source-file row owns its labels.\n> Displayed tokens are nonparticipating examples.\n\n| Plan citation | Owner-local label | Source file |\n|---|---|---|\n",
     );
     for (label, mint) in registry.iter() {
         writeln!(

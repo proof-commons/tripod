@@ -2,22 +2,32 @@
 
 > Generated from the specification LaTeX sources by `tripod-labels`.
 > Do not edit by hand.
-> The Attestation specification owns these labels.
+> The specification paper named in each source-file row owns its labels.
 > Displayed tokens are nonparticipating examples.
 
 | Plan citation | Owner-local label | Source file |
 |---|---|---|
 | ``[A-abst:attestation:abstract]`` | ``abst:attestation:abstract`` | `papers/attestation/sections/00_title.tex` |
+| ``[A-abst:kpc:abstract]`` | ``abst:kpc:abstract`` | `papers/lineage/sections/00_title.tex` |
 | ``[A-alg:operations:cycle-processing]`` | ``alg:operations:cycle-processing`` | `papers/attestation/sections/03_operations.tex` |
 | ``[A-app:attestation:symbols]`` | ``app:attestation:symbols`` | `papers/attestation/sections/B1_symbols.tex` |
 | ``[A-app:attestation:verification]`` | ``app:attestation:verification`` | `papers/attestation/sections/A1_verification.tex` |
+| ``[A-app:kpc:symbols]`` | ``app:kpc:symbols`` | `papers/lineage/sections/B1_symbols.tex` |
+| ``[A-app:kpc:verification]`` | ``app:kpc:verification`` | `papers/lineage/sections/A1_verification.tex` |
 | ``[A-cor:containment:pre-deposit-floor-factor]`` | ``cor:containment:pre-deposit-floor-factor`` | `papers/attestation/sections/06_containment.tex` |
 | ``[A-cor:costliness:supply-fraction-form]`` | ``cor:costliness:supply-fraction-form`` | `papers/attestation/sections/05_costliness.tex` |
+| ``[A-cor:kpc-interface:path-reading]`` | ``cor:kpc-interface:path-reading`` | `papers/lineage/sections/01_interface.tex` |
 | ``[A-def:costliness:position-decomposition]`` | ``def:costliness:position-decomposition`` | `papers/attestation/sections/05_costliness.tex` |
 | ``[A-def:costliness:redeemable-cost-ratio]`` | ``def:costliness:redeemable-cost-ratio`` | `papers/attestation/sections/05_costliness.tex` |
 | ``[A-def:interface:address-space]`` | ``def:interface:address-space`` | `papers/attestation/sections/01_interface.tex` |
 | ``[A-def:interface:attestation]`` | ``def:interface:attestation`` | `papers/attestation/sections/01_interface.tex` |
 | ``[A-def:interface:net-live-share]`` | ``def:interface:net-live-share`` | `papers/attestation/sections/01_interface.tex` |
+| ``[A-def:kpc-interface:membership-reading]`` | ``def:kpc-interface:membership-reading`` | `papers/lineage/sections/01_interface.tex` |
+| ``[A-def:kpc-model:first-output]`` | ``def:kpc-model:first-output`` | `papers/lineage/sections/02_model.tex` |
+| ``[A-def:kpc-model:history]`` | ``def:kpc-model:history`` | `papers/lineage/sections/02_model.tex` |
+| ``[A-def:kpc-model:keyed-membership]`` | ``def:kpc-model:keyed-membership`` | `papers/lineage/sections/02_model.tex` |
+| ``[A-def:kpc-operations:classification]`` | ``def:kpc-operations:classification`` | `papers/lineage/sections/03_operations.tex` |
+| ``[A-def:kpc-operations:continuation]`` | ``def:kpc-operations:continuation`` | `papers/lineage/sections/03_operations.tex` |
 | ``[A-def:maturity:conversion]`` | ``def:maturity:conversion`` | `papers/attestation/sections/09_maturity.tex` |
 | ``[A-def:model:bootstrapping-phase]`` | ``def:model:bootstrapping-phase`` | `papers/attestation/sections/02_model.tex` |
 | ``[A-def:model:classes]`` | ``def:model:classes`` | `papers/attestation/sections/02_model.tex` |
@@ -47,6 +57,8 @@
 | ``[A-intuit:interface:two-relations]`` | ``intuit:interface:two-relations`` | `papers/attestation/sections/01_interface.tex` |
 | ``[A-lem:costliness:attestation-append-only]`` | ``lem:costliness:attestation-append-only`` | `papers/attestation/sections/05_costliness.tex` |
 | ``[A-motto:attestation:motto]`` | ``motto:attestation:motto`` | `papers/attestation/sections/00_title.tex` |
+| ``[A-op:kpc-operations:merge]`` | ``op:kpc-operations:merge`` | `papers/lineage/sections/03_operations.tex` |
+| ``[A-op:kpc-operations:source]`` | ``op:kpc-operations:source`` | `papers/lineage/sections/03_operations.tex` |
 | ``[A-open:attestation:leverage-timing]`` | ``open:attestation:leverage-timing`` | `papers/attestation/sections/10_limitations.tex` |
 | ``[A-open:attestation:operator-disambiguation]`` | ``open:attestation:operator-disambiguation`` | `papers/attestation/sections/10_limitations.tex` |
 | ``[A-postc:interface:auditability]`` | ``postc:interface:auditability`` | `papers/attestation/sections/01_interface.tex` |
@@ -70,6 +82,7 @@
 | ``[A-prop:invariants:issuance-preserves-floor]`` | ``prop:invariants:issuance-preserves-floor`` | `papers/attestation/sections/04_invariants.tex` |
 | ``[A-prop:invariants:maturity-preserves-floor]`` | ``prop:invariants:maturity-preserves-floor`` | `papers/attestation/sections/04_invariants.tex` |
 | ``[A-prop:invariants:redemption-preserves-floor]`` | ``prop:invariants:redemption-preserves-floor`` | `papers/attestation/sections/04_invariants.tex` |
+| ``[A-prop:kpc-model:single-birth]`` | ``prop:kpc-model:single-birth`` | `papers/lineage/sections/02_model.tex` |
 | ``[A-prop:maturity:burn-distribution]`` | ``prop:maturity:burn-distribution`` | `papers/attestation/sections/09_maturity.tex` |
 | ``[A-rem:costliness:dominant-holder-cost]`` | ``rem:costliness:dominant-holder-cost`` | `papers/attestation/sections/05_costliness.tex` |
 | ``[A-rem:costliness:tlock-class-summary]`` | ``rem:costliness:tlock-class-summary`` | `papers/attestation/sections/05_costliness.tex` |
@@ -77,6 +90,7 @@
 | ``[A-rem:discipline:transient-decorrelation]`` | ``rem:discipline:transient-decorrelation`` | `papers/attestation/sections/07_discipline.tex` |
 | ``[A-rem:interface:clocks]`` | ``rem:interface:clocks`` | `papers/attestation/sections/01_interface.tex` |
 | ``[A-rem:interface:consumption-rule]`` | ``rem:interface:consumption-rule`` | `papers/attestation/sections/01_interface.tex` |
+| ``[A-rem:kpc-interface:record-evidence]`` | ``rem:kpc-interface:record-evidence`` | `papers/lineage/sections/01_interface.tex` |
 | ``[A-rem:maturity:announcement-timing]`` | ``rem:maturity:announcement-timing`` | `papers/attestation/sections/09_maturity.tex` |
 | ``[A-rem:maturity:atomic-conversion]`` | ``rem:maturity:atomic-conversion`` | `papers/attestation/sections/09_maturity.tex` |
 | ``[A-rem:maturity:confidence-signal]`` | ``rem:maturity:confidence-signal`` | `papers/attestation/sections/09_maturity.tex` |
@@ -107,6 +121,11 @@
 | ``[A-sec:interface:computational]`` | ``sec:interface:computational`` | `papers/attestation/sections/01_interface.tex` |
 | ``[A-sec:interface:consumption]`` | ``sec:interface:consumption`` | `papers/attestation/sections/01_interface.tex` |
 | ``[A-sec:interface:monetary-surface]`` | ``sec:interface:monetary-surface`` | `papers/attestation/sections/01_interface.tex` |
+| ``[A-sec:kpc:interface]`` | ``sec:kpc:interface`` | `papers/lineage/sections/01_interface.tex` |
+| ``[A-sec:kpc:invariants]`` | ``sec:kpc:invariants`` | `papers/lineage/sections/04_invariants.tex` |
+| ``[A-sec:kpc:limitations]`` | ``sec:kpc:limitations`` | `papers/lineage/sections/10_limitations.tex` |
+| ``[A-sec:kpc:model]`` | ``sec:kpc:model`` | `papers/lineage/sections/02_model.tex` |
+| ``[A-sec:kpc:operations]`` | ``sec:kpc:operations`` | `papers/lineage/sections/03_operations.tex` |
 | ``[A-sec:limitations:limitations]`` | ``sec:limitations:limitations`` | `papers/attestation/sections/10_limitations.tex` |
 | ``[A-sec:limitations:open-problems]`` | ``sec:limitations:open-problems`` | `papers/attestation/sections/10_limitations.tex` |
 | ``[A-sec:maturity:announcement-conversion]`` | ``sec:maturity:announcement-conversion`` | `papers/attestation/sections/09_maturity.tex` |
@@ -138,6 +157,11 @@
 | ``[A-thm:costliness:zeta-independence]`` | ``thm:costliness:zeta-independence`` | `papers/attestation/sections/05_costliness.tex` |
 | ``[A-thm:interface:instantaneous-costliness]`` | ``thm:interface:instantaneous-costliness`` | `papers/attestation/sections/01_interface.tex` |
 | ``[A-thm:invariants:floor-non-decrease]`` | ``thm:invariants:floor-non-decrease`` | `papers/attestation/sections/04_invariants.tex` |
+| ``[A-thm:kpc-interface:membership-correctness]`` | ``thm:kpc-interface:membership-correctness`` | `papers/lineage/sections/01_interface.tex` |
+| ``[A-thm:kpc-invariants:key-isolation]`` | ``thm:kpc-invariants:key-isolation`` | `papers/lineage/sections/04_invariants.tex` |
+| ``[A-thm:kpc-invariants:set-membership-growth]`` | ``thm:kpc-invariants:set-membership-growth`` | `papers/lineage/sections/04_invariants.tex` |
+| ``[A-thm:kpc-invariants:source-provenance]`` | ``thm:kpc-invariants:source-provenance`` | `papers/lineage/sections/04_invariants.tex` |
+| ``[A-thm:kpc-invariants:unique-successor]`` | ``thm:kpc-invariants:unique-successor`` | `papers/lineage/sections/04_invariants.tex` |
 | ``[A-thm:seigniorage:bootstrapping-bound]`` | ``thm:seigniorage:bootstrapping-bound`` | `papers/attestation/sections/08_seigniorage.tex` |
 | ``[A-thm:seigniorage:no-finite-lifetime-envelope]`` | ``thm:seigniorage:no-finite-lifetime-envelope`` | `papers/attestation/sections/08_seigniorage.tex` |
 | ``[A-verif:walkthrough:boundary]`` | ``verif:walkthrough:boundary`` | `papers/attestation/sections/A1_verification.tex` |

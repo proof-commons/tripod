@@ -633,6 +633,52 @@ fn one_unreadable_entry_is_reported_beside_the_readable_ones() {
     assert_eq!(failures[0].path, "plans/closed");
 }
 
+#[test]
+fn second_paper_is_discovered_and_missing_declarations_are_refused() {
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
+    let root = directory.path();
+    let declared = RepositoryCensus::discover(root);
+    let paper = root.join("papers/lineage");
+    fs::create_dir_all(paper.join("sections")).expect("second paper directory");
+    fs::write(paper.join("main.tex"), "").expect("second paper main");
+    fs::write(paper.join("sections/01_interface.tex"), "").expect("second paper section");
+    let found = RepositoryCensus::discover(root);
+    assert!(found.attestation_sections.contains(&paper.join("main.tex")));
+    assert!(
+        found
+            .attestation_sections
+            .contains(&paper.join("sections/01_interface.tex"))
+    );
+    assert_eq!(
+        found.verify(&[CensusGroup::Attestation]),
+        [] as [LabelDiagnostic; 0]
+    );
+    let diagnostics = declared.verify(&[CensusGroup::Attestation]);
+    for path in [
+        "papers/lineage/main.tex",
+        "papers/lineage/sections/01_interface.tex",
+    ] {
+        assert!(diagnostics.iter().any(|diagnostic| {
+            diagnostic.code == LabelErrorCode::CensusStale && diagnostic.path == path
+        }));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn second_paper_metadata_failure_is_reported() {
+    let directory = fixture_root("# Realization\n`sec:fixture:division`\n");
+    let root = directory.path();
+    let paper = root.join("papers/lineage");
+    // A symlink loop makes metadata fail even when tests run as root.
+    std::os::unix::fs::symlink("lineage", &paper).expect("metadata failure subject");
+    let census = RepositoryCensus::discover(root);
+    let diagnostics = census.verify(&[CensusGroup::Attestation]);
+    assert!(diagnostics.iter().any(|diagnostic| {
+        diagnostic.code == LabelErrorCode::CensusUnreadable && diagnostic.path == "papers/lineage"
+    }));
+}
+
 #[cfg(unix)]
 #[test]
 fn scoped_model_derivation_refuses_an_unreadable_scoped_directory() {

@@ -1,0 +1,24 @@
+% Pure expl3 source: main.tex owns the syntax toggle.
+% Labels use kind:kpc:name or kind:kpc-chapter:name throughout.
+\tl_new:N \g_tripod_version_tl
+\NewDocumentCommand{\setversion}{m}{ \tl_gset:Nn \g_tripod_version_tl {#1} }
+\NewDocumentCommand{\docversion}{}{ \tl_use:N \g_tripod_version_tl }
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{operation}[theorem]{Operation}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+\numberwithin{equation}{section}
+
+% Shared-number environments retain their individual reference types.
+\AddToHook{env/theorem/begin}{\zcsetup{countertype={theorem=theorem}}}
+\AddToHook{env/definition/begin}{\zcsetup{countertype={theorem=definition}}}
+\AddToHook{env/operation/begin}{\zcsetup{countertype={theorem=operation}}}
+\AddToHook{env/corollary/begin}{\zcsetup{countertype={theorem=corollary}}}
+\AddToHook{env/remark/begin}{\zcsetup{countertype={theorem=remark}}}
+\AddToHook{env/proposition/begin}{\zcsetup{countertype={theorem=proposition}}}

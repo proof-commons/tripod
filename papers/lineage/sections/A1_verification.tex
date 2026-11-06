@@ -1,0 +1,25 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Verification Suite}
+\label{app:kpc:verification}
+Evidence for a realization must check the following statements; this appendix claims
+no completed checks. The birth family covers both clauses of
+\zcref{def:kpc-model:first-output} and single birth
+(\zcref{prop:kpc-model:single-birth}). The continuation family covers the
+same clauses at every consumed handle and
+\zcref{thm:kpc-invariants:unique-successor,thm:kpc-invariants:key-isolation}.
+The record family covers SOURCE, MERGE and their exhaustive recurrence
+(\zcref{op:kpc-operations:source,op:kpc-operations:merge,def:kpc-operations:classification})
+with provenance and disjoint growth
+(\zcref{thm:kpc-invariants:source-provenance,thm:kpc-invariants:set-membership-growth}).
+The reading family covers reconstruction, incomplete and invalid evidence,
+the named evidence assumptions, and path reading
+(\zcref{sec:kpc:interface,thm:kpc-interface:membership-correctness,cor:kpc-interface:path-reading}).
+The acceptance family checks the separation in
+\zcref{rem:kpc-interface:record-evidence}.
+The resource family measures a realization's costs without adding a
+covenant condition or claiming that this specification supplies a cost
+bound (\zcref{sec:kpc:limitations}).
+
+\end{document}
