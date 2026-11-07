@@ -212,13 +212,29 @@ struct BehaviouralBody<'a> {
 pub fn behavioural_hash(
     validated: &ValidatedDraftArchitecture<'_>,
 ) -> Result<[u8; 32], serde_json::Error> {
-    unchecked_behavioural_hash(validated.architecture())
+    let span = tracing::debug_span!(
+        target: "architecture::canonical",
+        "behavioural_hash",
+        schema_version = validated.architecture().document.architecture_schema_version
+    );
+    let _entered = span.enter();
+    let result = unchecked_behavioural_hash(validated.architecture());
+    trace_identity_result("behavioural", &result);
+    result
 }
 
 pub fn behavioural_hash_hex(
     validated: &ValidatedDraftArchitecture<'_>,
 ) -> Result<String, serde_json::Error> {
-    Ok(hex(&behavioural_hash(validated)?))
+    let span = tracing::debug_span!(
+        target: "architecture::canonical",
+        "behavioural_hash_hex",
+        schema_version = validated.architecture().document.architecture_schema_version
+    );
+    let _entered = span.enter();
+    let result = unchecked_behavioural_hash(validated.architecture()).map(|hash| hex(&hash));
+    trace_identity_result("behavioural", &result);
+    result
 }
 
 /// Behavioural hash over an architecture that has *not* been validated.
@@ -290,13 +306,48 @@ pub fn canonical_json_bytes(
 pub fn semantic_hash(
     validated: &ValidatedDraftArchitecture<'_>,
 ) -> Result<[u8; 32], serde_json::Error> {
-    unchecked_semantic_hash(validated.architecture())
+    let span = tracing::debug_span!(
+        target: "architecture::canonical",
+        "semantic_hash",
+        schema_version = validated.architecture().document.architecture_schema_version
+    );
+    let _entered = span.enter();
+    let result = unchecked_semantic_hash(validated.architecture());
+    trace_identity_result("semantic", &result);
+    result
 }
 
 pub fn semantic_hash_hex(
     validated: &ValidatedDraftArchitecture<'_>,
 ) -> Result<String, serde_json::Error> {
-    Ok(hex(&semantic_hash(validated)?))
+    let span = tracing::debug_span!(
+        target: "architecture::canonical",
+        "semantic_hash_hex",
+        schema_version = validated.architecture().document.architecture_schema_version
+    );
+    let _entered = span.enter();
+    let result = unchecked_semantic_hash(validated.architecture()).map(|hash| hex(&hash));
+    trace_identity_result("semantic", &result);
+    result
+}
+
+fn trace_identity_result<T>(identity_kind: &'static str, result: &Result<T, serde_json::Error>) {
+    if result.is_ok() {
+        tracing::debug!(
+            target: "architecture::canonical",
+            identity_kind,
+            outcome = "completed",
+            "identity computation completed"
+        );
+    } else {
+        tracing::debug!(
+            target: "architecture::canonical",
+            identity_kind,
+            outcome = "failed",
+            error_kind = "serialization",
+            "identity computation completed"
+        );
+    }
 }
 
 /// Canonical projection of an architecture that has *not* been

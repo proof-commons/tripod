@@ -12,13 +12,17 @@ architecture_source_files = files(
   'src/tests/conformance_tests.rs',
   'src/tests/deployment_tests.rs',
   'src/tests/export_hash_tests.rs',
+  'src/tests/export_tracing_tests.rs',
   'src/tests/guide12_reproductions.rs',
+  'src/tests/identity_tracing_tests.rs',
   'src/tests/mod.rs',
   'src/tests/mutation_tests.rs',
+  'src/tests/tracing_capture.rs',
+  'src/tests/tracing_tests.rs',
   'src/tests/validation_tests.rs',
   'src/tests/versioning_gate_tests.rs',
   'src/validate.rs',
 )
 
 # Crate documentation (DOC owner).
-architecture_doc_files = files('README.md')
+architecture_doc_files = files('README.md', 'TRACING.md')

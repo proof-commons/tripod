@@ -48,7 +48,7 @@ use sha2::{Digest, Sha256};
 use crate::canonical::{canonicalize_json, hex};
 use crate::ids::{BoundId, DependencyId, PublicationStatus};
 use crate::spec::{Architecture, MaxCount};
-use crate::validate::validate_architecture_release;
+use crate::validate::validate_architecture_release_core;
 
 /// Canonical deployment-profile hash algorithm identifier. Domain
 /// separation from the architecture manifest hash is provided both by
@@ -233,6 +233,43 @@ pub enum DeploymentError {
     ProductionReleaseUnsupported,
 }
 
+impl DeploymentError {
+    /// Return a stable, payload-free variant name for tracing.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::UnsupportedSchemaVersion => "unsupported_schema_version",
+            Self::ArchitectureNotReleasable => "architecture_not_releasable",
+            Self::ArchitectureHashMismatch => "architecture_hash_mismatch",
+            Self::ProfileNotFinal => "profile_not_final",
+            Self::ZeroNetworkId => "zero_network_id",
+            Self::ZeroGenesisId => "zero_genesis_id",
+            Self::ZeroScriptLimit => "zero_script_limit",
+            Self::MissingBoundCalibration(_) => "missing_bound_calibration",
+            Self::DuplicateBoundCalibration(_) => "duplicate_bound_calibration",
+            Self::UnexpectedBoundCalibration(_) => "unexpected_bound_calibration",
+            Self::ZeroCalibratedValue(_) => "zero_calibrated_value",
+            Self::InvalidMaturityLeadPair => "invalid_maturity_lead_pair",
+            Self::CalibratedValueBelowManifestMinimum(_) => {
+                "calibrated_value_below_manifest_minimum"
+            }
+            Self::MissingBoundEvidence(_) => "missing_bound_evidence",
+            Self::BoundCalibrationBundleMismatch(_) => "bound_calibration_bundle_mismatch",
+            Self::MissingBoundMeasurement(_) => "missing_bound_measurement",
+            Self::MeasurementExceedsScriptLimit(_) => "measurement_exceeds_script_limit",
+            Self::MissingDependencyEvidence(_) => "missing_dependency_evidence",
+            Self::DuplicateDependencyEvidence(_) => "duplicate_dependency_evidence",
+            Self::DependencyNotVerified(_) => "dependency_not_verified",
+            Self::MissingDependencyEvidenceHash(_) => "missing_dependency_evidence_hash",
+            Self::MissingDependencyToolVersion(_) => "missing_dependency_tool_version",
+            Self::MissingDependencyTestName(_) => "missing_dependency_test_name",
+            Self::MissingArtifactHash(_) => "missing_artifact_hash",
+            Self::MissingTestReportHash(_) => "missing_test_report_hash",
+            Self::ProductionReleaseUnsupported => "production_release_unsupported",
+        }
+    }
+}
+
 impl fmt::Display for DeploymentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -387,6 +424,41 @@ pub fn validate_deployment_profile_structure(
     architecture: &Architecture,
     profile: &DeploymentProfile,
 ) -> Result<(), Vec<DeploymentError>> {
+    let span = tracing::debug_span!(
+        target: "architecture::deployment",
+        "validate_deployment_profile_structure",
+        profile_schema_version = profile.schema_version,
+        calibration_count = crate::trace_count(profile.calibrated_bounds.len()),
+        dependency_count = crate::trace_count(profile.dependency_evidence.len())
+    );
+    let _entered = span.enter();
+    let result = validate_deployment_profile_structure_core(architecture, profile);
+    trace_structure_result(result.as_ref());
+    result
+}
+
+fn trace_structure_result<T>(result: Result<&T, &Vec<DeploymentError>>) {
+    match result {
+        Ok(_) => tracing::debug!(
+            target: "architecture::deployment",
+            outcome = "completed",
+            defect_count = 0_u64,
+            "deployment structure validation completed"
+        ),
+        Err(errors) => tracing::debug!(
+            target: "architecture::deployment",
+            outcome = "refused",
+            defect_count = crate::trace_count(errors.len()),
+            refusal_kind = errors.first().map_or("unknown", DeploymentError::name),
+            "deployment structure validation completed"
+        ),
+    }
+}
+
+fn validate_deployment_profile_structure_core(
+    architecture: &Architecture,
+    profile: &DeploymentProfile,
+) -> Result<(), Vec<DeploymentError>> {
     let mut errors = Vec::new();
 
     if profile.schema_version != DEPLOYMENT_PROFILE_SCHEMA_VERSION {
@@ -396,8 +468,8 @@ pub fn validate_deployment_profile_structure(
     // Architecture binding: the architecture must itself be
     // releasable, and the profile must bind to its exact semantic
     // hash.
-    match validate_architecture_release(architecture) {
-        Ok(release) => match crate::canonical::semantic_hash(&release.draft()) {
+    match validate_architecture_release_core(architecture) {
+        Ok(release) => match crate::canonical::unchecked_semantic_hash(release.architecture()) {
             Ok(hash) if hash == profile.architecture_semantic_hash => {}
             _ => errors.push(DeploymentError::ArchitectureHashMismatch),
         },
@@ -864,12 +936,22 @@ pub fn validate_deployment_profile<'a>(
     architecture: &'a Architecture,
     profile: &'a DeploymentProfile,
 ) -> Result<ValidatedPreReleaseDeploymentProfile<'a>, Vec<DeploymentError>> {
-    validate_deployment_profile_structure(architecture, profile)?;
-
-    Ok(ValidatedPreReleaseDeploymentProfile {
-        architecture,
-        profile,
-    })
+    let span = tracing::debug_span!(
+        target: "architecture::deployment",
+        "validate_deployment_profile",
+        profile_schema_version = profile.schema_version,
+        calibration_count = crate::trace_count(profile.calibrated_bounds.len()),
+        dependency_count = crate::trace_count(profile.dependency_evidence.len())
+    );
+    let _entered = span.enter();
+    let result = validate_deployment_profile_structure_core(architecture, profile).map(|()| {
+        ValidatedPreReleaseDeploymentProfile {
+            architecture,
+            profile,
+        }
+    });
+    trace_structure_result(result.as_ref());
+    result
 }
 
 /// Production-release validation of one deployment profile.
@@ -904,12 +986,26 @@ pub fn validate_production_deployment_release(
     architecture: &Architecture,
     profile: &DeploymentProfile,
 ) -> Result<(), Vec<DeploymentError>> {
-    let mut errors = match validate_deployment_profile_structure(architecture, profile) {
+    let span = tracing::debug_span!(
+        target: "architecture::deployment",
+        "validate_production_deployment_release",
+        profile_schema_version = profile.schema_version
+    );
+    let _entered = span.enter();
+    let mut errors = match validate_deployment_profile_structure_core(architecture, profile) {
         Ok(()) => Vec::new(),
         Err(errors) => errors,
     };
 
     errors.push(DeploymentError::ProductionReleaseUnsupported);
+
+    tracing::debug!(
+        target: "architecture::deployment",
+        outcome = "refused",
+        defect_count = crate::trace_count(errors.len()),
+        refusal_kind = errors[0].name(),
+        "production release validation completed"
+    );
 
     Err(errors)
 }
@@ -923,7 +1019,15 @@ pub fn validate_production_deployment_release(
 pub fn deployment_profile_hash(
     validated: &ValidatedPreReleaseDeploymentProfile<'_>,
 ) -> Result<[u8; 32], serde_json::Error> {
-    unchecked_deployment_profile_hash(validated.profile)
+    let span = tracing::debug_span!(
+        target: "architecture::deployment",
+        "deployment_profile_hash",
+        profile_schema_version = validated.profile.schema_version
+    );
+    let _entered = span.enter();
+    let result = unchecked_deployment_profile_hash(validated.profile);
+    trace_profile_identity_result(&result);
+    result
 }
 
 /// Canonical profile bytes without the validation precondition.
@@ -956,5 +1060,32 @@ pub(crate) fn unchecked_deployment_profile_hash(
 pub fn deployment_profile_hash_hex(
     validated: &ValidatedPreReleaseDeploymentProfile<'_>,
 ) -> Result<String, serde_json::Error> {
-    Ok(hex(&deployment_profile_hash(validated)?))
+    let span = tracing::debug_span!(
+        target: "architecture::deployment",
+        "deployment_profile_hash_hex",
+        profile_schema_version = validated.profile.schema_version
+    );
+    let _entered = span.enter();
+    let result = unchecked_deployment_profile_hash(validated.profile).map(|hash| hex(&hash));
+    trace_profile_identity_result(&result);
+    result
+}
+
+fn trace_profile_identity_result<T>(result: &Result<T, serde_json::Error>) {
+    if result.is_ok() {
+        tracing::debug!(
+            target: "architecture::deployment",
+            identity_kind = "profile",
+            outcome = "completed",
+            "identity computation completed"
+        );
+    } else {
+        tracing::debug!(
+            target: "architecture::deployment",
+            identity_kind = "profile",
+            outcome = "failed",
+            error_kind = "serialization",
+            "identity computation completed"
+        );
+    }
 }

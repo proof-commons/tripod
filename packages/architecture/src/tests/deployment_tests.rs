@@ -6,7 +6,7 @@ use crate::deployment::unchecked_deployment_profile_hash;
 use crate::*;
 
 /// A final, pinned architecture for release testing.
-fn release_architecture() -> Architecture {
+pub(super) fn release_architecture() -> Architecture {
     let mut architecture = ARCHITECTURE;
 
     architecture.document.status = PublicationStatus::Final;
@@ -21,7 +21,7 @@ const RELEASED_BUNDLE: [u8; 32] = [0xD3; 32];
 
 /// A fully populated synthetic final deployment profile bound to the
 /// release architecture.
-fn release_profile(architecture: &Architecture) -> DeploymentProfile {
+pub(super) fn release_profile(architecture: &Architecture) -> DeploymentProfile {
     let calibrated_bounds = architecture
         .bounds
         .iter()

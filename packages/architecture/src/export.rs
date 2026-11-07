@@ -89,6 +89,20 @@ impl PublishedArchitecture {
     pub fn from_architecture(
         validated: &ValidatedDraftArchitecture<'_>,
     ) -> Result<Self, serde_json::Error> {
+        let span = tracing::debug_span!(
+            target: "architecture::export",
+            "build_envelope",
+            schema_version = validated.architecture().document.architecture_schema_version
+        );
+        let _entered = span.enter();
+        let result = Self::from_architecture_core(*validated);
+        trace_build_result(&result);
+        result
+    }
+
+    fn from_architecture_core(
+        validated: ValidatedDraftArchitecture<'_>,
+    ) -> Result<Self, serde_json::Error> {
         let architecture = validated.architecture();
         let body = ArchitectureExport::from_architecture(architecture);
 
@@ -128,7 +142,16 @@ impl PublishedArchitecture {
     ///
     /// Returns the underlying serialization error.
     pub fn to_artifact_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string_pretty(self)
+        let span = tracing::debug_span!(
+            target: "architecture::export",
+            "render_artifact",
+            schema_version = self.architecture_schema_version,
+            format = "json"
+        );
+        let _entered = span.enter();
+        let result = serde_json::to_string_pretty(self);
+        trace_render_result(&result);
+        result
     }
 
     /// Canonical presentation rendering of the TOML artifact
@@ -140,7 +163,16 @@ impl PublishedArchitecture {
     ///
     /// Returns the underlying serialization error.
     pub fn to_artifact_toml(&self) -> Result<String, toml::ser::Error> {
-        toml::to_string_pretty(self)
+        let span = tracing::debug_span!(
+            target: "architecture::export",
+            "render_artifact",
+            schema_version = self.architecture_schema_version,
+            format = "toml"
+        );
+        let _entered = span.enter();
+        let result = toml::to_string_pretty(self);
+        trace_render_result(&result);
+        result
     }
 
     /// Hash-envelope verification only: both declared hash algorithms
@@ -153,6 +185,18 @@ impl PublishedArchitecture {
     ///
     /// Returns the first hash-envelope failure.
     pub fn verify_hashes(&self) -> Result<(), EnvelopeError> {
+        let span = tracing::debug_span!(
+            target: "architecture::export",
+            "verify_hashes",
+            schema_version = self.architecture_schema_version
+        );
+        let _entered = span.enter();
+        let result = self.verify_hashes_core();
+        trace_envelope_result(&result);
+        result
+    }
+
+    fn verify_hashes_core(&self) -> Result<(), EnvelopeError> {
         if self.semantic_hash_algorithm != SEMANTIC_HASH_ALGORITHM {
             return Err(EnvelopeError::UnsupportedHashAlgorithm);
         }
@@ -193,7 +237,19 @@ impl PublishedArchitecture {
     ///
     /// Returns the first envelope failure.
     pub fn validate_envelope(&self) -> Result<(), EnvelopeError> {
-        self.verify_hashes()?;
+        let span = tracing::debug_span!(
+            target: "architecture::export",
+            "validate_envelope",
+            schema_version = self.architecture_schema_version
+        );
+        let _entered = span.enter();
+        let result = self.validate_envelope_core();
+        trace_envelope_result(&result);
+        result
+    }
+
+    fn validate_envelope_core(&self) -> Result<(), EnvelopeError> {
+        self.verify_hashes_core()?;
 
         if self.architecture_schema_version != crate::spec::ARCHITECTURE_SCHEMA_VERSION {
             return Err(EnvelopeError::UnsupportedSchemaVersion(
@@ -246,7 +302,19 @@ impl PublishedArchitecture {
     /// Returns the first envelope failure, or
     /// [`EnvelopeError::NotFinal`] for a non-final artifact.
     pub fn validate_release_envelope(&self) -> Result<(), EnvelopeError> {
-        self.validate_envelope()?;
+        let span = tracing::debug_span!(
+            target: "architecture::export",
+            "validate_release_envelope",
+            schema_version = self.architecture_schema_version
+        );
+        let _entered = span.enter();
+        let result = self.validate_release_envelope_core();
+        trace_envelope_result(&result);
+        result
+    }
+
+    fn validate_release_envelope_core(&self) -> Result<(), EnvelopeError> {
+        self.validate_envelope_core()?;
 
         if self.publication_status != PublicationStatus::Final.as_str() {
             return Err(EnvelopeError::NotFinal);
@@ -269,13 +337,94 @@ impl PublishedArchitecture {
     /// [`EnvelopeError::UnexpectedPublication`] when any field differs
     /// from `expected`.
     pub fn validate_against_expected(&self, expected: &Self) -> Result<(), EnvelopeError> {
-        self.validate_envelope()?;
+        let span = tracing::debug_span!(
+            target: "architecture::export",
+            "validate_against_expected",
+            schema_version = self.architecture_schema_version
+        );
+        let _entered = span.enter();
+        let result = self.validate_against_expected_core(expected);
+        trace_envelope_result(&result);
+        result
+    }
+
+    fn validate_against_expected_core(&self, expected: &Self) -> Result<(), EnvelopeError> {
+        self.validate_envelope_core()?;
 
         if self != expected {
             return Err(EnvelopeError::UnexpectedPublication);
         }
 
         Ok(())
+    }
+}
+
+fn trace_build_result(result: &Result<PublishedArchitecture, serde_json::Error>) {
+    if result.is_ok() {
+        tracing::debug!(
+            target: "architecture::export",
+            outcome = "completed",
+            "envelope construction completed"
+        );
+    } else {
+        tracing::debug!(
+            target: "architecture::export",
+            outcome = "failed",
+            error_kind = "serialization",
+            "envelope construction completed"
+        );
+    }
+}
+
+fn trace_render_result<E>(result: &Result<String, E>) {
+    match result {
+        Ok(value) => {
+            tracing::debug!(
+                target: "architecture::export",
+                outcome = "completed",
+                rendered_bytes = crate::trace_count(value.len()),
+                "artifact rendering completed"
+            );
+        }
+        Err(_) => {
+            tracing::debug!(
+                target: "architecture::export",
+                outcome = "failed",
+                error_kind = "serialization",
+                "artifact rendering completed"
+            );
+        }
+    }
+}
+
+fn trace_envelope_result(result: &Result<(), EnvelopeError>) {
+    match result {
+        Ok(()) => {
+            tracing::debug!(
+                target: "architecture::export",
+                outcome = "completed",
+                defect_count = 0_u64,
+                "envelope validation completed"
+            );
+        }
+        Err(EnvelopeError::Serialization(_)) => {
+            tracing::debug!(
+                target: "architecture::export",
+                outcome = "failed",
+                defect_count = 0_u64,
+                error_kind = "serialization",
+                "envelope validation completed"
+            );
+        }
+        Err(error) => {
+            tracing::debug!(
+                target: "architecture::export",
+                outcome = "refused",
+                defect_count = 1_u64,
+                refusal_kind = error.name(),
+                "envelope validation completed"
+            );
+        }
     }
 }
 
@@ -293,6 +442,26 @@ pub enum EnvelopeError {
     NotFinal,
     UnexpectedPublication,
     Serialization(serde_json::Error),
+}
+
+impl EnvelopeError {
+    /// Return a stable, payload-free variant name for tracing.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::UnsupportedHashAlgorithm => "unsupported_hash_algorithm",
+            Self::HashMismatch => "hash_mismatch",
+            Self::UnsupportedBehaviouralHashAlgorithm => "unsupported_behavioural_hash_algorithm",
+            Self::BehaviouralHashMismatch => "behavioural_hash_mismatch",
+            Self::UnsupportedSchemaVersion(_) => "unsupported_schema_version",
+            Self::UnrecognizedPublicationStatus(_) => "unrecognized_publication_status",
+            Self::MissingRealizationVersion => "missing_realization_version",
+            Self::MalformedRealizationVersion(_) => "malformed_realization_version",
+            Self::NotFinal => "not_final",
+            Self::UnexpectedPublication => "unexpected_publication",
+            Self::Serialization(_) => "serialization",
+        }
+    }
 }
 
 impl From<serde_json::Error> for EnvelopeError {

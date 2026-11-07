@@ -16,8 +16,10 @@
     clippy::use_self
 )]
 
-// Retain the core dependency (`[ADR026-dec:tracing:core]`); remove at first instrumentation.
-use tracing as _;
+/// Saturate an observation count without letting instrumentation affect a domain result.
+pub(crate) fn trace_count(count: usize) -> u64 {
+    u64::try_from(count).unwrap_or(u64::MAX)
+}
 
 pub mod canonical;
 pub mod deployment;

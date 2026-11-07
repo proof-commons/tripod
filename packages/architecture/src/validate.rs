@@ -62,6 +62,27 @@ pub enum ManifestError {
     DraftPublication,
 }
 
+impl ManifestError {
+    /// Return a stable, payload-free variant name for tracing.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::DuplicateId { .. } => "duplicate_id",
+            Self::MissingId { .. } => "missing_id",
+            Self::InvalidAsset { .. } => "invalid_asset",
+            Self::InvalidRoot { .. } => "invalid_root",
+            Self::InvalidObject { .. } => "invalid_object",
+            Self::InvalidOperation { .. } => "invalid_operation",
+            Self::InvalidQuantity { .. } => "invalid_quantity",
+            Self::InvalidBound { .. } => "invalid_bound",
+            Self::InvalidDecision { .. } => "invalid_decision",
+            Self::InvalidDocument { .. } => "invalid_document",
+            Self::UnpinnedSpecification => "unpinned_specification",
+            Self::DraftPublication => "draft_publication",
+        }
+    }
+}
+
 impl fmt::Display for ManifestError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -171,6 +192,35 @@ impl<'a> ValidatedReleaseArchitecture<'a> {
 /// wrapper is the only value the canonical projection and hash
 /// functions accept.
 pub fn validate_draft(
+    architecture: &Architecture,
+) -> Result<ValidatedDraftArchitecture<'_>, Vec<ManifestError>> {
+    let span = tracing::debug_span!(
+        target: "architecture::validate",
+        "validate_draft",
+        schema_version = architecture.document.architecture_schema_version,
+        operation_count = crate::trace_count(architecture.operations.len())
+    );
+    let _entered = span.enter();
+    let result = validate_draft_core(architecture);
+    match &result {
+        Ok(_) => tracing::debug!(
+            target: "architecture::validate",
+            outcome = "completed",
+            defect_count = 0_u64,
+            "draft validation completed"
+        ),
+        Err(errors) => tracing::debug!(
+            target: "architecture::validate",
+            outcome = "refused",
+            defect_count = crate::trace_count(errors.len()),
+            refusal_kind = errors.first().map_or("unknown", ManifestError::name),
+            "draft validation completed"
+        ),
+    }
+    result
+}
+
+fn validate_draft_core(
     architecture: &Architecture,
 ) -> Result<ValidatedDraftArchitecture<'_>, Vec<ManifestError>> {
     let mut errors = Vec::new();
@@ -299,7 +349,35 @@ pub fn validate_draft(
 pub fn validate_architecture_release(
     architecture: &Architecture,
 ) -> Result<ValidatedReleaseArchitecture<'_>, Vec<ManifestError>> {
-    let mut errors = match validate_draft(architecture) {
+    let span = tracing::debug_span!(
+        target: "architecture::validate",
+        "validate_architecture_release",
+        schema_version = architecture.document.architecture_schema_version
+    );
+    let _entered = span.enter();
+    let result = validate_architecture_release_core(architecture);
+    match &result {
+        Ok(_) => tracing::debug!(
+            target: "architecture::validate",
+            outcome = "completed",
+            defect_count = 0_u64,
+            "release validation completed"
+        ),
+        Err(errors) => tracing::debug!(
+            target: "architecture::validate",
+            outcome = "refused",
+            defect_count = crate::trace_count(errors.len()),
+            refusal_kind = errors.first().map_or("unknown", ManifestError::name),
+            "release validation completed"
+        ),
+    }
+    result
+}
+
+pub(crate) fn validate_architecture_release_core(
+    architecture: &Architecture,
+) -> Result<ValidatedReleaseArchitecture<'_>, Vec<ManifestError>> {
+    let mut errors = match validate_draft_core(architecture) {
         Ok(_) => Vec::new(),
         Err(errors) => errors,
     };
