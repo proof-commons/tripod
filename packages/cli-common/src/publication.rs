@@ -256,6 +256,25 @@ enum PlannedPublication {
 pub fn publish_batch(
     assets: &[PublicationAsset<'_>],
 ) -> Result<Vec<PublicationResult>, BatchPublicationError> {
+    let asset_count = if tracing::enabled!(target: "cli_common::publication", tracing::Level::INFO)
+        || tracing::enabled!(target: "cli_common::publication", tracing::Level::DEBUG)
+    {
+        saturating_count(assets.len())
+    } else {
+        0
+    };
+    let span = tracing::info_span!(target: "cli_common::publication", "publish_batch", asset_count);
+    let _entered = span.enter();
+    let mut results = Vec::new();
+    let outcome = publish_batch_inner(assets, &mut results);
+    emit_batch_outcome(asset_count, &results, &outcome);
+    outcome.map(|()| results)
+}
+
+fn publish_batch_inner(
+    assets: &[PublicationAsset<'_>],
+    results: &mut Vec<PublicationResult>,
+) -> Result<(), BatchPublicationError> {
     // Phase 1 — validate: lexically distinct destinations and usable
     // parent directories before anything is derived on disk.
     let roles = assets
@@ -294,6 +313,8 @@ pub fn publish_batch(
             DestinationState::StaleBytes => {}
         }
 
+        let stage_span = tracing::debug_span!(target: "cli_common::publication", "stage_asset", role = "asset", written_bytes = saturating_count(asset.bytes.len()));
+        let _stage_entered = stage_span.enter();
         let directory = asset.path.parent().unwrap_or_else(|| Path::new("."));
         let mut temporary = tempfile::Builder::new()
             .prefix(".publication-staged-")
@@ -311,8 +332,6 @@ pub fn publish_batch(
 
     // Phase 3 — publish. Only rename and mode-repair steps remain; see
     // the module documentation for the residual multi-rename window.
-    let mut results = Vec::new();
-
     for (asset, planned) in assets.iter().zip(staged) {
         let publish_error = |error: io::Error| BatchPublicationError::Publish {
             role: asset.role.to_owned(),
@@ -346,5 +365,55 @@ pub fn publish_batch(
         });
     }
 
-    Ok(results)
+    Ok(())
+}
+
+fn emit_batch_outcome(
+    asset_count: u64,
+    results: &[PublicationResult],
+    outcome: &Result<(), BatchPublicationError>,
+) {
+    if matches!(outcome, Err(BatchPublicationError::AliasedOutputs(_))) {
+        tracing::debug!(target: "cli_common::publication", outcome = "refused", refusal_kind = "aliased_outputs", asset_count, "asset batch refused");
+        return;
+    }
+    if !tracing::enabled!(target: "cli_common::publication", tracing::Level::INFO) {
+        return;
+    }
+    let bytes_changed_count = saturating_count(
+        results
+            .iter()
+            .filter(|item| item.change.bytes_changed)
+            .count(),
+    );
+    let mode_changed_count = saturating_count(
+        results
+            .iter()
+            .filter(|item| item.change.mode_changed)
+            .count(),
+    );
+    let unchanged_count = saturating_count(
+        results
+            .iter()
+            .filter(|item| item.change.unchanged())
+            .count(),
+    );
+    match outcome {
+        Ok(()) => {
+            tracing::info!(target: "cli_common::publication", outcome = "completed", asset_count, bytes_changed_count, mode_changed_count, unchanged_count, "asset batch published");
+        }
+        Err(error) => {
+            let (phase, error_kind) = match error {
+                BatchPublicationError::AliasedOutputs(_) => return,
+                BatchPublicationError::Stage { .. } => ("stage", "stage_io"),
+                BatchPublicationError::Publish { .. } => ("publish", "publish_io"),
+            };
+            let published_count = saturating_count(results.len());
+            tracing::info!(target: "cli_common::publication", outcome = "failed", asset_count, bytes_changed_count, mode_changed_count, unchanged_count, phase, error_kind, published_count, "asset batch failed");
+        }
+    }
+}
+
+fn saturating_count(count: usize) -> u64 {
+    u64::try_from(count).unwrap_or(u64::MAX)
 }

@@ -10,9 +10,14 @@ use std::sync::{Mutex, MutexGuard, TryLockError};
 
 use clap::{CommandFactory, Parser};
 use serde::{Deserialize, Serialize};
+use tracing::Instrument as _;
 use tracing_subscriber::fmt::MakeWriter;
 
 mod publication;
+mod span_close;
+mod subscriber;
+
+pub use subscriber::install_command_subscriber;
 
 pub use publication::{
     BatchPublicationError, PublicationAsset, PublicationChange, PublicationMode, PublicationResult,
@@ -29,6 +34,9 @@ pub const CONTROL_PLANE_SCHEMA: u32 = 1;
 pub const REDACTED: &str = "[redacted]";
 
 static PANIC_REPORTED: AtomicBool = AtomicBool::new(false);
+// Old binaries still use the startup delegate. Preserve their quiet clean-run
+// stderr until they move to the explicit bootstrap.
+static LEGACY_STARTUP: AtomicBool = AtomicBool::new(false);
 // Fail closed: panic payloads may contain secrets, so they are omitted
 // until a parsed `--debug` flag explicitly enables them (ADR-010). A
 // panic before debug status is known therefore reports thread and
@@ -702,26 +710,13 @@ fn debug_name_to_snake_case(name: &str) -> String {
     normalized
 }
 
-/// Write one ADR-010 control-plane JSON record to stderr.
-///
-/// This helper does not depend on `tracing`, so it is safe for clap help,
-/// clap parse errors, early startup failures, TTY refusal, and panic hooks.
+/// Dispatch one ADR-010 control-plane JSON record to the subscriber's control route.
 ///
 /// # Errors
 ///
-/// Returns an error if serialisation or writing to stderr fails.
+/// Returns an error if serialisation fails. Subscriber write errors cannot be observed here.
 pub fn emit_control_plane_record(record: &ControlPlaneRecord) -> io::Result<()> {
-    let mut writer = LockedStderrWriter::new();
-    write_json_line(&mut writer, record)
-}
-
-fn try_emit_control_plane_record(record: &ControlPlaneRecord) -> io::Result<bool> {
-    let Some(mut writer) = LockedStderrWriter::try_new() else {
-        return Ok(false);
-    };
-
-    write_json_line(&mut writer, record)?;
-    Ok(true)
+    subscriber::emit_control_record(record, false)
 }
 
 fn write_json_line<W: Write, T: serde::Serialize>(writer: &mut W, value: &T) -> io::Result<()> {
@@ -736,6 +731,11 @@ fn write_json_line<W: Write, T: serde::Serialize>(writer: &mut W, value: &T) -> 
 /// The hook emits one best-effort control-plane record on stderr and terminates
 /// the process with exit code 1 without invoking Rust's default text panic hook.
 pub fn install_json_panic_hook(command_name: &str) {
+    LEGACY_STARTUP.store(true, Ordering::Relaxed);
+    install_command_subscriber(command_name);
+}
+
+pub(crate) fn set_json_panic_hook(command_name: &str) {
     let command_name = command_name.to_string();
     std::panic::set_hook(Box::new(move |panic_info| {
         if !PANIC_REPORTED.swap(true, Ordering::SeqCst) {
@@ -754,7 +754,7 @@ pub fn install_json_panic_hook(command_name: &str) {
                 .flatten();
             let record =
                 ControlPlaneRecord::panic(&command_name, thread_name, location.as_deref(), payload);
-            let _ignored = try_emit_control_plane_record(&record);
+            let _ignored = subscriber::emit_control_record(&record, true);
         }
 
         exit_with(CommandExit::Failure);
@@ -841,16 +841,7 @@ pub fn try_init_json_tracing_with_debug(debug: bool, default_level: tracing::Lev
 }
 
 fn try_init_json_tracing_with_directive(filter_directive: &str) -> bool {
-    let fallback_directive = level_directive(tracing::Level::INFO);
-    let filter = tracing_subscriber::EnvFilter::try_new(filter_directive)
-        .unwrap_or_else(|_error| tracing_subscriber::EnvFilter::new(fallback_directive));
-
-    tracing_subscriber::fmt()
-        .json()
-        .with_env_filter(filter)
-        .with_writer(LockedStderr)
-        .try_init()
-        .is_ok()
+    subscriber::reload_diagnostic_filter(filter_directive)
 }
 
 /// Serialise `value` as one JSON object + trailing newline to stdout.
@@ -862,6 +853,36 @@ pub fn emit<T: serde::Serialize>(value: &T) -> io::Result<()> {
     let stdout = io::stdout();
     let mut out = stdout.lock();
     write_json_line(&mut out, value)
+}
+
+/// Reload the process diagnostic filter after parsing command arguments.
+pub fn configure_command_diagnostics(debug: bool, default_level: tracing::Level) {
+    let filter = tracing_filter(debug, default_level);
+    if LEGACY_STARTUP.load(Ordering::Relaxed) && filter.source == TracingFilterSource::DefaultLevel
+    {
+        let directive = format!("{},cli_common::command=warn", filter.directive);
+        let _reloaded = subscriber::reload_command_filter(&directive);
+    } else {
+        let _reloaded = subscriber::reload_command_filter(&filter.directive);
+    }
+}
+
+/// Open the shared INFO command span for a custom main or command runner.
+#[must_use]
+pub fn command_span(command_name: &str, output_mode: &'static str) -> tracing::Span {
+    tracing::info_span!(target: "cli_common::command", "command", command = command_name, output_mode)
+}
+
+/// Record one successful command outcome after result publication.
+pub fn command_completed(output_mode: &'static str, result_published: bool) {
+    tracing::info!(target: "cli_common::command", exit_class = "success", output_mode, result_published, "command completed");
+}
+
+/// Record one operational command failure after central text redaction.
+pub fn command_failed(phase: &'static str, error: &impl std::fmt::Display) {
+    if tracing::enabled!(target: "cli_common::command", tracing::Level::ERROR) {
+        tracing::error!(target: "cli_common::command", exit_class = "failure", phase, error = %redact_text(&error.to_string()), "command failed");
+    }
 }
 
 /// Run a stdout-producing single-JSON-object command.
@@ -881,28 +902,28 @@ where
     Run: FnOnce() -> Result<Output, CommandError>,
 {
     set_panic_payload_reporting_enabled(debug);
-    install_json_panic_hook(command_name);
-    init_json_tracing_with_debug(debug, default_level);
+    configure_command_diagnostics(debug, default_level);
 
     if let Some(record) = stdout_tty_refusal_record(command_name) {
         let _ignored = emit_control_plane_record(&record);
         return CommandExit::Usage.exit_code();
     }
 
+    let span = command_span(command_name, "stdout");
+    let _entered = span.enter();
     match run() {
         Ok(output) => match emit(&output) {
-            Ok(()) => CommandExit::Success.exit_code(),
+            Ok(()) => {
+                command_completed("stdout", true);
+                CommandExit::Success.exit_code()
+            }
             Err(error) => {
-                tracing::error!(error = %redact_text(&error.to_string()), "failed to write JSON to stdout");
+                command_failed("publish", &error);
                 CommandExit::Failure.exit_code()
             }
         },
         Err(error) => {
-            // ADR-010: arbitrary `Display` errors may embed credential
-            // URLs (connection strings, HTTP endpoints), so the display
-            // text passes through `redact_text` centrally here instead
-            // of trusting each command to sanitise its own errors.
-            tracing::error!(error = %redact_text(&error.to_string()), "command failed");
+            command_failed("execute", &error);
             CommandExit::Failure.exit_code()
         }
     }
@@ -924,15 +945,17 @@ where
     Run: FnOnce() -> Result<(), CommandError>,
 {
     set_panic_payload_reporting_enabled(debug);
-    install_json_panic_hook(command_name);
-    init_json_tracing_with_debug(debug, default_level);
+    configure_command_diagnostics(debug, default_level);
 
+    let span = command_span(command_name, "none");
+    let _entered = span.enter();
     match run() {
-        Ok(()) => CommandExit::Success.exit_code(),
+        Ok(()) => {
+            command_completed("none", false);
+            CommandExit::Success.exit_code()
+        }
         Err(error) => {
-            // ADR-010: the display text passes through `redact_text`
-            // because arbitrary errors may embed credential URLs.
-            tracing::error!(error = %redact_text(&error.to_string()), "command failed");
+            command_failed("execute", &error);
             CommandExit::Failure.exit_code()
         }
     }
@@ -955,18 +978,23 @@ where
     RunFuture: Future<Output = Result<(), CommandError>>,
 {
     set_panic_payload_reporting_enabled(debug);
-    install_json_panic_hook(command_name);
-    init_json_tracing_with_debug(debug, default_level);
+    configure_command_diagnostics(debug, default_level);
 
-    match run().await {
-        Ok(()) => CommandExit::Success.exit_code(),
-        Err(error) => {
-            // ADR-010: the display text passes through `redact_text`
-            // because arbitrary errors may embed credential URLs.
-            tracing::error!(error = %redact_text(&error.to_string()), "command failed");
-            CommandExit::Failure.exit_code()
+    let span = command_span(command_name, "none");
+    async {
+        match run().await {
+            Ok(()) => {
+                command_completed("none", false);
+                CommandExit::Success.exit_code()
+            }
+            Err(error) => {
+                command_failed("execute", &error);
+                CommandExit::Failure.exit_code()
+            }
         }
     }
+    .instrument(span)
+    .await
 }
 
 /// Run an ADR-014 checker that produces a JSON report on success.
@@ -991,8 +1019,7 @@ where
     Run: FnOnce() -> Result<Report, CommandError>,
 {
     set_panic_payload_reporting_enabled(debug);
-    install_json_panic_hook(command_name);
-    init_json_tracing_with_debug(debug, default_level);
+    configure_command_diagnostics(debug, default_level);
 
     // Direct mode (no --report/--stamp) refuses terminal stdout *before*
     // any semantic work: the JSON result would have nowhere safe to go,
@@ -1008,26 +1035,44 @@ where
         return CommandExit::Usage.exit_code();
     }
 
+    let span = command_span(
+        command_name,
+        if output.report.is_some() {
+            "asset"
+        } else {
+            "stdout"
+        },
+    );
+    let _entered = span.enter();
     let report = match run() {
         Ok(report) => report,
         Err(error) => {
-            // ADR-010: arbitrary errors may embed credential URLs.
-            tracing::error!(error = %redact_text(&error.to_string()), "command failed");
+            command_failed("execute", &error);
             return CommandExit::Failure.exit_code();
         }
     };
 
     match finish_check_command(command_name, output, &report) {
-        Ok(()) => CommandExit::Success.exit_code(),
+        Ok(()) => {
+            command_completed(
+                if output.report.is_some() {
+                    "asset"
+                } else {
+                    "stdout"
+                },
+                true,
+            );
+            CommandExit::Success.exit_code()
+        }
         Err(CheckResultError::TtyRefusal) => CommandExit::Usage.exit_code(),
         Err(error) => {
-            tracing::error!(error = %error, "failed to publish the check result");
+            command_failed("publish", &error);
             CommandExit::Failure.exit_code()
         }
     }
 }
 
-struct LockedStderr;
+pub(crate) struct LockedStderr;
 
 impl<'writer> MakeWriter<'writer> for LockedStderr {
     type Writer = LockedStderrWriter;
@@ -1037,13 +1082,13 @@ impl<'writer> MakeWriter<'writer> for LockedStderr {
     }
 }
 
-struct LockedStderrWriter {
+pub(crate) struct LockedStderrWriter {
     _guard: MutexGuard<'static, ()>,
     stderr: io::Stderr,
 }
 
 impl LockedStderrWriter {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             _guard: STDERR_WRITE_LOCK
                 .lock()
@@ -1052,7 +1097,7 @@ impl LockedStderrWriter {
         }
     }
 
-    fn try_new() -> Option<Self> {
+    pub(crate) fn try_new() -> Option<Self> {
         match STDERR_WRITE_LOCK.try_lock() {
             Ok(guard) => Some(Self {
                 _guard: guard,

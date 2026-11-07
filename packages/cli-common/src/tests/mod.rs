@@ -61,6 +61,8 @@ use crate::{
     tracing_filter_from_rust_log, write_json_line,
 };
 
+mod instrumentation;
+
 /// A `Write` that fails every call with `BrokenPipe`.
 ///
 /// Used to cover the `emit` error branch without actually

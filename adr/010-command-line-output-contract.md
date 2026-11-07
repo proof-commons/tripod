@@ -3,8 +3,7 @@
 **Status:** Decided and implemented
 **Scope:** Every first-party executable shipped by this workspace
 **Implementation:** `packages/cli-common`
-**Excludes:** tests, examples, benches, build-script protocol output, and
-library crates without executables
+**Excludes:** test cases inside a test harness, examples, benches, build-script protocol output, and library crates without executables
 
 ---
 
@@ -40,16 +39,15 @@ Standard error carries control-plane records:
 - panic reports;
 - TTY refusal.
 
+Every first-party stderr byte is rendered by the process's one `tracing` subscriber, either as an unfiltered control record or as a filtered diagnostic or span-close record. First-party code does not write stderr directly.
+
 Both streams contain JSON records or nothing.
 
 A command with no stdout result leaves stdout empty.
 
-### Child-byte relay
+### Child output routes
 
-`execwrap` may reproduce a child process's raw stdout or stderr bytes. Those
-bytes are the wrapper's result data, not wrapper diagnostics.
-
-Wrapper diagnostics still use JSON on stderr.
+`execwrap` writes child stdout and stderr bytes only to explicit file routes. If either child stream has no route, it refuses before spawning, emits a JSON usage record on stderr, leaves stdout empty, and exits 2. Raw child bytes are not a wrapper result stream or a tracing field. A first-party mock's declared protocol output, including documented malformed negative-test frames, is its explicit stdout result.
 
 ## Result encoding · `rule:output:json`
 
@@ -102,8 +100,7 @@ A check command does not repair or regenerate tracked assets.
 
 Generation and checking remain separate operations.
 
-The `execwrap` child-byte relay is the deliberate exception described in
-(`rule:output:streams`).
+Child streams routed by `execwrap` are explicit file assets under (`rule:output:streams`).
 
 ## TTY refusal · `rule:output:tty`
 
@@ -181,7 +178,7 @@ status
 diagnostic
 ```
 
-Multiple stderr records use NDJSON and a non-interleaving locked writer.
+Multiple stderr records use NDJSON and one non-interleaving locked subscriber writer. The control route renders these records with the existing wire schema and is never filtered, including when `RUST_LOG=off`.
 
 Help and version:
 
@@ -203,11 +200,15 @@ empty stdout
 
 Runtime diagnostics use JSON `tracing` output on stderr.
 
+The diagnostic route retains the JSON envelope with `timestamp`, `level`, `target`, `fields` containing `message`, and current `span` and `spans`. Each enabled span emits one close record with its name, target, level, entry fields, and numeric `busy_ns` and `idle_ns`; it emits no open or enter record. Span close records are on by default. The control route preserves the distinct schema above; consumers distinguish it by `schema` and `kind` rather than the diagnostic `level` and `target`.
+
 Filter precedence is:
 
 1. nonempty `RUST_LOG`;
 2. parsed `--debug`;
 3. command default.
+
+Before argument parsing, nonempty `RUST_LOG` selects the diagnostic filter; otherwise it is `info`. After parsing, the runner applies the precedence above through the shared reload handle. An unparseable directive falls back to `info` and emits one warning without echoing the environment value. Filtering never suppresses required control records.
 
 Plain `println!` and `eprintln!` are prohibited for first-party command
 diagnostics. Controlled emission remains centralized in `cli-common`.
@@ -252,8 +253,7 @@ heuristically redacted, and only the process exit status is reported.
 
 ## Early startup · `rule:output:early-startup`
 
-Early startup ends after arguments are parsed, the `--debug` state is
-recorded, and JSON tracing is initialized.
+The first action of every executable is the shared `cli-common` bootstrap, which installs its one JSON subscriber and panic hook together. Early startup ends after arguments are parsed, the `--debug` state is recorded, and the diagnostic filter is reloaded. Help, version, usage and early panic records are unfiltered subscriber events with the existing control-plane JSON shape.
 
 Before that boundary, executables do not perform general secret sweeping.
 Early records contain only static text and known-safe typed metadata, and
@@ -294,13 +294,13 @@ stderr from first-party diagnostics does not sandbox or authenticate them
 
 ## Panics · `rule:output:panics`
 
-Every executable installs the shared JSON panic hook before normal startup
-work.
+Every executable installs the shared JSON subscriber and panic hook together before normal startup work.
 
 The hook:
 
 - suppresses Rust's default text panic output;
 - emits at most one best-effort JSON panic record;
+- uses a nonblocking subscriber writer, dropping the record on contention or re-entry;
 - exits with code 1;
 - omits the panic payload unless parsed `--debug` explicitly enabled it.
 
@@ -316,6 +316,8 @@ disclosure follows (`rule:output:debug-disclosure`).
 - control-plane records;
 - JSON stderr writing;
 - tracing initialization;
+- the unfiltered early control route and reloadable diagnostic filter;
+- default span-close timing records;
 - panic handling;
 - stdout TTY refusal;
 - stdout JSON emission;
@@ -324,13 +326,13 @@ disclosure follows (`rule:output:debug-disclosure`).
 - redaction helpers;
 - runners for stdout-result and side-effect commands.
 
-New executables use this package rather than reimplementing the contract.
+New executables use this package rather than reimplementing the contract. A harness-free program run by a script or another program is a first-party executable even when its source lives under `tests/`; first-party test-subject programs also follow the stderr rule. Test cases inside a test harness remain excluded.
 
 Existing command classifications are:
 
 | Command | Class |
 |---|---|
-| `execwrap` | side effect plus deliberate child-byte relay |
+| `execwrap` | side effect; writes child streams to explicit files |
 | `flatten-latex-main` | side effect; writes `--output` |
 | `generate-all` | side effect; writes `--output` |
 | `check-generated` | one JSON stdout result |
@@ -386,6 +388,10 @@ The contract is implemented when:
 - panic payloads default to hidden;
 - usage records carry no argument values;
 - child argv never appears in wrapper diagnostics;
+- help, usage, TTY refusal and panic remain JSON control records with `RUST_LOG=off`;
+- an enabled INFO span yields one close record with numeric busy and idle nanoseconds;
+- `execwrap` refuses an unrouted child stream before spawning;
+- no first-party source outside the shared implementation obtains `std::io::stderr()`;
 - stderr records do not interleave;
 - subprocess tests cover each shipped executable;
 - Clippy denies uncontrolled stdout/stderr printing and process exit outside
