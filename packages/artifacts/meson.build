@@ -7,6 +7,7 @@ artifacts_source_files = files(
   'src/bin/generate-all.rs',
   'src/lib.rs',
   'src/tests/mod.rs',
+  'src/tests/tracing_tests.rs',
   'src/tests/weld_tests.rs',
   'src/weld.rs',
 )
@@ -18,4 +19,4 @@ artifacts_source_files = files(
 artifacts_excluded_files = files('tests/subprocess_contract.rs')
 
 # Crate documentation (DOC owner).
-artifacts_doc_files = files('README.md')
+artifacts_doc_files = files('README.md', 'TRACING.md')

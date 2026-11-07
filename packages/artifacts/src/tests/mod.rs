@@ -4,6 +4,7 @@
 //! Meson-driven `check-generated` target (ADR-014); these tests use
 //! synthetic fixture repositories only.
 
+mod tracing_tests;
 mod weld_tests;
 
 use crate::{ARTIFACT_NAMES, ArtifactFreshness, check, expected_artifacts};
@@ -170,9 +171,7 @@ fn concurrent_same_stem_writes_do_not_collide() {
     assert_eq!(leftovers, 0, "staged temporary files were left behind");
 }
 
-// The skip path prints its reason: a silently green skipped test
-// would misreport environment-dependent coverage as evidence.
-#[allow(clippy::print_stderr)]
+// A privileged probe cannot establish the failure path and fails unless an explicit opt-in selects the success control.
 #[test]
 fn failed_write_leaves_the_original_target_intact() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -187,19 +186,24 @@ fn failed_write_leaves_the_original_target_intact() {
     std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o555);
     std::fs::set_permissions(dir.path(), permissions.clone()).expect("set read-only");
 
-    // A privileged process (root / CAP_DAC_OVERRIDE, common in rootful
-    // CI containers) can write into a 0o555 directory, so the mode
-    // change would not produce the failure under test. Probe and skip
-    // explicitly rather than reporting an environment property as an
-    // implementation failure.
+    // A privileged process can write into a 0o555 directory, so the
+    // mode change would not produce the failure under test. Require an
+    // explicit opt-in before exercising the successful-write control.
     let probe = dir.path().join("permission-probe");
     if std::fs::write(&probe, b"probe").is_ok() {
         let _removed = std::fs::remove_file(&probe);
         std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o755);
         std::fs::set_permissions(dir.path(), permissions).expect("restore permissions");
-        eprintln!(
-            "skipping failed_write_leaves_the_original_target_intact: \
-             process writes despite 0o555 (privileged test environment)"
+        assert!(
+            std::env::var_os("TRIPOD_ALLOW_PRIVILEGED_SKIP").is_some(),
+            "privileged process can write into a 0o555 directory, so the failed-write assertion was not exercised; set TRIPOD_ALLOW_PRIVILEGED_SKIP to run the successful-write control instead"
+        );
+        publish_one(&target, b"replacement").expect("privileged write control");
+        assert_eq!(std::fs::read(&target).expect("read target"), b"replacement");
+        assert_eq!(
+            std::fs::read_dir(dir.path()).expect("read dir").count(),
+            1,
+            "privileged write left a staged file behind"
         );
         return;
     }

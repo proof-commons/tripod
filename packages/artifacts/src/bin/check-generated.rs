@@ -18,10 +18,13 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use cli_common::{
-    BaseArgs, CheckOutputArgs, install_json_panic_hook, parse_args_or_exit, run_check_command,
+    BaseArgs, CheckOutputArgs, install_command_subscriber, parse_args_or_exit, run_check_command,
 };
 
 const COMMAND_NAME: &str = "check-generated";
+const REGENERATE_DETAIL: &str =
+    "run `meson compile -C <builddir> generate-artifacts` and commit the diff";
+const UNEXPECTED_DETAIL: &str = "remove the file or add it to the generated-artifact census";
 
 #[derive(Parser)]
 #[command(
@@ -62,7 +65,7 @@ struct Args {
 }
 
 fn main() -> ExitCode {
-    install_json_panic_hook(COMMAND_NAME);
+    install_command_subscriber(COMMAND_NAME);
     let args = parse_args_or_exit::<Args>();
 
     run_check_command(
@@ -87,20 +90,30 @@ fn main() -> ExitCode {
 
             if !report.current {
                 for artifact in &report.artifacts {
-                    if artifact.status != artifacts::ArtifactFreshness::Current {
+                    if artifact.status != artifacts::ArtifactFreshness::Current
+                        && tracing::enabled!(target: "artifacts::check", tracing::Level::ERROR)
+                    {
+                        let diagnostic_code = match artifact.status {
+                            artifacts::ArtifactFreshness::Current => continue,
+                            artifacts::ArtifactFreshness::Stale => "stale",
+                            artifacts::ArtifactFreshness::Missing => "missing",
+                        };
                         tracing::error!(
-                            artifact = %artifact.name,
-                            status = ?artifact.status,
-                            "generated artifact is not current; run \
-                             `meson compile -C <builddir> generate-artifacts` \
-                             and commit the diff",
+                            target: "artifacts::check",
+                            diagnostic_code,
+                            artifact = artifact.name.as_str(),
+                            detail = REGENERATE_DETAIL,
+                            "generated artifact not current"
                         );
                     }
                 }
                 for stray in &report.unexpected {
                     tracing::error!(
-                        file = %stray,
-                        "unexpected file in generated directory",
+                        target: "artifacts::check",
+                        diagnostic_code = "unexpected",
+                        path = stray.as_str(),
+                        detail = UNEXPECTED_DETAIL,
+                        "unexpected file in generated directory"
                     );
                 }
                 return Err("generated artifacts are not current".to_owned());

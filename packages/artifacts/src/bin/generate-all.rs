@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
-use cli_common::{BaseArgs, install_json_panic_hook, parse_args_or_exit, run_no_stdout_command};
+use cli_common::{BaseArgs, install_command_subscriber, parse_args_or_exit, run_no_stdout_command};
 
 const COMMAND_NAME: &str = "generate-all";
 
@@ -53,7 +53,7 @@ struct Args {
 }
 
 fn main() -> ExitCode {
-    install_json_panic_hook(COMMAND_NAME);
+    install_command_subscriber(COMMAND_NAME);
     let args = parse_args_or_exit::<Args>();
 
     run_no_stdout_command(COMMAND_NAME, args.base.debug, tracing::Level::INFO, || {
@@ -89,25 +89,27 @@ fn main() -> ExitCode {
             })
             .collect::<Vec<_>>();
 
-        for result in cli_common::publish_batch(&assets)? {
-            tracing::info!(
-                path = %result.path.display(),
-                bytes_changed = result.change.bytes_changed,
-                mode_changed = result.change.mode_changed,
-                "artifact published",
-            );
-        }
+        cli_common::publish_batch(&assets)?;
 
         // The generated directory is owned by this generator: report
         // strays so the census stays explicit (the checker fails them).
+        let warn_enabled = tracing::enabled!(target: "artifacts::render", tracing::Level::WARN);
+        let mut unowned_file_count = 0_u64;
         for entry in std::fs::read_dir(&output)? {
-            let name = entry?.file_name().to_string_lossy().into_owned();
-            if !artifacts::ARTIFACT_NAMES.contains(&name.as_str()) {
-                tracing::warn!(
-                    file = %name,
-                    "unexpected file in generated directory (not owned by generate-all)",
-                );
+            let entry = entry?;
+            if warn_enabled {
+                let name = entry.file_name();
+                if !artifacts::ARTIFACT_NAMES.contains(&name.to_string_lossy().as_ref()) {
+                    unowned_file_count = unowned_file_count.saturating_add(1);
+                }
             }
+        }
+        if unowned_file_count != 0 {
+            tracing::warn!(
+                target: "artifacts::render",
+                unowned_file_count,
+                "unowned files left in output directory"
+            );
         }
 
         anyhow::Ok(())
