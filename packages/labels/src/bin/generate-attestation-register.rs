@@ -10,7 +10,7 @@
 use std::{collections::BTreeMap, path::PathBuf, process::ExitCode};
 
 use clap::Parser;
-use cli_common::{BaseArgs, install_json_panic_hook, run_no_stdout_command};
+use cli_common::{BaseArgs, install_command_subscriber, run_no_stdout_command};
 
 const COMMAND_NAME: &str = "generate-attestation-register";
 
@@ -98,7 +98,7 @@ impl Args {
 fn main() -> ExitCode {
     // Installed before parsing so an early panic still fails closed
     // with a JSON-only record (ADR-010 early-startup rule).
-    install_json_panic_hook(COMMAND_NAME);
+    install_command_subscriber(COMMAND_NAME);
     let args = cli_common::parse_args_or_exit::<Args>();
     run_no_stdout_command(COMMAND_NAME, args.base.debug, tracing::Level::INFO, || {
         let paths = args.census().map_err(|message| {
@@ -109,14 +109,15 @@ fn main() -> ExitCode {
             )])
         })?;
         let output = paths.attestation_register.clone();
-        let register = labels::generate_attestation_register(&paths, &output).inspect_err(
+        let _register = labels::generate_attestation_register(&paths, &output).inspect_err(
             |error| {
                 for diagnostic in error.diagnostics().iter().filter(|d| d.is_error()) {
-                    tracing::error!(code = ?diagnostic.code, path = %diagnostic.path, line = diagnostic.line, message = %diagnostic.message, "attestation source validation failed");
+                    if tracing::enabled!(target: "labels::repository", tracing::Level::ERROR) {
+                        tracing::error!(target: "labels::repository", diagnostic_code = diagnostic.code.as_str(), path = diagnostic.path.as_str(), line = u64::try_from(diagnostic.line).unwrap_or(u64::MAX), column = u64::try_from(diagnostic.column).unwrap_or(u64::MAX), detail = diagnostic.message.as_str(), "label source validation failed");
+                    }
                 }
             },
         )?;
-        tracing::info!(path = %register.path.display(), bytes = register.bytes, "attestation register written");
         Ok::<(), labels::repository::GenerateError>(())
     })
 }

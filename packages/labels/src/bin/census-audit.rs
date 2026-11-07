@@ -13,7 +13,7 @@ use std::{path::PathBuf, process::ExitCode};
 
 use anyhow::Context;
 use clap::Parser;
-use cli_common::{BaseArgs, CheckOutputArgs, install_json_panic_hook, run_check_command};
+use cli_common::{BaseArgs, CheckOutputArgs, install_command_subscriber, run_check_command};
 use labels::census::audit_census;
 
 const COMMAND_NAME: &str = "census-audit";
@@ -51,7 +51,7 @@ struct Args {
 fn main() -> ExitCode {
     // Installed before parsing so an early panic still fails closed
     // with a JSON-only record (ADR-010 early-startup rule).
-    install_json_panic_hook(COMMAND_NAME);
+    install_command_subscriber(COMMAND_NAME);
     let args = cli_common::parse_args_or_exit::<Args>();
     run_check_command(
         COMMAND_NAME,
@@ -63,6 +63,50 @@ fn main() -> ExitCode {
 }
 
 fn audit(args: &Args) -> anyhow::Result<labels::census::CensusAuditReport> {
+    let enabled = tracing::enabled!(target: "labels::census", tracing::Level::INFO);
+    let span = if enabled {
+        tracing::info_span!(target: "labels::census", "audit_census", declared_file_count = u64::try_from(args.declared.len()).unwrap_or(u64::MAX))
+    } else {
+        tracing::Span::none()
+    };
+    let _entered = span.enter();
+    let mut child_exit_code = None;
+    let mut child_failed = false;
+    let result = audit_core(args, &mut child_exit_code, &mut child_failed, enabled);
+    if enabled {
+        match &result {
+            Ok(report) => {
+                tracing::info!(target: "labels::census", outcome = "completed", valid = report.valid, scanned_file_count = u64::try_from(report.tracked).unwrap_or(u64::MAX), refusal_count = u64::try_from(report.missing_from_census.len().saturating_add(report.not_tracked.len()).saturating_add(report.disallowed_modes.len())).unwrap_or(u64::MAX), "tracked audit completed");
+            }
+            Err(_) if child_failed => {
+                if let Some(code) = child_exit_code {
+                    tracing::info!(target: "labels::census", outcome = "failed", error_kind = "git", child_exit_code = code, "tracked audit completed");
+                } else {
+                    tracing::info!(target: "labels::census", outcome = "failed", error_kind = "git", "tracked audit completed");
+                }
+            }
+            Err(_) => {
+                tracing::info!(target: "labels::census", outcome = "failed", error_kind = "environment", "tracked audit completed");
+            }
+        }
+    }
+    match result {
+        Ok(report) if !report.valid && report.disallowed_modes.is_empty() => {
+            anyhow::bail!("the hand-managed build census disagrees with git ls-files")
+        }
+        Ok(report) if !report.valid => {
+            anyhow::bail!("the tracked repository contains an entry that is not an ordinary blob")
+        }
+        other => other,
+    }
+}
+
+fn audit_core(
+    args: &Args,
+    child_exit_code: &mut Option<i32>,
+    child_failed: &mut bool,
+    enabled: bool,
+) -> anyhow::Result<labels::census::CensusAuditReport> {
     let pattern =
         regex::Regex::new(&args.exclude_pattern).context("compiling the exclusion pattern")?;
 
@@ -81,10 +125,10 @@ fn audit(args: &Args) -> anyhow::Result<labels::census::CensusAuditReport> {
         // only the process status and a fixed message; the raw child
         // stderr is omitted rather than relayed or heuristically
         // redacted.
-        tracing::error!(
-            status = %listing.status,
-            "git ls-files failed",
-        );
+        *child_failed = true;
+        if enabled {
+            *child_exit_code = listing.status.code();
+        }
         anyhow::bail!("git ls-files failed");
     }
     let tracked = String::from_utf8(listing.stdout).context("decoding git ls-files output")?;
@@ -98,30 +142,16 @@ fn audit(args: &Args) -> anyhow::Result<labels::census::CensusAuditReport> {
         args.excluded.iter().map(String::as_str),
         &pattern,
     );
-    if report.valid {
-        return Ok(report);
-    }
     for path in &report.missing_from_census {
-        tracing::error!(
-            path = %path,
-            "tracked lint subject is missing from its directory's meson.build census list",
-        );
+        tracing::error!(target: "labels::census", diagnostic_code = "missing_from_census", path = path.as_str(), detail = "tracked lint subject is missing from its directory's meson.build census list", "census mismatch");
     }
     for path in &report.not_tracked {
-        tracing::error!(
-            path = %path,
-            "declared census entry is not a tracked lint subject; git add it or drop the list entry",
-        );
+        tracing::error!(target: "labels::census", diagnostic_code = "not_tracked", path = path.as_str(), detail = "declared census entry is not a tracked lint subject; git add it or drop the list entry", "census mismatch");
     }
     for defect in &report.disallowed_modes {
-        tracing::error!(
-            path = %defect.path,
-            mode = %defect.mode,
-            "tracked entry is not an ordinary blob; the repository carries no symlinks, gitlinks, or submodules",
-        );
+        if tracing::enabled!(target: "labels::census", tracing::Level::ERROR) {
+            tracing::error!(target: "labels::census", diagnostic_code = "disallowed_mode", path = defect.path.as_str(), mode = defect.mode.as_str(), detail = "tracked entry is not an ordinary blob; the repository carries no symlinks, gitlinks, or submodules", "census mismatch");
+        }
     }
-    if report.disallowed_modes.is_empty() {
-        anyhow::bail!("the hand-managed build census disagrees with git ls-files");
-    }
-    anyhow::bail!("the tracked repository contains an entry that is not an ordinary blob");
+    Ok(report)
 }

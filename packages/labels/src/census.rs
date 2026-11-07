@@ -100,6 +100,45 @@ impl CensusGroup {
 }
 
 impl RepositoryCensus {
+    pub(crate) fn owner_group_count(&self) -> u64 {
+        let count = CensusGroup::ALL.iter().fold(0usize, |count, group| {
+            count.saturating_add(match group {
+                CensusGroup::Crates => self.crate_sources.len(),
+                _ => 1,
+            })
+        });
+        u64::try_from(count).unwrap_or(u64::MAX)
+    }
+
+    pub(crate) fn source_file_count(&self) -> u64 {
+        let count = 2usize
+            .saturating_add(self.attestation_sections.len())
+            .saturating_add(self.adrs.len())
+            .saturating_add(self.plans.len())
+            .saturating_add(self.docs.len())
+            .saturating_add(self.model_sources.len())
+            .saturating_add(self.crate_sources.values().map(Vec::len).sum::<usize>())
+            .saturating_add(self.scripts.len());
+        u64::try_from(count).unwrap_or(u64::MAX)
+    }
+
+    fn declared_file_count(&self, groups: &[CensusGroup]) -> u64 {
+        let count = groups.iter().fold(0usize, |count, group| {
+            let size = match group {
+                CensusGroup::Attestation => 1usize.saturating_add(self.attestation_sections.len()),
+                CensusGroup::Realization => 1,
+                CensusGroup::Adr => self.adrs.len(),
+                CensusGroup::Plan => self.plans.len(),
+                CensusGroup::Doc => self.docs.len(),
+                CensusGroup::Model => self.model_sources.len(),
+                CensusGroup::Crates => self.crate_sources.values().map(Vec::len).sum(),
+                CensusGroup::Script => self.scripts.len(),
+            };
+            count.saturating_add(size)
+        });
+        u64::try_from(count).unwrap_or(u64::MAX)
+    }
+
     /// Discover the census by walking the canonical repository layout
     /// under `root`. Production use is the verifier below; tests use
     /// it to enumerate synthetic fixture repositories. Missing
@@ -206,6 +245,31 @@ impl RepositoryCensus {
     /// [`LabelErrorCode::CensusStale`] diagnostic naming the path: the
     /// remedy is a build reconfigure, never a silent reclassification.
     pub fn verify(&self, groups: &[CensusGroup]) -> Vec<LabelDiagnostic> {
+        let span = if tracing::enabled!(target: "labels::census", tracing::Level::DEBUG) {
+            tracing::debug_span!(
+                target: "labels::census",
+                "verify_census",
+                group_count = u64::try_from(groups.len()).unwrap_or(u64::MAX),
+                declared_file_count = self.declared_file_count(groups)
+            )
+        } else {
+            tracing::Span::none()
+        };
+        let _entered = span.enter();
+        let diagnostics = self.verify_core(groups);
+        if tracing::enabled!(target: "labels::census", tracing::Level::DEBUG) {
+            tracing::debug!(
+                target: "labels::census",
+                outcome = "completed",
+                group_count = u64::try_from(groups.len()).unwrap_or(u64::MAX),
+                defect_count = u64::try_from(diagnostics.len()).unwrap_or(u64::MAX),
+                "census verification completed"
+            );
+        }
+        diagnostics
+    }
+
+    pub(crate) fn verify_core(&self, groups: &[CensusGroup]) -> Vec<LabelDiagnostic> {
         let discovered = Self::discover(&self.root);
         let mut diagnostics = Vec::new();
         for group in groups {

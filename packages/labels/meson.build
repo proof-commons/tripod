@@ -42,4 +42,4 @@ labels_source_files = files(
 labels_excluded_files = files('tests/subprocess_contract.rs')
 
 # Crate documentation (DOC owner).
-labels_doc_files = files('README.md')
+labels_doc_files = files('README.md', 'TRACING.md')

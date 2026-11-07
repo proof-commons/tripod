@@ -9,7 +9,7 @@
 use std::{path::PathBuf, process::ExitCode};
 
 use clap::Parser;
-use cli_common::{BaseArgs, CheckOutputArgs, install_json_panic_hook, run_check_command};
+use cli_common::{BaseArgs, CheckOutputArgs, install_command_subscriber, run_check_command};
 
 const COMMAND_NAME: &str = "check-plans";
 
@@ -39,7 +39,7 @@ struct Args {
 fn main() -> ExitCode {
     // Installed before parsing so an early panic still fails closed
     // with a JSON-only record (ADR-010 early-startup rule).
-    install_json_panic_hook(COMMAND_NAME);
+    install_command_subscriber(COMMAND_NAME);
     let args = cli_common::parse_args_or_exit::<Args>();
     run_check_command(
         COMMAND_NAME,
@@ -48,25 +48,17 @@ fn main() -> ExitCode {
         &args.output,
         || {
             let outcome = labels::plans::check_plans(&args.repository_root, &args.subjects)?;
-            tracing::info!(
-                adr_bytes = outcome.report.adr_bytes,
-                plans_bytes = outcome.report.plans_bytes,
-                combined_bytes = outcome.report.combined_bytes,
-                hard_cap_bytes = outcome.report.hard_cap_bytes,
-                soft_target_bytes = outcome.report.soft_target_bytes,
-                "markdown weight"
-            );
             for warning in &outcome.warnings {
-                tracing::warn!(message = %warning, "plan-tree warning");
+                tracing::warn!(target: "labels::plans", diagnostic_code = "plan_warning", detail = warning.as_str(), "plan check warning");
             }
             if outcome.report.soft_target_exceeded {
-                tracing::warn!("combined Markdown exceeds soft target");
+                tracing::warn!(target: "labels::plans", diagnostic_code = "soft_target_exceeded", detail = "combined Markdown exceeds soft target", "plan check warning");
             }
             if outcome.report.valid {
                 return Ok(outcome.report);
             }
             for failure in &outcome.failures {
-                tracing::error!(message = %failure, "plan-tree check failed");
+                tracing::error!(target: "labels::plans", diagnostic_code = "plan_failure", detail = failure.as_str(), "plan check failed");
             }
             Err(anyhow::anyhow!("plan-tree validation failed"))
         },

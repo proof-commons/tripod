@@ -27,6 +27,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 nix = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true

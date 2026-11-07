@@ -132,6 +132,31 @@ pub struct RepositoryLabels {
 }
 impl RepositoryLabels {
     pub fn harvest_sources(paths: &RepositoryCensus) -> Self {
+        let span = if tracing::enabled!(target: "labels::repository", tracing::Level::DEBUG) {
+            tracing::debug_span!(
+                target: "labels::repository",
+                "harvest_sources",
+                owner_group_count = paths.owner_group_count(),
+                source_file_count = paths.source_file_count()
+            )
+        } else {
+            tracing::Span::none()
+        };
+        let _entered = span.enter();
+        let result = Self::harvest_sources_core(paths);
+        if tracing::enabled!(target: "labels::repository", tracing::Level::DEBUG) {
+            tracing::debug!(
+                target: "labels::repository",
+                outcome = "completed",
+                source_file_count = paths.source_file_count(),
+                diagnostic_count = u64::try_from(result.diagnostics.len()).unwrap_or(u64::MAX),
+                "source harvest completed"
+            );
+        }
+        result
+    }
+
+    pub(crate) fn harvest_sources_core(paths: &RepositoryCensus) -> Self {
         // Two-pass staging: the adoption data are loaded before any
         // source is read, so that no harvest and no resolution can
         // observe a parameter that is still being decided.
@@ -1468,6 +1493,22 @@ pub fn generate_registers(
     specification_output: &Path,
     realization_output: &Path,
 ) -> Result<Vec<GeneratedRegister>, GenerateError> {
+    let span = tracing::info_span!(
+        target: "labels::repository",
+        "generate_registers",
+        output_count = 2u64
+    );
+    let _entered = span.enter();
+    let result = generate_registers_core(paths, specification_output, realization_output);
+    record_generation_result(&result, 2);
+    result
+}
+
+fn generate_registers_core(
+    paths: &RepositoryCensus,
+    specification_output: &Path,
+    realization_output: &Path,
+) -> Result<Vec<GeneratedRegister>, GenerateError> {
     // Role uniqueness before derivation or writing (F2-005): the two
     // registers are distinct assets and must never fold into one path.
     cli_common::ensure_distinct_outputs(&[
@@ -1525,10 +1566,10 @@ pub fn generate_registers(
 pub fn attestation_base(
     paths: &RepositoryCensus,
 ) -> Result<crate::attestation::AttestationBase, GenerateError> {
-    let mut labels = RepositoryLabels::harvest_sources(paths);
+    let mut labels = RepositoryLabels::harvest_sources_core(paths);
     labels
         .diagnostics
-        .extend(paths.verify(crate::census::CensusGroup::ALL));
+        .extend(paths.verify_core(crate::census::CensusGroup::ALL));
     if labels.has_errors() {
         return Err(GenerateError::Validation(labels.diagnostics));
     }
@@ -1538,6 +1579,30 @@ pub fn attestation_base(
 
 /// Generate and publish the companion attestation register.
 pub fn generate_attestation_register(
+    paths: &RepositoryCensus,
+    output: &Path,
+) -> Result<GeneratedRegister, GenerateError> {
+    let span = tracing::info_span!(
+        target: "labels::repository",
+        "generate_attestation_register",
+        output_count = 1u64
+    );
+    let _entered = span.enter();
+    let result = generate_attestation_register_core(paths, output);
+    if let Err(error) = &result {
+        record_generation_error(error);
+    } else {
+        tracing::info!(
+            target: "labels::repository",
+            outcome = "completed",
+            output_count = 1u64,
+            "register generation completed"
+        );
+    }
+    result
+}
+
+fn generate_attestation_register_core(
     paths: &RepositoryCensus,
     output: &Path,
 ) -> Result<GeneratedRegister, GenerateError> {
@@ -1554,6 +1619,65 @@ pub fn generate_attestation_register(
     })
 }
 
+fn record_generation_result(
+    result: &Result<Vec<GeneratedRegister>, GenerateError>,
+    output_count: u64,
+) {
+    match result {
+        Ok(_) if tracing::enabled!(target: "labels::repository", tracing::Level::INFO) => {
+            tracing::info!(
+                target: "labels::repository",
+                outcome = "completed",
+                output_count,
+                "register generation completed"
+            );
+        }
+        Err(error) => record_generation_error(error),
+        _ => {}
+    }
+}
+
+const TRACE_REFUSAL_ALIASED_OUTPUTS: &str = "aliased_outputs";
+const TRACE_REFUSAL_VALIDATION: &str = "validation";
+const TRACE_ERROR_PUBLICATION: &str = "publication";
+const TRACE_ERROR_IO: &str = "io";
+const TRACE_ERROR_JSON: &str = "json";
+
+fn record_generation_error(error: &GenerateError) {
+    match error {
+        GenerateError::AliasedOutputs(_) => tracing::debug!(
+            target: "labels::repository",
+            outcome = "refused",
+            refusal_kind = TRACE_REFUSAL_ALIASED_OUTPUTS,
+            "register generation completed"
+        ),
+        GenerateError::Validation(_) => tracing::debug!(
+            target: "labels::repository",
+            outcome = "refused",
+            refusal_kind = TRACE_REFUSAL_VALIDATION,
+            "register generation completed"
+        ),
+        GenerateError::Publication(_) => tracing::info!(
+            target: "labels::repository",
+            outcome = "failed",
+            error_kind = TRACE_ERROR_PUBLICATION,
+            "register generation completed"
+        ),
+        GenerateError::Io(_) => tracing::info!(
+            target: "labels::repository",
+            outcome = "failed",
+            error_kind = TRACE_ERROR_IO,
+            "register generation completed"
+        ),
+        GenerateError::Json(_) => tracing::info!(
+            target: "labels::repository",
+            outcome = "failed",
+            error_kind = TRACE_ERROR_JSON,
+            "register generation completed"
+        ),
+    }
+}
+
 pub fn model_labels_json(paths: &RepositoryCensus) -> Result<String, GenerateError> {
     let labels = derive_model_sources(paths);
     if labels.has_errors() {
@@ -1566,7 +1690,7 @@ fn derive_register_sources(paths: &RepositoryCensus) -> RepositoryLabels {
     let mut result = RepositoryLabels::default();
     result
         .diagnostics
-        .extend(paths.verify(crate::census::CensusGroup::REGISTER_SCOPED));
+        .extend(paths.verify_core(crate::census::CensusGroup::REGISTER_SCOPED));
     let (attestation, diagnostics) = harvest_attestation(paths);
     result.registries.attestation = attestation;
     result.diagnostics.extend(diagnostics);
@@ -1585,7 +1709,7 @@ fn derive_model_sources(paths: &RepositoryCensus) -> RepositoryLabels {
     // would silently change the derived registers.
     result
         .diagnostics
-        .extend(paths.verify(crate::census::CensusGroup::SCOPED));
+        .extend(paths.verify_core(crate::census::CensusGroup::SCOPED));
     let (attestation, diagnostics) = harvest_attestation(paths);
     result.registries.attestation = attestation;
     result.diagnostics.extend(diagnostics);
@@ -1623,4 +1747,29 @@ const fn scoped_citation_participates(citation: &LabelCitation) -> bool {
         citation.target.owner,
         LabelOwner::Attestation | LabelOwner::Realization | LabelOwner::Model
     )
+}
+
+#[cfg(test)]
+mod trace_name_tests {
+    use super::*;
+
+    #[test]
+    fn generation_variant_trace_names_are_snake_case() {
+        let names = [
+            TRACE_REFUSAL_ALIASED_OUTPUTS,
+            TRACE_REFUSAL_VALIDATION,
+            TRACE_ERROR_PUBLICATION,
+            TRACE_ERROR_IO,
+            TRACE_ERROR_JSON,
+        ];
+        assert_eq!(
+            names,
+            ["aliased_outputs", "validation", "publication", "io", "json"]
+        );
+        let snake_case = regex::Regex::new(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")
+            .expect("valid tracing-name expression");
+        for name in names {
+            assert!(snake_case.is_match(name), "invalid tracing name: {name}");
+        }
+    }
 }

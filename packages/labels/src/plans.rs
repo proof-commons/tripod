@@ -373,6 +373,41 @@ pub struct PlansOutcome {
 /// Returns `Err` only for environmental faults (an unreadable file or
 /// directory); every tree defect is a failure entry in the outcome.
 pub fn check_plans(root: &Path, subjects: &[PathBuf]) -> anyhow::Result<PlansOutcome> {
+    let enabled = tracing::enabled!(target: "labels::plans", tracing::Level::INFO);
+    let span = if enabled {
+        tracing::info_span!(
+            target: "labels::plans",
+            "check_plans",
+            subject_count = u64::try_from(subjects.len()).unwrap_or(u64::MAX)
+        )
+    } else {
+        tracing::Span::none()
+    };
+    let _entered = span.enter();
+    let result = check_plans_core(root, subjects);
+    if enabled {
+        if let Ok(outcome) = &result {
+            tracing::info!(
+                target: "labels::plans",
+                outcome = "completed",
+                valid = outcome.report.valid,
+                warning_count = u64::try_from(outcome.warnings.len()).unwrap_or(u64::MAX),
+                failure_count = u64::try_from(outcome.failures.len()).unwrap_or(u64::MAX),
+                "plan check completed"
+            );
+        } else {
+            tracing::info!(
+                target: "labels::plans",
+                outcome = "failed",
+                error_kind = "environment",
+                "plan check completed"
+            );
+        }
+    }
+    result
+}
+
+fn check_plans_core(root: &Path, subjects: &[PathBuf]) -> anyhow::Result<PlansOutcome> {
     let root = root
         .canonicalize()
         .with_context(|| format!("resolving repository root {}", root.display()))?;
@@ -1410,6 +1445,7 @@ mod tests {
     use std::fs;
 
     use super::*;
+    use crate::tests::{TraceValue, assert_trace_pair, capture_trace, isolate_capture_test};
 
     fn write_phase_index(root: &Path, rows: &[(&str, &str, &str)]) {
         use std::fmt::Write as _;
@@ -1493,6 +1529,71 @@ mod tests {
         assert!(outcome.report.combined_bytes > 0);
         assert_eq!(outcome.report.combined_bytes, outcome.report.plans_bytes);
         assert_eq!(outcome.report.adr_hard_cap_bytes, ADR_HARD_CAP_BYTES);
+    }
+
+    #[test]
+    fn plan_tracing_preserves_complete_valid_and_adjacent_invalid_reports() {
+        if isolate_capture_test(
+            "plans::tests::plan_tracing_preserves_complete_valid_and_adjacent_invalid_reports",
+        ) {
+            return;
+        }
+        let dir = fixture();
+        let root = dir.path();
+        let declared = subjects(root);
+        let plain = check_plans(root, &declared).expect("plain plan check");
+        let (captured, records) =
+            capture_trace(|| check_plans(root, &declared).expect("captured plan check"));
+        assert_eq!(
+            serde_json::to_value(&plain.report).expect("plain report"),
+            serde_json::to_value(&captured.report).expect("captured report")
+        );
+        assert_eq!(plain.failures, captured.failures);
+        assert_eq!(plain.warnings, captured.warnings);
+        assert!(plain.report.valid);
+        let event = assert_trace_pair(
+            &records,
+            "labels::plans",
+            "check_plans",
+            "plan check completed",
+            tracing::Level::INFO,
+        );
+        assert_eq!(event.fields.get("valid"), Some(&TraceValue::Bool(true)));
+        assert_eq!(
+            event.fields.get("outcome"),
+            Some(&TraceValue::Str("completed".into()))
+        );
+
+        fs::write(
+            root.join("plans/phases/02-pilot.md"),
+            "# Pilot\n\n> **Status:** Exited\n",
+        )
+        .expect("adjacent status change");
+        let plain = check_plans(root, &declared).expect("plain negative plan check");
+        let (captured, records) =
+            capture_trace(|| check_plans(root, &declared).expect("captured negative plan check"));
+        assert_eq!(
+            serde_json::to_value(&plain.report).expect("plain report"),
+            serde_json::to_value(&captured.report).expect("captured report")
+        );
+        assert_eq!(plain.failures, captured.failures);
+        assert_eq!(plain.warnings, captured.warnings);
+        assert!(!plain.report.valid);
+        let event = assert_trace_pair(
+            &records,
+            "labels::plans",
+            "check_plans",
+            "plan check completed",
+            tracing::Level::INFO,
+        );
+        assert_eq!(event.fields.get("valid"), Some(&TraceValue::Bool(false)));
+        assert_eq!(
+            event.fields.get("outcome"),
+            Some(&TraceValue::Str("completed".into()))
+        );
+        assert!(
+            matches!(event.fields.get("failure_count"), Some(TraceValue::U64(count)) if *count > 0)
+        );
     }
 
     #[test]

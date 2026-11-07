@@ -1,9 +1,19 @@
-use std::{fs, path::Path};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::Path,
+    process::Command,
+    sync::{Arc, Mutex},
+};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+#[cfg(unix)]
+use std::path::PathBuf;
 
 use petgraph::Direction;
+use tracing::{Event, Subscriber, field::Visit, span::Attributes};
+use tracing_subscriber::{Layer, layer::Context, prelude::*};
 
 use crate::{
     LabelDiagnostic, LabelErrorCode, adoption, attestation, attestation_base,
@@ -533,33 +543,78 @@ fn unreadable_adr_is_an_io_diagnostic() {
     let adr = root.join("adr/012-unreadable.md");
 
     fs::write(&adr, "# ADR\n`rule:labels:defined`\n").expect("ADR source");
-    fs::set_permissions(&adr, fs::Permissions::from_mode(0o0)).expect("make ADR unreadable");
-
-    if fs::read_to_string(&adr).is_ok() {
-        fs::set_permissions(&adr, fs::Permissions::from_mode(0o644)).expect("restore readable ADR");
-        return;
-    }
-
-    let labels = RepositoryLabels::harvest_sources(&RepositoryCensus::discover(root));
-
-    fs::set_permissions(&adr, fs::Permissions::from_mode(0o644)).expect("restore readable ADR");
+    let paths = RepositoryCensus::discover(root);
+    let inaccessible = make_unreadable(&adr);
+    let labels = RepositoryLabels::harvest_sources(&paths);
+    drop(inaccessible);
 
     assert!(labels.diagnostics.iter().any(|diagnostic| {
         diagnostic.code == LabelErrorCode::Io && diagnostic.path == "adr/012-unreadable.md"
     }));
 }
 
-/// Make `path` unreadable, returning `false` when the process can read
-/// it anyway — running as root, or on a filesystem without permission
-/// enforcement — so the caller can skip rather than assert falsely.
+/// Keep a fixture inaccessible until the assertion finishes.
 #[cfg(unix)]
-fn make_unreadable(path: &Path) -> bool {
-    fs::set_permissions(path, fs::Permissions::from_mode(0o0)).expect("remove permissions");
-    if fs::read_dir(path).is_ok() {
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("restore permissions");
-        return false;
+enum InaccessibleFixture {
+    Permissions {
+        path: PathBuf,
+        original: fs::Permissions,
+    },
+    Loop {
+        path: PathBuf,
+        backup: PathBuf,
+    },
+}
+
+#[cfg(unix)]
+impl Drop for InaccessibleFixture {
+    fn drop(&mut self) {
+        match self {
+            Self::Permissions { path, original } => {
+                fs::set_permissions(path, original.clone()).expect("restore fixture permissions");
+            }
+            Self::Loop { path, backup } => {
+                fs::remove_file(path.as_path()).expect("remove fixture symlink loop");
+                fs::rename(backup.as_path(), path.as_path()).expect("restore fixture path");
+            }
+        }
     }
-    true
+}
+
+/// Require the permission failure, or exercise the same I/O boundary with a
+/// symlink loop when an explicit privileged-test opt-in is present.
+#[cfg(unix)]
+fn make_unreadable(path: &Path) -> InaccessibleFixture {
+    let metadata = fs::metadata(path).expect("fixture metadata");
+    let original = metadata.permissions();
+    fs::set_permissions(path, fs::Permissions::from_mode(0o0)).expect("remove permissions");
+    let inaccessible = if metadata.is_dir() {
+        fs::read_dir(path).is_err()
+    } else {
+        fs::read_to_string(path).is_err()
+    };
+    if inaccessible {
+        return InaccessibleFixture::Permissions {
+            path: path.to_path_buf(),
+            original,
+        };
+    }
+    fs::set_permissions(path, original).expect("restore fixture permissions");
+    assert!(
+        std::env::var_os("TRIPOD_ALLOW_PRIVILEGED_SKIP").is_some(),
+        "permission-based fixture remains readable; set TRIPOD_ALLOW_PRIVILEGED_SKIP to exercise the I/O boundary with a symlink loop"
+    );
+    let name = path.file_name().expect("fixture name");
+    let backup = path.with_file_name(format!(
+        ".{}-privileged-test-backup",
+        name.to_string_lossy()
+    ));
+    fs::rename(path, &backup).expect("move fixture behind symlink loop");
+    std::os::unix::fs::symlink(name, path).expect("create fixture symlink loop");
+    InaccessibleFixture::Loop {
+        path: path.to_path_buf(),
+        backup,
+    }
 }
 
 #[cfg(unix)]
@@ -576,9 +631,7 @@ fn unreadable_subject_directory_fails_an_empty_declared_group() {
         "# ADR\n`rule:hidden:label`\n",
     )
     .expect("ADR source");
-    if !make_unreadable(&adr_dir) {
-        return;
-    }
+    let inaccessible = make_unreadable(&adr_dir);
 
     let declared = RepositoryCensus {
         root: root.to_path_buf(),
@@ -586,8 +639,7 @@ fn unreadable_subject_directory_fails_an_empty_declared_group() {
     };
     let diagnostics = declared.verify(&[CensusGroup::Adr]);
 
-    fs::set_permissions(&adr_dir, fs::Permissions::from_mode(0o755))
-        .expect("restore ADR directory");
+    drop(inaccessible);
 
     assert!(
         diagnostics.iter().any(|diagnostic| {
@@ -607,14 +659,11 @@ fn one_unreadable_entry_is_reported_beside_the_readable_ones() {
     let closed = root.join("plans/closed");
     fs::create_dir_all(&closed).expect("nested plan directory");
     fs::write(closed.join("third.md"), "# Third\n").expect("plan source");
-    if !make_unreadable(&closed) {
-        return;
-    }
+    let inaccessible = make_unreadable(&closed);
 
     let census = RepositoryCensus::discover(root);
 
-    fs::set_permissions(&closed, fs::Permissions::from_mode(0o755))
-        .expect("restore plan directory");
+    drop(inaccessible);
 
     // The readable siblings are still discovered.
     let names: Vec<_> = census
@@ -688,9 +737,7 @@ fn scoped_model_derivation_refuses_an_unreadable_scoped_directory() {
     let root = directory.path();
     let sources = root.join("packages/model/src");
     fs::write(sources.join("fixture.rs"), "// ´def:fixture:hidden´\n").expect("model source");
-    if !make_unreadable(&sources) {
-        return;
-    }
+    let inaccessible = make_unreadable(&sources);
 
     let declared = RepositoryCensus {
         root: root.to_path_buf(),
@@ -698,8 +745,7 @@ fn scoped_model_derivation_refuses_an_unreadable_scoped_directory() {
     };
     let error = model_labels_json(&declared).expect_err("unreadable model sources must fail");
 
-    fs::set_permissions(&sources, fs::Permissions::from_mode(0o755))
-        .expect("restore model source directory");
+    drop(inaccessible);
 
     let crate::repository::GenerateError::Validation(diagnostics) = error else {
         panic!("expected a validation failure");
@@ -867,6 +913,505 @@ fn fixture_root(realization: &str) -> tempfile::TempDir {
     fs::write(root.join("docs/attestation/realization.md"), realization)
         .expect("realization source");
     directory
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TraceValue {
+    Bool(bool),
+    U64(u64),
+    Str(String),
+    Debug(String),
+}
+
+#[derive(Clone, Debug)]
+pub struct TraceRecord {
+    pub is_span: bool,
+    pub name: String,
+    pub target: String,
+    pub level: tracing::Level,
+    pub fields: BTreeMap<String, TraceValue>,
+}
+
+#[derive(Default)]
+struct TraceFields(BTreeMap<String, TraceValue>);
+
+impl Visit for TraceFields {
+    fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+        self.0.insert(field.name().into(), TraceValue::Bool(value));
+    }
+
+    fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+        self.0.insert(field.name().into(), TraceValue::U64(value));
+    }
+
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        self.0
+            .insert(field.name().into(), TraceValue::Str(value.into()));
+    }
+
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        self.0
+            .insert(field.name().into(), TraceValue::Debug(format!("{value:?}")));
+    }
+}
+
+#[derive(Clone)]
+struct TraceCapture(Arc<Mutex<Vec<TraceRecord>>>);
+
+static CAPTURE_INSTALL_LOCK: Mutex<()> = Mutex::new(());
+
+impl<S: Subscriber> Layer<S> for TraceCapture {
+    fn on_new_span(&self, attrs: &Attributes<'_>, _id: &tracing::span::Id, _ctx: Context<'_, S>) {
+        let mut fields = TraceFields::default();
+        attrs.record(&mut fields);
+        let meta = attrs.metadata();
+        self.0.lock().expect("capture lock").push(TraceRecord {
+            is_span: true,
+            name: meta.name().into(),
+            target: meta.target().into(),
+            level: *meta.level(),
+            fields: fields.0,
+        });
+    }
+
+    fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+        let mut fields = TraceFields::default();
+        event.record(&mut fields);
+        let meta = event.metadata();
+        self.0.lock().expect("capture lock").push(TraceRecord {
+            is_span: false,
+            name: meta.name().into(),
+            target: meta.target().into(),
+            level: *meta.level(),
+            fields: fields.0,
+        });
+    }
+}
+
+pub fn capture_trace<T>(run: impl FnOnce() -> T) -> (T, Vec<TraceRecord>) {
+    let _install = CAPTURE_INSTALL_LOCK.lock().expect("capture install lock");
+    let records = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(TraceCapture(records.clone()));
+    let result = tracing::subscriber::with_default(subscriber, || {
+        tracing::callsite::rebuild_interest_cache();
+        run()
+    });
+    let captured = records.lock().expect("capture lock").clone();
+    (result, captured)
+}
+
+/// Re-execute one capture test as the only selected test in a fresh process.
+///
+/// Returns `false` in the child so the caller runs its assertions there.
+///
+/// # Panics
+///
+/// Panics if the test executable cannot launch, its child fails, or it selects anything other than one passing test.
+pub fn isolate_capture_test(name: &str) -> bool {
+    const CHILD_MARKER: &str = "TRIPOD_LABELS_CAPTURE_CHILD";
+    if std::env::var(CHILD_MARKER).as_deref() == Ok(name) {
+        return false;
+    }
+    let output = Command::new(std::env::current_exe().expect("current test executable"))
+        .arg("--exact")
+        .arg(name)
+        .env(CHILD_MARKER, name)
+        .output()
+        .expect("isolated capture test");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "isolated {name} failed: status={}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status
+    );
+    assert!(
+        stdout.contains("running 1 test") && stdout.contains("1 passed; 0 failed;"),
+        "isolated {name} did not run exactly one passing test\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    true
+}
+
+pub fn assert_trace_pair<'a>(
+    records: &'a [TraceRecord],
+    target: &str,
+    span_name: &str,
+    message: &str,
+    level: tracing::Level,
+) -> &'a TraceRecord {
+    assert!(records.iter().all(|record| {
+        record.level != tracing::Level::WARN && record.level != tracing::Level::ERROR
+    }));
+    let own: Vec<_> = records
+        .iter()
+        .filter(|record| record.target == target)
+        .collect();
+    assert_eq!(own.len(), 2, "{records:#?}");
+    assert!(own[0].is_span);
+    assert_eq!(
+        (own[0].target.as_str(), own[0].name.as_str()),
+        (target, span_name)
+    );
+    assert_eq!(own[0].level, level);
+    assert!(!own[1].is_span);
+    assert_eq!(own[1].target, target);
+    assert_eq!(own[1].level, level);
+    assert!(
+        matches!(own[1].fields.get("message"), Some(TraceValue::Debug(value)) if value == message)
+    );
+    own[1]
+}
+
+#[test]
+fn scoped_capture_rebuilds_interest_on_threads() {
+    if isolate_capture_test("tests::scoped_capture_rebuilds_interest_on_threads") {
+        return;
+    }
+    let dir = tempfile::tempdir().expect("capture fixture");
+    let paths = Arc::new(RepositoryCensus::discover(dir.path()));
+    let plain = paths.verify(&[CensusGroup::Plan]);
+    let handles = (0..2)
+        .map(|_| {
+            let paths = Arc::clone(&paths);
+            std::thread::spawn(move || capture_trace(|| paths.verify(&[CensusGroup::Plan])))
+        })
+        .collect::<Vec<_>>();
+    for handle in handles {
+        let (captured, records) = handle.join().expect("capture thread");
+        assert_eq!(plain, captured);
+        assert_trace_pair(
+            &records,
+            "labels::census",
+            "verify_census",
+            "census verification completed",
+            tracing::Level::DEBUG,
+        );
+    }
+}
+
+#[test]
+fn owner_group_count_follows_census_groups_and_crate_owners() {
+    let mut paths = RepositoryCensus::default();
+    let fixed_groups = CensusGroup::ALL
+        .iter()
+        .filter(|group| **group != CensusGroup::Crates)
+        .count();
+    assert_eq!(
+        paths.owner_group_count(),
+        u64::try_from(fixed_groups).unwrap()
+    );
+    paths.crate_sources.insert("model".into(), Vec::new());
+    paths.crate_sources.insert("labels".into(), Vec::new());
+    assert_eq!(
+        paths.owner_group_count(),
+        u64::try_from(fixed_groups + 2).unwrap()
+    );
+}
+
+#[test]
+fn repository_library_boundaries_trace_complete_adjacent_subjects() {
+    if isolate_capture_test("tests::repository_library_boundaries_trace_complete_adjacent_subjects")
+    {
+        return;
+    }
+    let directory =
+        fixture_root("# Realization\n`sec:fixture:division`\nBody cite (`[A-def:model:known]`).\n");
+    let root = directory.path();
+    let paths = RepositoryCensus::discover(root);
+
+    let plain_harvest = RepositoryLabels::harvest_sources(&paths);
+    let (captured_harvest, records) = capture_trace(|| RepositoryLabels::harvest_sources(&paths));
+    assert_eq!(plain_harvest.diagnostics, captured_harvest.diagnostics);
+    assert_eq!(
+        crate::render::specification_register(&plain_harvest.registries.attestation),
+        crate::render::specification_register(&captured_harvest.registries.attestation)
+    );
+    let harvest = assert_trace_pair(
+        &records,
+        "labels::repository",
+        "harvest_sources",
+        "source harvest completed",
+        tracing::Level::DEBUG,
+    );
+    let harvest_span = records
+        .iter()
+        .find(|record| record.is_span && record.name == "harvest_sources")
+        .expect("harvest entry span");
+    assert_eq!(
+        harvest_span.fields.get("owner_group_count"),
+        Some(&TraceValue::U64(paths.owner_group_count()))
+    );
+    assert_eq!(
+        harvest.fields.get("outcome"),
+        Some(&TraceValue::Str("completed".into()))
+    );
+    assert!(matches!(
+        harvest.fields.get("source_file_count"),
+        Some(TraceValue::U64(_))
+    ));
+
+    let plain_census = paths.verify(&[CensusGroup::Plan]);
+    let (captured_census, records) = capture_trace(|| paths.verify(&[CensusGroup::Plan]));
+    assert_eq!(plain_census, captured_census);
+    let census = assert_trace_pair(
+        &records,
+        "labels::census",
+        "verify_census",
+        "census verification completed",
+        tracing::Level::DEBUG,
+    );
+    assert_eq!(census.fields.get("defect_count"), Some(&TraceValue::U64(0)));
+
+    fs::write(
+        root.join("docs/attestation/realization.md"),
+        "# Realization\n`sec:fixture:division`\nBody cite (`[A-def:model:known]`).\n`sec:fixture:division`\n",
+    )
+    .expect("adjacent duplicate mint");
+    let plain_harvest = RepositoryLabels::harvest_sources(&paths);
+    let (captured_harvest, records) = capture_trace(|| RepositoryLabels::harvest_sources(&paths));
+    assert_eq!(plain_harvest.diagnostics, captured_harvest.diagnostics);
+    assert!(
+        plain_harvest
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::DuplicateMint)
+    );
+    let harvest = assert_trace_pair(
+        &records,
+        "labels::repository",
+        "harvest_sources",
+        "source harvest completed",
+        tracing::Level::DEBUG,
+    );
+    assert_eq!(
+        harvest.fields.get("outcome"),
+        Some(&TraceValue::Str("completed".into()))
+    );
+
+    fs::write(root.join("plans/one.md"), "# One\n").expect("one adjacent census file");
+    let plain_census = paths.verify(&[CensusGroup::Plan]);
+    let (captured_census, records) = capture_trace(|| paths.verify(&[CensusGroup::Plan]));
+    assert_eq!(plain_census, captured_census);
+    assert!(
+        plain_census
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::CensusStale)
+    );
+    let census = assert_trace_pair(
+        &records,
+        "labels::census",
+        "verify_census",
+        "census verification completed",
+        tracing::Level::DEBUG,
+    );
+    assert_eq!(census.fields.get("defect_count"), Some(&TraceValue::U64(1)));
+
+    let live = RepositoryCensus::discover(repository_root());
+    let plain_check = crate::check_repository(&live);
+    let (captured_check, records) = capture_trace(|| crate::check_repository(&live));
+    assert_eq!(
+        serde_json::to_value(&plain_check.0).expect("plain report"),
+        serde_json::to_value(&captured_check.0).expect("captured report")
+    );
+    assert_eq!(plain_check.1, captured_check.1);
+    assert!(plain_check.0.valid, "{:#?}", plain_check.1);
+    let check = assert_trace_pair(
+        &records,
+        "labels::check",
+        "check_repository",
+        "label check completed",
+        tracing::Level::INFO,
+    );
+    assert_eq!(check.fields.get("valid"), Some(&TraceValue::Bool(true)));
+
+    let mut adjacent = live;
+    adjacent.adrs.pop().expect("one declared ADR");
+    let plain_check = crate::check_repository(&adjacent);
+    let (captured_check, records) = capture_trace(|| crate::check_repository(&adjacent));
+    assert_eq!(
+        serde_json::to_value(&plain_check.0).expect("plain report"),
+        serde_json::to_value(&captured_check.0).expect("captured report")
+    );
+    assert_eq!(plain_check.1, captured_check.1);
+    assert!(!plain_check.0.valid);
+    let check = assert_trace_pair(
+        &records,
+        "labels::check",
+        "check_repository",
+        "label check completed",
+        tracing::Level::INFO,
+    );
+    assert_eq!(check.fields.get("valid"), Some(&TraceValue::Bool(false)));
+    assert_eq!(
+        check.fields.get("outcome"),
+        Some(&TraceValue::Str("completed".into()))
+    );
+}
+
+#[test]
+fn register_generation_tracing_preserves_bytes_and_refuses_adjacent_defect() {
+    if isolate_capture_test(
+        "tests::register_generation_tracing_preserves_bytes_and_refuses_adjacent_defect",
+    ) {
+        return;
+    }
+    let directory =
+        fixture_root("# Realization\n`sec:fixture:division`\nBody cite (`[A-def:model:known]`).\n");
+    let root = directory.path();
+    let paths = RepositoryCensus::discover(root);
+    let output = tempfile::tempdir().expect("output directory");
+    let specification = output.path().join("specification.md");
+    let realization = output.path().join("realization.md");
+    let attestation = output.path().join("attestation.md");
+
+    let plain = generate_registers(&paths, &specification, &realization).expect("plain registers");
+    let specification_bytes = fs::read(&specification).expect("specification bytes");
+    let realization_bytes = fs::read(&realization).expect("realization bytes");
+    let (captured, records) = capture_trace(|| {
+        generate_registers(&paths, &specification, &realization).expect("captured registers")
+    });
+    assert_eq!(
+        plain.iter().map(|item| item.bytes).collect::<Vec<_>>(),
+        captured.iter().map(|item| item.bytes).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        specification_bytes,
+        fs::read(&specification).expect("specification bytes")
+    );
+    assert_eq!(
+        realization_bytes,
+        fs::read(&realization).expect("realization bytes")
+    );
+    let event = assert_trace_pair(
+        &records,
+        "labels::repository",
+        "generate_registers",
+        "register generation completed",
+        tracing::Level::INFO,
+    );
+    let publication = assert_trace_pair(
+        &records,
+        "cli_common::publication",
+        "publish_batch",
+        "asset batch published",
+        tracing::Level::INFO,
+    );
+    assert_eq!(
+        publication.fields.get("outcome"),
+        Some(&TraceValue::Str("completed".into()))
+    );
+    assert_eq!(
+        event.fields.get("outcome"),
+        Some(&TraceValue::Str("completed".into()))
+    );
+    assert_eq!(event.fields.get("output_count"), Some(&TraceValue::U64(2)));
+
+    fs::write(
+        root.join("docs/attestation/realization.md"),
+        "# Realization\n`sec:fixture:division`\nBody cite (`[A-def:model:known]`).\n`sec:fixture:division`\n",
+    )
+    .expect("one duplicate mint");
+    let plain = generate_registers(&paths, &specification, &realization)
+        .expect_err("plain validation refusal");
+    let (captured, records) = capture_trace(|| {
+        generate_registers(&paths, &specification, &realization)
+            .expect_err("captured validation refusal")
+    });
+    assert_eq!(plain.diagnostics(), captured.diagnostics());
+    assert!(
+        plain
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code == LabelErrorCode::DuplicateMint)
+    );
+    assert_eq!(
+        specification_bytes,
+        fs::read(&specification).expect("specification bytes")
+    );
+    assert_eq!(
+        realization_bytes,
+        fs::read(&realization).expect("realization bytes")
+    );
+    assert_refused_generation(&records, "generate_registers", "validation");
+
+    let live = RepositoryCensus::discover(repository_root());
+    let plain = crate::generate_attestation_register(&live, &attestation)
+        .expect("plain attestation register");
+    let attestation_bytes = fs::read(&attestation).expect("attestation bytes");
+    let (captured, records) = capture_trace(|| {
+        crate::generate_attestation_register(&live, &attestation)
+            .expect("captured attestation register")
+    });
+    assert_eq!(plain.bytes, captured.bytes);
+    assert_eq!(
+        attestation_bytes,
+        fs::read(&attestation).expect("attestation bytes")
+    );
+    let event = assert_trace_pair(
+        &records,
+        "labels::repository",
+        "generate_attestation_register",
+        "register generation completed",
+        tracing::Level::INFO,
+    );
+    let publication = assert_trace_pair(
+        &records,
+        "cli_common::publication",
+        "publish_batch",
+        "asset batch published",
+        tracing::Level::INFO,
+    );
+    assert_eq!(
+        publication.fields.get("outcome"),
+        Some(&TraceValue::Str("completed".into()))
+    );
+    assert_eq!(
+        event.fields.get("outcome"),
+        Some(&TraceValue::Str("completed".into()))
+    );
+    assert_eq!(event.fields.get("output_count"), Some(&TraceValue::U64(1)));
+
+    let mut adjacent = live;
+    adjacent.adrs.pop().expect("one declared ADR");
+    let plain = crate::generate_attestation_register(&adjacent, &attestation)
+        .expect_err("plain attestation refusal");
+    let (captured, records) = capture_trace(|| {
+        crate::generate_attestation_register(&adjacent, &attestation)
+            .expect_err("captured attestation refusal")
+    });
+    assert_eq!(plain.diagnostics(), captured.diagnostics());
+    assert_eq!(
+        attestation_bytes,
+        fs::read(&attestation).expect("attestation bytes")
+    );
+    assert_refused_generation(&records, "generate_attestation_register", "validation");
+}
+
+fn assert_refused_generation(records: &[TraceRecord], span_name: &str, refusal_kind: &str) {
+    assert_eq!(records.len(), 2, "{records:#?}");
+    assert!(records[0].is_span);
+    assert_eq!(records[0].name, span_name);
+    assert_eq!(records[0].target, "labels::repository");
+    assert_eq!(records[0].level, tracing::Level::INFO);
+    assert_eq!(
+        records[0].fields.get("output_count"),
+        Some(&TraceValue::U64(if span_name == "generate_registers" {
+            2
+        } else {
+            1
+        }))
+    );
+    assert!(!records[1].is_span);
+    assert_eq!(records[1].target, "labels::repository");
+    assert_eq!(records[1].level, tracing::Level::DEBUG);
+    assert_eq!(
+        records[1].fields.get("outcome"),
+        Some(&TraceValue::Str("refused".into()))
+    );
+    assert_eq!(
+        records[1].fields.get("refusal_kind"),
+        Some(&TraceValue::Str(refusal_kind.into()))
+    );
 }
 
 #[test]

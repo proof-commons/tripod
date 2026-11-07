@@ -9,7 +9,7 @@
 use std::{path::PathBuf, process::ExitCode};
 
 use clap::Parser;
-use cli_common::{BaseArgs, CheckOutputArgs, install_json_panic_hook, run_check_command};
+use cli_common::{BaseArgs, CheckOutputArgs, install_command_subscriber, run_check_command};
 
 const COMMAND_NAME: &str = "check-labels";
 
@@ -98,7 +98,7 @@ impl Args {
 fn main() -> ExitCode {
     // Installed before parsing so an early panic still fails closed
     // with a JSON-only record (ADR-010 early-startup rule).
-    install_json_panic_hook(COMMAND_NAME);
+    install_command_subscriber(COMMAND_NAME);
     let args = cli_common::parse_args_or_exit::<Args>();
     run_check_command(
         COMMAND_NAME,
@@ -113,13 +113,17 @@ fn main() -> ExitCode {
             // or not the check passes: a warning only raised on failure
             // is a warning no passing run ever shows.
             for diagnostic in diagnostics.iter().filter(|d| !d.is_error()) {
-                tracing::warn!(code = ?diagnostic.code, path = %diagnostic.path, line = diagnostic.line, message = %diagnostic.message, "label check warning");
+                if tracing::enabled!(target: "labels::check", tracing::Level::WARN) {
+                    tracing::warn!(target: "labels::check", diagnostic_code = diagnostic.code.as_str(), path = diagnostic.path.as_str(), line = u64::try_from(diagnostic.line).unwrap_or(u64::MAX), column = u64::try_from(diagnostic.column).unwrap_or(u64::MAX), detail = diagnostic.message.as_str(), "label check warning");
+                }
             }
             if report.valid {
                 return Ok(report);
             }
             for diagnostic in diagnostics.iter().filter(|d| d.is_error()) {
-                tracing::error!(code = ?diagnostic.code, path = %diagnostic.path, line = diagnostic.line, message = %diagnostic.message, "label check failed");
+                if tracing::enabled!(target: "labels::check", tracing::Level::ERROR) {
+                    tracing::error!(target: "labels::check", diagnostic_code = diagnostic.code.as_str(), path = diagnostic.path.as_str(), line = u64::try_from(diagnostic.line).unwrap_or(u64::MAX), column = u64::try_from(diagnostic.column).unwrap_or(u64::MAX), detail = diagnostic.message.as_str(), "label check failed");
+                }
             }
             Err("repository label validation failed".to_owned())
         },

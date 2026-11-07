@@ -26,10 +26,14 @@ pub struct CheckReport {
     pub valid: bool,
 }
 pub fn check_repository(paths: &RepositoryCensus) -> (CheckReport, Vec<LabelDiagnostic>) {
-    let mut labels = RepositoryLabels::harvest_sources(paths);
+    let span = tracing::info_span!(target: "labels::check", "check_repository");
+    let _entered = span.enter();
+    let mut labels = RepositoryLabels::harvest_sources_core(paths);
     // Full census verification (ADR-014): the argument census must
     // equal the on-disk discovery for every group.
-    labels.diagnostics.extend(paths.verify(CensusGroup::ALL));
+    labels
+        .diagnostics
+        .extend(paths.verify_core(CensusGroup::ALL));
     current(
         paths,
         &paths.specification_register,
@@ -92,6 +96,16 @@ pub fn check_repository(paths: &RepositoryCensus) -> (CheckReport, Vec<LabelDiag
         imported_citations: labels.imported_citation_count(),
         valid,
     };
+    if tracing::enabled!(target: "labels::check", tracing::Level::INFO) {
+        tracing::info!(
+            target: "labels::check",
+            outcome = "completed",
+            valid = report.valid,
+            source_file_count = paths.source_file_count(),
+            diagnostic_count = u64::try_from(labels.diagnostics.len()).unwrap_or(u64::MAX),
+            "label check completed"
+        );
+    }
     (report, labels.diagnostics)
 }
 fn current(
