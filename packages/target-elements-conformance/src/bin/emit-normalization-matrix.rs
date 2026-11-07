@@ -36,7 +36,7 @@
 use std::process::ExitCode;
 
 use clap::Parser;
-use cli_common::{BaseArgs, install_json_panic_hook, run_stdout_json_command};
+use cli_common::{BaseArgs, install_command_subscriber, run_stdout_json_command};
 use target_elements_conformance::emit::normalization_matrix_document;
 
 const COMMAND_NAME: &str = "emit-normalization-matrix";
@@ -53,9 +53,7 @@ struct Args {
 }
 
 fn main() -> ExitCode {
-    // Installed before parsing so an early panic still fails closed with
-    // a JSON-only record (ADR-010 early-startup rule).
-    install_json_panic_hook(COMMAND_NAME);
+    install_command_subscriber(COMMAND_NAME);
     let args = cli_common::parse_args_or_exit::<Args>();
     run_stdout_json_command(
         COMMAND_NAME,

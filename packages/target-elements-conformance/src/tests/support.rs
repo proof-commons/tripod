@@ -225,3 +225,79 @@ pub fn confidential_handshake() -> ExecutorHandshake {
     handshake.confidential_funding = Some(confidential_advertisement());
     handshake
 }
+#[derive(Clone)]
+struct TraceWriter(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+static CAPTURE_INSTALL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+const CAPTURE_CHILD_MARKER: &str = "TRIPOD_TARGET_ELEMENTS_CONFORMANCE_CAPTURE_CHILD";
+
+/// Runs a capture test alone in this test binary before its body installs a subscriber.
+///
+/// # Panics
+/// Panics only if this test binary cannot re-execute or if the selected child test fails or is not selected exactly once.
+pub fn isolated_capture_child(test_path: &str) -> bool {
+    if std::env::var(CAPTURE_CHILD_MARKER).as_deref() == Ok("1") {
+        return true;
+    }
+    let output = std::process::Command::new(std::env::current_exe().expect("current test binary"))
+        .arg("--exact")
+        .arg(test_path)
+        .env(CAPTURE_CHILD_MARKER, "1")
+        .output()
+        .expect("run isolated capture test");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "isolated capture {test_path} exited {}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status
+    );
+    assert_eq!(
+        stdout
+            .lines()
+            .filter(|line| line.starts_with("test result: ok. 1 passed; 0 failed;"))
+            .count(),
+        1,
+        "isolated capture {test_path} selected the wrong number of tests\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    false
+}
+
+impl std::io::Write for TraceWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .expect("trace buffer lock")
+            .extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Captures the current thread's trace without changing the process subscriber.
+///
+/// # Panics
+/// Panics only if the test-owned capture mutex is poisoned or its formatter writes non-UTF-8 bytes, which this formatter cannot arrange.
+pub fn capture_trace<T>(run: impl FnOnce() -> T) -> (T, String) {
+    let _install_guard = CAPTURE_INSTALL_LOCK.lock().expect("capture install lock");
+    let bytes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let writer = TraceWriter(std::sync::Arc::clone(&bytes));
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_target(true)
+        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+        .with_writer(move || writer.clone())
+        .finish();
+    let value = tracing::subscriber::with_default(subscriber, || {
+        tracing::callsite::rebuild_interest_cache();
+        run()
+    });
+    let output = String::from_utf8(bytes.lock().expect("trace buffer lock").clone())
+        .expect("trace output is UTF-8");
+    (value, output)
+}

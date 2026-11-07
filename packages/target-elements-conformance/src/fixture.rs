@@ -1286,6 +1286,39 @@ pub fn canonical_fixture_set(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
 ) -> Result<CanonicalPrimitiveFixtureSet, NativeConformanceError> {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::fixture",
+        "build_matrix",
+        matrix = "primitive"
+    );
+    let _entered = span.enter();
+    let result = canonical_fixture_set_core(target, binding);
+    match &result {
+        Ok(matrix) => tracing::event!(
+            target: "target_elements_conformance::fixture",
+            tracing::Level::DEBUG,
+            outcome = "completed",
+            matrix = "primitive",
+            row_count = u64::try_from(matrix.len()).unwrap_or(u64::MAX),
+            request_count = u64::try_from(matrix.len()).unwrap_or(u64::MAX),
+            "matrix built"
+        ),
+        Err(error) => tracing::event!(
+            target: "target_elements_conformance::fixture",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            matrix = "primitive",
+            refusal_kind = error.tracing_kind(),
+            "matrix built"
+        ),
+    }
+    result
+}
+
+fn canonical_fixture_set_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+) -> Result<CanonicalPrimitiveFixtureSet, NativeConformanceError> {
     Ok(CanonicalPrimitiveFixtureSet {
         fixtures: crate::census::canonical_census(target, binding)?,
     })

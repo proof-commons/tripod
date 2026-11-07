@@ -76,7 +76,6 @@ impl PrototypeRelation {
         }
     }
 }
-
 /// Which prototype case a fixture answers for.
 ///
 /// A relation and an ordinal name. The name is a label for a reader and
@@ -779,9 +778,52 @@ pub use crate::census::constructor::bearing_cases;
 pub fn constructor_case_matrix(
     target: &ReviewedElementsTapscriptDefinition,
 ) -> Result<ConstructorPrototypeMatrix, ConstructorMatrixDefect> {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::prototype",
+        "build_matrix",
+        matrix = "constructor"
+    );
+    let _entered = span.enter();
+    let result = constructor_case_matrix_core(target);
+    match &result {
+        Ok(matrix) => tracing::event!(
+            target: "target_elements_conformance::prototype",
+            tracing::Level::DEBUG,
+            outcome = "completed",
+            matrix = "constructor",
+            row_count = u64::try_from(matrix.len()).unwrap_or(u64::MAX),
+            request_count = u64::try_from(matrix.len()).unwrap_or(u64::MAX),
+            "matrix built"
+        ),
+        Err(error) => tracing::event!(
+            target: "target_elements_conformance::prototype",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            matrix = "constructor",
+            refusal_kind = constructor_matrix_defect_kind(error),
+            "matrix built"
+        ),
+    }
+    result
+}
+
+fn constructor_case_matrix_core(
+    target: &ReviewedElementsTapscriptDefinition,
+) -> Result<ConstructorPrototypeMatrix, ConstructorMatrixDefect> {
     Ok(ConstructorPrototypeMatrix {
         rows: crate::census::constructor::constructor_matrix(target)?,
     })
+}
+
+const fn constructor_matrix_defect_kind(defect: &ConstructorMatrixDefect) -> &'static str {
+    match defect {
+        ConstructorMatrixDefect::ProgramNotAdmitted => "program_not_admitted",
+        ConstructorMatrixDefect::InstanceNotConstructible => "instance_not_constructible",
+        ConstructorMatrixDefect::TransitionNotAvailable => "transition_not_available",
+        ConstructorMatrixDefect::LeafNotExpressible => "leaf_not_expressible",
+        ConstructorMatrixDefect::ParityNotFound => "parity_not_found",
+        ConstructorMatrixDefect::CanonicalSideNotFound => "canonical_side_not_found",
+    }
 }
 
 /// Why the wide-floor matrix could not be authored.
@@ -805,10 +847,110 @@ pub use crate::census::wide_floor::residual_threats as wide_floor_residual_threa
 pub fn wide_floor_case_matrix(
     target: &ReviewedElementsTapscriptDefinition,
 ) -> Result<WideFloorPrototypeMatrix, WideFloorMatrixDefect> {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::prototype",
+        "build_matrix",
+        matrix = "wide_floor"
+    );
+    let _entered = span.enter();
+    let result = wide_floor_case_matrix_core(target);
+    match &result {
+        Ok(matrix) => tracing::event!(
+            target: "target_elements_conformance::prototype",
+            tracing::Level::DEBUG,
+            outcome = "completed",
+            matrix = "wide_floor",
+            row_count = u64::try_from(matrix.len()).unwrap_or(u64::MAX),
+            request_count = u64::try_from(matrix.len()).unwrap_or(u64::MAX),
+            "matrix built"
+        ),
+        Err(error) => tracing::event!(
+            target: "target_elements_conformance::prototype",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            matrix = "wide_floor",
+            refusal_kind = wide_floor_matrix_defect_kind(error),
+            "matrix built"
+        ),
+    }
+    result
+}
+
+fn wide_floor_case_matrix_core(
+    target: &ReviewedElementsTapscriptDefinition,
+) -> Result<WideFloorPrototypeMatrix, WideFloorMatrixDefect> {
     Ok(WideFloorPrototypeMatrix {
         rows: crate::census::wide_floor::wide_floor_matrix(target)?,
     })
 }
 
+const fn wide_floor_matrix_defect_kind(defect: &WideFloorMatrixDefect) -> &'static str {
+    match defect {
+        WideFloorMatrixDefect::ProgramNotAdmitted => "program_not_admitted",
+        WideFloorMatrixDefect::InstanceNotAvailable => "instance_not_available",
+        WideFloorMatrixDefect::LeafNotConstructible => "leaf_not_constructible",
+        WideFloorMatrixDefect::VariantNotExpressible => "variant_not_expressible",
+    }
+}
+
 /// Which cases bear on each wide-floor claim, as the rows state it.
 pub use crate::census::wide_floor::bearing_cases as wide_floor_bearing_cases;
+
+#[cfg(test)]
+mod tracing_name_tests {
+    use super::{
+        ConstructorMatrixDefect, WideFloorMatrixDefect, constructor_matrix_defect_kind,
+        wide_floor_matrix_defect_kind,
+    };
+
+    fn expected_name(defect: &impl std::fmt::Debug) -> String {
+        let mut name = String::new();
+        for letter in format!("{defect:?}").chars() {
+            if letter.is_ascii_uppercase() {
+                if !name.is_empty() {
+                    name.push('_');
+                }
+                name.push(letter.to_ascii_lowercase());
+            } else {
+                name.push(letter);
+            }
+        }
+        name
+    }
+
+    fn assert_name(defect: &impl std::fmt::Debug, actual: &str) {
+        assert_eq!(actual, expected_name(defect));
+        assert!(
+            matches!(actual.as_bytes().first(), Some(b'a'..=b'z'))
+                && actual.split('_').all(|part| {
+                    !part.is_empty()
+                        && part
+                            .bytes()
+                            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+                }),
+            "invalid tracing kind {actual}"
+        );
+    }
+
+    #[test]
+    fn every_matrix_defect_tracing_name_matches_its_variant_and_snake_case_grammar() {
+        for defect in [
+            ConstructorMatrixDefect::ProgramNotAdmitted,
+            ConstructorMatrixDefect::InstanceNotConstructible,
+            ConstructorMatrixDefect::TransitionNotAvailable,
+            ConstructorMatrixDefect::LeafNotExpressible,
+            ConstructorMatrixDefect::ParityNotFound,
+            ConstructorMatrixDefect::CanonicalSideNotFound,
+        ] {
+            assert_name(&defect, constructor_matrix_defect_kind(&defect));
+        }
+        for defect in [
+            WideFloorMatrixDefect::ProgramNotAdmitted,
+            WideFloorMatrixDefect::InstanceNotAvailable,
+            WideFloorMatrixDefect::LeafNotConstructible,
+            WideFloorMatrixDefect::VariantNotExpressible,
+        ] {
+            assert_name(&defect, wide_floor_matrix_defect_kind(&defect));
+        }
+    }
+}

@@ -43,8 +43,8 @@
 //!
 //! It exists so the protocol's failure paths — a malformed line, a wrong
 //! schema, a duplicated, missing, reordered, or unexpected result, a
-//! child that dies, a child that hangs, a child that writes noise on
-//! stderr — can be driven to failure by a real subprocess. A run using
+//! child that dies, a child that hangs, a child whose diagnostic is
+//! discarded — can be driven to failure by a real subprocess. A run using
 //! it must be declared a mock run, and the gate refuses such a run
 //! whatever the report says (Guide-9 §1.6, §11.8).
 //!
@@ -69,11 +69,10 @@
 //! ignored them would let the harness pass an unusable path forever with
 //! nothing noticing.
 //!
-//! Its `noisy-stderr` behavior still writes on stderr, and that is the
-//! point of it: an arbitrary caller-selected executor may write anywhere,
-//! and what the harness promises is that nothing it wrote there is
-//! relayed. The reviewed adapter's promise — that it writes nothing there
-//! at all — is a different promise, checked where that adapter lives.
+//! Its `noisy-stderr` behavior emits a structured WARN through the shared
+//! subscriber. A separate local test child writes arbitrary raw stderr
+//! so the harness's discard rule is tested without making this first-party
+//! program an exception to the output contract.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
@@ -81,7 +80,8 @@ use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
 use cli_common::{
-    CommandExit, emit_control_plane_record, install_json_panic_hook, parse_args_from,
+    CommandExit, command_completed, command_failed, command_span, configure_command_diagnostics,
+    emit_control_plane_record, install_command_subscriber, parse_args_from,
 };
 use target_elements::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
@@ -368,12 +368,6 @@ fn mock_binding(
     validate_reviewed_development_binding(target, declared).ok()
 }
 
-/// The fixed text the noisy behavior writes on its stderr.
-///
-/// The harness must never relay it. It is a test-only string and names
-/// nothing.
-const NOISE: &str = "MOCK_EXECUTOR_STDERR_THAT_MUST_NOT_BE_RELAYED";
-
 #[derive(Parser)]
 #[command(
     name = "mock-native-executor",
@@ -436,7 +430,7 @@ fn note_startup(args: &Args) {
 }
 
 fn main() -> ExitCode {
-    install_json_panic_hook(COMMAND_NAME);
+    install_command_subscriber(COMMAND_NAME);
     let args: Args = match parse_args_from::<Args, _, _>(std::env::args_os()) {
         Ok(parsed) => parsed,
         Err(exit) => {
@@ -445,10 +439,25 @@ fn main() -> ExitCode {
         }
     };
 
+    configure_command_diagnostics(false, tracing::Level::INFO);
+    let span = command_span(COMMAND_NAME, "stdout");
+    let _entered = span.enter();
     note_startup(&args);
     let table = AnswerTable::new(args.unknown_case, args.prototype_verdicts.as_deref());
-    run(args.behavior, &table)
-        .map_or_else(|_| CommandExit::Failure.exit_code(), CommandExit::exit_code)
+    match run(args.behavior, &table) {
+        Ok(CommandExit::Success) => {
+            command_completed("stdout", true);
+            CommandExit::Success.exit_code()
+        }
+        Ok(exit) => {
+            command_failed("execute", &"protocol");
+            exit.exit_code()
+        }
+        Err(_) => {
+            command_failed("execute", &"io");
+            CommandExit::Failure.exit_code()
+        }
+    }
 }
 
 /// Writes one record the strict framing defines nothing for.
@@ -488,9 +497,7 @@ fn run(behavior: Behavior, table: &AnswerTable) -> std::io::Result<CommandExit> 
         return Ok(CommandExit::Failure);
     }
     if behavior == Behavior::NoisyStderr {
-        let mut stderr = std::io::stderr();
-        writeln!(stderr, "{NOISE}")?;
-        stderr.flush()?;
+        tracing::warn!(target: "target_elements_conformance::mock_executor", behavior = "noisy_stderr", "mock executor diagnostic");
     }
 
     let input = std::io::stdin();

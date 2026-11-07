@@ -14,6 +14,42 @@ use crate::emit::{
 };
 use crate::protocol::NATIVE_PROTOCOL_SCHEMA;
 
+#[test]
+fn document_tracing_preserves_result_bytes_and_marks_bad_records_as_refused() {
+    if !super::support::isolated_capture_child(
+        "tests::emit_tests::document_tracing_preserves_result_bytes_and_marks_bad_records_as_refused",
+    ) {
+        return;
+    }
+    let plain = conservation_matrix_document();
+    let (traced, matrix_trace) = super::support::capture_trace(conservation_matrix_document);
+    assert_eq!(plain, traced);
+    assert!(matrix_trace.contains("build_document"));
+    assert!(
+        matrix_trace.contains("outcome=\"completed\""),
+        "{matrix_trace}"
+    );
+    assert!(matrix_trace.contains("row_count="));
+
+    let plain = normalization_matrix_document().expect("normalization matrix");
+    let (traced, normalization_trace) = super::support::capture_trace(|| {
+        normalization_matrix_document().expect("normalization matrix")
+    });
+    assert_eq!(plain, traced);
+    assert!(normalization_trace.contains("document_kind=\"normalization_matrix\""));
+
+    let bad_record = serde_json::json!({"responses": []});
+    let plain = normalization_report_document(&bad_record).expect_err("bad census");
+    let (traced, refusal_trace) = super::support::capture_trace(|| {
+        normalization_report_document(&bad_record).expect_err("bad census")
+    });
+    assert_eq!(plain.as_bytes(), traced.as_bytes());
+    assert!(refusal_trace.contains("outcome=\"refused\""));
+    assert!(refusal_trace.contains("refusal_kind=\"run_record\""));
+    assert!(!refusal_trace.contains(" WARN "));
+    assert!(!refusal_trace.contains(" ERROR "));
+}
+
 /// The conservation matrix states this revision and separates its shapes.
 ///
 /// The separation is the property worth pinning: a request carries the

@@ -495,6 +495,45 @@ pub fn evaluate(
     plan: &EvidencePlan,
     registry: &ClaimRegistry,
 ) -> Result<NativeConformanceReport, NativeConformanceError> {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::validate",
+        "evaluate_report",
+        report_kind = "primitive",
+        case_count = u64::try_from(fixtures.len()).unwrap_or(u64::MAX)
+    );
+    let _entered = span.enter();
+    let result = evaluate_core(target, binding, fixtures, transcript, plan, registry);
+    match &result {
+        Ok(report) => tracing::event!(
+            target: "target_elements_conformance::validate",
+            tracing::Level::DEBUG,
+            outcome = "completed",
+            report_kind = "primitive",
+            case_count = u64::from(report.summary.cases_total),
+            passed_count = u64::from(report.summary.cases_passed),
+            failed_count = u64::from(report.summary.cases_failed),
+            "report assessed"
+        ),
+        Err(error) => tracing::event!(
+            target: "target_elements_conformance::validate",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            report_kind = "primitive",
+            refusal_kind = error.tracing_kind(),
+            "report assessed"
+        ),
+    }
+    result
+}
+
+fn evaluate_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    fixtures: &CanonicalPrimitiveFixtureSet,
+    transcript: &ExecutionTranscript,
+    plan: &EvidencePlan,
+    registry: &ClaimRegistry,
+) -> Result<NativeConformanceReport, NativeConformanceError> {
     let regenerated = canonical_fixture_set(target, binding)?;
     if regenerated.len() != fixtures.len() {
         return Err(NativeConformanceError::NoncanonicalFixtureCensus);
@@ -886,6 +925,41 @@ pub fn validate_native_report(
     report: NativeConformanceReport,
     inputs: NativeReportValidationInputs<'_>,
 ) -> Result<ValidatedNativeConformanceReport, NativeConformanceError> {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::validate",
+        "validate_report",
+        report_kind = "primitive",
+        case_count = u64::try_from(report.cases.len()).unwrap_or(u64::MAX)
+    );
+    let _entered = span.enter();
+    let result = validate_native_report_core(report, inputs);
+    match &result {
+        Ok(validated) => tracing::event!(
+            target: "target_elements_conformance::validate",
+            tracing::Level::DEBUG,
+            outcome = "completed",
+            report_kind = "primitive",
+            case_count = u64::from(validated.report.summary.cases_total),
+            passed_count = u64::from(validated.report.summary.cases_passed),
+            failed_count = u64::from(validated.report.summary.cases_failed),
+            "report assessed"
+        ),
+        Err(error) => tracing::event!(
+            target: "target_elements_conformance::validate",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            report_kind = "primitive",
+            refusal_kind = error.tracing_kind(),
+            "report assessed"
+        ),
+    }
+    result
+}
+
+fn validate_native_report_core(
+    report: NativeConformanceReport,
+    inputs: NativeReportValidationInputs<'_>,
+) -> Result<ValidatedNativeConformanceReport, NativeConformanceError> {
     if report.schema != NATIVE_REPORT_SCHEMA {
         return Err(NativeConformanceError::UnsupportedReportSchema {
             offered: report.schema,
@@ -915,7 +989,7 @@ pub fn validate_native_report(
         inputs.transcript.environment(),
     )?;
 
-    let recomputed = evaluate(
+    let recomputed = evaluate_core(
         inputs.target,
         inputs.binding,
         inputs.fixtures,
@@ -1028,6 +1102,49 @@ pub fn validate_native_report(
 /// [`NativeConformanceError::ReportSummaryFailed`] for a report whose
 /// own summary records the run as failed.
 pub fn gate(
+    validated: &ValidatedNativeConformanceReport,
+    expected_provenance: Option<&ExpectedExecutorProvenance>,
+) -> Result<(), NativeConformanceError> {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::validate",
+        "gate_report",
+        report_kind = "primitive"
+    );
+    let _entered = span.enter();
+    let result = gate_core(validated, expected_provenance);
+    match &result {
+        Ok(()) => tracing::event!(
+            target: "target_elements_conformance::validate",
+            tracing::Level::DEBUG,
+            outcome = "completed",
+            report_kind = "primitive",
+            admitted = true,
+            mock = false,
+            "report gate completed"
+        ),
+        Err(error @ NativeConformanceError::MockExecutorCannotSatisfyNativeGate) => {
+            tracing::event!(
+                target: "target_elements_conformance::validate",
+                tracing::Level::DEBUG,
+                outcome = "refused",
+                report_kind = "primitive",
+                refusal_kind = error.tracing_kind(),
+                "report gate completed"
+            );
+        }
+        Err(error) => tracing::event!(
+            target: "target_elements_conformance::validate",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            report_kind = "primitive",
+            refusal_kind = error.tracing_kind(),
+            "report gate completed"
+        ),
+    }
+    result
+}
+
+fn gate_core(
     validated: &ValidatedNativeConformanceReport,
     expected_provenance: Option<&ExpectedExecutorProvenance>,
 ) -> Result<(), NativeConformanceError> {

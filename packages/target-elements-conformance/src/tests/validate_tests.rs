@@ -684,3 +684,77 @@ fn a_declared_mock_run_can_never_satisfy_the_gate() {
         NativeConformanceError::MockExecutorCannotSatisfyNativeGate,
     ));
 }
+
+#[test]
+fn report_tracing_preserves_bytes_and_keeps_expected_refusals_at_debug() {
+    if !super::support::isolated_capture_child(
+        "tests::validate_tests::report_tracing_preserves_bytes_and_keeps_expected_refusals_at_debug",
+    ) {
+        return;
+    }
+    let run = Run::passing();
+    let (traced_fixtures, matrix_trace) = super::support::capture_trace(|| {
+        canonical_fixture_set(&run.target, &run.binding).expect("canonical fixtures")
+    });
+    assert_eq!(run.fixtures, traced_fixtures);
+    assert!(matrix_trace.contains("build_matrix"));
+    assert!(matrix_trace.contains("outcome=\"completed\""));
+    let plain = run.report();
+    let (traced, evaluated) = super::support::capture_trace(|| run.report());
+    assert_eq!(
+        serde_json::to_vec(&plain).expect("plain report bytes"),
+        serde_json::to_vec(&traced).expect("traced report bytes"),
+    );
+    assert!(evaluated.contains("evaluate_report"));
+    assert!(evaluated.contains("outcome=\"completed\""));
+
+    let (validated, validation) = super::support::capture_trace(|| {
+        validate_native_report(traced.clone(), run.inputs()).expect("control report validates")
+    });
+    assert!(validation.contains("validate_report"));
+    assert!(validation.contains("outcome=\"completed\""));
+    let (admitted, gate_trace) =
+        super::support::capture_trace(|| gate(&validated, Some(&expected_provenance())));
+    assert!(admitted.is_ok());
+    assert!(gate_trace.contains("gate_report"));
+
+    let mut damaged = traced;
+    damaged.schema = NATIVE_REPORT_SCHEMA - 1;
+    let plain_refusal = validate_native_report(damaged.clone(), run.inputs())
+        .expect_err("one schema coordinate is refused without capture");
+    let (refused, refusal_trace) = super::support::capture_trace(|| {
+        validate_native_report(damaged, run.inputs()).expect_err("one schema coordinate is refused")
+    });
+    assert_eq!(
+        plain_refusal.to_string().as_bytes(),
+        refused.to_string().as_bytes()
+    );
+    assert!(matches!(
+        refused,
+        NativeConformanceError::UnsupportedReportSchema { .. }
+    ));
+    assert!(refusal_trace.contains("outcome=\"refused\""));
+    assert!(refusal_trace.contains("refusal_kind=\"unsupported_report_schema\""));
+    assert!(!refusal_trace.contains(" WARN "));
+    assert!(!refusal_trace.contains(" ERROR "));
+
+    let mock = Run::new(ExecutorTrust::Mock, |_case, _answer| None);
+    let mock_validated = validate_native_report(mock.report(), mock.inputs())
+        .expect("mock report validates as a report");
+    let plain_mock_refusal = gate(&mock_validated, Some(&expected_provenance()))
+        .expect_err("mock evidence is refused without capture");
+    let (mock_refusal, mock_trace) = super::support::capture_trace(|| {
+        gate(&mock_validated, Some(&expected_provenance())).expect_err("mock evidence is refused")
+    });
+    assert_eq!(
+        plain_mock_refusal.to_string().as_bytes(),
+        mock_refusal.to_string().as_bytes()
+    );
+    assert!(matches!(
+        mock_refusal,
+        NativeConformanceError::MockExecutorCannotSatisfyNativeGate
+    ));
+    assert!(mock_trace.contains("refusal_kind=\"mock_executor_cannot_satisfy_native_gate\""));
+    assert!(!mock_trace.contains(" WARN "));
+    assert!(!mock_trace.contains(" ERROR "));
+}

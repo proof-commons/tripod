@@ -44,6 +44,10 @@ use crate::protocol::{
     LifecycleCheck, NATIVE_PROTOCOL_SCHEMA, NativeNormalizationResponse, NormalizationCaseId,
 };
 
+fn document_count(document: &serde_json::Value, member: &str) -> u64 {
+    u64::try_from(document[member].as_array().map_or(0, Vec::len)).unwrap_or(u64::MAX)
+}
+
 /// The canonical §8.4 conservation matrix, as the emitted document.
 ///
 /// `rows` carries the whole matrix, expectations included, for a reader
@@ -57,6 +61,26 @@ use crate::protocol::{
 /// wave established it cannot materialize is not asked of a target.
 #[must_use]
 pub fn conservation_matrix_document() -> serde_json::Value {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::emit",
+        "build_document",
+        document_kind = "conservation_matrix"
+    );
+    let _entered = span.enter();
+    let document = conservation_matrix_document_core();
+    tracing::event!(
+        target: "target_elements_conformance::emit",
+        tracing::Level::DEBUG,
+        outcome = "completed",
+        document_kind = "conservation_matrix",
+        row_count = document_count(&document, "rows"),
+        request_count = document_count(&document, "requests"),
+        "document built"
+    );
+    document
+}
+
+fn conservation_matrix_document_core() -> serde_json::Value {
     let matrix = canonical_conservation_matrix();
     let requests: Vec<_> = matrix
         .iter()
@@ -90,6 +114,37 @@ pub fn conservation_matrix_document() -> serde_json::Value {
 /// a crash; here it is a refusal a caller can observe, which is what
 /// makes it testable at all.
 pub fn normalization_matrix_document() -> Result<serde_json::Value, String> {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::emit",
+        "build_document",
+        document_kind = "normalization_matrix"
+    );
+    let _entered = span.enter();
+    let result = normalization_matrix_document_core();
+    if let Ok(document) = &result {
+        tracing::event!(
+            target: "target_elements_conformance::emit",
+            tracing::Level::DEBUG,
+            outcome = "completed",
+            document_kind = "normalization_matrix",
+            row_count = document_count(document, "rows"),
+            request_count = document_count(document, "requests"),
+            "document built"
+        );
+    } else {
+        tracing::event!(
+            target: "target_elements_conformance::emit",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            document_kind = "normalization_matrix",
+            refusal_kind = "claim_conservation",
+            "document built"
+        );
+    }
+    result
+}
+
+fn normalization_matrix_document_core() -> Result<serde_json::Value, String> {
     let matrix = canonical_mutation_matrix();
     let claim = NormalizationClaim::canonical();
     if !claim.conserves() {
@@ -129,6 +184,38 @@ pub fn normalization_matrix_document() -> Result<serde_json::Value, String> {
 /// census of the canonical matrix, or where the report does not
 /// serialize.
 pub fn normalization_report_document(
+    record: &serde_json::Value,
+) -> Result<NormalizationReport, String> {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::emit",
+        "build_document",
+        document_kind = "normalization_report"
+    );
+    let _entered = span.enter();
+    let result = normalization_report_document_core(record);
+    if let Ok(report) = &result {
+        tracing::event!(
+            target: "target_elements_conformance::emit",
+            tracing::Level::DEBUG,
+            outcome = "completed",
+            document_kind = "normalization_report",
+            row_count = u64::try_from(report.rows.len()).unwrap_or(u64::MAX),
+            "document built"
+        );
+    } else {
+        tracing::event!(
+            target: "target_elements_conformance::emit",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            document_kind = "normalization_report",
+            refusal_kind = "run_record",
+            "document built"
+        );
+    }
+    result
+}
+
+fn normalization_report_document_core(
     record: &serde_json::Value,
 ) -> Result<NormalizationReport, String> {
     let responses: Vec<NativeNormalizationResponse> =
@@ -197,6 +284,38 @@ pub fn normalization_report_document(
 /// A note naming what the record does not state, or which gate the run
 /// does not meet.
 pub fn lifecycle_report_document(
+    record: &serde_json::Value,
+) -> Result<FreshProcessLifecycleReport, String> {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::emit",
+        "build_document",
+        document_kind = "lifecycle_report"
+    );
+    let _entered = span.enter();
+    let result = lifecycle_report_document_core(record);
+    if let Ok(report) = &result {
+        tracing::event!(
+            target: "target_elements_conformance::emit",
+            tracing::Level::DEBUG,
+            outcome = "completed",
+            document_kind = "lifecycle_report",
+            pass_count = u64::try_from(report.passes.len()).unwrap_or(u64::MAX),
+            "document built"
+        );
+    } else {
+        tracing::event!(
+            target: "target_elements_conformance::emit",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            document_kind = "lifecycle_report",
+            refusal_kind = "run_record",
+            "document built"
+        );
+    }
+    result
+}
+
+fn lifecycle_report_document_core(
     record: &serde_json::Value,
 ) -> Result<FreshProcessLifecycleReport, String> {
     // Parsed into the typed record rather than read field by field. An

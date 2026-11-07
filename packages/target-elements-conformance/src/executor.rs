@@ -994,6 +994,7 @@ pub(crate) struct PrototypeTranscriptParts<'a> {
 fn spawn_executor(
     program: &std::path::Path,
     diagnostics: &ExecutorDiagnostics,
+    attempt_count: Option<&std::cell::Cell<u64>>,
 ) -> std::io::Result<std::process::Child> {
     let mut attempts = 0u8;
     loop {
@@ -1020,6 +1021,9 @@ fn spawn_executor(
         #[cfg(unix)]
         std::os::unix::process::CommandExt::process_group(&mut command, 0);
         let result = command.spawn();
+        if let Some(count) = attempt_count {
+            count.set(count.get().saturating_add(1));
+        }
         match result {
             Err(error) if error.raw_os_error() == Some(libc_etxtbsy()) && attempts < 5 => {
                 attempts += 1;
@@ -1229,6 +1233,12 @@ impl ExecutorSupervisor {
     /// the descendants it started, and those are exactly what the group
     /// signal exists to reach.
     fn terminate(&self, grace: Duration) {
+        let span = tracing::debug_span!(
+            target: "target_elements_conformance::executor",
+            "executor_cleanup",
+            grace_ms = u64::try_from(grace.as_millis()).unwrap_or(u64::MAX)
+        );
+        let _entered = span.enter();
         let _sequence = self
             .termination
             .lock()
@@ -1461,12 +1471,164 @@ fn execute_workload(
 }
 
 /// The supervised run, optionally retaining a progressive operation capture.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one aggregate event covers all supervised return paths"
+)]
 fn execute_workload_with_capture(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
     configuration: &ExecutorConfiguration,
     workload: NativeWorkload<'_>,
+    capture: Option<&mut NativeOperationCapture>,
+) -> Result<ExecutionTranscript, NativeConformanceError> {
+    let info_enabled = tracing::enabled!(
+        target: "target_elements_conformance::executor",
+        tracing::Level::INFO
+    );
+    let debug_enabled = tracing::enabled!(
+        target: "target_elements_conformance::executor",
+        tracing::Level::DEBUG
+    );
+    let workload_kind = if info_enabled || debug_enabled {
+        match &workload {
+            NativeWorkload::Primitives(_) => "primitive",
+            NativeWorkload::Prototypes(_) => "prototype",
+            NativeWorkload::Operations(_) => "operation",
+        }
+    } else {
+        ""
+    };
+    let trust = if info_enabled {
+        match configuration.trust {
+            ExecutorTrust::Mock => "mock",
+            ExecutorTrust::ReviewedNonMock => "reviewed_non_mock",
+        }
+    } else {
+        ""
+    };
+    let case_count = if info_enabled {
+        match &workload {
+            NativeWorkload::Primitives(fixtures) => Some(fixtures.len()),
+            NativeWorkload::Prototypes(matrix) => Some(matrix.len()),
+            NativeWorkload::Operations(_) => None,
+        }
+    } else {
+        None
+    };
+    let span = tracing::info_span!(
+        target: "target_elements_conformance::executor",
+        "executor_run",
+        workload = workload_kind,
+        trust,
+        case_count = tracing::field::Empty
+    );
+    if let Some(count) = case_count {
+        span.record("case_count", u64::try_from(count).unwrap_or(u64::MAX));
+    }
+    let _entered = span.enter();
+    let attempts = info_enabled.then(|| std::cell::Cell::new(0));
+    let result = execute_workload_core(
+        target,
+        binding,
+        configuration,
+        workload,
+        capture,
+        attempts.as_ref(),
+    );
+    match &result {
+        Ok(transcript) if info_enabled => {
+            let response_count = transcript
+                .responses
+                .len()
+                .saturating_add(transcript.prototype_responses.len())
+                .saturating_add(transcript.operation_responses.len());
+            if let Some(count) = case_count {
+                tracing::event!(
+                    target: "target_elements_conformance::executor",
+                    tracing::Level::INFO,
+                    outcome = "completed",
+                    workload = workload_kind,
+                    case_count = u64::try_from(count).unwrap_or(u64::MAX),
+                    response_count = u64::try_from(response_count).unwrap_or(u64::MAX),
+                    attempt_count = attempts.as_ref().map_or(0, std::cell::Cell::get),
+                    "executor run completed"
+                );
+            } else {
+                tracing::event!(
+                    target: "target_elements_conformance::executor",
+                    tracing::Level::INFO,
+                    outcome = "completed",
+                    workload = workload_kind,
+                    response_count = u64::try_from(response_count).unwrap_or(u64::MAX),
+                    attempt_count = attempts.as_ref().map_or(0, std::cell::Cell::get),
+                    "executor run completed"
+                );
+            }
+        }
+        Err(error) if debug_enabled && executor_is_refusal(error) => {
+            let (refusal_kind, phase, record_byte_limit) = executor_refusal_fields(error);
+            if let Some(record_byte_limit) = record_byte_limit {
+                tracing::event!(
+                    target: "target_elements_conformance::executor",
+                    tracing::Level::DEBUG,
+                    outcome = "refused",
+                    workload = workload_kind,
+                    refusal_kind,
+                    phase,
+                    record_byte_limit,
+                    "executor run completed"
+                );
+            } else {
+                tracing::event!(
+                    target: "target_elements_conformance::executor",
+                    tracing::Level::DEBUG,
+                    outcome = "refused",
+                    workload = workload_kind,
+                    refusal_kind,
+                    phase,
+                    "executor run completed"
+                );
+            }
+        }
+        Err(error) if info_enabled && !executor_is_refusal(error) => {
+            let child_exit_code = match error {
+                NativeConformanceError::ExecutorExited { status } => *status,
+                _ => None,
+            };
+            if let Some(child_exit_code) = child_exit_code {
+                tracing::event!(
+                    target: "target_elements_conformance::executor",
+                    tracing::Level::INFO,
+                    outcome = "failed",
+                    workload = workload_kind,
+                    error_kind = executor_error_kind(error),
+                    child_exit_code,
+                    "executor run completed"
+                );
+            } else {
+                tracing::event!(
+                    target: "target_elements_conformance::executor",
+                    tracing::Level::INFO,
+                    outcome = "failed",
+                    workload = workload_kind,
+                    error_kind = executor_error_kind(error),
+                    "executor run completed"
+                );
+            }
+        }
+        _ => {}
+    }
+    result
+}
+
+fn execute_workload_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    configuration: &ExecutorConfiguration,
+    workload: NativeWorkload<'_>,
     mut capture: Option<&mut NativeOperationCapture>,
+    attempt_count: Option<&std::cell::Cell<u64>>,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
     // Under guard from the spawn onward. Every refusal between here and
     // the supervisor kills and reaps the process this harness started,
@@ -1476,7 +1638,11 @@ fn execute_workload_with_capture(
         finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
         return Err(error);
     }
-    let Ok(child) = spawn_executor(&configuration.program, &configuration.diagnostics) else {
+    let Ok(child) = spawn_executor(
+        &configuration.program,
+        &configuration.diagnostics,
+        attempt_count,
+    ) else {
         finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
         return Err(NativeConformanceError::ExecutorStartupFailed);
     };
@@ -1549,7 +1715,11 @@ fn execute_workload_with_capture(
     let transcript = match outcome {
         Ok(transcript) => transcript,
         Err(error) => {
-            if expired {
+            // An observed extra byte proves a protocol refusal even if the
+            // watchdog fires while cleanup runs. EOF caused by a watchdog
+            // kill is different: there the timeout remains authoritative.
+            let timeout_wins = timeout_overrides_error(expired, &error);
+            if timeout_wins {
                 finish_capture(&mut capture, CaptureTerminalState::Timeout);
             } else if capture
                 .as_deref()
@@ -1557,7 +1727,7 @@ fn execute_workload_with_capture(
             {
                 finish_capture(&mut capture, CaptureTerminalState::ReadRefused);
             }
-            return Err(if expired {
+            return Err(if timeout_wins {
                 NativeConformanceError::ExecutorTimeout
             } else {
                 error
@@ -1580,6 +1750,70 @@ fn execute_workload_with_capture(
 fn finish_capture(capture: &mut Option<&mut NativeOperationCapture>, state: CaptureTerminalState) {
     if let Some(capture) = capture.as_deref_mut() {
         capture.finish(state);
+    }
+}
+
+const fn timeout_overrides_error(expired: bool, error: &NativeConformanceError) -> bool {
+    expired && !matches!(error, NativeConformanceError::TrailingProtocolData)
+}
+
+const fn executor_is_refusal(error: &NativeConformanceError) -> bool {
+    !matches!(
+        error,
+        NativeConformanceError::ExecutorStartupFailed
+            | NativeConformanceError::ExecutorProcessGroupUnavailable
+            | NativeConformanceError::ExecutorHandshakeFailed
+            | NativeConformanceError::ExecutorTimeout
+            | NativeConformanceError::ExecutorExited { .. }
+    )
+}
+
+fn executor_refusal_fields(
+    error: &NativeConformanceError,
+) -> (&'static str, &'static str, Option<u64>) {
+    match error {
+        NativeConformanceError::ProtocolRecordTooLarge { phase, maximum }
+        | NativeConformanceError::RequestRecordTooLarge { phase, maximum } => (
+            error.tracing_kind(),
+            protocol_phase_name(*phase),
+            Some(u64::try_from(*maximum).unwrap_or(u64::MAX)),
+        ),
+        NativeConformanceError::MalformedResponse { phase }
+        | NativeConformanceError::BlankProtocolRecord { phase } => {
+            (error.tracing_kind(), protocol_phase_name(*phase), None)
+        }
+        NativeConformanceError::UnsupportedProtocolSchema { .. }
+        | NativeConformanceError::ExecutorProtocolMismatch => {
+            (error.tracing_kind(), "handshake", None)
+        }
+        NativeConformanceError::MissingEnvironmentObservation
+        | NativeConformanceError::EnvironmentBindingMismatch
+        | NativeConformanceError::GenesisObservationMismatch
+        | NativeConformanceError::ActivationObservationMismatch => {
+            (error.tracing_kind(), "environment", None)
+        }
+        NativeConformanceError::TrailingProtocolData => (error.tracing_kind(), "close", None),
+        NativeConformanceError::ResponseOrderViolation { .. }
+        | NativeConformanceError::PrototypeResponseOrderViolation { .. } => {
+            (error.tracing_kind(), "execute", None)
+        }
+        _ => (error.tracing_kind(), "execute", None),
+    }
+}
+
+const fn executor_error_kind(error: &NativeConformanceError) -> &'static str {
+    error.tracing_kind()
+}
+
+const fn protocol_phase_name(phase: crate::protocol::ProtocolPhase) -> &'static str {
+    match phase {
+        crate::protocol::ProtocolPhase::Startup => "startup",
+        crate::protocol::ProtocolPhase::Handshake => "handshake",
+        crate::protocol::ProtocolPhase::Environment => "environment",
+        crate::protocol::ProtocolPhase::Request | crate::protocol::ProtocolPhase::Response => {
+            "execute"
+        }
+        crate::protocol::ProtocolPhase::Shutdown => "close",
     }
 }
 
@@ -1748,6 +1982,10 @@ fn read_executor_environment(
     Ok(environment)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one exchange retains its strict request and response order"
+)]
 pub(crate) fn run_protocol_with_capture(
     target: &ReviewedElementsTapscriptDefinition,
     binding: &ReviewedDevelopmentBinding,
@@ -1758,9 +1996,31 @@ pub(crate) fn run_protocol_with_capture(
     mut capture: Option<&mut NativeOperationCapture>,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
     let limits = configuration.limits;
-    let handshake = read_executor_handshake(limits, &mut stdin, reader, &mut capture)?;
-    validate_executor_handshake(target, &workload, &handshake, &mut capture)?;
-    let environment = read_executor_environment(target, binding, limits, reader, &mut capture)?;
+    let workload_kind = if tracing::enabled!(
+        target: "target_elements_conformance::protocol",
+        tracing::Level::DEBUG
+    ) {
+        match &workload {
+            NativeWorkload::Primitives(_) => "primitive",
+            NativeWorkload::Prototypes(_) => "prototype",
+            NativeWorkload::Operations(_) => "operation",
+        }
+    } else {
+        ""
+    };
+    let (handshake, environment) = {
+        let span = tracing::debug_span!(
+            target: "target_elements_conformance::protocol",
+            "protocol_setup",
+            protocol_schema = NATIVE_PROTOCOL_SCHEMA,
+            workload = workload_kind
+        );
+        let _entered = span.enter();
+        let handshake = read_executor_handshake(limits, &mut stdin, reader, &mut capture)?;
+        validate_executor_handshake(target, &workload, &handshake, &mut capture)?;
+        let environment = read_executor_environment(target, binding, limits, reader, &mut capture)?;
+        (handshake, environment)
+    };
 
     let mut requests: BTreeMap<NativeCaseId, PrimitiveExecutionSubject> = BTreeMap::new();
     let mut responses: BTreeMap<NativeCaseId, NativeExecutionResponse> = BTreeMap::new();
@@ -1771,6 +2031,30 @@ pub(crate) fn run_protocol_with_capture(
     let mut operation_requests: BTreeMap<OperationCaseId, OperationSubject> = BTreeMap::new();
     let mut operation_responses: BTreeMap<OperationCaseId, NativeOperationResponse> =
         BTreeMap::new();
+    let cases_span = tracing::debug_span!(
+        target: "target_elements_conformance::protocol",
+        "protocol_cases",
+        workload = workload_kind,
+        case_count = tracing::field::Empty
+    );
+    if tracing::enabled!(target: "target_elements_conformance::protocol", tracing::Level::DEBUG) {
+        match &workload {
+            NativeWorkload::Primitives(fixtures) => {
+                cases_span.record(
+                    "case_count",
+                    u64::try_from(fixtures.len()).unwrap_or(u64::MAX),
+                );
+            }
+            NativeWorkload::Prototypes(matrix) => {
+                cases_span.record(
+                    "case_count",
+                    u64::try_from(matrix.len()).unwrap_or(u64::MAX),
+                );
+            }
+            NativeWorkload::Operations(_) => {}
+        }
+    }
+    let cases_entered = cases_span.enter();
     match workload {
         NativeWorkload::Primitives(fixtures) => run_primitive_cases(
             fixtures,
@@ -1804,6 +2088,7 @@ pub(crate) fn run_protocol_with_capture(
             },
         )?,
     }
+    drop(cases_entered);
 
     // Closing stdin is how a well-behaved executor learns the exchange
     // is over; it happens before the read below, because an executor
@@ -1815,7 +2100,7 @@ pub(crate) fn run_protocol_with_capture(
     // outside the exchange, which fails the run rather than being
     // ignored as harmless noise — a blank trailing record included,
     // since the framing has no empty records to be tolerant of.
-    if let Err(error) = expect_end_of_stream(reader, limits) {
+    if let Err(error) = expect_end_of_stream(reader) {
         return captured_refusal(&mut capture, CaptureTerminalState::ReadRefused, error);
     }
 
@@ -2318,20 +2603,17 @@ fn read_message<T: serde::de::DeserializeOwned>(
 ///
 /// Any further byte at all is trailing protocol data, including one that
 /// makes up a blank record: the framing defines no empty record, so an
-/// executor emitting one is writing outside the exchange.
-fn expect_end_of_stream(
-    reader: &mut impl BufRead,
-    limits: ProtocolLimits,
-) -> Result<(), NativeConformanceError> {
-    let phase = ProtocolPhase::Shutdown;
-    let maximum = limits.for_phase(phase);
-    let mut buffer = Vec::new();
-    let read = bounded_read(reader, maximum, &mut buffer)
-        .map_err(|_| NativeConformanceError::MalformedResponse { phase })?;
-    if read == 0 {
-        return Ok(());
+/// executor emitting one is writing outside the exchange. Inspect the
+/// first available byte; reading to a newline can wait after a violation
+/// is already observable and let the watchdog win during that wait.
+fn expect_end_of_stream(reader: &mut impl BufRead) -> Result<(), NativeConformanceError> {
+    match reader.fill_buf() {
+        Ok([]) => Ok(()),
+        Ok(_) => Err(NativeConformanceError::TrailingProtocolData),
+        Err(_) => Err(NativeConformanceError::MalformedResponse {
+            phase: ProtocolPhase::Shutdown,
+        }),
     }
-    Err(NativeConformanceError::TrailingProtocolData)
 }
 
 /// Reads one complete strict-NDJSON record.
@@ -2450,7 +2732,7 @@ impl Watchdog {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{self, Write};
+    use std::io::{self, BufRead, Read, Write};
     use std::path::Path;
     use std::time::Duration;
 
@@ -2462,20 +2744,79 @@ mod tests {
     use super::{
         CaptureTerminalState, ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust,
         NativeOperationCapture, NativeWorkload, OperationStep, PlanRefused, PrimitiveFixtureSet,
-        TargetOperationPlanner, UnadoptedChild, execute_operations_captured, run_protocol,
-        run_protocol_with_capture,
+        TargetOperationPlanner, UnadoptedChild, execute_operations_captured, expect_end_of_stream,
+        run_protocol, run_protocol_with_capture, timeout_overrides_error,
     };
     use crate::error::NativeConformanceError;
     use crate::protocol::{
         ExecutorCapability, MOCK_EXECUTOR_GENESIS_ID, MOCK_EXECUTOR_NETWORK_ID,
         MinedFundingReadback, NATIVE_PROTOCOL_SCHEMA, NativeOperationRequest,
         NativeOperationResponse, NativeResourceObservation, NativeVerdict, ObservedOutcomeLayer,
-        OperationCaseId, OperationStepKind, OperationSubject, ProtocolPhase,
+        OperationCaseId, OperationStepKind, OperationSubject, ProtocolLimits, ProtocolPhase,
         TargetSubmissionSubject,
     };
     use crate::tests::support::{
         confidential_handshake, development_binding, observed_environment, reviewed_target,
     };
+
+    struct FirstByteThenNoDelimiter {
+        consumed: bool,
+    }
+
+    impl Read for FirstByteThenNoDelimiter {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            panic!("the EOF check must inspect the buffered byte directly")
+        }
+    }
+
+    impl BufRead for FirstByteThenNoDelimiter {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            assert!(!self.consumed, "the EOF check waited for a delimiter");
+            Ok(b"x")
+        }
+
+        fn consume(&mut self, amount: usize) {
+            assert_eq!(amount, 1);
+            self.consumed = true;
+        }
+    }
+
+    #[test]
+    fn a_first_trailing_byte_is_refused_without_waiting_for_a_delimiter() {
+        let mut reader = FirstByteThenNoDelimiter { consumed: false };
+        assert!(matches!(
+            expect_end_of_stream(&mut reader),
+            Err(NativeConformanceError::TrailingProtocolData)
+        ));
+    }
+
+    #[test]
+    fn an_oversized_trailing_record_is_trailing_data() {
+        let bytes = vec![b'x'; ProtocolLimits::DEFAULT.maximum_trailing_record_bytes + 1];
+        let mut reader = io::Cursor::new(bytes);
+        assert!(matches!(
+            expect_end_of_stream(&mut reader),
+            Err(NativeConformanceError::TrailingProtocolData)
+        ));
+    }
+
+    #[test]
+    fn observed_trailing_data_remains_a_refusal_if_cleanup_reaches_the_timeout() {
+        assert!(!timeout_overrides_error(
+            true,
+            &NativeConformanceError::TrailingProtocolData
+        ));
+        assert!(timeout_overrides_error(
+            true,
+            &NativeConformanceError::ExecutorHandshakeFailed
+        ));
+        assert!(timeout_overrides_error(
+            true,
+            &NativeConformanceError::MalformedResponse {
+                phase: ProtocolPhase::Shutdown
+            }
+        ));
+    }
 
     /// `G11-R13`: a spawned child dropped before adoption is killed and
     /// reaped, not leaked.

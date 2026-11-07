@@ -644,6 +644,127 @@ pub enum NativeConformanceError {
     PrototypeCaseInfrastructureError(PrototypeCaseId),
 }
 
+macro_rules! tracing_kind_table {
+    ($($pattern:pat => $name:literal,)+) => {
+        /// A bounded static category for tracing; never formats error payloads.
+        #[allow(
+            clippy::too_many_lines,
+            reason = "each typed variant needs its own stable trace name"
+        )]
+        pub(crate) const fn tracing_kind(&self) -> &'static str {
+            match self {
+                $($pattern => $name,)+
+            }
+        }
+
+        #[cfg(test)]
+        pub(crate) const TRACING_KIND_PAIRS: &'static [(&'static str, &'static str)] = &[
+            $((stringify!($pattern), $name),)+
+        ];
+    };
+}
+
+impl NativeConformanceError {
+    tracing_kind_table! {
+            Self::UnsupportedProtocolSchema { .. } => "unsupported_protocol_schema",
+            Self::ExecutorStartupFailed => "executor_startup_failed",
+            Self::ExecutorProcessGroupUnavailable => "executor_process_group_unavailable",
+            Self::ExecutorHandshakeFailed => "executor_handshake_failed",
+            Self::ExecutorProtocolMismatch => "executor_protocol_mismatch",
+            Self::ExecutorTimeout => "executor_timeout",
+            Self::ExecutorExited { .. } => "executor_exited",
+            Self::MalformedResponse { .. } => "malformed_response",
+            Self::ProtocolRecordTooLarge { .. } => "protocol_record_too_large",
+            Self::RequestRecordTooLarge { .. } => "request_record_too_large",
+            Self::BlankProtocolRecord { .. } => "blank_protocol_record",
+            Self::MalformedResponseShape { .. } => "malformed_response_shape",
+            Self::MissingEnvironmentObservation => "missing_environment_observation",
+            Self::EnvironmentBindingMismatch => "environment_binding_mismatch",
+            Self::GenesisObservationMismatch => "genesis_observation_mismatch",
+            Self::ActivationObservationMismatch => "activation_observation_mismatch",
+            Self::TrailingProtocolData => "trailing_protocol_data",
+            Self::DuplicateCaseResponse(..) => "duplicate_case_response",
+            Self::MissingCaseResponse(..) => "missing_case_response",
+            Self::UnexpectedCaseResponse(..) => "unexpected_case_response",
+            Self::ResponseOrderViolation { .. } => "response_order_violation",
+            Self::PrototypeFixturesUnsupported => "prototype_fixtures_unsupported",
+            Self::MalformedPrototypeResponseShape { .. } => "malformed_prototype_response_shape",
+            Self::DuplicatePrototypeResponse(..) => "duplicate_prototype_response",
+            Self::MissingPrototypeResponse(..) => "missing_prototype_response",
+            Self::UnexpectedPrototypeResponse(..) => "unexpected_prototype_response",
+            Self::PrototypeResponseOrderViolation { .. } => "prototype_response_order_violation",
+            Self::OperationStepUnsupported(..) => "operation_step_unsupported",
+            Self::OperationPlanRefused => "operation_plan_refused",
+            Self::DuplicateOperationStep(..) => "duplicate_operation_step",
+            Self::MalformedOperationResponseShape { .. } => "malformed_operation_response_shape",
+            Self::DuplicateOperationResponse(..) => "duplicate_operation_response",
+            Self::MissingOperationResponse(..) => "missing_operation_response",
+            Self::UnexpectedOperationResponse(..) => "unexpected_operation_response",
+            Self::InfrastructureFailure(..) => "infrastructure_failure",
+            Self::DuplicateFixtureCase(..) => "duplicate_fixture_case",
+            Self::FixtureNotExpressible => "fixture_not_expressible",
+            Self::MalformedFixtureContext(..) => "malformed_fixture_context",
+            Self::TargetContractMismatch => "target_contract_mismatch",
+            Self::DevelopmentBindingMismatch => "development_binding_mismatch",
+            Self::EvidenceCensusMismatch => "evidence_census_mismatch",
+            Self::RequiredEvidenceMissing(..) => "required_evidence_missing",
+            Self::RequiredEvidenceFailed(..) => "required_evidence_failed",
+            Self::RequiredEvidenceInfrastructureError(..) => "required_evidence_infrastructure_error",
+            Self::RequiredRowWithoutRequiredClaim(..) => "required_row_without_required_claim",
+            Self::UnsupportedReportSchema { .. } => "unsupported_report_schema",
+            Self::ReportCaseCensusMismatch => "report_case_census_mismatch",
+            Self::DuplicateReportCase(..) => "duplicate_report_case",
+            Self::FixtureProjectionMismatch(..) => "fixture_projection_mismatch",
+            Self::ReportCaseOutcomeMismatch(..) => "report_case_outcome_mismatch",
+            Self::NoncanonicalFixtureCensus => "noncanonical_fixture_census",
+            Self::NoncanonicalFixtureSubject(..) => "noncanonical_fixture_subject",
+            Self::NoncanonicalPrototypeMatrix => "noncanonical_prototype_matrix",
+            Self::NoncanonicalPrototypeCase(..) => "noncanonical_prototype_case",
+            Self::CanonicalPrototypeMatrixUnavailable => "canonical_prototype_matrix_unavailable",
+            Self::TranscriptTargetRebinding => "transcript_target_rebinding",
+            Self::TranscriptDeploymentRebinding => "transcript_deployment_rebinding",
+            Self::MissingCaseRequest(..) => "missing_case_request",
+            Self::TranscriptSubjectMismatch(..) => "transcript_subject_mismatch",
+            Self::UnrequestedCaseResponse(..) => "unrequested_case_response",
+            Self::MissingPrototypeRequest(..) => "missing_prototype_request",
+            Self::PrototypeTranscriptSubjectMismatch(..) => "prototype_transcript_subject_mismatch",
+            Self::UnrequestedPrototypeResponse(..) => "unrequested_prototype_response",
+            Self::UnsupportedRequestExpectationBoundary { .. } => "unsupported_request_expectation_boundary",
+            Self::ReportEvidenceCensusMismatch => "report_evidence_census_mismatch",
+            Self::ReportClaimCensusMismatch => "report_claim_census_mismatch",
+            Self::DuplicateEvidenceClaim(..) => "duplicate_evidence_claim",
+            Self::MissingEvidenceClaim(..) => "missing_evidence_claim",
+            Self::UnexpectedEvidenceClaim(..) => "unexpected_evidence_claim",
+            Self::ReportSummaryMismatch => "report_summary_mismatch",
+            Self::ReportProvenanceMismatch => "report_provenance_mismatch",
+            Self::RequiredClaimMissing(..) => "required_claim_missing",
+            Self::RequiredClaimFailed(..) => "required_claim_failed",
+            Self::NativeCaseFailed(..) => "native_case_failed",
+            Self::NativeCaseInfrastructureError(..) => "native_case_infrastructure_error",
+            Self::ReportSummaryFailed => "report_summary_failed",
+            Self::ExecutorProvenanceUnestablished(..) => "executor_provenance_unestablished",
+            Self::ExpectedProvenanceUnavailable => "expected_provenance_unavailable",
+            Self::MockExecutorCannotSatisfyNativeGate => "mock_executor_cannot_satisfy_native_gate",
+            Self::PrototypeMatrixRelationMismatch { .. } => "prototype_matrix_relation_mismatch",
+            Self::DuplicatePrototypeCase(..) => "duplicate_prototype_case",
+            Self::IncoherentPrototypeFixture { .. } => "incoherent_prototype_fixture",
+            Self::PrototypeReportRoleMismatch => "prototype_report_role_mismatch",
+            Self::PrototypeReportCaseCensusMismatch => "prototype_report_case_census_mismatch",
+            Self::PrototypeProjectionMismatch(..) => "prototype_projection_mismatch",
+            Self::PrototypeCaseOutcomeMismatch(..) => "prototype_case_outcome_mismatch",
+            Self::DuplicatePrototypeClaim(..) => "duplicate_prototype_claim",
+            Self::MissingPrototypeClaim(..) => "missing_prototype_claim",
+            Self::UnexpectedPrototypeClaim(..) => "unexpected_prototype_claim",
+            Self::PrototypeReportClaimCensusMismatch => "prototype_report_claim_census_mismatch",
+            Self::PrototypeReportSummaryMismatch => "prototype_report_summary_mismatch",
+            Self::EmptyPrototypeMatrix => "empty_prototype_matrix",
+            Self::RequiredPrototypeClaimMissing(..) => "required_prototype_claim_missing",
+            Self::RequiredPrototypeClaimFailed(..) => "required_prototype_claim_failed",
+            Self::PrototypeCaseFailed(..) => "prototype_case_failed",
+            Self::PrototypeCaseInfrastructureError(..) => "prototype_case_infrastructure_error",
+    }
+}
+
 /// The safe spelling of one evidence requirement for a message.
 ///
 /// A requirement outside the spelling table cannot reach a message

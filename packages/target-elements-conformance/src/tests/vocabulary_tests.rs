@@ -11,11 +11,62 @@ use std::collections::BTreeSet;
 use target_elements::confidential::OpeningBlocker;
 use target_elements::{ElementsCapability, OpcodeId, TargetEvidenceRequirementId};
 
+use crate::error::NativeConformanceError;
 use crate::vocabulary::{
     capability_from_name, capability_name, evidence_requirement_from_name,
     evidence_requirement_name, opcode_from_name, opcode_name, opening_blocker_from_name,
     opening_blocker_name,
 };
+
+fn snake_case_variant(variant: &str) -> String {
+    let mut spelling = String::new();
+    for letter in variant.chars() {
+        if letter.is_ascii_uppercase() {
+            if !spelling.is_empty() {
+                spelling.push('_');
+            }
+            spelling.push(letter.to_ascii_lowercase());
+        } else {
+            spelling.push(letter);
+        }
+    }
+    spelling
+}
+
+fn valid_tracing_kind(kind: &str) -> bool {
+    let mut bytes = kind.bytes();
+    matches!(bytes.next(), Some(b'a'..=b'z'))
+        && kind.split('_').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        })
+}
+
+#[test]
+fn every_native_error_tracing_name_matches_its_variant_and_snake_case_grammar() {
+    for &(pattern, name) in NativeConformanceError::TRACING_KIND_PAIRS {
+        let variant = pattern
+            .rsplit("::")
+            .next()
+            .expect("a tracing pattern names one variant")
+            .trim_start()
+            .split(|letter: char| !letter.is_ascii_alphanumeric())
+            .next()
+            .expect("a tracing pattern contains the variant name");
+        assert!(valid_tracing_kind(name), "invalid tracing kind {name}");
+        assert_eq!(name, snake_case_variant(variant), "variant {variant}");
+    }
+}
+
+#[test]
+fn a_single_letter_variant_word_keeps_its_own_underscore() {
+    assert_eq!(
+        snake_case_variant("BundleIsNotACandidate"),
+        "bundle_is_not_a_candidate"
+    );
+}
 
 #[test]
 fn every_reviewed_primitive_has_one_spelling() {

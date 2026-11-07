@@ -36,6 +36,22 @@ fn run(args: &[&str]) -> Output {
         .expect("binary runs")
 }
 
+fn run_with_log(args: &[&str], rust_log: &str) -> Output {
+    Command::new(BINARY)
+        .args(args)
+        .env("RUST_LOG", rust_log)
+        .output()
+        .expect("binary runs")
+}
+
+fn stderr_records(output: &Output) -> Vec<serde_json::Value> {
+    String::from_utf8(output.stderr.clone())
+        .expect("stderr is utf8")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("stderr line is JSON"))
+        .collect()
+}
+
 /// A wrapper script selecting one mock behaviour.
 fn wrapper(directory: &Path, behavior: &str) -> PathBuf {
     let path = directory.join(format!("executor-{behavior}.sh"));
@@ -72,9 +88,12 @@ fn assert_json_only_stderr(output: &Output) {
 
 #[test]
 fn missing_arguments_are_usage_errors() {
-    let output = run(&[]);
+    let output = run_with_log(&[], "off");
     assert_eq!(output.status.code(), Some(2));
     assert_json_only_stderr(&output);
+    let records = stderr_records(&output);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["kind"], "usage_error");
 }
 
 #[test]
@@ -108,11 +127,17 @@ fn a_lone_report_destination_is_a_usage_error() {
 #[test]
 fn help_and_version_exit_zero_with_empty_stdout() {
     for flag in ["--help", "--version"] {
-        let output = run(&[flag]);
+        let output = run_with_log(&[flag], "off");
         assert_eq!(output.status.code(), Some(0), "{flag}: must exit 0");
         assert!(
             output.stdout.is_empty(),
             "{flag}: help and version are JSON on stderr",
+        );
+        let records = stderr_records(&output);
+        assert_eq!(records.len(), 1, "{flag}: one control record");
+        assert_eq!(
+            records[0]["kind"],
+            if flag == "--help" { "help" } else { "version" }
         );
     }
 }
@@ -166,10 +191,34 @@ fn a_declared_mock_run_cannot_satisfy_the_gate() {
         "a mock run is a runtime failure, not a usage error",
     );
     assert!(output.stdout.is_empty(), "a failed check writes no result");
-    let stderr = String::from_utf8(output.stderr).expect("stderr is utf8");
+    let stderr = String::from_utf8(output.stderr.clone()).expect("stderr is utf8");
     assert!(
         stderr.contains("mock executor cannot satisfy"),
         "expected the mock refusal: {stderr}",
+    );
+    let records = stderr_records(&output);
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record["target"] == "cli_common::command"
+                && record["fields"]["message"] == "command failed"
+                && record["fields"]["phase"] == "execute"
+                && record["fields"]["exit_class"] == "failure")
+            .count(),
+        1,
+        "one terminal failure record: {records:?}"
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record["target"] == "cli_common::command"
+                && record["fields"]["message"] == "span closed"
+                && record["span"]["name"] == "command"
+                && record["fields"]["busy_ns"].is_u64()
+                && record["fields"]["idle_ns"].is_u64())
+            .count(),
+        1,
+        "one numeric command close: {records:?}"
     );
 }
 

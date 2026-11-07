@@ -25,6 +25,96 @@ use crate::prototype_validate::{
 };
 use crate::report::{CaseStatus, EvidenceDisposition, PrototypeReportRole};
 
+#[test]
+fn prototype_report_tracing_preserves_bytes_and_marks_schema_and_mock_refusals() {
+    if !crate::tests::support::isolated_capture_child(
+        "tests::prototype_validate_tests::prototype_report_tracing_preserves_bytes_and_marks_schema_and_mock_refusals",
+    ) {
+        return;
+    }
+    let (target, matrix, transcript, report) = report_over(ExecutorTrust::ReviewedNonMock);
+    let (traced_matrix, matrix_trace) = crate::tests::support::capture_trace(|| {
+        wide_floor_case_matrix(&target).expect("the canonical matrix is authored")
+    });
+    assert_eq!(matrix, traced_matrix);
+    assert!(matrix_trace.contains("build_matrix"));
+    assert!(
+        matrix_trace.contains("outcome=\"completed\""),
+        "{matrix_trace}"
+    );
+    let binding = crate::tests::support::development_binding(&target);
+    let (traced, evaluation_trace) = crate::tests::support::capture_trace(|| {
+        evaluate_prototypes(
+            &target,
+            &binding,
+            CanonicalPrototypeMatrix::WideFloor(&matrix),
+            &transcript,
+        )
+        .expect("control report evaluates")
+    });
+    assert_eq!(
+        serde_json::to_vec(&report).expect("plain report bytes"),
+        serde_json::to_vec(&traced).expect("traced report bytes"),
+    );
+    assert!(evaluation_trace.contains("evaluate_report"));
+    assert!(evaluation_trace.contains("outcome=\"completed\""));
+
+    let (validated, validation_trace) = crate::tests::support::capture_trace(|| {
+        revalidate(&target, &matrix, &transcript, traced.clone()).expect("control report validates")
+    });
+    assert!(validation_trace.contains("validate_report"));
+    assert_eq!(validated.report().cases.len(), matrix.len());
+
+    let mut damaged = traced;
+    damaged.schema -= 1;
+    let plain_refusal = revalidate(&target, &matrix, &transcript, damaged.clone())
+        .expect_err("one schema coordinate is refused without capture");
+    let (error, refusal_trace) = crate::tests::support::capture_trace(|| {
+        revalidate(&target, &matrix, &transcript, damaged)
+            .expect_err("one schema coordinate is refused")
+    });
+    assert_eq!(
+        plain_refusal.to_string().as_bytes(),
+        error.to_string().as_bytes()
+    );
+    assert!(matches!(
+        error,
+        NativeConformanceError::UnsupportedReportSchema { .. }
+    ));
+    assert!(refusal_trace.contains("outcome=\"refused\""));
+    assert!(refusal_trace.contains("refusal_kind=\"unsupported_report_schema\""));
+    assert!(!refusal_trace.contains(" WARN "));
+    assert!(!refusal_trace.contains(" ERROR "));
+
+    let (mock_target, mock_matrix, mock_transcript, mock_report) = report_over(ExecutorTrust::Mock);
+    let mock_validated = revalidate(&mock_target, &mock_matrix, &mock_transcript, mock_report)
+        .expect("mock report validates as a report");
+    let plain_mock_refusal = prototype_gate(
+        &mock_validated,
+        Some(&crate::tests::support::expected_provenance()),
+    )
+    .expect_err("mock evidence is refused without capture");
+    let (error, gate_trace) = crate::tests::support::capture_trace(|| {
+        prototype_gate(
+            &mock_validated,
+            Some(&crate::tests::support::expected_provenance()),
+        )
+        .expect_err("mock evidence is refused")
+    });
+    assert_eq!(
+        plain_mock_refusal.to_string().as_bytes(),
+        error.to_string().as_bytes()
+    );
+    assert!(matches!(
+        error,
+        NativeConformanceError::MockExecutorCannotSatisfyNativeGate
+    ));
+    assert!(gate_trace.contains("gate_report"));
+    assert!(gate_trace.contains("refusal_kind=\"mock_executor_cannot_satisfy_native_gate\""));
+    assert!(!gate_trace.contains(" WARN "));
+    assert!(!gate_trace.contains(" ERROR "));
+}
+
 /// The wide-floor matrix, which every test here runs.
 ///
 /// Chosen because every one of its rows is answerable from the fixture

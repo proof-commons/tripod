@@ -124,4 +124,7 @@ target_elements_conformance_excluded_files = files(
 )
 
 # Crate documentation (DOC owner).
-target_elements_conformance_doc_files = files('README.md')
+target_elements_conformance_doc_files = files(
+  'README.md',
+  'TRACING.md',
+)

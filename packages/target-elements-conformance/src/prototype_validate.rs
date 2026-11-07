@@ -122,6 +122,43 @@ pub fn evaluate_prototypes(
     matrix: CanonicalPrototypeMatrix<'_>,
     transcript: &ExecutionTranscript,
 ) -> Result<PrototypeConformanceReport, NativeConformanceError> {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::prototype_validate",
+        "evaluate_report",
+        report_kind = "prototype",
+        case_count = u64::try_from(matrix.rows().len()).unwrap_or(u64::MAX)
+    );
+    let _entered = span.enter();
+    let result = evaluate_prototypes_core(target, binding, matrix, transcript);
+    match &result {
+        Ok(report) => tracing::event!(
+            target: "target_elements_conformance::prototype_validate",
+            tracing::Level::DEBUG,
+            outcome = "completed",
+            report_kind = "prototype",
+            case_count = u64::from(report.summary.cases_total),
+            passed_count = u64::from(report.summary.cases_passed),
+            failed_count = u64::from(report.summary.cases_failed),
+            "report assessed"
+        ),
+        Err(error) => tracing::event!(
+            target: "target_elements_conformance::prototype_validate",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            report_kind = "prototype",
+            refusal_kind = error.tracing_kind(),
+            "report assessed"
+        ),
+    }
+    result
+}
+
+fn evaluate_prototypes_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: &ReviewedDevelopmentBinding,
+    matrix: CanonicalPrototypeMatrix<'_>,
+    transcript: &ExecutionTranscript,
+) -> Result<PrototypeConformanceReport, NativeConformanceError> {
     let relation = matrix.relation();
     let regenerated = regenerate(target, relation)?;
     let offered = matrix.rows();
@@ -626,6 +663,41 @@ pub fn validate_prototype_report(
     report: PrototypeConformanceReport,
     inputs: PrototypeReportValidationInputs<'_>,
 ) -> Result<ValidatedPrototypeReport, NativeConformanceError> {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::prototype_validate",
+        "validate_report",
+        report_kind = "prototype",
+        case_count = u64::try_from(report.cases.len()).unwrap_or(u64::MAX)
+    );
+    let _entered = span.enter();
+    let result = validate_prototype_report_core(report, inputs);
+    match &result {
+        Ok(validated) => tracing::event!(
+            target: "target_elements_conformance::prototype_validate",
+            tracing::Level::DEBUG,
+            outcome = "completed",
+            report_kind = "prototype",
+            case_count = u64::from(validated.report.summary.cases_total),
+            passed_count = u64::from(validated.report.summary.cases_passed),
+            failed_count = u64::from(validated.report.summary.cases_failed),
+            "report assessed"
+        ),
+        Err(error) => tracing::event!(
+            target: "target_elements_conformance::prototype_validate",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            report_kind = "prototype",
+            refusal_kind = error.tracing_kind(),
+            "report assessed"
+        ),
+    }
+    result
+}
+
+fn validate_prototype_report_core(
+    report: PrototypeConformanceReport,
+    inputs: PrototypeReportValidationInputs<'_>,
+) -> Result<ValidatedPrototypeReport, NativeConformanceError> {
     if report.schema != PROTOTYPE_REPORT_SCHEMA {
         return Err(NativeConformanceError::UnsupportedReportSchema {
             offered: report.schema,
@@ -656,7 +728,7 @@ pub fn validate_prototype_report(
         inputs.transcript.environment(),
     )?;
 
-    let recomputed = evaluate_prototypes(
+    let recomputed = evaluate_prototypes_core(
         inputs.target,
         inputs.binding,
         inputs.matrix,
@@ -761,6 +833,49 @@ pub fn validate_prototype_report(
 /// [`NativeConformanceError::PrototypeCaseInfrastructureError`] for the
 /// first case that did not pass.
 pub fn prototype_gate(
+    validated: &ValidatedPrototypeReport,
+    expected_provenance: Option<&ExpectedExecutorProvenance>,
+) -> Result<(), NativeConformanceError> {
+    let span = tracing::debug_span!(
+        target: "target_elements_conformance::prototype_validate",
+        "gate_report",
+        report_kind = "prototype"
+    );
+    let _entered = span.enter();
+    let result = prototype_gate_core(validated, expected_provenance);
+    match &result {
+        Ok(()) => tracing::event!(
+            target: "target_elements_conformance::prototype_validate",
+            tracing::Level::DEBUG,
+            outcome = "completed",
+            report_kind = "prototype",
+            admitted = true,
+            mock = false,
+            "report gate completed"
+        ),
+        Err(error @ NativeConformanceError::MockExecutorCannotSatisfyNativeGate) => {
+            tracing::event!(
+                target: "target_elements_conformance::prototype_validate",
+                tracing::Level::DEBUG,
+                outcome = "refused",
+                report_kind = "prototype",
+                refusal_kind = error.tracing_kind(),
+                "report gate completed"
+            );
+        }
+        Err(error) => tracing::event!(
+            target: "target_elements_conformance::prototype_validate",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            report_kind = "prototype",
+            refusal_kind = error.tracing_kind(),
+            "report gate completed"
+        ),
+    }
+    result
+}
+
+fn prototype_gate_core(
     validated: &ValidatedPrototypeReport,
     expected_provenance: Option<&ExpectedExecutorProvenance>,
 ) -> Result<(), NativeConformanceError> {

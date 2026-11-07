@@ -75,7 +75,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use clap::{Parser, ValueEnum};
-use cli_common::{BaseArgs, CheckOutputArgs, install_json_panic_hook, run_check_command};
+use cli_common::{BaseArgs, CheckOutputArgs, install_command_subscriber, run_check_command};
 use target_elements::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
     TargetContractVersion, reviewed_elements_tapscript, validate_reviewed_development_binding,
@@ -178,9 +178,7 @@ struct Args {
 }
 
 fn main() -> ExitCode {
-    // Installed before parsing so an early panic still fails closed with
-    // a JSON-only record (ADR-010 early-startup rule).
-    install_json_panic_hook(COMMAND_NAME);
+    install_command_subscriber(COMMAND_NAME);
     let args = cli_common::parse_args_or_exit::<Args>();
     run_check_command(
         COMMAND_NAME,

@@ -16,6 +16,7 @@
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::time::Duration;
 
 use tapscript::{StackItem, TapscriptInstruction, TapscriptProgram};
@@ -36,7 +37,7 @@ use target_elements_conformance::protocol::{
     ProtocolLimits, ProtocolPhase, ResponseShapeDefect,
 };
 
-/// The string the noisy mock writes on its stderr.
+/// Arbitrary stderr from a local test child, outside any first-party binary.
 const NOISE: &str = "MOCK_EXECUTOR_STDERR_THAT_MUST_NOT_BE_RELAYED";
 
 fn reviewed_target() -> ReviewedElementsTapscriptDefinition {
@@ -119,6 +120,24 @@ fn wrapper(directory: &Path, behavior: &str) -> PathBuf {
     permissions.set_mode(0o755);
     file.set_permissions(permissions).expect("set mode");
     drop(file);
+    path
+}
+
+/// A local child writes raw stderr before handing the protocol to the mock.
+fn raw_stderr_wrapper(directory: &Path) -> PathBuf {
+    let path = directory.join("raw-stderr-child.sh");
+    let mut file = std::fs::File::create(&path).expect("create child");
+    writeln!(file, "#!/bin/sh").expect("write shebang");
+    writeln!(file, "printf '%s\\n' '{NOISE}' >&2").expect("write raw diagnostic");
+    writeln!(
+        file,
+        "exec {} --behavior answer-from-census \"$@\"",
+        env!("CARGO_BIN_EXE_mock-native-executor"),
+    )
+    .expect("write mock handoff");
+    let mut permissions = file.metadata().expect("metadata").permissions();
+    permissions.set_mode(0o755);
+    file.set_permissions(permissions).expect("set mode");
     path
 }
 
@@ -210,6 +229,135 @@ fn a_malformed_line_fails_closed() {
     ));
 }
 
+#[derive(Clone)]
+struct TraceWriter(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+static CAPTURE_INSTALL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+const CAPTURE_CHILD_MARKER: &str = "TRIPOD_TARGET_ELEMENTS_CONFORMANCE_CAPTURE_CHILD";
+
+fn isolated_capture_child(test_path: &str) -> bool {
+    if std::env::var(CAPTURE_CHILD_MARKER).as_deref() == Ok("1") {
+        return true;
+    }
+    let output = std::process::Command::new(std::env::current_exe().expect("current test binary"))
+        .arg("--exact")
+        .arg(test_path)
+        .env(CAPTURE_CHILD_MARKER, "1")
+        .output()
+        .expect("run isolated capture test");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "isolated capture {test_path} exited {}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status
+    );
+    assert_eq!(
+        stdout
+            .lines()
+            .filter(|line| line.starts_with("test result: ok. 1 passed; 0 failed;"))
+            .count(),
+        1,
+        "isolated capture {test_path} selected the wrong number of tests\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    false
+}
+
+impl std::io::Write for TraceWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .expect("trace buffer lock")
+            .extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn capture_trace<T>(run: impl FnOnce() -> T) -> (T, String) {
+    let _install_guard = CAPTURE_INSTALL_LOCK.lock().expect("capture install lock");
+    let bytes = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let writer = TraceWriter(std::sync::Arc::clone(&bytes));
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_target(true)
+        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+        .with_writer(move || writer.clone())
+        .finish();
+    let value = tracing::subscriber::with_default(subscriber, || {
+        tracing::callsite::rebuild_interest_cache();
+        run()
+    });
+    let output = String::from_utf8(bytes.lock().expect("trace buffer lock").clone())
+        .expect("trace output is UTF-8");
+    (value, output)
+}
+
+fn capture_probe() {
+    let _span = tracing::debug_span!("capture_probe").entered();
+}
+
+#[test]
+fn scoped_captures_rebuild_interest_after_an_uncaptured_call() {
+    if !isolated_capture_child("scoped_captures_rebuild_interest_after_an_uncaptured_call") {
+        return;
+    }
+    capture_probe();
+    let captures = [
+        std::thread::spawn(|| capture_trace(capture_probe).1),
+        std::thread::spawn(|| capture_trace(capture_probe).1),
+    ];
+    for capture in captures {
+        let trace = capture.join().expect("capture thread completes");
+        assert_eq!(trace.matches("capture_probe").count(), 1, "{trace}");
+    }
+}
+
+#[test]
+fn executor_tracing_keeps_results_and_refuses_one_malformed_frame_at_debug() {
+    if !isolated_capture_child(
+        "executor_tracing_keeps_results_and_refuses_one_malformed_frame_at_debug",
+    ) {
+        return;
+    }
+    let plain = run("answer-from-census").expect("control exchange");
+    let (traced, control) = capture_trace(|| run("answer-from-census").expect("control exchange"));
+    assert_eq!(plain, traced);
+    let plain_response_bytes = serde_json::to_vec(&plain.responses().iter().collect::<Vec<_>>())
+        .expect("plain response bytes");
+    let traced_response_bytes = serde_json::to_vec(&traced.responses().iter().collect::<Vec<_>>())
+        .expect("traced response bytes");
+    assert_eq!(plain_response_bytes, traced_response_bytes);
+    assert!(control.contains("executor_run"));
+    assert!(control.contains("protocol_setup"));
+    assert!(control.contains("protocol_cases"));
+    assert!(control.contains("target_elements_conformance::executor"));
+    assert!(control.contains("target_elements_conformance::protocol"));
+    assert!(control.contains("outcome=\"completed\""));
+    assert!(control.contains("attempt_count=1"));
+    assert_eq!(control.matches("executor run completed").count(), 1);
+
+    let plain = run("malformed-json").expect_err("malformed frame");
+    let (traced, subject) = capture_trace(|| run("malformed-json").expect_err("malformed frame"));
+    assert_eq!(
+        std::mem::discriminant(&plain),
+        std::mem::discriminant(&traced)
+    );
+    assert_eq!(plain.to_string().as_bytes(), traced.to_string().as_bytes());
+    assert!(subject.contains("outcome=\"refused\""));
+    assert!(subject.contains("refusal_kind=\"malformed_response\""));
+    assert!(subject.contains("phase=\"handshake\""));
+    assert!(subject.contains("executor_cleanup"));
+    assert_eq!(subject.matches("executor run completed").count(), 1);
+    assert!(!subject.contains(" WARN "));
+    assert!(!subject.contains(" ERROR "));
+}
+
 #[test]
 fn an_unknown_response_field_fails_closed() {
     let error = run("unknown-field").expect_err("the field is refused");
@@ -269,10 +417,10 @@ fn a_missing_result_fails_closed() {
 #[test]
 fn protocol_data_after_the_last_response_fails_closed() {
     let error = run("trailing-data").expect_err("the trailing data is refused");
-    assert!(matches!(
-        error,
-        NativeConformanceError::TrailingProtocolData,
-    ));
+    assert!(
+        matches!(error, NativeConformanceError::TrailingProtocolData),
+        "expected trailing protocol data, got {error}"
+    );
 }
 
 #[test]
@@ -479,10 +627,173 @@ fn an_accepted_response_naming_a_failure_class_is_not_a_passing_case() {
 
 #[test]
 fn raw_child_stderr_never_reaches_the_harness() {
-    let transcript = run("noisy-stderr").expect("the exchange completes");
+    let directory = tempfile::tempdir().expect("tempdir");
+    let program = raw_stderr_wrapper(directory.path());
+    let configuration = ExecutorConfiguration::new(
+        &program,
+        ExecutorTrust::Mock,
+        Duration::from_secs(30),
+        ExecutorDiagnostics::in_directory(directory.path()),
+    );
+    let target = reviewed_target();
+    let binding = development_binding(&target);
+    let transcript =
+        execute(&target, &binding, &configuration, &fixtures()).expect("the exchange completes");
     let rendered = format!("{transcript:?}");
     assert!(
         !rendered.contains(NOISE),
         "the child's stderr must be omitted, not relayed: {rendered}",
+    );
+}
+
+#[test]
+fn mock_noise_is_a_json_warning_and_protocol_stdout_is_unchanged() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let run_mock = |behavior: &str| {
+        Command::new(env!("CARGO_BIN_EXE_mock-native-executor"))
+            .args([
+                "--behavior",
+                behavior,
+                "--output",
+                directory
+                    .path()
+                    .join("typed.log")
+                    .to_str()
+                    .expect("path text"),
+                "--elements-output",
+                directory
+                    .path()
+                    .join("raw.log")
+                    .to_str()
+                    .expect("path text"),
+            ])
+            .stdin(Stdio::null())
+            .env("RUST_LOG", "info")
+            .output()
+            .expect("mock runs")
+    };
+    let control = run_mock("answer-from-census");
+    let noisy = run_mock("noisy-stderr");
+    assert_eq!(control.status.code(), Some(0));
+    assert_eq!(noisy.status.code(), Some(0));
+    assert_eq!(
+        control.stdout, noisy.stdout,
+        "diagnostics cannot alter protocol bytes"
+    );
+    assert_eq!(
+        String::from_utf8(noisy.stdout.clone())
+            .expect("protocol is utf8")
+            .lines()
+            .count(),
+        2,
+        "handshake and environment remain two protocol lines"
+    );
+    let stderr = String::from_utf8(noisy.stderr).expect("stderr is utf8");
+    assert!(
+        !stderr.contains(NOISE),
+        "no raw child marker enters mock stderr"
+    );
+    let records: Vec<serde_json::Value> = stderr
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("each stderr line is JSON"))
+        .collect();
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record["level"] == "WARN"
+                && record["target"] == "target_elements_conformance::mock_executor"
+                && record["fields"]["message"] == "mock executor diagnostic"
+                && record["fields"]["behavior"] == "noisy_stderr")
+            .count(),
+        1,
+        "one structured mock warning: {records:?}"
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record["target"] == "cli_common::command"
+                && record["fields"]["message"] == "command completed")
+            .count(),
+        1,
+        "one terminal command event: {records:?}"
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record["target"] == "cli_common::command"
+                && record["fields"]["message"] == "span closed"
+                && record["span"]["name"] == "command"
+                && record["fields"]["busy_ns"].is_u64()
+                && record["fields"]["idle_ns"].is_u64())
+            .count(),
+        1,
+        "one numeric command close: {records:?}"
+    );
+}
+
+#[test]
+fn mock_control_records_survive_disabled_diagnostics() {
+    for (args, status, kind) in [
+        (vec!["--help"], 0, "help"),
+        (vec!["--version"], 0, "version"),
+        (vec!["--bad-flag"], 2, "usage_error"),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_mock-native-executor"))
+            .args(args)
+            .env("RUST_LOG", "off")
+            .output()
+            .expect("mock runs");
+        assert_eq!(output.status.code(), Some(status));
+        assert_eq!(output.stdout, [] as [u8; 0]);
+        let stderr = String::from_utf8(output.stderr).expect("stderr is utf8");
+        let records: Vec<serde_json::Value> = stderr
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("control record is JSON"))
+            .collect();
+        assert_eq!(records.len(), 1, "one control record: {records:?}");
+        assert_eq!(records[0]["kind"], kind);
+    }
+}
+
+#[test]
+fn mock_terminal_failure_uses_a_fixed_kind_word() {
+    let directory = tempfile::tempdir().expect("tempdir");
+    let output = Command::new(env!("CARGO_BIN_EXE_mock-native-executor"))
+        .args([
+            "--behavior",
+            "die-early",
+            "--output",
+            directory
+                .path()
+                .join("typed.log")
+                .to_str()
+                .expect("path text"),
+            "--elements-output",
+            directory
+                .path()
+                .join("raw.log")
+                .to_str()
+                .expect("path text"),
+        ])
+        .stdin(Stdio::null())
+        .output()
+        .expect("mock runs");
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(output.stdout, [] as [u8; 0]);
+    let stderr = String::from_utf8(output.stderr).expect("stderr is utf8");
+    let records: Vec<serde_json::Value> = stderr
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("each stderr line is JSON"))
+        .collect();
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record["target"] == "cli_common::command"
+                && record["fields"]["message"] == "command failed"
+                && record["fields"]["phase"] == "execute"
+                && record["fields"]["error"] == "protocol")
+            .count(),
+        1,
+        "one fixed-kind terminal failure: {records:?}"
     );
 }

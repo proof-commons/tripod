@@ -85,6 +85,52 @@ fn run(binary: &str, args: &[&str]) -> Output {
         .expect("binary runs")
 }
 
+fn run_with_log(binary: &str, args: &[&str], rust_log: &str) -> Output {
+    Command::new(binary)
+        .args(args)
+        .env("RUST_LOG", rust_log)
+        .output()
+        .expect("binary runs")
+}
+
+fn stderr_records(output: &Output) -> Vec<serde_json::Value> {
+    let stderr = String::from_utf8(output.stderr.clone()).expect("stderr is utf8");
+    stderr
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("stderr line is JSON"))
+        .collect()
+}
+
+fn assert_command_completed(name: &str, output: &Output) {
+    let records = stderr_records(output);
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| {
+                record["target"] == "cli_common::command"
+                    && record["fields"]["message"] == "command completed"
+                    && record["fields"]["result_published"] == true
+            })
+            .count(),
+        1,
+        "{name}: one terminal completion event: {records:?}"
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| {
+                record["target"] == "cli_common::command"
+                    && record["fields"]["message"] == "span closed"
+                    && record["span"]["name"] == "command"
+                    && record["fields"]["busy_ns"].is_u64()
+                    && record["fields"]["idle_ns"].is_u64()
+            })
+            .count(),
+        1,
+        "{name}: one numeric command close record: {records:?}"
+    );
+}
+
 /// Every stderr line is one JSON object, and stdout carries nothing.
 fn assert_json_only_stderr(name: &str, output: &Output) {
     assert!(
@@ -130,10 +176,7 @@ fn a_matrix_command_writes_one_compact_json_object_and_nothing_else() {
         let name = emitter.name;
 
         assert_eq!(output.status.code(), Some(0), "{name}: a clean run exits 0");
-        assert!(
-            output.stderr.is_empty(),
-            "{name}: a clean run says nothing on stderr",
-        );
+        assert_command_completed(name, &output);
 
         // ADR-010's stdout result data: one compact JSON line, not a
         // pretty-printed block, so a reader can take it a line at a time.
@@ -154,10 +197,50 @@ fn a_matrix_command_writes_one_compact_json_object_and_nothing_else() {
 }
 
 #[test]
+fn matrix_stdout_bytes_ignore_the_diagnostic_filter() {
+    for emitter in EMITTERS.iter().filter(|one| !one.reads_a_run_record) {
+        let normal = run_with_log(emitter.binary, &[], "info");
+        let quiet = run_with_log(emitter.binary, &[], "off");
+        assert_eq!(normal.status.code(), Some(0), "{}", emitter.name);
+        assert_eq!(quiet.status.code(), Some(0), "{}", emitter.name);
+        assert_eq!(normal.stdout, quiet.stdout, "{}", emitter.name);
+        assert!(
+            quiet.stderr.is_empty(),
+            "{}: diagnostics filtered off",
+            emitter.name
+        );
+    }
+}
+
+#[test]
+fn panic_control_record_survives_disabled_diagnostics() {
+    const CHILD: &str = "TRIPOD_TARGET_ELEMENTS_PANIC_PROBE_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        cli_common::install_command_subscriber("emit-panic-probe");
+        panic!("private panic payload");
+    }
+    let output = Command::new(std::env::current_exe().expect("current test binary"))
+        .args([
+            "--exact",
+            "panic_control_record_survives_disabled_diagnostics",
+        ])
+        .env(CHILD, "1")
+        .env("RUST_LOG", "off")
+        .output()
+        .expect("panic probe runs");
+    assert_eq!(output.status.code(), Some(1));
+    let records = stderr_records(&output);
+    assert_eq!(records.len(), 1, "one panic control record: {records:?}");
+    assert_eq!(records[0]["kind"], "panic");
+    assert_eq!(records[0]["command"], "emit-panic-probe");
+    assert!(records[0]["fields"].get("payload").is_none());
+}
+
+#[test]
 fn every_command_answers_help_and_version_as_control_plane_records() {
     for emitter in EMITTERS {
         for flag in ["--help", "--version"] {
-            let output = run(emitter.binary, &[flag]);
+            let output = run_with_log(emitter.binary, &[flag], "off");
             assert_eq!(
                 output.status.code(),
                 Some(0),
@@ -165,6 +248,12 @@ fn every_command_answers_help_and_version_as_control_plane_records() {
                 emitter.name,
             );
             assert_json_only_stderr(emitter.name, &output);
+            let records = stderr_records(&output);
+            assert_eq!(records.len(), 1, "{}: one control record", emitter.name);
+            assert_eq!(
+                records[0]["kind"],
+                if flag == "--help" { "help" } else { "version" }
+            );
         }
     }
 }
@@ -172,7 +261,7 @@ fn every_command_answers_help_and_version_as_control_plane_records() {
 #[test]
 fn an_unknown_flag_is_a_usage_error_for_every_command() {
     for emitter in EMITTERS {
-        let output = run(emitter.binary, &["--definitely-not-a-real-flag"]);
+        let output = run_with_log(emitter.binary, &["--definitely-not-a-real-flag"], "off");
         assert_eq!(
             output.status.code(),
             Some(2),
@@ -180,6 +269,14 @@ fn an_unknown_flag_is_a_usage_error_for_every_command() {
             emitter.name,
         );
         assert_json_only_stderr(emitter.name, &output);
+        let records = stderr_records(&output);
+        assert_eq!(
+            records.len(),
+            1,
+            "{}: one usage control record",
+            emitter.name
+        );
+        assert_eq!(records[0]["kind"], "usage_error");
     }
 }
 
