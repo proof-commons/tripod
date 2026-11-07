@@ -36,7 +36,9 @@ pub struct Writer {
     add_prefix: bool,
     wrap_length: usize,
     props: StreamProps,
-    debug: bool,
+    track_written_bytes: bool,
+    stdout_written_bytes: u64,
+    stderr_written_bytes: u64,
     stdout_buffer: Vec<u8>,
     stderr_buffer: Vec<u8>,
 }
@@ -52,14 +54,19 @@ impl Writer {
         add_prefix: bool,
         wrap_length: usize,
         props: StreamProps,
-        debug: bool,
+        _debug: bool,
     ) -> Self {
         Self {
             file: Box::new(file),
             add_prefix,
             wrap_length,
             props,
-            debug,
+            track_written_bytes: tracing::enabled!(
+                target: "execwrap::stream",
+                tracing::Level::DEBUG
+            ),
+            stdout_written_bytes: 0,
+            stderr_written_bytes: 0,
             stdout_buffer: Vec::new(),
             stderr_buffer: Vec::new(),
         }
@@ -77,11 +84,28 @@ impl Writer {
         if self.add_prefix {
             self.write_calligraphic(stream, raw)
         } else {
-            if self.debug {
-                tracing::debug!(bytes = raw.len(), "writer typesetter");
+            self.file.write_all(raw)?;
+            if self.track_written_bytes {
+                self.record_written(stream, raw.len());
             }
-            self.file.write_all(raw)
+            Ok(())
         }
+    }
+
+    /// Bytes confirmed written for one stream, excluding partial failed writes.
+    pub(crate) const fn written_bytes(&self, stream: Stream) -> u64 {
+        match stream {
+            Stream::Stdout => self.stdout_written_bytes,
+            Stream::Stderr => self.stderr_written_bytes,
+        }
+    }
+
+    fn record_written(&mut self, stream: Stream, len: usize) {
+        let total = match stream {
+            Stream::Stdout => &mut self.stdout_written_bytes,
+            Stream::Stderr => &mut self.stderr_written_bytes,
+        };
+        *total = total.saturating_add(u64::try_from(len).unwrap_or(u64::MAX));
     }
 
     fn write_calligraphic(&mut self, stream: Stream, raw: &[u8]) -> io::Result<()> {
@@ -108,11 +132,15 @@ impl Writer {
         while let Some(newline_index) = buffer.iter().position(|&byte| byte == b'\n') {
             let line_bytes: Vec<u8> = buffer.drain(..=newline_index).collect();
             let line = sanitize(&line_bytes);
-            if self.debug {
-                tracing::debug!(line = %line.trim_end(), "writer calligraphic");
-            }
             let wrapped = wrap_with_prefixes(&line, &line1, &wrap, self.wrap_length);
             self.file.write_all(wrapped.as_bytes())?;
+            if self.track_written_bytes {
+                let total = match stream {
+                    Stream::Stdout => &mut self.stdout_written_bytes,
+                    Stream::Stderr => &mut self.stderr_written_bytes,
+                };
+                *total = total.saturating_add(u64::try_from(wrapped.len()).unwrap_or(u64::MAX));
+            }
         }
         Ok(())
     }
@@ -124,6 +152,33 @@ impl Writer {
     ///
     /// Returns any underlying I/O error from the destination file.
     pub fn finalize(&mut self) -> io::Result<()> {
+        let mode = if self.add_prefix { "prefixed" } else { "raw" };
+        let span = tracing::span!(
+            target: "execwrap::writer",
+            tracing::Level::DEBUG,
+            "writer_finalize",
+            mode
+        );
+        let _entered = span.enter();
+        let result = self.finalize_inner();
+        if result.is_ok() {
+            tracing::debug!(
+                target: "execwrap::writer",
+                outcome = "completed",
+                "writer finalized"
+            );
+        } else {
+            tracing::debug!(
+                target: "execwrap::writer",
+                outcome = "failed",
+                error_kind = "io",
+                "writer finalized"
+            );
+        }
+        result
+    }
+
+    fn finalize_inner(&mut self) -> io::Result<()> {
         if self.add_prefix {
             for stream in [Stream::Stdout, Stream::Stderr] {
                 let (line1, wrap) = match stream {
@@ -147,6 +202,9 @@ impl Writer {
                 line.push('\n');
                 let wrapped = wrap_with_prefixes(&line, &line1, &wrap, self.wrap_length);
                 self.file.write_all(wrapped.as_bytes())?;
+                if self.track_written_bytes {
+                    self.record_written(stream, wrapped.len());
+                }
             }
         }
         self.file.flush()

@@ -17,4 +17,4 @@ execwrap_source_files = files(
 execwrap_excluded_files = files('tests/subprocess_contract.rs')
 
 # Crate documentation (DOC owner).
-execwrap_doc_files = files('README.md')
+execwrap_doc_files = files('README.md', 'TRACING.md')

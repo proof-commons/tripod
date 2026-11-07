@@ -12,10 +12,11 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use cli_common::{
-    CommandExit, emit_control_plane_record, init_json_tracing_with_debug, install_json_panic_hook,
-    parse_args_from, set_panic_payload_reporting_enabled,
+    CommandExit, command_completed, command_failed, command_span, configure_command_diagnostics,
+    emit_control_plane_record, install_command_subscriber, parse_args_from,
+    set_panic_payload_reporting_enabled,
 };
-use execwrap::{ExecError, Notification, RoutingConfig, preflight_routing, run};
+use execwrap::{ExecError, RoutingConfig, preflight_routing, run};
 
 const COMMAND_NAME: &str = "execwrap";
 
@@ -65,10 +66,7 @@ struct Args {
 }
 
 fn main() -> ExitCode {
-    // The panic hook precedes argument parsing (ADR-010): a panic
-    // anywhere in the process emits one JSON diagnostic, never Rust's
-    // text hook.
-    install_json_panic_hook(COMMAND_NAME);
+    install_command_subscriber(COMMAND_NAME);
 
     // clap owns help/version/usage handling; the `last = true`
     // positional makes the `--` separator a clap-enforced requirement,
@@ -83,7 +81,7 @@ fn main() -> ExitCode {
     };
 
     set_panic_payload_reporting_enabled(args.debug);
-    init_json_tracing_with_debug(args.debug, default_level(&args));
+    configure_command_diagnostics(args.debug, default_level(&args));
 
     let cfg = RoutingConfig {
         redirect: args.redirect,
@@ -95,38 +93,49 @@ fn main() -> ExitCode {
         quiet: args.quiet,
     };
 
-    // Conflicting routing for one path is an invalid argument
-    // combination: usage class 2, before any side effect. The
-    // conflicting path is an argument value and stays out of the
-    // record; the fixed usage message comes from the constructor.
-    if let Err(ExecError::AmbiguousRedirection { .. }) = preflight_routing(&cfg) {
-        let record =
-            cli_common::ControlPlaneRecord::usage_error(COMMAND_NAME, "ambiguous_redirection");
-        let _ignored = emit_control_plane_record(&record);
-        return CommandExit::Usage.exit_code();
+    // Routing conflicts and missing child-stream routes are usage
+    // failures before any file is opened or child is spawned. Caller
+    // paths stay out of the fixed control record.
+    match preflight_routing(&cfg) {
+        Err(ExecError::AmbiguousRedirection { .. }) => {
+            let record =
+                cli_common::ControlPlaneRecord::usage_error(COMMAND_NAME, "ambiguous_redirection");
+            let _ignored = emit_control_plane_record(&record);
+            return CommandExit::Usage.exit_code();
+        }
+        Err(ExecError::UnroutedStream { .. }) => {
+            let record =
+                cli_common::ControlPlaneRecord::usage_error(COMMAND_NAME, "unrouted_stream");
+            let _ignored = emit_control_plane_record(&record);
+            return CommandExit::Usage.exit_code();
+        }
+        Ok(()) => {}
+        Err(_) => {
+            let span = command_span(COMMAND_NAME, "asset");
+            let _entered = span.enter();
+            command_failed("routing", &"io");
+            return CommandExit::Failure.exit_code();
+        }
     }
 
+    let span = command_span(COMMAND_NAME, "asset");
+    let _entered = span.enter();
+
     if let Some(directory) = &args.change_directory
-        && let Err(error) = env::set_current_dir(directory)
+        && env::set_current_dir(directory).is_err()
     {
-        tracing::error!(
-            error = %error,
-            directory = %directory.display(),
-            "failed to change working directory",
-        );
+        command_failed("setup", &"change_directory");
         return CommandExit::Failure.exit_code();
     }
 
-    let outcome = match run(&args.command, &cfg, emit_notification) {
+    let outcome = match run(&args.command, &cfg, |_| {}) {
         Ok(outcome) => outcome,
-        Err(ExecError::Spawn { source }) => {
-            // The program path is caller-controlled argv[0]; only the
-            // spawn error itself is safe to report (ADR-010).
-            tracing::error!(error = %source, "failed to spawn child process");
+        Err(ExecError::Spawn { .. }) => {
+            command_failed("child", &"spawn");
             return CommandExit::Failure.exit_code();
         }
-        Err(error) => {
-            tracing::error!(error = %error, "execwrap setup failed");
+        Err(_) => {
+            command_failed("child", &"io");
             return CommandExit::Failure.exit_code();
         }
     };
@@ -134,11 +143,28 @@ fn main() -> ExitCode {
     // Losing captured output is a wrapper failure even when the child
     // succeeded: a build must not silently continue on truncated logs.
     if outcome.data_loss && outcome.exit_code == 0 {
-        tracing::error!("captured output may be incomplete; treating the run as failed");
+        command_failed("child", &"data_loss");
         return CommandExit::Failure.exit_code();
     }
 
-    wrapper_exit_from_child_status(outcome.exit_code)
+    let exit = wrapper_exit_from_child_status(outcome.exit_code);
+    if outcome.exit_code == 0 {
+        command_completed("asset", false);
+    } else if outcome.data_loss {
+        command_failed("child", &"data_loss");
+    } else if (3..=255).contains(&outcome.exit_code) {
+        tracing::info!(
+            target: "cli_common::command",
+            exit_class = "child_status",
+            child_exit_code = outcome.exit_code,
+            output_mode = "asset",
+            result_published = false,
+            "command completed"
+        );
+    } else {
+        command_failed("child", &"child_exit");
+    }
+    exit
 }
 
 /// Map a relayed child status onto the wrapper's exit code, keeping the
@@ -160,26 +186,5 @@ const fn default_level(args: &Args) -> tracing::Level {
         tracing::Level::WARN
     } else {
         tracing::Level::INFO
-    }
-}
-
-fn emit_notification(notification: &Notification) {
-    match notification {
-        Notification::WritingToLog { path, stream } => {
-            tracing::info!(
-                path = %path.display(),
-                stream = stream.label(),
-                "Writing to log ({}): {}",
-                stream.label(),
-                path.display(),
-            );
-        }
-        Notification::WroteToLog { path } => {
-            tracing::info!(
-                path = %path.display(),
-                "Wrote to log file: {}",
-                path.display(),
-            );
-        }
     }
 }

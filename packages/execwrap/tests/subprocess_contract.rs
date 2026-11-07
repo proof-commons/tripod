@@ -12,11 +12,76 @@ fn execwrap() -> Command {
 }
 
 fn run(args: &[&str]) -> Output {
-    execwrap().args(args).output().expect("execwrap runs")
+    execwrap()
+        .args(args)
+        .env_remove("RUST_LOG")
+        .output()
+        .expect("execwrap runs")
 }
 
 fn read(path: &Path) -> Vec<u8> {
     std::fs::read(path).expect("log file readable")
+}
+
+fn stderr_records(output: &Output) -> Vec<serde_json::Value> {
+    let stderr = String::from_utf8(output.stderr.clone()).expect("stderr is UTF-8");
+    stderr
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("each stderr line is JSON"))
+        .collect()
+}
+
+fn assert_command_close(records: &[serde_json::Value], command: &str) {
+    let closes: Vec<_> = records
+        .iter()
+        .filter(|record| {
+            record["target"] == "cli_common::command"
+                && record["span"]["name"] == "command"
+                && record["fields"]["busy_ns"].is_u64()
+        })
+        .collect();
+    assert_eq!(closes.len(), 1, "one command close record");
+    assert_eq!(closes[0]["level"], "INFO");
+    assert_eq!(closes[0]["span"]["command"], command);
+    assert_eq!(closes[0]["span"]["output_mode"], "asset");
+    assert!(closes[0]["fields"]["idle_ns"].is_u64());
+}
+
+fn assert_terminal(records: &[serde_json::Value], class: &str, error: Option<&str>) {
+    let terminals: Vec<_> = records
+        .iter()
+        .filter(|record| {
+            record["target"] == "cli_common::command" && record["fields"]["exit_class"].is_string()
+        })
+        .collect();
+    assert_eq!(terminals.len(), 1, "one terminal command event");
+    assert_eq!(terminals[0]["fields"]["exit_class"], class);
+    if let Some(error) = error {
+        assert_eq!(terminals[0]["fields"]["error"], error);
+        assert_eq!(terminals[0]["level"], "ERROR");
+    } else {
+        assert_eq!(terminals[0]["fields"]["output_mode"], "asset");
+        assert_eq!(terminals[0]["fields"]["result_published"], false);
+        assert_eq!(terminals[0]["level"], "INFO");
+    }
+}
+
+fn assert_child_status_terminal(records: &[serde_json::Value], code: i32) {
+    let terminals: Vec<_> = records
+        .iter()
+        .filter(|record| {
+            record["target"] == "cli_common::command" && record["fields"]["exit_class"].is_string()
+        })
+        .collect();
+    assert_eq!(terminals.len(), 1, "one terminal command event");
+    let terminal = terminals[0];
+    assert_eq!(terminal["level"], "INFO");
+    assert_eq!(terminal["fields"]["message"], "command completed");
+    assert_eq!(terminal["fields"]["exit_class"], "child_status");
+    assert_eq!(terminal["fields"]["child_exit_code"], code);
+    assert_eq!(terminal["fields"]["output_mode"], "asset");
+    assert_eq!(terminal["fields"]["result_published"], false);
+    assert!(terminal["fields"].get("error").is_none());
 }
 
 /// `--redirect` (raw, merged) preserves arbitrary bytes: invalid
@@ -89,6 +154,8 @@ fn child_exit_code_is_propagated() {
         "exit 7",
     ]);
     assert_eq!(output.status.code(), Some(7));
+    assert_eq!(output.stdout, [] as [u8; 0]);
+    assert_child_status_terminal(&stderr_records(&output), 7);
 }
 
 /// Reserved workspace exit classes survive child-status relay: 0 stays
@@ -131,6 +198,7 @@ fn unspawnable_child_is_wrapper_failure() {
         "definitely-not-a-real-program-b3f1",
     ]);
     assert_eq!(output.status.code(), Some(1));
+    assert_terminal(&stderr_records(&output), "failure", Some("spawn"));
 }
 
 /// A spawn failure must not echo the caller-controlled program path:
@@ -140,8 +208,15 @@ fn unspawnable_child_is_wrapper_failure() {
 fn spawn_failure_does_not_echo_child_program_text() {
     let secret = "SHOULD_NOT_APPEAR_spawn-program-secret";
     let program = format!("/nonexistent/{secret}");
+    let dir = tempfile::tempdir().expect("tempdir");
+    let log = dir.path().join("spawn.log");
 
-    let output = run(&["--", program.as_str()]);
+    let output = run(&[
+        "--redirect",
+        log.to_str().expect("utf8 path"),
+        "--",
+        program.as_str(),
+    ]);
 
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(output.stdout, [] as [u8; 0]);
@@ -163,8 +238,15 @@ fn spawn_failure_does_not_echo_child_program_text() {
 #[test]
 fn spawn_failure_does_not_echo_credential_bearing_program_url() {
     let program = "https://user:hunter2-secret@example.invalid/SHOULD_NOT_APPEAR";
+    let dir = tempfile::tempdir().expect("tempdir");
+    let log = dir.path().join("spawn.log");
 
-    let output = run(&["--", program]);
+    let output = run(&[
+        "--redirect",
+        log.to_str().expect("utf8 path"),
+        "--",
+        program,
+    ]);
 
     assert_eq!(output.status.code(), Some(1));
     assert_eq!(output.stdout, [] as [u8; 0]);
@@ -192,6 +274,7 @@ fn signal_termination_maps_to_128_plus_signal() {
     ]);
     // SIGTERM = 15.
     assert_eq!(output.status.code(), Some(128 + 15));
+    assert_child_status_terminal(&stderr_records(&output), 128 + 15);
 }
 
 /// The same path configured for two different routing kinds is an
@@ -276,68 +359,103 @@ fn credential_bearing_url_never_appears_in_diagnostics() {
     }
 }
 
-/// Redirecting only stderr must still relay stdout to the parent.
+/// A fully routed child succeeds; removing only the stdout route refuses
+/// before opening either file or spawning the child.
 #[test]
-fn redirect_error_only_still_forwards_stdout() {
+fn missing_stdout_route_refuses_before_spawn() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let log = dir.path().join("err.log");
-
-    let output = run(&[
-        "--quiet",
-        "--redirect-error",
-        log.to_str().expect("utf8 path"),
-        "--",
-        "sh",
-        "-c",
-        "printf 'stdout-visible'; printf 'to-file' >&2",
-    ]);
-    assert!(output.status.success());
-    assert_eq!(output.stdout, b"stdout-visible");
-    assert_eq!(read(&log), b"to-file");
-}
-
-/// The minimal valid invocation: a separator and a child, no options.
-#[test]
-fn bare_separator_invocation_succeeds() {
-    let output = run(&["--", "true"]);
-    assert_eq!(output.status.code(), Some(0));
-    assert_eq!(output.stdout, [] as [u8; 0]);
-}
-
-/// An unsubscribed child stream is relayed to the parent's stream even
-/// when the parent stream is a pipe, never silently discarded.
-#[test]
-fn unredirected_streams_pass_through_pipes() {
-    // No redirection at all: both streams relay.
-    let output = run(&[
-        "--quiet",
-        "--",
-        "sh",
-        "-c",
-        "printf 'out-bytes'; printf 'err-bytes' >&2",
-    ]);
-    assert!(output.status.success());
-    assert_eq!(output.stdout, b"out-bytes");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("err-bytes"), "stderr bytes were discarded");
-
-    // Only stdout redirected: stderr still relays.
-    let dir = tempfile::tempdir().expect("tempdir");
-    let log = dir.path().join("out.log");
-    let output = run(&[
-        "--quiet",
+    let stdout_log = dir.path().join("out.log");
+    let stderr_log = dir.path().join("err.log");
+    let sentinel = dir.path().join("spawned");
+    let script = format!("touch '{}'", sentinel.display());
+    let control = run(&[
         "--redirect-output",
-        log.to_str().expect("utf8 path"),
+        stdout_log.to_str().expect("utf8 path"),
+        "--redirect-error",
+        stderr_log.to_str().expect("utf8 path"),
         "--",
         "sh",
         "-c",
-        "printf 'to-file'; printf 'still-visible' >&2",
+        &script,
     ]);
-    assert!(output.status.success());
-    assert!(output.stdout.is_empty(), "redirected stdout must not relay");
-    assert_eq!(read(&log), b"to-file");
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("still-visible"), "stderr was discarded");
+    assert!(control.status.success());
+    assert!(sentinel.exists());
+    std::fs::remove_file(&sentinel).expect("remove sentinel");
+    std::fs::remove_file(&stdout_log).expect("remove stdout log");
+    std::fs::remove_file(&stderr_log).expect("remove stderr log");
+    let refusal = run(&[
+        "--redirect-error",
+        stderr_log.to_str().expect("utf8 path"),
+        "--",
+        "sh",
+        "-c",
+        &script,
+    ]);
+    assert_unrouted_refusal(&refusal);
+    assert!(!sentinel.exists());
+    assert!(!stderr_log.exists());
+}
+
+/// A fully routed child succeeds; removing only the stderr route refuses
+/// before opening either file or spawning the child.
+#[test]
+fn missing_stderr_route_refuses_before_spawn() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let stdout_log = dir.path().join("out.log");
+    let stderr_log = dir.path().join("err.log");
+    let sentinel = dir.path().join("spawned");
+    let script = format!("touch '{}'", sentinel.display());
+    let control = run(&[
+        "--redirect-output",
+        stdout_log.to_str().expect("utf8 path"),
+        "--redirect-error",
+        stderr_log.to_str().expect("utf8 path"),
+        "--",
+        "sh",
+        "-c",
+        &script,
+    ]);
+    assert!(control.status.success());
+    assert!(sentinel.exists());
+    std::fs::remove_file(&sentinel).expect("remove sentinel");
+    std::fs::remove_file(&stdout_log).expect("remove stdout log");
+    std::fs::remove_file(&stderr_log).expect("remove stderr log");
+    let refusal = run(&[
+        "--redirect-output",
+        stdout_log.to_str().expect("utf8 path"),
+        "--",
+        "sh",
+        "-c",
+        &script,
+    ]);
+    assert_unrouted_refusal(&refusal);
+    assert!(!sentinel.exists());
+    assert!(!stdout_log.exists());
+}
+
+fn assert_unrouted_refusal(output: &Output) {
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, [] as [u8; 0]);
+    let stderr = String::from_utf8(output.stderr.clone()).expect("stderr is text");
+    let records: Vec<serde_json::Value> = stderr
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("one JSON object per line"))
+        .collect();
+    assert_eq!(records.len(), 1, "one usage record: {stderr}");
+    assert_eq!(
+        records[0],
+        serde_json::json!({
+            "schema": 1,
+            "command": "execwrap",
+            "kind": "usage_error",
+            "message": "invalid command-line arguments",
+            "fields": {
+                "type": "usage_error",
+                "exit_code": 2,
+                "clap_error_kind": "unrouted_stream"
+            }
+        })
+    );
 }
 
 /// Help and version are control-plane paths: JSON on stderr, empty
@@ -396,10 +514,10 @@ fn prefixed_redirect_tags_streams() {
 /// report success.
 #[test]
 fn data_loss_fails_a_successful_child() {
-    if !Path::new("/dev/full").exists() {
-        // Non-Linux fallback: nothing to exercise.
-        return;
-    }
+    assert!(
+        Path::new("/dev/full").exists(),
+        "data-loss contract requires /dev/full; this environment cannot exercise it"
+    );
 
     let output = run(&[
         "--redirect",
@@ -420,7 +538,14 @@ fn data_loss_fails_a_successful_child() {
 /// parseable JSON records and no stdout.
 #[test]
 fn spawn_failure_emits_json_diagnostics() {
-    let output = run(&["--", "/nonexistent-binary-for-execwrap-test"]);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let log = dir.path().join("spawn.log");
+    let output = run(&[
+        "--redirect",
+        log.to_str().expect("utf8 path"),
+        "--",
+        "/nonexistent-binary-for-execwrap-test",
+    ]);
     assert_eq!(output.status.code(), Some(1));
     assert!(output.stdout.is_empty(), "stdout must stay empty");
 
@@ -436,6 +561,160 @@ fn spawn_failure_emits_json_diagnostics() {
         assert!(value.is_object());
     }
     assert!(saw_json, "expected at least one JSON diagnostic");
+}
+
+#[test]
+fn routed_command_has_one_terminal_and_numeric_close() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let log = dir.path().join("combined.log");
+    let output = execwrap()
+        .args([
+            "--redirect",
+            log.to_str().expect("utf8 path"),
+            "--",
+            "sh",
+            "-c",
+            "printf 'out'; printf 'err' >&2",
+        ])
+        .env("RUST_LOG", "info")
+        .output()
+        .expect("execwrap runs");
+    assert!(output.status.success());
+    assert_eq!(output.stdout, [] as [u8; 0]);
+    let bytes = read(&log);
+    assert_eq!(bytes.len(), 6);
+    let records = stderr_records(&output);
+    assert_command_close(&records, "execwrap");
+    assert_terminal(&records, "success", None);
+}
+
+#[test]
+fn quiet_suppresses_success_diagnostics_without_losing_assets() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let log = dir.path().join("combined.log");
+    let output = execwrap()
+        .args([
+            "--quiet",
+            "--redirect",
+            log.to_str().expect("utf8 path"),
+            "--",
+            "sh",
+            "-c",
+            "printf 'asset'",
+        ])
+        .env_remove("RUST_LOG")
+        .output()
+        .expect("execwrap runs");
+    assert!(output.status.success());
+    assert_eq!(output.stdout, [] as [u8; 0]);
+    assert_eq!(output.stderr, [] as [u8; 0]);
+    assert_eq!(read(&log), b"asset");
+}
+
+#[test]
+fn control_records_survive_disabled_diagnostics() {
+    let help = execwrap()
+        .arg("--help")
+        .env("RUST_LOG", "off")
+        .output()
+        .expect("execwrap help runs");
+    assert!(help.status.success());
+    assert_eq!(help.stdout, [] as [u8; 0]);
+    let help_records = stderr_records(&help);
+    assert_eq!(help_records.len(), 1);
+    assert_eq!(help_records[0]["kind"], "help");
+    assert_eq!(help_records[0]["command"], "execwrap");
+
+    let usage = execwrap()
+        .args(["--", "true"])
+        .env("RUST_LOG", "off")
+        .output()
+        .expect("execwrap usage runs");
+    assert_unrouted_refusal(&usage);
+
+    let mock_help = mock_tex()
+        .arg("--help")
+        .env("RUST_LOG", "off")
+        .output()
+        .expect("mock help runs");
+    assert!(mock_help.status.success());
+    assert_eq!(mock_help.stdout, [] as [u8; 0]);
+    let mock_records = stderr_records(&mock_help);
+    assert_eq!(mock_records.len(), 1);
+    assert_eq!(mock_records[0]["kind"], "help");
+    assert_eq!(mock_records[0]["command"], "execwrap-mock-tex");
+
+    let mock_usage = mock_tex()
+        .arg("--unknown-argument")
+        .env("RUST_LOG", "off")
+        .output()
+        .expect("mock usage runs");
+    assert_eq!(mock_usage.status.code(), Some(2));
+    assert_eq!(mock_usage.stdout, [] as [u8; 0]);
+    let mock_usage_records = stderr_records(&mock_usage);
+    assert_eq!(mock_usage_records.len(), 1);
+    assert_eq!(mock_usage_records[0]["kind"], "usage_error");
+    assert_eq!(mock_usage_records[0]["command"], "execwrap-mock-tex");
+}
+
+#[test]
+fn mock_command_has_one_terminal_and_numeric_close() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let args = [
+        "--child",
+        "latexmk",
+        "--outdir",
+        dir.path().to_str().expect("utf8 path"),
+    ];
+    let success = mock_tex()
+        .args(args)
+        .env("RUST_LOG", "info")
+        .output()
+        .expect("mock runs");
+    assert!(success.status.success());
+    assert_eq!(success.stdout, [] as [u8; 0]);
+    assert!(dir.path().join("main.pdf").exists());
+    let success_records = stderr_records(&success);
+    assert_command_close(&success_records, "execwrap-mock-tex");
+    assert_terminal(&success_records, "success", None);
+
+    let failure = mock_tex()
+        .args(args)
+        .arg("--fail")
+        .env("RUST_LOG", "info")
+        .output()
+        .expect("mock runs");
+    assert_eq!(failure.status.code(), Some(1));
+    assert_eq!(failure.stdout, [] as [u8; 0]);
+    let failure_records = stderr_records(&failure);
+    assert_command_close(&failure_records, "execwrap-mock-tex");
+    assert_terminal(&failure_records, "failure", Some("injected_failure"));
+}
+
+#[test]
+fn shared_panic_hook_child() {
+    if std::env::var_os("EXECWRAP_PANIC_PROBE").is_none() {
+        return;
+    }
+    cli_common::install_command_subscriber("execwrap-panic-probe");
+    panic!("hidden panic payload");
+}
+
+#[test]
+fn shared_panic_hook_emits_one_control_record() {
+    let output = Command::new(std::env::current_exe().expect("test executable"))
+        .args(["--exact", "shared_panic_hook_child"])
+        .env("EXECWRAP_PANIC_PROBE", "1")
+        .env("RUST_LOG", "off")
+        .output()
+        .expect("panic probe runs");
+    assert!(!output.status.success());
+    let records = stderr_records(&output);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["kind"], "panic");
+    assert_eq!(records[0]["command"], "execwrap-panic-probe");
+    assert_eq!(records[0]["fields"]["exit_code"], 1);
+    assert!(records[0]["fields"].get("payload").is_none());
 }
 
 /// The production wrapper no longer knows any mock flags: test simulation is

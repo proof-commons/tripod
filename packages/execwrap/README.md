@@ -21,7 +21,7 @@ you do not already trust:
 - Child argv is omitted from wrapper diagnostics, but it is still
   present in process memory and visible through ordinary
   operating-system interfaces. Omission from logs is not secrecy.
-- Relayed and captured child output is **unsanitized child result
+- Captured child output is **unsanitized child result
   data** (ADR-015). The wrapper does not inspect it, redact it, or
   vouch for it. In raw routing it is written byte-for-byte.
 - The wrapper's own diagnostics never carry argv or the program path,
@@ -40,10 +40,9 @@ Four destinations, each optional:
 | `redirect_error`   | stderr only                       |
 | `redirect_prefixed`| both streams, with line prefixes  |
 
-A stream with **no** file subscriber is relayed verbatim to the parent's
-corresponding stream — pipe, file, or terminal alike. The wrapper never
-silently discards child output; discarding a stream is data loss, not a
-default.
+Each child stream must have an explicit file route. A missing route is
+refused before any output is opened or child is spawned; the wrapper
+never writes child bytes to its own stdout or stderr.
 
 Two routes that resolve to the same file are refused before anything is
 opened. Resolution is by filesystem identity — device and inode for an
@@ -64,7 +63,7 @@ Validate a configuration, then run a child and route its streams:
 // but is not run as a doctest.
 use std::ffi::OsString;
 
-use execwrap::{Notification, RoutingConfig, preflight_routing, run};
+use execwrap::{RoutingConfig, preflight_routing, run};
 
 fn main() -> Result<(), execwrap::ExecError> {
     let config = RoutingConfig {
@@ -79,20 +78,16 @@ fn main() -> Result<(), execwrap::ExecError> {
     preflight_routing(&config)?;
 
     let command: Vec<OsString> = vec!["echo".into(), "hello".into()];
-    let outcome = run(&command, &config, |notification| match notification {
-        Notification::WritingToLog { path, stream } => {
-            println!("writing {} to {}", stream.label(), path.display());
-        }
-        Notification::WroteToLog { path } => {
-            println!("wrote {}", path.display());
-        }
+    let mut notifications = Vec::new();
+    let outcome = run(&command, &config, |notification| {
+        notifications.push(notification.clone());
     })?;
 
     // Losing captured output is a failure even when the child succeeded.
     if outcome.data_loss {
         return Err(execwrap::ExecError::EmptyCommand);
     }
-    println!("child exited {}", outcome.exit_code);
+    let _result = (outcome.exit_code, notifications);
     Ok(())
 }
 ```
@@ -104,12 +99,22 @@ use execwrap::{RoutingConfig, Stream, preflight_routing};
 
 let config = RoutingConfig {
     redirect_output: Some("build/out.log".into()),
+    redirect_error: Some("build/err.log".into()),
     ..RoutingConfig::default()
 };
 
 assert!(config.is_stream_redirected(Stream::Stdout));
-assert!(!config.is_stream_redirected(Stream::Stderr));
-preflight_routing(&config).expect("a single target is unambiguous");
+assert!(config.is_stream_redirected(Stream::Stderr));
+preflight_routing(&config).expect("both streams have routes");
+
+let output_only = RoutingConfig {
+    redirect_error: None,
+    ..config
+};
+assert!(matches!(
+    preflight_routing(&output_only),
+    Err(execwrap::ExecError::UnroutedStream { stream: Stream::Stderr })
+));
 ```
 
 ## Public API tour
@@ -118,25 +123,28 @@ preflight_routing(&config).expect("a single target is unambiguous");
 
 - `struct RoutingConfig { redirect, redirect_output, redirect_error, redirect_prefixed, notify_on_write, debug, quiet }` — all four targets
   are `Option<PathBuf>`; the rest are `bool`. `Default` gives no
-  redirection at all, meaning both streams pass through to the parent.
+  redirection at all, so `preflight_routing` and `run` refuse it.
 - `RoutingConfig::is_stream_redirected(&self, stream: Stream) -> bool` —
   true when that stream has a file subscriber.
 - `enum Stream { Stdout, Stderr }` — `label(self) -> &'static str`
   yields the uppercase name used in diagnostics.
 - `preflight_routing(cfg: &RoutingConfig) -> Result<(), ExecError>` —
   stat-only validation. Returns `ExecError::AmbiguousRedirection` when
-  one file is configured for multiple routing kinds.
+  one file is configured for multiple routing kinds or
+  `ExecError::UnroutedStream` when a child stream has no file route.
 - `run(command: &[OsString], cfg: &RoutingConfig, notify: impl FnMut(&Notification)) -> Result<ExecOutcome, ExecError>`
   — spawn, capture both pipes on reader threads, fan the bytes out to
-  every subscribed writer, relay unsubscribed streams to the parent, and
-  wait. `notify` is called only when `notify_on_write` is set.
+  every subscribed writer, and wait. `notify` is called only when
+  `notify_on_write` is set.
 - `struct ExecOutcome { exit_code: i32, data_loss: bool }` — a signal
   termination is reported as `128 + signal`. `data_loss` is true when a
-  log write, a child-stream read, a reader thread, a parent flush, or a
-  writer finalization failed.
+  log write, a child-stream read, a reader thread, or a writer
+  finalization failed.
 - `enum Notification { WritingToLog { path, stream }, WroteToLog { path } }`
-  — the immediate and deferred forms of the write notice.
-- `enum ExecError { Io, Spawn { source }, EmptyCommand, AmbiguousRedirection { path } }`
+  — `WritingToLog` is emitted on the first routed write;
+  `WroteToLog` remains a compatibility variant but cannot be produced
+  by a valid fully routed run.
+- `enum ExecError { Io, Spawn { source }, EmptyCommand, AmbiguousRedirection { path }, UnroutedStream { stream } }`
   — `Spawn` deliberately omits the failing program path, which is
   caller-controlled argv.
 - `safe_open(path: &Path) -> io::Result<File>` — open for writing,
@@ -181,9 +189,9 @@ execwrap [--redirect FILE] [--redirect-output FILE] [--redirect-error FILE]
 ```
 
 The `--` separator is required by the argument grammar. Diagnostics are
-JSON on stderr; an ambiguous routing configuration is a usage error
-(class 2) emitted before any side effect, and the conflicting path stays
-out of the record because it is an argument value.
+JSON on stderr; ambiguous routing or an unrouted child stream is a
+usage error (class 2) emitted before any side effect, and caller paths
+stay out of the record because they are argument values.
 
 Exit-code mapping keeps the reserved wrapper classes intact:
 
@@ -200,12 +208,13 @@ continue silently on truncated logs.
 
 `run` returns `ExecError` for setup failures only — pipe or file
 preparation (`Io`), an empty command vector (`EmptyCommand`), a spawn
-failure (`Spawn`), or ambiguous routing (`AmbiguousRedirection`). A
+failure (`Spawn`), ambiguous routing (`AmbiguousRedirection`), or a
+missing stream route (`UnroutedStream`). A
 non-zero child status is **not** an error; it arrives through
 `ExecOutcome::exit_code`.
 
 Per-stream failures during the run do not abort it. A failed log write,
-read error, panicked reader thread, parent flush failure, or writer
+read error, panicked reader thread, or writer
 finalization error is logged through `tracing` and sets
 `ExecOutcome::data_loss`. Callers must treat a run with `data_loss` as
 failed even when the child exited 0.
@@ -219,7 +228,7 @@ failed even when the child exited 0.
   written exactly as produced. The lossy conversion in prefixed mode is
   a presentation choice for a human-readable log, not a safety measure.
 - **It does not discard a stream.** A stream with no file subscriber is
-  always relayed to the parent.
+  refused before the child starts.
 - **It does not log argv or the program path**, at any verbosity.
 - **It does not merge streams except where asked.** Only `redirect` and
   `redirect_prefixed` combine them.

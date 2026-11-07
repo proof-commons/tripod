@@ -14,8 +14,9 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use cli_common::{
-    CommandExit, emit_control_plane_record, init_json_tracing_with_debug, install_json_panic_hook,
-    parse_args_from, set_panic_payload_reporting_enabled,
+    CommandExit, command_completed, command_failed, command_span, configure_command_diagnostics,
+    emit_control_plane_record, install_command_subscriber, parse_args_from,
+    set_panic_payload_reporting_enabled,
 };
 use execwrap::{MockChild, run_mock_child};
 
@@ -46,9 +47,7 @@ struct Args {
 }
 
 fn main() -> ExitCode {
-    // The panic hook precedes argument parsing (ADR-010): a panic anywhere in
-    // the process emits one JSON diagnostic, never Rust's text hook.
-    install_json_panic_hook(COMMAND_NAME);
+    install_command_subscriber(COMMAND_NAME);
 
     let args: Args = match parse_args_from::<Args, _, _>(env::args_os()) {
         Ok(parsed) => parsed,
@@ -59,20 +58,22 @@ fn main() -> ExitCode {
     };
 
     set_panic_payload_reporting_enabled(args.debug);
-    init_json_tracing_with_debug(args.debug, tracing::Level::INFO);
+    configure_command_diagnostics(args.debug, tracing::Level::INFO);
+    let span = command_span(COMMAND_NAME, "asset");
+    let _entered = span.enter();
 
     // Failure injection belongs to the mock tool, not the production wrapper:
     // no output is written, mirroring a real render failure.
     if args.fail {
-        tracing::error!("mock TeX child failure injected");
+        command_failed("mock", &"injected_failure");
         return CommandExit::Failure.exit_code();
     }
 
-    match run_mock_child(args.child, &args.outdir) {
-        Ok(()) => CommandExit::Success.exit_code(),
-        Err(error) => {
-            tracing::error!(error = %error, "mock TeX child failed to write outputs");
-            CommandExit::Failure.exit_code()
-        }
+    if run_mock_child(args.child, &args.outdir).is_ok() {
+        command_completed("asset", false);
+        CommandExit::Success.exit_code()
+    } else {
+        command_failed("mock", &"io");
+        CommandExit::Failure.exit_code()
     }
 }

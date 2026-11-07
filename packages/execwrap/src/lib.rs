@@ -2,7 +2,7 @@
 
 use std::ffi::OsString;
 use std::fs::{File, create_dir_all};
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::os::unix::process::ExitStatusExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -36,6 +36,20 @@ impl Stream {
             Self::Stderr => "STDERR",
         }
     }
+
+    const fn trace_label(self) -> &'static str {
+        match self {
+            Self::Stdout => "stdout",
+            Self::Stderr => "stderr",
+        }
+    }
+
+    const fn index(self) -> usize {
+        match self {
+            Self::Stdout => 0,
+            Self::Stderr => 1,
+        }
+    }
 }
 
 /// Errors returned from [`run`].
@@ -66,6 +80,13 @@ pub enum ExecError {
     AmbiguousRedirection {
         /// Conflicting output path.
         path: PathBuf,
+    },
+
+    /// A child stream has no explicit file route.
+    #[error("unrouted child {stream:?} stream")]
+    UnroutedStream {
+        /// Child stream that needs a route.
+        stream: Stream,
     },
 }
 
@@ -108,6 +129,17 @@ enum RouteKind {
     CombinedPrefixed,
     StdoutOnly,
     StderrOnly,
+}
+
+impl RouteKind {
+    const fn trace_label(self) -> &'static str {
+        match self {
+            Self::CombinedRaw => "combined_raw",
+            Self::CombinedPrefixed => "combined_prefixed",
+            Self::StdoutOnly => "stdout_only",
+            Self::StderrOnly => "stderr_only",
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -323,9 +355,77 @@ fn collect_file_specs(cfg: &RoutingConfig) -> Result<Vec<FileSpec>, ExecError> {
 ///
 /// Returns [`ExecError::AmbiguousRedirection`] when one file — by
 /// filesystem identity, not merely lexical path equality — is
-/// configured for multiple routing kinds.
+/// configured for multiple routing kinds, or [`ExecError::UnroutedStream`]
+/// when either child stream has no file route.
 pub fn preflight_routing(cfg: &RoutingConfig) -> Result<(), ExecError> {
-    collect_file_specs(cfg).map(|_specs| ())
+    let route_count = if tracing::enabled!(target: "execwrap::routing", tracing::Level::DEBUG) {
+        configured_route_count(cfg)
+    } else {
+        0
+    };
+    let span = tracing::span!(
+        target: "execwrap::routing",
+        tracing::Level::DEBUG,
+        "routing_preflight",
+        route_count
+    );
+    let _entered = span.enter();
+    let result = validate_routes(cfg).map(|_specs| ());
+    match &result {
+        Ok(()) => tracing::debug!(
+            target: "execwrap::routing",
+            outcome = "completed",
+            route_count,
+            "routing preflight completed"
+        ),
+        Err(ExecError::AmbiguousRedirection { .. }) => tracing::debug!(
+            target: "execwrap::routing",
+            outcome = "refused",
+            route_count,
+            refusal_kind = "ambiguous_redirection",
+            "routing preflight completed"
+        ),
+        Err(ExecError::UnroutedStream { .. }) => tracing::debug!(
+            target: "execwrap::routing",
+            outcome = "refused",
+            route_count,
+            refusal_kind = "unrouted_stream",
+            "routing preflight completed"
+        ),
+        Err(_) => tracing::debug!(
+            target: "execwrap::routing",
+            outcome = "failed",
+            route_count,
+            error_kind = "io",
+            "routing preflight completed"
+        ),
+    }
+    result
+}
+
+fn validate_routes(cfg: &RoutingConfig) -> Result<Vec<FileSpec>, ExecError> {
+    for stream in [Stream::Stdout, Stream::Stderr] {
+        if !cfg.is_stream_redirected(stream) {
+            return Err(ExecError::UnroutedStream { stream });
+        }
+    }
+    collect_file_specs(cfg)
+}
+
+fn configured_route_count(cfg: &RoutingConfig) -> u64 {
+    [
+        cfg.redirect.is_some(),
+        cfg.redirect_prefixed.is_some(),
+        cfg.redirect_output.is_some(),
+        cfg.redirect_error.is_some(),
+    ]
+    .into_iter()
+    .map(u64::from)
+    .sum()
+}
+
+fn count_u64(len: usize) -> u64 {
+    u64::try_from(len).unwrap_or(u64::MAX)
 }
 
 /// Open `path` for writing in binary mode, creating parent directories as needed.
@@ -388,12 +488,95 @@ pub struct ExecOutcome {
 pub fn run(
     command: &[OsString],
     cfg: &RoutingConfig,
-    mut notify: impl FnMut(&Notification),
+    notify: impl FnMut(&Notification),
 ) -> Result<ExecOutcome, ExecError> {
+    let enabled = tracing::enabled!(target: "execwrap::run", tracing::Level::INFO);
+    let argument_count = if enabled {
+        count_u64(command.len().saturating_sub(1))
+    } else {
+        0
+    };
+    let route_count = if enabled {
+        configured_route_count(cfg)
+    } else {
+        0
+    };
+    let span = tracing::span!(
+        target: "execwrap::run",
+        tracing::Level::INFO,
+        "child_run",
+        argument_count,
+        route_count
+    );
+    let _entered = span.enter();
+    let result = run_inner(command, cfg, notify);
+    match &result {
+        Ok((outcome, normal_exit_code)) => {
+            if let Some(child_exit_code) = normal_exit_code {
+                tracing::info!(
+                    target: "execwrap::run",
+                    outcome = "completed",
+                    child_exit_code,
+                    data_loss = outcome.data_loss,
+                    "child completed"
+                );
+            } else {
+                tracing::info!(
+                    target: "execwrap::run",
+                    outcome = "completed",
+                    data_loss = outcome.data_loss,
+                    "child completed"
+                );
+            }
+        }
+        Err(ExecError::EmptyCommand) => tracing::debug!(
+            target: "execwrap::run",
+            outcome = "refused",
+            refusal_kind = "empty_command",
+            "child completed"
+        ),
+        Err(ExecError::AmbiguousRedirection { .. }) => tracing::debug!(
+            target: "execwrap::run",
+            outcome = "refused",
+            refusal_kind = "ambiguous_redirection",
+            "child completed"
+        ),
+        Err(ExecError::UnroutedStream { .. }) => tracing::debug!(
+            target: "execwrap::run",
+            outcome = "refused",
+            refusal_kind = "unrouted_stream",
+            "child completed"
+        ),
+        Err(ExecError::Spawn { .. }) => tracing::info!(
+            target: "execwrap::run",
+            outcome = "failed",
+            error_kind = "spawn",
+            "child completed"
+        ),
+        Err(ExecError::Io(_)) => tracing::info!(
+            target: "execwrap::run",
+            outcome = "failed",
+            error_kind = "io",
+            "child completed"
+        ),
+    }
+    result.map(|(outcome, _normal_exit_code)| outcome)
+}
+
+#[allow(
+    clippy::cognitive_complexity,
+    clippy::too_many_lines,
+    clippy::option_if_let_else
+)]
+fn run_inner(
+    command: &[OsString],
+    cfg: &RoutingConfig,
+    mut notify: impl FnMut(&Notification),
+) -> Result<(ExecOutcome, Option<i32>), ExecError> {
     let program = command.first().ok_or(ExecError::EmptyCommand)?;
     let args = &command[1..];
 
-    let specs = collect_file_specs(cfg)?;
+    let specs = validate_routes(cfg)?;
 
     // Build writers per file path, then index them per stream.
     let mut file_writers: Vec<FileWriter> = Vec::new();
@@ -417,6 +600,7 @@ pub fn run(
         let idx = file_writers.len();
         file_writers.push(FileWriter {
             path: spec.path.clone(),
+            kind: spec.kind,
             writer,
         });
 
@@ -430,23 +614,9 @@ pub fn run(
         }
     }
 
-    // A stream with no file subscriber passes through to the parent's
-    // corresponding stream unconditionally — pipe, file, or terminal.
-    // Silently discarding a child stream is data loss, never a default.
-    let stdout_passthrough = stdout_subscribers.is_empty();
-    let stderr_passthrough = stderr_subscribers.is_empty();
-
     // Track first-write notifications.
     let mut first_write_stdout = !stdout_subscribers.is_empty();
     let mut first_write_stderr = !stderr_subscribers.is_empty();
-
-    // Defer-or-immediate notification decision.
-    let defer_notifications = cfg.notify_on_write
-        && cfg.redirect_output.is_some()
-        && cfg.redirect_error.is_none()
-        && cfg.redirect.is_none()
-        && cfg.redirect_prefixed.is_none()
-        && !cfg.is_stream_redirected(Stream::Stderr);
 
     let mut child = Command::new(program)
         .args(args)
@@ -462,9 +632,10 @@ pub fn run(
     // call site, so only known-safe metadata (argument count and pid)
     // is recorded.
     tracing::info!(
-        argument_count = args.len(),
+        target: "execwrap::run",
+        argument_count = count_u64(args.len()),
         pid = child.id(),
-        "executing child process",
+        "child started",
     );
 
     let stdout = child.stdout.take().expect("stdout pipe configured above");
@@ -475,107 +646,124 @@ pub fn run(
     let stdout_handle = spawn_reader(Stream::Stdout, stdout, tx.clone());
     let stderr_handle = spawn_reader(Stream::Stderr, stderr, tx);
 
-    // Buffered passthrough to the parent's standard streams when no subscriber.
-    let mut parent_stdout = io::stdout();
-    let mut parent_stderr = io::stderr();
-
-    let mut pending_paths: Vec<PathBuf> = Vec::new();
     let mut data_loss = false;
+    let track_streams = tracing::enabled!(target: "execwrap::stream", tracing::Level::DEBUG);
+    let mut stream_metrics = [StreamMetrics::default(), StreamMetrics::default()];
 
     for message in rx {
         match message {
             ChannelMessage::Data { stream, data } => {
+                if track_streams {
+                    let metrics = &mut stream_metrics[stream.index()];
+                    metrics.read_bytes = metrics.read_bytes.saturating_add(count_u64(data.len()));
+                }
                 let subscribers = match stream {
                     Stream::Stdout => &stdout_subscribers,
                     Stream::Stderr => &stderr_subscribers,
                 };
-                if subscribers.is_empty() {
-                    let relay = match stream {
-                        Stream::Stdout if stdout_passthrough => parent_stdout.write_all(&data),
-                        Stream::Stderr if stderr_passthrough => parent_stderr.write_all(&data),
-                        // Unreachable: passthrough is exactly
-                        // "no subscriber" per stream.
-                        _ => Ok(()),
-                    };
-                    if let Err(error) = relay {
-                        data_loss = true;
-                        tracing::error!(
-                            error = %error,
-                            stream = stream.label(),
-                            "parent passthrough write failed",
-                        );
+                let first = match stream {
+                    Stream::Stdout => {
+                        let f = first_write_stdout;
+                        first_write_stdout = false;
+                        f
                     }
-                } else {
-                    let first = match stream {
-                        Stream::Stdout => {
-                            let f = first_write_stdout;
-                            first_write_stdout = false;
-                            f
-                        }
-                        Stream::Stderr => {
-                            let f = first_write_stderr;
-                            first_write_stderr = false;
-                            f
-                        }
-                    };
-                    for &idx in subscribers {
-                        let entry = &mut file_writers[idx];
-                        if first && cfg.notify_on_write {
-                            if defer_notifications {
-                                if !pending_paths.contains(&entry.path) {
-                                    pending_paths.push(entry.path.clone());
-                                }
-                            } else {
-                                notify(&Notification::WritingToLog {
-                                    path: entry.path.clone(),
-                                    stream,
-                                });
-                            }
-                        }
-                        if let Err(error) = entry.writer.write(stream, &data) {
-                            data_loss = true;
-                            tracing::error!(error = %error, path = ?entry.path, "writer error");
+                    Stream::Stderr => {
+                        let f = first_write_stderr;
+                        first_write_stderr = false;
+                        f
+                    }
+                };
+                for &idx in subscribers {
+                    let entry = &mut file_writers[idx];
+                    if first && cfg.notify_on_write {
+                        tracing::info!(
+                            target: "execwrap::routing",
+                            route_kind = entry.kind.trace_label(),
+                            stream = stream.trace_label(),
+                            "log write started"
+                        );
+                        notify(&Notification::WritingToLog {
+                            path: entry.path.clone(),
+                            stream,
+                        });
+                    }
+                    if entry.writer.write(stream, &data).is_err() {
+                        data_loss = true;
+                        if track_streams {
+                            stream_metrics[stream.index()].fail("write");
                         }
                     }
                 }
             }
-            ChannelMessage::Eof { stream } => {
-                tracing::debug!(stream = stream.label(), "child stream closed");
-            }
-            ChannelMessage::Error { stream, error } => {
+            ChannelMessage::Eof { stream: _stream } => {}
+            ChannelMessage::Error {
+                stream,
+                error: _error,
+            } => {
                 data_loss = true;
-                tracing::error!(error = %error, stream = stream.label(), "read error on child stream");
+                if track_streams {
+                    stream_metrics[stream.index()].fail("read");
+                }
             }
         }
     }
 
     // A panicked reader thread may have dropped bytes on the floor.
-    for (handle, label) in [(stdout_handle, "stdout"), (stderr_handle, "stderr")] {
+    for (stream, handle) in [
+        (Stream::Stdout, stdout_handle),
+        (Stream::Stderr, stderr_handle),
+    ] {
         if handle.join().is_err() {
             data_loss = true;
-            tracing::error!(stream = label, "child stream reader thread panicked");
-        }
-    }
-
-    for (parent, label) in [
-        (&mut parent_stdout as &mut dyn Write, "stdout"),
-        (&mut parent_stderr as &mut dyn Write, "stderr"),
-    ] {
-        if let Err(error) = parent.flush() {
-            data_loss = true;
-            tracing::error!(error = %error, stream = label, "parent stream flush failed");
+            if track_streams {
+                stream_metrics[stream.index()].fail("reader_panic");
+            }
         }
     }
 
     for entry in &mut file_writers {
-        if let Err(error) = entry.writer.finalize() {
+        if entry.writer.finalize().is_err() {
             data_loss = true;
-            tracing::error!(error = %error, path = ?entry.path, "writer finalize error");
+            if track_streams {
+                match entry.kind {
+                    RouteKind::CombinedRaw | RouteKind::CombinedPrefixed => {
+                        stream_metrics[0].fail("finalize");
+                        stream_metrics[1].fail("finalize");
+                    }
+                    RouteKind::StdoutOnly => stream_metrics[0].fail("finalize"),
+                    RouteKind::StderrOnly => stream_metrics[1].fail("finalize"),
+                }
+            }
         }
     }
 
-    for path in pending_paths {
-        notify(&Notification::WroteToLog { path });
+    if track_streams {
+        for stream in [Stream::Stdout, Stream::Stderr] {
+            let written_bytes = file_writers.iter().fold(0_u64, |total, entry| {
+                total.saturating_add(entry.writer.written_bytes(stream))
+            });
+            let metrics = stream_metrics[stream.index()];
+            if let Some(error_kind) = metrics.error_kind {
+                tracing::debug!(
+                    target: "execwrap::stream",
+                    stream = stream.trace_label(),
+                    outcome = "failed",
+                    read_bytes = metrics.read_bytes,
+                    written_bytes,
+                    error_kind,
+                    "child stream completed"
+                );
+            } else {
+                tracing::debug!(
+                    target: "execwrap::stream",
+                    stream = stream.trace_label(),
+                    outcome = "completed",
+                    read_bytes = metrics.read_bytes,
+                    written_bytes,
+                    "child stream completed"
+                );
+            }
+        }
     }
 
     let status = child.wait().map_err(ExecError::Io)?;
@@ -588,16 +776,33 @@ pub fn run(
         1
     };
 
-    tracing::debug!(exit_code, data_loss, "child exited");
-    Ok(ExecOutcome {
-        exit_code,
-        data_loss,
-    })
+    Ok((
+        ExecOutcome {
+            exit_code,
+            data_loss,
+        },
+        status.code(),
+    ))
 }
 
 struct FileWriter {
     path: PathBuf,
+    kind: RouteKind,
     writer: Writer,
+}
+
+#[derive(Clone, Copy, Default)]
+struct StreamMetrics {
+    read_bytes: u64,
+    error_kind: Option<&'static str>,
+}
+
+impl StreamMetrics {
+    const fn fail(&mut self, kind: &'static str) {
+        if self.error_kind.is_none() {
+            self.error_kind = Some(kind);
+        }
+    }
 }
 
 enum ChannelMessage {
@@ -611,27 +816,39 @@ fn spawn_reader<R: Read + Send + 'static>(
     mut source: R,
     tx: Sender<ChannelMessage>,
 ) -> thread::JoinHandle<()> {
+    let dispatch = tracing::dispatcher::get_default(tracing::Dispatch::clone);
+    let parent = tracing::Span::current();
     thread::spawn(move || {
-        let mut buffer = [0_u8; 8192];
-        loop {
-            match source.read(&mut buffer) {
-                Ok(0) => {
-                    let _ignored = tx.send(ChannelMessage::Eof { stream });
-                    break;
-                }
-                Ok(read) => {
-                    let data = buffer[..read].to_vec();
-                    if tx.send(ChannelMessage::Data { stream, data }).is_err() {
+        tracing::dispatcher::with_default(&dispatch, || {
+            let _parent = parent.enter();
+            let span = tracing::span!(
+                target: "execwrap::stream",
+                tracing::Level::DEBUG,
+                "child_stream_read",
+                stream = stream.trace_label()
+            );
+            let _entered = span.enter();
+            let mut buffer = [0_u8; 8192];
+            loop {
+                match source.read(&mut buffer) {
+                    Ok(0) => {
+                        let _ignored = tx.send(ChannelMessage::Eof { stream });
+                        break;
+                    }
+                    Ok(read) => {
+                        let data = buffer[..read].to_vec();
+                        if tx.send(ChannelMessage::Data { stream, data }).is_err() {
+                            break;
+                        }
+                    }
+                    Err(ref error) if error.kind() == io::ErrorKind::Interrupted => {}
+                    Err(error) => {
+                        let _ignored = tx.send(ChannelMessage::Error { stream, error });
                         break;
                     }
                 }
-                Err(ref error) if error.kind() == io::ErrorKind::Interrupted => {}
-                Err(error) => {
-                    let _ignored = tx.send(ChannelMessage::Error { stream, error });
-                    break;
-                }
             }
-        }
+        });
     })
 }
 
@@ -654,6 +871,16 @@ pub enum MockChild {
     Latexmk,
 }
 
+impl MockChild {
+    const fn trace_label(self) -> &'static str {
+        match self {
+            Self::Xelatex => "xelatex",
+            Self::Biber => "biber",
+            Self::Latexmk => "latexmk",
+        }
+    }
+}
+
 const MOCK_BCF: &[u8] = b"% mock main.bcf\n";
 const MOCK_AUX: &[u8] = b"\\relax\n% mock main.aux\n";
 const MOCK_BBL: &[u8] = b"% mock main.bbl\n";
@@ -674,11 +901,45 @@ pub fn run_mock_child(kind: MockChild, outdir: &Path) -> io::Result<()> {
         MockChild::Biber => &[("main.bbl", MOCK_BBL)],
         MockChild::Latexmk => &[("main.pdf", MOCK_PDF), ("main.aux", MOCK_AUX)],
     };
-    create_dir_all(outdir)?;
-    for (name, bytes) in outputs {
-        write_if_changed_under(outdir, name, bytes)?;
+    let output_count = if tracing::enabled!(target: "execwrap::mock", tracing::Level::INFO) {
+        count_u64(outputs.len())
+    } else {
+        0
+    };
+    let span = tracing::span!(
+        target: "execwrap::mock",
+        tracing::Level::INFO,
+        "mock_child_run",
+        child_kind = kind.trace_label(),
+        output_count
+    );
+    let _entered = span.enter();
+    let result = (|| {
+        create_dir_all(outdir)?;
+        for (name, bytes) in outputs {
+            write_if_changed_under(outdir, name, bytes)?;
+        }
+        Ok(())
+    })();
+    if result.is_ok() {
+        tracing::info!(
+            target: "execwrap::mock",
+            outcome = "completed",
+            child_kind = kind.trace_label(),
+            output_count,
+            "mock child completed"
+        );
+    } else {
+        tracing::info!(
+            target: "execwrap::mock",
+            outcome = "failed",
+            child_kind = kind.trace_label(),
+            output_count,
+            error_kind = "io",
+            "mock child completed"
+        );
     }
-    Ok(())
+    result
 }
 
 /// Write `bytes` to `dir/name` only if the current contents differ.
