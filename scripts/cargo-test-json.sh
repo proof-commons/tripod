@@ -1,5 +1,5 @@
 #!/bin/sh
-# One package's test groups, run as a single Meson test (CI-002).
+# A package or one explicitly selected target, run as a Meson test (CI-002).
 #
 # The gate runs no workspace-level `cargo test`: every package is its own
 # Meson-driven lane, so a duration and a failure both carry the name of the
@@ -16,17 +16,17 @@
 # reports as timing it did not measure. It never invents timing, and it never
 # sets RUSTC_BOOTSTRAP to force unstable flags onto a stable toolchain.
 #
-# The doctest harness accepts the same flags, so one invocation per package
-# covers unit, integration, and documentation tests alike -- the lane proves
-# exactly what `cargo test -p <package>` proved before.
+# The doctest harness accepts the same flags. A split package's lanes jointly
+# cover unit, integration, and documentation tests; the target census checks
+# that their union preserves the package invocation's complete test surface.
 #
 # Usage: cargo-test-json.sh <cargo> <manifest> <package> <profile> <stream>
 #   profile  gate | release
 #   stream   absolute path for the libtest JSON event stream (build tree)
 set -eu
 
-if [ "$#" -ne 5 ]; then
-  echo "usage: cargo-test-json.sh <cargo> <manifest> <package> <profile> <stream>" >&2
+if [ "$#" -lt 5 ] || [ "$#" -gt 6 ]; then
+  echo "usage: cargo-test-json.sh <cargo> <manifest> <package> <profile> <stream> [lib|doc|test:NAME]" >&2
   exit 2
 fi
 
@@ -35,6 +35,7 @@ manifest="$2"
 package="$3"
 profile="$4"
 stream="$5"
+selection="${6:-all}"
 
 case "$profile" in
   gate|release) ;;
@@ -50,6 +51,13 @@ if [ "$profile" = release ]; then
 else
   set -- "$@" --profile gate
 fi
+case "$selection" in
+  all) ;;
+  lib) set -- "$@" --lib ;;
+  doc) set -- "$@" --doc ;;
+  test:*) set -- "$@" --test "${selection#test:}" ;;
+  *) echo "ERROR: unknown test selection: $selection" >&2; exit 2 ;;
+esac
 
 if "$cargo" --version 2>/dev/null | grep -q -- '-nightly'; then
   set -- "$@" -- -Z unstable-options --format json --report-time
@@ -61,7 +69,6 @@ fi
 if [ "$mode" = plain ]; then
   echo "WARNING: $cargo is not a nightly cargo; per-test timing is NOT measured" >&2
   echo "         for package $package ($profile); the tests themselves are unaffected" >&2
-  CARGO_TERM_PROGRESS_WHEN=never exec "$cargo" "$@"
 fi
 
 # JSON mode. The event stream is stdout and is captured whole; cargo's own
@@ -69,11 +76,23 @@ fi
 # log keeps them. A failing run prints the stream too: the failure detail a
 # human needs lives inside it, and a lane must not fail silently.
 status=0
-CARGO_TERM_PROGRESS_WHEN=never "$cargo" "$@" > "$stream" || status=$?
+output="$stream"
+if [ "$mode" = plain ]; then output="$stream.plain"; fi
+CARGO_TERM_PROGRESS_WHEN=never "$cargo" "$@" > "$output" 2> "$stream.stderr" || status=$?
+cat "$stream.stderr" >&2
+if [ "$mode" = plain ]; then cat "$output"; fi
+# A lane must consume the artifacts its warm-up built. Keep diagnostics
+# beside the stream and fail loudly if package feature selection drifts.
+if grep -q '^[[:space:]]*Compiling ' "$stream.stderr"; then
+  echo "ERROR: compilation inside warmed test lane: $package ($profile) $selection" >&2
+  status=1
+fi
 if [ "$status" -ne 0 ]; then
   echo "==> libtest JSON stream for $package ($profile):" >&2
-  cat "$stream" >&2
+  cat "$output" >&2
   exit "$status"
 fi
 
-echo "$package ($profile): libtest JSON stream written to $stream" >&2
+if [ "$mode" = json ]; then
+  echo "$package ($profile): libtest JSON stream written to $stream" >&2
+fi

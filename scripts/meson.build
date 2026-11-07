@@ -3,6 +3,8 @@
 # build. The shell sources beside them are not scanned and are removed
 # by the categorical exclusion pattern in the parent meson.build.
 script_source_files = files(
+  'cargo-test-warmup.py',
+  'check-vector-test-targets.py',
   'check-workspace-tracing.py',
   'ci-timing-report.py',
   'diagnose-taproot-issuance-rangeproof-digest.py',
@@ -15,6 +17,7 @@ script_source_files = files(
   'run-fresh-process-lifecycle.py',
   'run-normalization-matrix.py',
   'test-elements-observer-contract.py',
+  'test-cargo-lanes.py',
   'test-executor-boundaries.py',
   'test-executor-classification.py',
   'test-executor-request-comparisons.py',

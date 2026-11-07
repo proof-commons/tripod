@@ -755,9 +755,54 @@ foreach dir : cargo_test_lane_dirs
 endforeach
 
 cargo_test_json = find_program('scripts/cargo-test-json.sh')
+test_python = find_program('python3')
+test(
+  'cargo-lane-contracts', test_python,
+  args: files('scripts/test-cargo-lanes.py'), suite: 'lint', timeout: 60,
+)
+vector_target_check = files('scripts/check-vector-test-targets.py')
+vector_test_targets = [
+  'lib', 'doc',
+  'test:compact_ash_operation', 'test:compact_native', 'test:ctf_materializer',
+  'test:guide13_live_native', 'test:guide13_live_resources',
+  'test:guide13_live_transfer', 'test:guide13_preflight',
+  'test:guide13_sponsor_signing', 'test:maturity_abi', 'test:maturity_closure',
+  'test:maturity_confidential', 'test:maturity_continuity',
+  'test:maturity_diagnostic', 'test:maturity_native', 'test:maturity_observer',
+  'test:maturity_observer_boundaries', 'test:maturity_operator',
+  'test:maturity_predecessor_mutants', 'test:maturity_recovery',
+  'test:maturity_retained', 'test:maturity_successor_mutants', 'test:sighash_verdict',
+]
+run_command(
+  test_python, vector_target_check, cargo, cargo_manifest, vector_test_targets,
+  check: true,
+)
+test(
+  'vectors-target-census', test_python,
+  args: vector_target_check + ['--self-test', cargo.full_path(), cargo_manifest]
+    + vector_test_targets,
+  suite: 'lint', timeout: 60,
+)
 
-# Warm-up: one workspace-wide `cargo build --tests` per profile, which
-# every per-package lane of that profile depends on. Cargo serializes
+# Warm-up: `cargo test --no-run -p PACKAGE` for every package per profile.
+# The former workspace-wide build unified dependency features differently:
+# the study found regex-syntax with Unicode versus std-only and a different
+# stable_deref_trait feature set. The change propagated through conformance
+# into vectors, rebuilding inside the supposedly warm lane (141s gate,
+# 388s release). Use precisely the lane's package selection instead.
+# Cold-start study warm-ups were 100s gate / 348s release; the first
+# per-package warm-ups were 233s / 1244s (release timed out at its 1200s
+# budget, then finished remaining work before release-alone execution).
+# The corresponding warm-up plus both vectors-alone battery totals were
+# 1883s before / 2475s after. Whole scripts took 2060s / 3060s, but the
+# latter also ran fmt, clippy and the full suite; these are not matched
+# cold-cache experiments. Node load reached 153.59 in the latter run.
+# Preserving both build directories made the unchanged repeat warm-ups
+# 3s / 4s; the complete warm repeat took 709s, including both vectors-alone
+# batteries and the full suite. Exact package selection trades more cold
+# artifacts for lanes without crate recompilation; the wrapper refuses a
+# "Compiling" line.
+# Every per-package lane depends on its profile warm-up. Cargo serializes
 # concurrent invocations on a lock over the shared target directory, so
 # sixteen lanes that each had to compile would spend most of their wall
 # time queued behind that lock and their per-package durations would
@@ -783,8 +828,8 @@ cargo_test_json = find_program('scripts/cargo-test-json.sh')
 # in total, and each lane's duration measured how long that lane waited
 # for the build lock rather than how long its tests took.
 #
-# What the warm-up does NOT cover is documentation tests: `cargo build
-# --tests` does not compile them, so rustdoc compiles each package's
+# What the warm-up does NOT cover is documentation examples: `test --no-run`
+# does not compile them, so rustdoc compiles each package's
 # doctests inside its own lane, holding cargo's lock while it does. In
 # the historical debug run that cost was small. A full gate run of both
 # profiles measured 7:04 of warm-up and 10:31 of lanes, with release packages
@@ -795,16 +840,15 @@ cargo_test_json = find_program('scripts/cargo-test-json.sh')
 # remains outside the warm-up; measure its cost for each run rather than
 # treating those historical walls as current test cost.
 cargo_test_warmup = {}
+warmup_packages = []
+foreach entry : cargo_test_packages
+  warmup_packages += entry[1]
+endforeach
 foreach profile : ['gate', 'release']
   warmup_args = [
-    cargo, 'build', '--tests', '--workspace',
-    '--manifest-path', cargo_manifest,
-  ]
-  if profile == 'release'
-    warmup_args += ['--release']
-  else
-    warmup_args += ['--profile', 'gate']
-  endif
+    test_python, files('scripts/cargo-test-warmup.py'),
+    cargo.full_path(), cargo_manifest, profile,
+  ] + warmup_packages
   warmup = custom_target(
     'run-cargo-test-warmup-' + profile,
     output: ['cargo-test-warmup-' + profile + '.ok',
@@ -841,23 +885,60 @@ endforeach
 # the doctest queueing described above rather than test execution.
 cargo_test_stream_root = meson.project_build_root() / 'cargo-test-json'
 
+# Vectors study, shared 30-core node, unchanged tests: serial package lanes
+# in the full gate measured 442.65s gate / 323.77s release (load about 20).
+# Alone, with unrelated node load rising through 26--57, lane walls were
+# 622.475s / 808.729s, including the 141s / 388s rebuild above. Libtest suite
+# walls summed to 477.968s / 418.287s; the longest binary was 184.929s / 160.880s.
+# The split preserves Cargo's complete target census, including harness=false
+# maturity_observer and rustdoc. Each lane owns its stream; no concurrent append.
+# First split run, warm execution envelopes: alone 420.41s gate / 122.03s
+# release; full suite 318.68s / 245.19s. The round reached load 153.59;
+# the full-suite battery itself began at 21.07 and ended at 45.29.
+# Unchanged warm repeat: alone 238.32s gate / 107.52s release; full suite
+# 288.17s / 229.03s. Alone battery loads began at 48.07 / 38.07; full suite
+# began at 16.26 and ended at 23.82. All figures are seconds on the same
+# shared 30-core node; alone excludes sibling lanes, not other node users.
+# The former gate-alone target of 300s cannot hold in all measured conditions:
+# the unsplit library unit-test binary alone took 318.68s in that full
+# suite and 420.41s alone. Overlapping integration targets cannot shorten
+# that binary; its internal work is the next cost to study. These are
+# observed bounds under those conditions, not a machine-independent floor.
+# The warm repeat did meet 300s; the split cannot guarantee it under the
+# slower measured conditions without studying the library binary itself.
+# Execution budgets after exact package warm-up: alone 450s gate / 260s
+# release; full suite 350s / 300s. Tolerance: 1.5x these budgets on the
+# shared node. The 1800s per-target harness timeout is a separate bound.
+# These are aggregate profile envelopes, not sums of overlapping lane walls.
+# Per-binary thread limits avoid multiplying 30 libtest threads by 24 targets
+# and two profiles. Meson remains the only binary scheduler.
 foreach profile : ['gate', 'release']
   foreach entry : cargo_test_packages
-    test(
-      'cargo-test-' + profile + '-' + entry[0],
-      cargo_test_json,
-      args: [
-        cargo.full_path(),
-        cargo_manifest,
-        entry[1],
-        profile,
-        cargo_test_stream_root / profile / (entry[0] + '.json'),
-      ],
-      depends: cargo_test_warmup[profile],
-      suite: 'cargo-' + profile,
-      timeout: 1800,
-      is_parallel: true,
-    )
+    selections = ['all']
+    if entry[0] == 'vectors'
+      selections = vector_test_targets
+    endif
+    foreach selection : selections
+      suffix = entry[0]
+      lane_env = environment()
+      if selection != 'all'
+        suffix += '-' + selection.replace(':', '-')
+        lane_env.set('RUST_TEST_THREADS', selection == 'lib' ? '8' : '2')
+      endif
+      test(
+        'cargo-test-' + profile + '-' + suffix,
+        cargo_test_json,
+        args: [
+          cargo.full_path(), cargo_manifest, entry[1], profile,
+          cargo_test_stream_root / profile / (suffix + '.json'),
+        ] + (selection == 'all' ? [] : [selection]),
+        env: lane_env,
+        depends: cargo_test_warmup[profile],
+        suite: 'cargo-' + profile,
+        timeout: 1800,
+        is_parallel: true,
+      )
+    endforeach
   endforeach
 endforeach
 
@@ -972,7 +1053,13 @@ test(
 
 live_native_capture_test = find_program('scripts/test-live-native-v2-r7-capture.sh')
 
-# Budget: 0:30, tolerance 1:00 (gate node: direct 8.4s, Meson 24.8s).
+# Budget: 0:30, tolerance 1:00, for an individual Meson run.
+# Historical direct 8.4s / Meson 24.8s; study alone 24.09s.
+# Full suite: earlier 55.19s; split round 102.02s. That round reached
+# load 153.59, while its full-suite battery ran from load 21.07 to 45.29.
+# Unchanged warm full-suite repeat: 70.49s, battery load 16.26 to 23.82.
+# Full-suite operating budget 2:00, tolerance 2:30 on the shared node;
+# harness timeout 3:00, well above the measured 102.02s full-suite wall.
 # Four isolated cases run at a time; mock Cargo encodes common fields once
 # per case. The driver still hashes and parses 79 artifacts per complete
 # capture. Pure shell with synthetic Git suites; no Rust toolchain, target
@@ -988,7 +1075,13 @@ test(
 
 live_native_r8_capture_test = find_program('scripts/test-live-native-v2-r8-capture.sh')
 
-# Budget: 0:30, tolerance 1:00 (gate node: direct 23.1s, Meson 27.1s).
+# Budget: 0:40, tolerance 1:00, for an individual Meson run.
+# Historical direct 23.1s / Meson 27.1s; study alone 32.87s.
+# Full suite: earlier 55.74s; split round 103.20s. That round reached
+# load 153.59, while its full-suite battery ran from load 21.07 to 45.29.
+# Unchanged warm full-suite repeat: 70.57s, battery load 16.26 to 23.82.
+# Full-suite operating budget 2:00, tolerance 2:30 on the shared node;
+# harness timeout 3:00, well above the measured 103.20s full-suite wall.
 # Four isolated cases run at a time; mock Cargo encodes common fields once
 # per case. The driver still hashes and parses 85 artifacts per complete
 # capture. Pure shell with synthetic Git suites; no Rust toolchain, target
@@ -1168,7 +1261,14 @@ test(
 # request-framing case is posed at the handshake, which the adapter reads
 # before it boots anything. The `elementsd` and `elements-cli` it configures
 # are shell stand-ins and the framework is a stub package.
-# Budget: 0:10, tolerance 0:20 (measured 0:05.6 on the node of record).
+# Budget: 0:10, tolerance 0:20, for an individual run (historical 0:05.6).
+# Study alone 9.97s; full gate 33.42s exceeded that tolerance.
+# The first split full-suite run measured 34.40s.
+# Unchanged warm full-suite repeat: 13.13s, battery load 16.26 to 23.82.
+# Full-gate operating budget 0:40, tolerance 1:00 on the shared node.
+# Study harness battery CPU pressure some/full was 6.003s/5.484s over 67s;
+# the prior full gate recorded 58.279s/18.089s over 498s, with no throttling.
+# Alone excludes sibling Meson tests, not other users of the node.
 # Seventy-six adapter processes across four test workers; signing stand-ins
 # exit on stop rather than a fixed sleep, with a bounded lifetime as fallback.
 # Two failed-startup cases retain the stand-in node's bounded lifetime.
