@@ -679,6 +679,49 @@ pub fn link_live_candidate(
     bundles: &[CandidateRelocatableLiveTransferBundle],
     deployment: &LiveLinkDeploymentParameters,
 ) -> Result<CandidateLinkedLiveTransferBundle, LinkRefusal> {
+    let span = tracing::info_span!(
+        target: "linker::live_bundle",
+        "link_live_candidate",
+        family = "live",
+        bundle_count = u64::try_from(bundles.len()).unwrap_or(u64::MAX)
+    );
+    let _entered = span.enter();
+    let result = link_live_candidate_core(target, bundles, deployment);
+    match &result {
+        Ok(candidate) => {
+            if tracing::enabled!(target: "linker::live_bundle", tracing::Level::INFO) {
+                let leaf_count = candidate
+                    .constructors()
+                    .values()
+                    .map(|constructor| constructor.programs().len())
+                    .sum::<usize>();
+                tracing::info!(
+                    target: "linker::live_bundle",
+                    outcome = "completed",
+                    family = "live",
+                    leaf_count = u64::try_from(leaf_count).unwrap_or(u64::MAX),
+                    outstanding_obligation_count = u64::try_from(candidate.outstanding_obligations().count().get()).unwrap_or(u64::MAX),
+                    "link completed"
+                );
+            }
+        }
+        Err(refusal) => tracing::debug!(
+            target: "linker::live_bundle",
+            outcome = "refused",
+            family = "live",
+            refusal_kind = refusal.kind(),
+            "link refused"
+        ),
+    }
+    result
+}
+
+#[allow(clippy::too_many_lines)]
+fn link_live_candidate_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    bundles: &[CandidateRelocatableLiveTransferBundle],
+    deployment: &LiveLinkDeploymentParameters,
+) -> Result<CandidateLinkedLiveTransferBundle, LinkRefusal> {
     let first = check_offering(bundles)?;
 
     let mut constructors = BTreeMap::new();
@@ -870,6 +913,17 @@ fn link_one_bundle(
     bundle: &CandidateRelocatableLiveTransferBundle,
     deployment: &LiveLinkDeploymentParameters,
 ) -> Result<(LiveDefinitionCensus, LinkedLiveConstructor), LinkRefusal> {
+    let _span = tracing::debug_span!(
+        target: "linker::live_bundle",
+        "link_live_bundle",
+        family = "live",
+        leaf_count = u64::try_from(bundle.leaves().len()).unwrap_or(u64::MAX),
+        representation = match bundle.representation() {
+            LiveTransferRepresentationPlan::Explicit => "explicit",
+            LiveTransferRepresentationPlan::PrivateCommitted => "private_committed",
+        }
+    )
+    .entered();
     let representation = bundle.representation();
     let owner = OwnerParameter::new(bundle.constructor().owner().clone());
 

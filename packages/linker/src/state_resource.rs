@@ -718,6 +718,12 @@ pub fn measure_state_resources(
     record: &StateAnnouncementProgram,
     linked: &LinkedStateLeafProgram,
 ) -> Result<StateLinkedResources, StateLinkRefusal> {
+    let _span = tracing::debug_span!(
+        target: "linker::state_resource",
+        "measure_state_resources",
+        family = "state"
+    )
+    .entered();
     let program = linked.program();
     let totals = measure_state_totals(target, record, program)?;
 

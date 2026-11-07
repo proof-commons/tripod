@@ -501,6 +501,13 @@ impl<L: TreeLeaf> Node<L> {
 ///
 /// Every refusal [`assemble_under`] raises.
 pub fn assemble(input: &TaptreeInput) -> Result<DeterministicTaptree, LinkRefusal> {
+    let _span = tracing::debug_span!(
+        target: "linker::taptree",
+        "assemble_taptree",
+        family = "compact",
+        leaf_count = u64::try_from(input.leaves().len()).unwrap_or(u64::MAX)
+    )
+    .entered();
     assemble_under(input, OptimumEvidencePolicy::SubsetOracleOnly)
 }
 

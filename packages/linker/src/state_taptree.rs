@@ -204,6 +204,13 @@ pub fn state_static_taptree_input(
 pub fn assemble_state_static(
     input: &TaptreeInput<StateLeafRole>,
 ) -> Result<DeterministicTaptree<StateLeafRole>, LinkRefusal> {
+    let _span = tracing::debug_span!(
+        target: "linker::state_taptree",
+        "assemble_taptree",
+        family = "state",
+        leaf_count = u64::try_from(input.leaves().len()).unwrap_or(u64::MAX)
+    )
+    .entered();
     assemble_under(input, STATE_OPTIMUM_POLICY)
 }
 

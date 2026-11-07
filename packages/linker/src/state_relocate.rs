@@ -490,6 +490,12 @@ pub fn substitute_state(
     record: &StateAnnouncementProgram,
     resolved: &StateResolvedCensus,
 ) -> Result<LinkedStateLeafProgram, StateLinkRefusal> {
+    let _span = tracing::debug_span!(
+        target: "linker::state_relocate",
+        "substitute_relocations",
+        family = "state"
+    )
+    .entered();
     let relocations = discover_state_relocations(target, record, resolved)?;
 
     // Once, from the pristine instructions, with every value together.

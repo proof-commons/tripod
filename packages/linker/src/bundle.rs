@@ -466,6 +466,39 @@ pub fn link_candidate(
     bundle: &CandidateRelocatableTapscriptBundle,
     deployment: &LinkDeploymentParameters,
 ) -> Result<CandidateLinkedBundle, LinkRefusal> {
+    let span = tracing::info_span!(
+        target: "linker::bundle",
+        "link_candidate",
+        family = "compact",
+        leaf_count = u64::try_from(bundle.constructor().leaves().len()).unwrap_or(u64::MAX)
+    );
+    let _entered = span.enter();
+    let result = link_candidate_core(target, bundle, deployment);
+    match &result {
+        Ok(candidate) => tracing::info!(
+            target: "linker::bundle",
+            outcome = "completed",
+            family = "compact",
+            leaf_count = u64::try_from(candidate.programs().len()).unwrap_or(u64::MAX),
+            outstanding_obligation_count = u64::try_from(candidate.outstanding_obligations().count().get()).unwrap_or(u64::MAX),
+            "link completed"
+        ),
+        Err(refusal) => tracing::debug!(
+            target: "linker::bundle",
+            outcome = "refused",
+            family = "compact",
+            refusal_kind = refusal.kind(),
+            "link refused"
+        ),
+    }
+    result
+}
+
+fn link_candidate_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    bundle: &CandidateRelocatableTapscriptBundle,
+    deployment: &LinkDeploymentParameters,
+) -> Result<CandidateLinkedBundle, LinkRefusal> {
     if bundle.status() != BackendArtifactStatus::Prototype {
         return Err(LinkRefusal::BundleIsNotACandidate);
     }

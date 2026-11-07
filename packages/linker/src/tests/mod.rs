@@ -59,6 +59,7 @@ mod state_symbol_tests;
 mod state_taptree_tests;
 mod symbol_tests;
 mod taptree_tests;
+mod tracing_tests;
 
 use std::collections::BTreeMap;
 use std::num::{NonZeroU32, NonZeroU64};

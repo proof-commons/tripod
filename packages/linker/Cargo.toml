@@ -50,6 +50,7 @@ target-elements = { workspace = true }
 architecture = { workspace = true }
 compiler = { workspace = true }
 realization = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true

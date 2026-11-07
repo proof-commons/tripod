@@ -102,6 +102,13 @@ pub fn substitute(
     census: &DefinitionCensus,
     resolved: &CompactAshSymbols,
 ) -> Result<BTreeMap<LeafRole, LinkedLeafProgram>, LinkRefusal> {
+    let _span = tracing::debug_span!(
+        target: "linker::relocate",
+        "substitute_relocations",
+        family = "compact",
+        site_count = u64::try_from(bundle.relocations().len()).unwrap_or(u64::MAX)
+    )
+    .entered();
     let sites = program_sites(bundle);
     let mut linked = BTreeMap::new();
 

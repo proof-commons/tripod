@@ -500,6 +500,10 @@ pub fn state_graph_from_sources(
     use StateGraphNode as Node;
     use StateLinkSymbol as Key;
 
+    let _span =
+        tracing::debug_span!(target: "linker::state_graph", "resolve_graph", family = "state")
+            .entered();
+
     let announcement = Node::Program(StateLeafRole::Announcement);
     let metadata = Node::Program(StateLeafRole::MetadataCommitment);
     let mut declarations = Vec::new();

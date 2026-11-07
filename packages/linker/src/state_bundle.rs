@@ -883,6 +883,33 @@ pub fn link_state_candidate<C: StateCurveCapability>(
     target: &ReviewedElementsTapscriptDefinition,
     sources: &StateLinkSources<'_, C>,
 ) -> Result<CandidateLinkedMaturityBundle, LinkRefusal> {
+    let span = tracing::info_span!(target: "linker::state_bundle", "link_state_candidate", family = "state");
+    let _entered = span.enter();
+    let result = link_state_candidate_core(target, sources);
+    match &result {
+        Ok(candidate) => tracing::info!(
+            target: "linker::state_bundle",
+            outcome = "completed",
+            family = "state",
+            leaf_count = u64::try_from(candidate.programs().len()).unwrap_or(u64::MAX),
+            outstanding_obligation_count = u64::try_from(candidate.obligations().count().get()).unwrap_or(u64::MAX),
+            "link completed"
+        ),
+        Err(refusal) => tracing::debug!(
+            target: "linker::state_bundle",
+            outcome = "refused",
+            family = "state",
+            refusal_kind = refusal.kind(),
+            "link refused"
+        ),
+    }
+    result
+}
+
+fn link_state_candidate_core<C: StateCurveCapability>(
+    target: &ReviewedElementsTapscriptDefinition,
+    sources: &StateLinkSources<'_, C>,
+) -> Result<CandidateLinkedMaturityBundle, LinkRefusal> {
     let record = sources.record;
     let deployment = sources.deployment;
     let supplied = sources.constructor;

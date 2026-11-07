@@ -282,6 +282,8 @@ pub fn resolve_references(
     bundle: &CandidateRelocatableTapscriptBundle,
     strategy: SelfCommitmentStrategy,
 ) -> Result<FrozenReferenceGraph, LinkRefusal> {
+    let _span = tracing::debug_span!(target: "linker::graph", "resolve_graph", family = "compact")
+        .entered();
     // Collected as a set first so the identities below are assigned
     // from the canonical order rather than from iteration order, and
     // so a symbol referenced twice from one leaf under two target roles

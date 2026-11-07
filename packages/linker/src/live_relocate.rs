@@ -115,6 +115,13 @@ pub fn substitute_live(
     census: &LiveDefinitionCensus,
     resolved: &LiveTransferSymbols,
 ) -> Result<BTreeMap<LiveTransferLeafRole, LinkedLiveLeafProgram>, LinkRefusal> {
+    let _span = tracing::debug_span!(
+        target: "linker::live_relocate",
+        "substitute_relocations",
+        family = "live",
+        site_count = u64::try_from(bundle.relocations().len()).unwrap_or(u64::MAX)
+    )
+    .entered();
     let sites = program_sites(bundle);
     let representation = bundle.representation();
     let owner = OwnerParameter::new(bundle.constructor().owner().clone());

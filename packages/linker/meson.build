@@ -53,10 +53,11 @@ linker_source_files = files(
   'src/tests/state_taptree_tests.rs',
   'src/tests/symbol_tests.rs',
   'src/tests/taptree_tests.rs',
+  'src/tests/tracing_tests.rs',
 )
 
 # Crate documentation (DOC owner).
-linker_doc_files = files('README.md')
+linker_doc_files = files('README.md', 'TRACING.md')
 
 # Same-typed files deliberately outside the crate-source census
 # (ADR-014). The crate declares none yet; the empty list keeps the

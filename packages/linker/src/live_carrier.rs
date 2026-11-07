@@ -284,6 +284,9 @@ pub fn close_live(
     emitted: &BTreeMap<LiveTransferRepresentationPlan, BTreeSet<LiveTransferLeafRole>>,
     committed: &BTreeMap<LiveTransferRepresentationPlan, BTreeSet<LiveTransferLeafRole>>,
 ) -> Result<LiveCarrierClosure, LinkRefusal> {
+    let _span =
+        tracing::debug_span!(target: "linker::live_carrier", "close_carriers", family = "live")
+            .entered();
     let mut plans = BTreeMap::new();
 
     for (representation, committed_leaves) in committed {

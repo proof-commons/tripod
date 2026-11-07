@@ -762,3 +762,67 @@ pub enum StateLinkRefusal {
         missing: StateLinkSymbol,
     },
 }
+impl StateLinkRefusal {
+    /// Fixed, payload-free `snake_case` variant name for tracing a typed refusal.
+    pub(crate) const fn kind(&self) -> &'static str {
+        match self {
+            Self::DuplicateDefinition(..) => "duplicate_definition",
+            Self::MissingDefinition(..) => "missing_definition",
+            Self::UnusedDefinition(..) => "unused_definition",
+            Self::IncompatibleType { .. } => "incompatible_type",
+            Self::MetadataHeaderWidthMismatch { .. } => "metadata_header_width_mismatch",
+            Self::MetadataSchemaDisagreement { .. } => "metadata_schema_disagreement",
+            Self::TargetRevisionDisagreement { .. } => "target_revision_disagreement",
+            Self::SingletonDeclarationMismatch => "singleton_declaration_mismatch",
+            Self::InvalidDefinitionItem { .. } => "invalid_definition_item",
+            Self::FrozenGraph(..) => "frozen_graph",
+            Self::GraphReferenceLimitExceeded { .. } => "graph_reference_limit_exceeded",
+            Self::LiteralStaticRootBeneathItself { .. } => "literal_static_root_beneath_itself",
+            Self::ConstructorProjectionMismatch { .. } => "constructor_projection_mismatch",
+            Self::UnvalidatedCut { .. } => "unvalidated_cut",
+            Self::ResidualCycle { .. } => "residual_cycle",
+            Self::UnresolvedRelocation(..) => "unresolved_relocation",
+            Self::SiteIsNotAPush { .. } => "site_is_not_a_push",
+            Self::SiteOutsideEveryComponent { .. } => "site_outside_every_component",
+            Self::LiteralStaticRootRelocation => "literal_static_root_relocation",
+            Self::RelocationCensusDisagreement { .. } => "relocation_census_disagreement",
+            Self::RelocationNotApplied { .. } => "relocation_not_applied",
+            Self::UntrackedProgramMutation { .. } => "untracked_program_mutation",
+            Self::RoundTripMismatch => "round_trip_mismatch",
+            Self::LinkedProgramDoesNotSchedule { .. } => "linked_program_does_not_schedule",
+            Self::AbstractExecutionMoved => "abstract_execution_moved",
+            Self::ResourceDeltaOverflow { .. } => "resource_delta_overflow",
+            Self::ResourceTotalOverflow { .. } => "resource_total_overflow",
+            Self::InitialArgumentNotAdmitted { .. } => "initial_argument_not_admitted",
+            Self::LinkedProgramFailsTheFinalStackRule { .. } => {
+                "linked_program_fails_the_final_stack_rule"
+            }
+            Self::ResourceProjectionDisagreement { .. } => "resource_projection_disagreement",
+            Self::EmittedProjection(..) => "emitted_projection",
+            Self::MissingCompilerRelation { .. } => "missing_compiler_relation",
+            Self::MissingEmittedRow { .. } => "missing_emitted_row",
+            Self::ExtraEmittedRow { .. } => "extra_emitted_row",
+            Self::DuplicateCarrierRow { .. } => "duplicate_carrier_row",
+            Self::DischargeBoundaryDisagreement { .. } => "discharge_boundary_disagreement",
+            Self::ExternalRequirementDropped { .. } => "external_requirement_dropped",
+            Self::VacuityDisagreement { .. } => "vacuity_disagreement",
+            Self::DeploymentFactUnrecorded { .. } => "deployment_fact_unrecorded",
+            Self::MissingComponentRange { .. } => "missing_component_range",
+            Self::ComponentRangeOutsideLeaf { .. } => "component_range_outside_leaf",
+            Self::CarrierLeafUncommitted { .. } => "carrier_leaf_uncommitted",
+            Self::ComponentRangeMoved { .. } => "component_range_moved",
+            Self::SelectedAlternativeUnmatched { .. } => "selected_alternative_unmatched",
+            Self::CensusNotTotal { .. } => "census_not_total",
+            Self::RepresentationDisagreement { .. } => "representation_disagreement",
+            Self::SuppliedConstructorCommitsAnotherProgram => {
+                "supplied_constructor_commits_another_program"
+            }
+            Self::ConstructorApplication(..) => "constructor_application",
+            Self::AppliedReferenceDisagreement { .. } => "applied_reference_disagreement",
+            Self::CensusMovedUnderApplication { .. } => "census_moved_under_application",
+            Self::StaticSubtreeDiscontinuity { .. } => "static_subtree_discontinuity",
+            Self::InstanceAlreadyRetained { .. } => "instance_already_retained",
+            Self::ConstructorPolicyIncomplete { .. } => "constructor_policy_incomplete",
+        }
+    }
+}

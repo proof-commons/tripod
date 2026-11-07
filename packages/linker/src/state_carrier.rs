@@ -443,6 +443,9 @@ pub fn close_state_carriers(
     linked: &LinkedStateLeafProgram,
     taptree: &StateLinkedTaptree,
 ) -> Result<StateCarrierClosure, StateLinkRefusal> {
+    let _span =
+        tracing::debug_span!(target: "linker::state_carrier", "close_carriers", family = "state")
+            .entered();
     let plan = deployment.plan();
     let projection =
         project_maturity_carriers(plan, record).map_err(StateLinkRefusal::EmittedProjection)?;

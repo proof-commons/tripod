@@ -633,6 +633,99 @@ pub enum LinkRefusal {
     },
 }
 
+impl LinkRefusal {
+    /// Fixed, payload-free `snake_case` variant name for tracing a typed refusal.
+    pub(crate) const fn kind(&self) -> &'static str {
+        match self {
+            Self::InvalidDeploymentParameters(..) => "invalid_deployment_parameters",
+            Self::DuplicateSymbolDefinition(..) => "duplicate_symbol_definition",
+            Self::MissingSymbol(..) => "missing_symbol",
+            Self::IncompatibleSymbolType { .. } => "incompatible_symbol_type",
+            Self::AmbiguousSymbol(..) => "ambiguous_symbol",
+            Self::UnknownReferenceTarget(..) => "unknown_reference_target",
+            Self::ReferenceSiteCountOverflow { .. } => "reference_site_count_overflow",
+            Self::ReferenceTypeMismatch { .. } => "reference_type_mismatch",
+            Self::UnsupportedReferenceCycle { .. } => "unsupported_reference_cycle",
+            Self::ImpossibleStaticFixedPoint { .. } => "impossible_static_fixed_point",
+            Self::CycleStrategyContradictedByRelocation { .. } => {
+                "cycle_strategy_contradicted_by_relocation"
+            }
+            Self::UnresolvedRelocation(..) => "unresolved_relocation",
+            Self::InvalidLinkedProgram { .. } => "invalid_linked_program",
+            Self::RelocationNotApplied { .. } => "relocation_not_applied",
+            Self::UntrackedProgramMutation { .. } => "untracked_program_mutation",
+            Self::RoundTripMismatch(..) => "round_trip_mismatch",
+            Self::InvalidLeafVersion(..) => "invalid_leaf_version",
+            Self::EmptyLeafSet => "empty_leaf_set",
+            Self::DuplicateTreeLeaf(..) => "duplicate_tree_leaf",
+            Self::TreeDepthExceeded { .. } => "tree_depth_exceeded",
+            Self::NonOptimalTree { .. } => "non_optimal_tree",
+            Self::TreeCostOverflow => "tree_cost_overflow",
+            Self::NonDeterministicTree => "non_deterministic_tree",
+            Self::TreeOracleBudgetExceeded { .. } => "tree_oracle_budget_exceeded",
+            Self::TreeLeafBudgetExceeded { .. } => "tree_leaf_budget_exceeded",
+            Self::DuplicateLiveSymbolDefinition(..) => "duplicate_live_symbol_definition",
+            Self::MissingLiveSymbol(..) => "missing_live_symbol",
+            Self::IncompatibleLiveSymbolType { .. } => "incompatible_live_symbol_type",
+            Self::AmbiguousLiveSymbol(..) => "ambiguous_live_symbol",
+            Self::SighashProfileDisagreement { .. } => "sighash_profile_disagreement",
+            Self::LiveSymbolRoleUnfilled { .. } => "live_symbol_role_unfilled",
+            Self::UnresolvedLiveRelocation(..) => "unresolved_live_relocation",
+            Self::InvalidLinkedLiveProgram { .. } => "invalid_linked_live_program",
+            Self::LiveRelocationNotApplied { .. } => "live_relocation_not_applied",
+            Self::UntrackedLiveProgramMutation { .. } => "untracked_live_program_mutation",
+            Self::LiveRoundTripMismatch(..) => "live_round_trip_mismatch",
+            Self::LinkedLiveProgramDoesNotSchedule { .. } => {
+                "linked_live_program_does_not_schedule"
+            }
+            Self::LinkedLiveProgramFailsTheFinalStackRule { .. } => {
+                "linked_live_program_fails_the_final_stack_rule"
+            }
+            Self::MissingLivePlanProjection { .. } => "missing_live_plan_projection",
+            Self::LiveCarrierCensusMismatch { .. } => "live_carrier_census_mismatch",
+            Self::UnreachableLiveRelationCarrier { .. } => "unreachable_live_relation_carrier",
+            Self::UniqueLiveCarrierRemoved { .. } => "unique_live_carrier_removed",
+            Self::PlanStarvedOfCarrier { .. } => "plan_starved_of_carrier",
+            Self::ExternalRequirementCarriedLocally { .. } => {
+                "external_requirement_carried_locally"
+            }
+            Self::DuplicateLiveTreeLeaf(..) => "duplicate_live_tree_leaf",
+            Self::LiveTreeDepthExceeded { .. } => "live_tree_depth_exceeded",
+            Self::MixedRepresentationTree { .. } => "mixed_representation_tree",
+            Self::DuplicateStateTreeLeaf(..) => "duplicate_state_tree_leaf",
+            Self::StateTreeDepthExceeded { .. } => "state_tree_depth_exceeded",
+            Self::MetadataLeafDeclaredStatic => "metadata_leaf_declared_static",
+            Self::StaticTreeWithoutAnnouncement => "static_tree_without_announcement",
+            Self::StateStaticLeafSetMismatch { .. } => "state_static_leaf_set_mismatch",
+            Self::StateLeafVersionMismatch { .. } => "state_leaf_version_mismatch",
+            Self::StateStaticTopologyMismatch { .. } => "state_static_topology_mismatch",
+            Self::StateOuterPairMismatch { .. } => "state_outer_pair_mismatch",
+            Self::StateConstructor(..) => "state_constructor",
+            Self::MissingRelationCarrier(..) => "missing_relation_carrier",
+            Self::UnreachableRelationCarrier(..) => "unreachable_relation_carrier",
+            Self::CarrierCensusMismatch { .. } => "carrier_census_mismatch",
+            Self::DuplicateIncompatibleCarrier(..) => "duplicate_incompatible_carrier",
+            Self::UniqueCarrierRemoved { .. } => "unique_carrier_removed",
+            Self::MissingResourceFormula { .. } => "missing_resource_formula",
+            Self::StaticTargetLimitExceeded { .. } => "static_target_limit_exceeded",
+            Self::NoLiveBundleOffered => "no_live_bundle_offered",
+            Self::LiveBundleIsNotACandidate => "live_bundle_is_not_a_candidate",
+            Self::LiveBundlePlansDisagree => "live_bundle_plans_disagree",
+            Self::DuplicateLinkedConstructor { .. } => "duplicate_linked_constructor",
+            Self::StateLink(refusal) => refusal.kind(),
+            Self::BundleIsNotACandidate => "bundle_is_not_a_candidate",
+            Self::ZeroNetworkId { .. } => "zero_network_id",
+            Self::ZeroGenesisId { .. } => "zero_genesis_id",
+            Self::InvalidOperatorProfile(..) => "invalid_operator_profile",
+            Self::OperatorKeyEncodingMismatch { .. } => "operator_key_encoding_mismatch",
+            Self::OperatorKeyIsInternalKey { .. } => "operator_key_is_internal_key",
+            Self::OperatorKeyMismatch { .. } => "operator_key_mismatch",
+            Self::OperatorDeploymentMismatch { .. } => "operator_deployment_mismatch",
+            Self::OperatorProfileMismatch { .. } => "operator_profile_mismatch",
+        }
+    }
+}
+
 impl From<StateLinkRefusal> for LinkRefusal {
     fn from(refusal: StateLinkRefusal) -> Self {
         Self::StateLink(refusal)

@@ -144,6 +144,13 @@ pub fn live_taptree_input(
 pub fn assemble_live(
     input: &TaptreeInput<LiveTransferLeafRole>,
 ) -> Result<DeterministicTaptree<LiveTransferLeafRole>, LinkRefusal> {
+    let _span = tracing::debug_span!(
+        target: "linker::live_taptree",
+        "assemble_taptree",
+        family = "live",
+        leaf_count = u64::try_from(input.leaves().len()).unwrap_or(u64::MAX)
+    )
+    .entered();
     assemble_under(input, LIVE_OPTIMUM_POLICY)
 }
 

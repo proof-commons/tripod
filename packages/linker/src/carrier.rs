@@ -88,6 +88,13 @@ pub fn close(
     bundle: &CandidateRelocatableTapscriptBundle,
     committed: &BTreeSet<LeafRole>,
 ) -> Result<CarrierClosure, LinkRefusal> {
+    let _span = tracing::debug_span!(
+        target: "linker::carrier",
+        "close_carriers",
+        family = "compact",
+        relation_count = u64::try_from(bundle.placements().len()).unwrap_or(u64::MAX)
+    )
+    .entered();
     let required: BTreeSet<RelationCaseKey> = bundle
         .plan()
         .carriers()
