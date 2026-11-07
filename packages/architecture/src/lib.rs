@@ -16,6 +16,9 @@
     clippy::use_self
 )]
 
+// Retain the core dependency (`[ADR026-dec:tracing:core]`); remove at first instrumentation.
+use tracing as _;
+
 pub mod canonical;
 pub mod deployment;
 pub mod export;

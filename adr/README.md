@@ -36,6 +36,7 @@ repository itself.
 | [ADR-023](023-script-tree-label-carrier.md) | Decided and implemented | The script tree joins the label carrier: two amended ADR-019 entries putting `scripts/*.py` under `DOC` and scanning Python comments, strings excluded. |
 | [ADR-024](024-closure-exact-linking.md) | Decided and adopted for the STATE generation; implementation lands with the Wave-6 reduction bite; earlier generations under audit | Emission and linking carry exactly the checks the contract's closure requires; a surplus check is a defect; closure is compositional over locally sound family leaves and consensus conservation. |
 | [ADR-025](025-relay-admissible-announcement-witness.md) | Decided and implemented for the STATE generation; the route track landed and closed; historical whole-item schedule retained for replay | Emission derives relay-admissible metadata transport from the canonical layout's constant classification and the target's argument-width policy, reconstructing omitted constants before unchanged authentication. |
+| [ADR-026](026-core-tracing.md) | Decided and implemented | Core tracing dependency in every workspace package and structured instrumentation for new code. |
 
 ## Numbering · `rule:adr:numbering`
 

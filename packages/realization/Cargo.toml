@@ -13,6 +13,7 @@ version.workspace = true
 name = "realization"
 
 [dependencies]
+tracing = { workspace = true }
 architecture = { workspace = true }
 petgraph = { workspace = true }
 thiserror = { workspace = true }

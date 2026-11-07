@@ -74,6 +74,8 @@ with standard-library code.
 
 Planning or reference Markdown is never a dependency configuration source.
 
+Every package retains the core `tracing` dependency even before its first instrumentation use, for the shared vocabulary and immediate availability established by (`[ADR026-dec:tracing:core]`).
+
 ## Licenses · `rule:toolchain:licenses`
 
 The workspace is:

@@ -18,6 +18,7 @@ name = "tapscript"
 # Curve arithmetic remains a downstream capability, not a dependency.
 # thiserror derives the constructor's closed refusal vocabulary.
 [dependencies]
+tracing = { workspace = true }
 compiler = { workspace = true }
 realization = { workspace = true }
 sha2 = { workspace = true }

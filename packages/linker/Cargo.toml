@@ -35,6 +35,7 @@ name = "linker"
 # nothing, and its refusal root is hand-written, which keeps `thiserror`
 # out as it is kept out of `tapscript`.
 [dependencies]
+tracing = { workspace = true }
 petgraph = { workspace = true }
 tapscript = { workspace = true }
 target-elements = { workspace = true }

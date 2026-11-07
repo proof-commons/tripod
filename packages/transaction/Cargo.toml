@@ -37,6 +37,7 @@ name = "transaction"
 # elements are tagged SHA-256 hashes of the linked programs. Without it
 # this crate could state a witness layout but not a witness.
 [dependencies]
+tracing = { workspace = true }
 # Architecture supplies classification identities and each claimed family's asset.
 architecture = { workspace = true }
 linker = { workspace = true }

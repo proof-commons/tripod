@@ -113,6 +113,7 @@ name = "vectors"
 # identities. No executor record, no wire spelling, and no second
 # authored source for either name (§1.12).
 [dependencies]
+tracing = { workspace = true }
 architecture = { workspace = true }
 compiler = { workspace = true }
 linker = { workspace = true }

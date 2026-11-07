@@ -20,6 +20,7 @@ name = "compiler"
 # `OperationId`, and minting a compiler-local operation identifier
 # would duplicate an architecture-owned ID rather than cite it.
 [dependencies]
+tracing = { workspace = true }
 architecture = { workspace = true }
 petgraph = { workspace = true }
 realization = { workspace = true }

@@ -1108,6 +1108,17 @@ test(
 
 python3 = find_program('python3')
 
+# Budget: 0:00.2, tolerance 0:02 (measured 0:00.19 on the node of record).
+# Manifest reads and a temporary control/refusal pair; Meson owns timing
+# and outcome reporting.
+test(
+  'workspace-tracing',
+  python3,
+  args: [files('scripts/check-workspace-tracing.py'), meson.project_source_root()],
+  suite: 'lint',
+  timeout: 120,
+)
+
 # Preflight in the driver, an ordinary lane here. It refuses a tracked path
 # that falls outside the safe checker-argv grammar (SR3-05), so a path that
 # would need quoting can never reach a checker's argv. census-args.sh stays

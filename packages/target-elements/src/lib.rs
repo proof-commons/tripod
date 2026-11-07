@@ -1,6 +1,9 @@
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
+// Retain the core dependency (`[ADR026-dec:tracing:core]`); remove at first instrumentation.
+use tracing as _;
+
 pub mod authorization;
 pub mod capability;
 pub mod ceremony;

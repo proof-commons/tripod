@@ -15,6 +15,7 @@ adr_record_files = files(
   '023-script-tree-label-carrier.md',
   '024-closure-exact-linking.md',
   '025-relay-admissible-announcement-witness.md',
+  '026-core-tracing.md',
 )
 
 # Non-numbered documentation in this directory (DOC owner).

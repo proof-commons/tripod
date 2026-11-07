@@ -1,5 +1,6 @@
 # Agent instructions
 
+- New code records counters, timings and progress with tracing spans and structured events; every package inherits tracing (`[ADR026-dec:tracing:core]`).
 - The canonical meson build directory is `build/` at the repository
   root. Please run `meson compile -C build` to compile. Do not create
   parallel build directories; run `meson setup build` only when

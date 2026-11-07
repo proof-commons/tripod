@@ -20,6 +20,7 @@ name = "target_elements"
 # derived, which keeps even `thiserror` out. Adding any dependency
 # requires ADR-011 review with a real consumer.
 [dependencies]
+tracing = { workspace = true }
 
 [lints]
 workspace = true
