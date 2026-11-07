@@ -2208,7 +2208,6 @@ mod tests {
     use crate::maturity_report::{
         MaturityReportTiming, MaturitySafetyReportRole, MaturityVolatileField,
     };
-    use std::io::Write as _;
     use std::sync::LazyLock;
     use std::time::Duration;
     use target_elements_conformance::executor::{OperationStep, TargetOperationPlanner};
@@ -3167,11 +3166,6 @@ mod tests {
                         .recomputed_items()
                         .contains(&item)
                 );
-                writeln!(
-                    std::io::stdout().lock(),
-                    "\nRUN-REPORT item={item:?} {reason}"
-                )
-                .expect("item evidence");
                 unreachable += 1;
             }
         }
@@ -3450,7 +3444,7 @@ mod tests {
         );
     }
 
-    fn check_rendered_measurements(index: usize, label: &str) {
+    fn check_rendered_measurements(index: usize) {
         let source = &SOURCES[index];
         let report = assembled();
         let entry = &report.entries()[index];
@@ -3525,25 +3519,16 @@ mod tests {
             );
             assert!(facts.metadata_leaf_agrees());
         }
-        writeln!(std::io::stdout().lock(),
-            "\nRUN-REPORT continuity-report source={label} submitted={} stripped={} weight={} widths={widths:?} predecessor_nonce={} successor_nonce={} predecessor_rejected={} successor_rejected={} cycle={} bounds={}-{} request={} comparisons={} agreements={} completeness={} acceptance=outstanding",
-            entry.bytes().submitted(), entry.bytes().stripped(), entry.bytes().weight(),
-            entry.predecessor().nonce().get(), entry.successor().nonce().get(),
-            entry.predecessor_leastness().rejected_count(), entry.successor_leastness().rejected_count(),
-            entry.predecessor().semantic().cycle.get(), entry.semantic_facts().bounds().minimum().get(),
-            entry.semantic_facts().bounds().maximum().get(), entry.semantic_facts().requested_cycle().get(),
-            comparison_results(source).len(), comparison_results(source).iter().filter(|result| **result).count(),
-            report.completeness().name()).expect("measured report evidence");
     }
 
     #[test]
     fn archived_rendering_uses_projection_measurements() {
-        check_rendered_measurements(0, "archived");
+        check_rendered_measurements(0);
     }
 
     #[test]
     fn node_free_rendering_uses_projection_measurements() {
-        check_rendered_measurements(1, "node-free");
+        check_rendered_measurements(1);
     }
 
     #[test]

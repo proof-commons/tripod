@@ -25,6 +25,72 @@ use target_elements_conformance::executor::{
     TargetOperationPlanner, execute_operations_captured,
 };
 
+/// Enter the vector ceremony before invoking the conformance executor.
+/// # Errors
+/// Returns the executor's typed refusal or operational failure unchanged.
+pub fn trace_ceremony<T>(
+    family: &'static str,
+    ceremony_id: &'static str,
+    capture: &mut NativeOperationCapture,
+    run: impl FnOnce(
+        &mut NativeOperationCapture,
+    ) -> Result<T, target_elements_conformance::error::NativeConformanceError>,
+) -> Result<T, target_elements_conformance::error::NativeConformanceError> {
+    use target_elements_conformance::error::NativeConformanceError;
+
+    let span = tracing::info_span!(
+        target: "vectors::native_test",
+        "execute_ceremony",
+        family,
+        ceremony_id
+    );
+    let _entered = span.enter();
+    let result = run(capture);
+    match &result {
+        Ok(_) => {
+            if tracing::enabled!(target: "vectors::native_test", tracing::Level::INFO) {
+                let (mut accepted_count, mut refused_count, mut unobserved_count) =
+                    (0_u64, 0_u64, 0_u64);
+                for operation in capture.operations() {
+                    match operation.verdict() {
+                        Some(NativeVerdict::Accepted) => {
+                            accepted_count = accepted_count.saturating_add(1);
+                        }
+                        Some(NativeVerdict::Rejected) => {
+                            refused_count = refused_count.saturating_add(1);
+                        }
+                        _ => unobserved_count = unobserved_count.saturating_add(1),
+                    }
+                }
+                tracing::info!(
+                    target: "vectors::native_test",
+                    family,
+                    outcome = "completed",
+                    accepted_count,
+                    refused_count,
+                    unobserved_count,
+                    "ceremony completed"
+                );
+            }
+        }
+        Err(NativeConformanceError::OperationPlanRefused) => tracing::debug!(
+            target: "vectors::native_test",
+            family,
+            outcome = "refused",
+            refusal_kind = "operation_plan_refused",
+            "ceremony completed"
+        ),
+        Err(_) => tracing::info!(
+            target: "vectors::native_test",
+            family,
+            outcome = "failed",
+            error_kind = "executor",
+            "ceremony completed"
+        ),
+    }
+    result
+}
+
 /// Executes a planner with the shared reviewed deployment and bounded diagnostics.
 /// # Errors
 /// Preserves executor transport, protocol and planner failures.
@@ -57,7 +123,9 @@ pub fn execute(
         Duration::from_secs(300),
         ExecutorDiagnostics::in_directory(&directory.join("diagnostics")),
     );
-    execute_operations_captured(&target, &binding, &configuration, planner, capture)
+    trace_ceremony("state", "maturity_native", capture, |capture| {
+        execute_operations_captured(&target, &binding, &configuration, planner, capture)
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

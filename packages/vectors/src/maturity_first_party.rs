@@ -6914,7 +6914,6 @@ mod supplementary_tests {
 
     #[test]
     fn entry_pair_nonce_comparison() {
-        use std::io::Write as _;
         let pair = entry_pair(
             MaturitySafetySection::MetadataFault,
             "correct-semantic-metadata-with-noncanonical-representation-nonce",
@@ -6926,12 +6925,8 @@ mod supplementary_tests {
         let next = pair.offers.malformed.representation.get();
         let budget = StateNonceBudget::default().attempts();
         assert!(least < next && next < budget);
+        assert_eq!((least, next), (1, 4));
         assert_eq!(pair.offers.control.semantic, pair.offers.malformed.semantic);
-        writeln!(
-            std::io::stdout().lock(),
-            "census ABI nonce: least {least}, next admitted {next}, budget {budget}"
-        )
-        .unwrap();
         pair.offers.malformed = pair.offers.control;
         assert_eq!(
             pair.observe(),

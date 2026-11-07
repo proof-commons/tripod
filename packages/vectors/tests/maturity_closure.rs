@@ -22,7 +22,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::Duration;
@@ -1235,12 +1234,9 @@ const fn layer_name(layer: ObservedOutcomeLayer) -> &'static str {
 
 /// One observation, written where the invoking round's log keeps it.
 ///
-/// Written to this process's own error stream rather than through the
-/// print macros, which the test harness captures and discards on a pass.
-fn observation_line(case: &str, layer: ObservedOutcomeLayer, detail: &str) {
-    let mut stream = std::io::stderr();
-    writeln!(stream, "{case} --> {} {detail}", layer_name(layer))
-        .expect("the observation reaches the run's error stream");
+/// A scoped subscriber may render this hand-run observation as JSON.
+fn observation_line(case: &str, layer: ObservedOutcomeLayer) {
+    tracing::info!(target: "vectors::native_test", case, layer = layer_name(layer), "closure observation");
 }
 
 /// Whether one asset field is the explicit asset a leaf literal names.
@@ -1784,13 +1780,14 @@ fn compared_checks_follow_the_operator_check(
 /// case is refused before the leaf while the other three are refused
 /// inside it.
 #[test]
+#[ignore = "requires TRIPOD_LIVE_EXECUTOR and a configured live target"]
 fn the_four_adoption_vectors_are_submitted_to_a_real_target() {
-    let Ok(executor) = std::env::var("TRIPOD_LIVE_EXECUTOR") else {
-        return;
-    };
-    if executor.is_empty() {
-        return;
-    }
+    let executor = std::env::var("TRIPOD_LIVE_EXECUTOR")
+        .expect("TRIPOD_LIVE_EXECUTOR is required for the live adoption run");
+    assert!(
+        !executor.is_empty(),
+        "TRIPOD_LIVE_EXECUTOR must not be empty"
+    );
     let deployment = native_identity();
     let diagnostics = diagnostics_directory();
     let reviewed = target();
@@ -1806,8 +1803,8 @@ fn the_four_adoption_vectors_are_submitted_to_a_real_target() {
         &mut run,
         &mut capture,
     );
-    for (case, layer, detail) in &run.observations {
-        observation_line(case, *layer, detail);
+    for (case, layer, _) in &run.observations {
+        observation_line(case, *layer);
     }
     outcome.expect("the native exchange completed");
 

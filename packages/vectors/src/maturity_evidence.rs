@@ -3294,7 +3294,6 @@ fn combined_projection_standing(
 #[cfg(test)]
 mod combined_tests {
     use super::*;
-    use std::io::Write as _;
 
     #[test]
     fn positional_roles_preserve_blocked_sponsor_verdicts() {
@@ -3394,15 +3393,6 @@ mod combined_tests {
             ),
             agreement.standing
         );
-        writeln!(
-            std::io::stdout(),
-            "census combined: case={} identity={} height={} terms={}",
-            crate::maturity_corpus::COMBINED_PROJECTION_CASE,
-            agreement.readback.identity().to_target_display(),
-            agreement.readback.block_height(),
-            agreement.terms.len()
-        )
-        .expect("selection output");
     }
 
     #[test]
@@ -4733,7 +4723,6 @@ pub(crate) mod tests {
     use crate::subject::ExperimentalSubject;
     use linker::CandidateDeploymentIdentity;
     use std::fmt::Write as _;
-    use std::io::Write as _;
     use std::sync::LazyLock;
     use target_elements_conformance::executor::{OperationStep, TargetOperationPlanner};
     use target_elements_conformance::protocol::{
@@ -4751,20 +4740,11 @@ pub(crate) mod tests {
     /// depended on the environment it happens to run in would be checking
     /// the harness rather than the plan.
     static PLAN: LazyLock<MaturityAnnouncementEvidencePlan> = LazyLock::new(|| {
-        use std::io::Write as _;
-        let start = std::time::Instant::now();
-        let plan = derive_maturity_evidence_plan_with(
+        derive_maturity_evidence_plan_with(
             MaturityExecutorProvenanceExpectation::NotStatedByTheOperator,
             absent_material(),
         )
-        .expect("the evidence plan derives from its eight inputs");
-        writeln!(
-            std::io::stdout(),
-            "census first evidence-plan access wall {:?}",
-            start.elapsed()
-        )
-        .expect("wall output");
-        plan
+        .expect("the evidence plan derives from its eight inputs")
     });
 
     /// Explicit absence used by deterministic test derivations.
@@ -4895,15 +4875,6 @@ pub(crate) mod tests {
             assert_eq!(row.continuity_record_count(absent.continuity_records()), 0);
             assert_eq!(absent.continuity_record_count(row), 0);
         }
-        writeln!(
-            std::io::stdout().lock(),
-            "\nRUN-REPORT evidence absent census={:?} answered={} outstanding={} records={}",
-            absent.census(),
-            absent.census().answered(),
-            absent.census().outstanding(),
-            absent.continuity_records().len()
-        )
-        .expect("census observation");
     }
 
     #[test]
@@ -4926,7 +4897,7 @@ pub(crate) mod tests {
             records.len(),
             report.entries().len() + present.mutants().len()
         );
-        let (comparisons, agreements) = assert_comparison_records(plan, present);
+        assert_comparison_records(plan, present);
         assert_mutant_records(plan, present);
         for row in plan.rows() {
             let identity = (row.row().section(), row.row().name());
@@ -4956,13 +4927,12 @@ pub(crate) mod tests {
         let mut other_section = records[0].clone();
         other_section.section = MaturitySafetySection::PredecessorConstructorFault;
         assert_eq!(sponsorless.continuity_record_count(&[other_section]), 0);
-        writeln!(std::io::stdout().lock(), "\nRUN-REPORT evidence present census={:?} answered={} outstanding={} records={} entries={} mutants={} comparisons={comparisons} agreements={agreements}", plan.census(), plan.census().answered(), plan.census().outstanding(), records.len(), report.entries().len(), present.mutants().len()).expect("census observation");
     }
 
     fn assert_comparison_records(
         plan: &MaturityAnnouncementEvidencePlan,
         present: &MaturityPresentConstructorMaterial,
-    ) -> (usize, usize) {
+    ) {
         let report = present.report().report();
         let records = plan.continuity_records();
         let mut comparisons = 0;
@@ -4987,7 +4957,6 @@ pub(crate) mod tests {
         }
         assert_eq!(comparisons, report.census().comparisons());
         assert_eq!(agreements, report.census().agreements());
-        (comparisons, agreements)
     }
 
     fn assert_mutant_records(
@@ -7074,8 +7043,6 @@ pub(crate) mod tests {
         assert_eq!(PLAN.census().typed_non_answer_final(), 27);
         assert_eq!(PLAN.census().typed_non_answer_waiting(), 0);
         assert_eq!(PLAN.census().outstanding_under_typed_non_answer(), 27);
-        writeln!(std::io::stdout(), "census sponsored: {:?}", PLAN.census())
-            .expect("census output");
     }
 
     #[test]

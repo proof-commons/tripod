@@ -294,7 +294,6 @@ mod maturity_index_tests {
 
     #[test]
     fn maturity_index_pins_every_key_subject_and_ledger_reading() {
-        use std::io::Write as _;
         let rows = index_maturity_abi_validation().expect("performed entry comparisons");
         let ledger = maturity_first_party_dispositions().expect("ledger");
         let mut keys = std::collections::BTreeSet::new();
@@ -342,13 +341,6 @@ mod maturity_index_tests {
         assert_eq!(keys.len(), 28);
         assert_eq!(counts, [23, 5]);
         assert_eq!(subjects, 34);
-        writeln!(
-            std::io::stdout().lock(),
-            "census ABI index: {} ABI refused / {} adapter refused / 0 unasked; {subjects} subjects",
-            counts[0],
-            counts[1]
-        )
-        .unwrap();
     }
 }
 

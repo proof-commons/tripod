@@ -4991,7 +4991,16 @@ mod tests {
             [55, 9, 9, 17]
         );
         assert_eq!(positive + declared + unlinked, row_count());
-        print_region_census(positive, declared, unlinked);
+        assert_eq!(
+            [
+                reason(Why::NoPublishedRelationNamesIt),
+                reason(Why::SeveralPublishedRelationsFit),
+                reason(Why::TheReportIsTheSubject),
+                reason(Why::RelationScopedToTheWholeTransaction),
+                reason(Why::SubjectOutsideTheRelationsRegion),
+            ],
+            [55, 9, 9, 0, 11]
+        );
     }
 
     // Each key is reviewed against the declaration domains below. Keeping keys
@@ -5854,28 +5863,6 @@ mod tests {
                 "add-issuance" | "add-destruction" | "add-burn-record" | "add-clear-event"
             ));
         }
-    }
-
-    fn print_region_census(positive: usize, declared: usize, unlinked: usize) {
-        use std::io::Write as _;
-        let reasons = [
-            Why::NoPublishedRelationNamesIt,
-            Why::SeveralPublishedRelationsFit,
-            Why::TheReportIsTheSubject,
-            Why::RelationScopedToTheWholeTransaction,
-            Why::SubjectOutsideTheRelationsRegion,
-        ]
-        .map(|reason| {
-            rows()
-                .iter()
-                .filter(|row| row.relation() == &Standing::Unlinked(reason))
-                .count()
-        });
-        writeln!(
-            std::io::stdout(),
-            "census region links: {positive} / {declared} / {unlinked}; reasons {reasons:?}"
-        )
-        .expect("census output");
     }
 
     #[test]

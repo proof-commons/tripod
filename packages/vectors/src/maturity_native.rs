@@ -5630,7 +5630,6 @@ pub(crate) mod tests {
     use crate::maturity_negative_half::{MaturityNegativeHalfGap, STILL_REQUIRED};
     use crate::maturity_safety::MaturitySafetySection;
     use std::fmt::Write as _;
-    use std::io::Write as _;
     use std::sync::OnceLock;
     use target_elements_conformance::protocol::WireOutpoint;
     use target_elements_conformance::protocol::{MinedFundingReadback, NativeResourceObservation};
@@ -5891,7 +5890,6 @@ pub(crate) mod tests {
 
     #[test]
     fn sponsored_schedule_replays_requests_routes_and_readbacks() {
-        let started = std::time::Instant::now();
         assert_eq!(
             hex(&sponsored::hash160(b"")),
             "b472a266d0bd89c13706a4132ccfb16f7c3b9fcb"
@@ -5943,12 +5941,6 @@ pub(crate) mod tests {
             true,
         );
         assert_eq!(zero.census()[3..], [18, 13, 5]);
-        writeln!(
-            std::io::stderr().lock(),
-            "\nRUN-REPORT sponsored_schedule_replays_requests_routes_and_readbacks wall={:.3}s",
-            started.elapsed().as_secs_f64()
-        )
-        .expect("timing output");
     }
 
     #[test]
@@ -5967,7 +5959,6 @@ pub(crate) mod tests {
 
     #[test]
     fn sponsored_replay_refuses_changed_policy_route_and_readback() {
-        let started = std::time::Instant::now();
         let plan = sponsored_script();
         for mutation in 0..5 {
             let seed = crate::maturity_corpus::maturity_variable_run_of_record()
@@ -6025,12 +6016,6 @@ pub(crate) mod tests {
                 Some(expected)
             );
         }
-        writeln!(
-            std::io::stderr().lock(),
-            "\nRUN-REPORT sponsored_replay_refuses_changed_policy_route_and_readback wall={:.3}s",
-            started.elapsed().as_secs_f64()
-        )
-        .expect("timing output");
     }
 
     #[test]
@@ -6186,7 +6171,6 @@ pub(crate) mod tests {
 
     #[test]
     fn retained_routes_use_one_issuance_and_family_specific_control_order() {
-        use std::io::Write as _;
         let plan = retained_routes_script();
         let mut issues = 0;
         let mut asset = None;
@@ -6227,8 +6211,6 @@ pub(crate) mod tests {
                     assert!(points.insert((point.txid.clone(), point.vout)));
                 }
                 OperationSubject::Submission(subject) => {
-                    writeln!(std::io::stdout(), "schedule {}", step.case().step)
-                        .expect("schedule output");
                     let family = step.case().step.split(':').next().expect("family");
                     let transaction =
                         TargetTransaction::decode(&subject.transaction_bytes).expect("transaction");

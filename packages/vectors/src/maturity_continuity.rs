@@ -2735,7 +2735,6 @@ pub(crate) mod tests {
     use crate::subject::{ExperimentalSubject, SubjectStanding};
     use realization::ProtocolAmount;
     use std::fmt::Write as _;
-    use std::io::Write as _;
     use std::sync::LazyLock;
     use target_elements_conformance::constructor::tagged::{
         TAP_BRANCH_TAG, TAP_LEAF_TAG, TAP_TWEAK_TAG, tagged_hash as constructor_tagged_hash,
@@ -3105,19 +3104,6 @@ pub(crate) mod tests {
         record
     }
 
-    fn report_observed(source: &str, record: &ValidatedMaturityContinuity) {
-        let widths: Vec<_> = record.transaction().witnesses()[0]
-            .stack()
-            .iter()
-            .map(Vec::len)
-            .collect();
-        writeln!(std::io::stdout().lock(), "\nRUN-REPORT projection source={source} predecessor_nonce={} successor_nonce={} request={} widths={widths:?} predecessor_rejected={:?} successor_rejected={:?} leastness=({},{}) facts=({:?},{:?}) static=(true,true) descriptors=ok constructor=ok semantic=(true,true)",
-            record.predecessor().nonce().get(), record.successor().nonce().get(), record.requested_cycle().get(),
-            record.predecessor_leastness().evidence().rejected, record.successor_leastness().evidence().rejected,
-            record.predecessor_leastness().is_host_least(), record.successor_leastness().is_host_least(),
-            record.predecessor_leastness().reconstructed_facts_match(), record.successor_leastness().reconstructed_facts_match()).expect("test observation output");
-    }
-
     struct ExperimentalBytes {
         bytes: ExperimentalSubject<Vec<u8>>,
         original_boundary: EvidenceBoundary,
@@ -3326,19 +3312,7 @@ pub(crate) mod tests {
         assert_eq!(context.declared_layer(), context.row().mutation());
         assert_eq!(context.refusing_layer(), context.row().refusing_layer());
         assert_eq!(context.intended_carrier(), context.row().carrier());
-        writeln!(std::io::stdout().lock(), "\nRUN-REPORT negative section={:?} row={} boundary={:?} declared_layer={:?} applied_layer={:?} carrier={:?} refusal={}", context.row().section(), context.row().name(), context.declared_boundary(), context.declared_layer(), context.applied_layer(), context.actual(), refusal_name(subject.failure())).expect("negative observation");
         result
-    }
-
-    fn refusal_name(refusal: &Refusal) -> &'static str {
-        match refusal {
-            Refusal::RetainedContext { .. } => "RetainedContext",
-            Refusal::OutputProgram(_) => "OutputProgram",
-            Refusal::ControlBlock(_) => "ControlBlock",
-            Refusal::PredecessorPrefix(_) => "PredecessorPrefix",
-            Refusal::SuccessorPrefix(_) => "SuccessorPrefix",
-            _ => "other (asserted by test)",
-        }
     }
 
     fn substituted_successor(
@@ -3606,12 +3580,6 @@ pub(crate) mod tests {
         assert!(before.is_host_least());
         assert_eq!(before.residual().text(), StateNonceEvidence::RESIDUAL);
         assert_eq!(record.checked_successor().rejected().len(), 0);
-        writeln!(
-            std::io::stdout().lock(),
-            "\nRUN-REPORT checked-prefix predecessor={before:?} successor={:?}",
-            record.checked_successor()
-        )
-        .expect("prefix observation");
     }
 
     #[test]
@@ -3684,7 +3652,6 @@ pub(crate) mod tests {
                     evidence.premises()[6].domain_or_residual(),
                     tapscript::StateInternalKeyPolicy::RESIDUAL
                 );
-                writeln!(std::io::stdout().lock(), "\nRUN-REPORT tweak source={:?} side={:?} nums={} leaf={} branch={} digest={} key={} parity={:?} comparisons=all-agree", source.origin, evidence.side(), hex(evidence.internal().reconstructed()), hex(evidence.metadata().reconstructed()), hex(evidence.branch().reconstructed()), hex(evidence.digest().reconstructed()), hex(evidence.key().reconstructed()), evidence.oddness().reconstructed()).expect("tweak observation");
             }
         }
     }
@@ -3787,7 +3754,6 @@ pub(crate) mod tests {
         assert!(controls.outer().iter().all(MaturityByteComparison::agrees));
         let (actual, expected) = controls.first_byte_relation();
         assert_eq!(actual, expected);
-        writeln!(std::io::stdout().lock(), "\nRUN-REPORT controls lengths={:?} internal_siblings=0 outer=both-metadata first_xor={actual} parity_xor={expected} predecessor=observed successor=derived-unobserved", controls.lengths()).expect("control observation");
     }
 
     #[test]
@@ -4162,7 +4128,6 @@ pub(crate) mod tests {
             projection.successor_attribution(),
             MaturitySuccessorAttribution::CommitmentMismatchWithoutCauseAttribution
         );
-        writeln!(std::io::stdout().lock(), "\nRUN-REPORT descriptor same-root=true independent-descriptor=refused-equal-roots projector=success single-retained-tree=true attribution=CommitmentMismatchWithoutCauseAttribution").expect("descriptor observation");
     }
 
     #[test]
@@ -4185,15 +4150,6 @@ pub(crate) mod tests {
             .map(Vec::len)
             .collect();
         assert_eq!(widths, [1, 4, 8, 32, 86, 1, 64, 1286, 65]);
-        writeln!(
-            std::io::stdout().lock(),
-            "\nRUN-REPORT decoder stripped={} encoded={} weight={} widths={widths:?}",
-            record.transaction().encode_without_witness().len(),
-            record.transaction().encode().len(),
-            record.transaction().weight()
-        )
-        .expect("decoder observation");
-        report_observed("archived", &record);
     }
 
     #[test]
@@ -4216,7 +4172,6 @@ pub(crate) mod tests {
             record.semantic_comparison().reconstruction_agrees(),
             Some(true)
         );
-        report_observed("accepted-variable-archived", &record);
     }
 
     #[test]
@@ -4262,7 +4217,6 @@ pub(crate) mod tests {
     fn node_free_source_projects() {
         let record = positive(node_free());
         assert_eq!(record.source(), &MaturityByteSource::NodeFreeSubmitReady);
-        report_observed("node-free", &record);
     }
 
     #[test]
@@ -4282,7 +4236,6 @@ pub(crate) mod tests {
             record.semantic_comparison().reconstruction_agrees(),
             Some(true)
         );
-        report_observed("variable-node-free", &record);
     }
 
     #[test]
@@ -4914,7 +4867,7 @@ pub(crate) mod tests {
             Err(MaturityMutantAssemblyRefusal::ProjectionSucceeded)
         );
         let observed = ExperimentalSubject::observe((context, record));
-        writeln!(std::io::stdout().lock(), "\nRUN-REPORT accepted-experiment row={} boundary={:?} declared_layer={:?} carrier={:?} host_least=false residual={:?}", observed.subject().0.row().name(), observed.subject().0.declared_boundary(), observed.subject().0.declared_layer(), observed.subject().0.actual(), observed.subject().1.checked_successor().residual()).expect("later nonce observation");
+        assert_eq!(observed.standing(), SubjectStanding::Experimental);
     }
 
     #[test]
@@ -4936,10 +4889,7 @@ pub(crate) mod tests {
         assert_eq!(diagnostics.leaf_script(), None);
     }
 
-    fn common_nonce_control(
-        source: &Source,
-        request: Cycle,
-    ) -> (Source, StateMetadata, Vec<u8>, StateRepresentationNonce) {
+    fn common_nonce_control(source: &Source, request: Cycle) -> (Source, StateMetadata, Vec<u8>) {
         let target = closure_target().expect("target");
         let predecessor = source.bundle.instances()[0].metadata().semantic;
         let bounds = source.bundle.deployment().lead_bounds().bounds();
@@ -4989,14 +4939,14 @@ pub(crate) mod tests {
             .project(source)
             .expect("coherent experimental control");
         control_source.bytes = control.bytes.into_subject();
-        (control_source, expected, program, original.nonce())
+        (control_source, expected, program)
     }
 
     #[test]
     fn request_mutation_retains_expected_successor_on_output_refusal() {
         let source = archived();
         let request = Cycle::new(9);
-        let (control, expected, program, nonce) = common_nonce_control(source, request);
+        let (control, expected, program) = common_nonce_control(source, request);
         let mutant = changed_stack(&control, "requested-cycle witness item only", |stack| {
             stack[2] = request.get().to_be_bytes().to_vec();
         });
@@ -5022,7 +4972,6 @@ pub(crate) mod tests {
         assert!(!comparison.agrees());
         assert!(diagnostics.static_root().expect("root").agrees());
         assert!(diagnostics.control_block().expect("control").agrees());
-        writeln!(std::io::stdout().lock(), "\nRUN-REPORT mutant=request-item baseline_nonce={} baseline_request=10 request={} refusal=OutputProgram transition=true static_root=true control=true", nonce.get(), request.get()).expect("test observation output");
     }
 
     #[test]

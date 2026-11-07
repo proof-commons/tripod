@@ -129,6 +129,28 @@ pub enum ReportValidationRefusal {
     ExecutorProvenanceUnestablished(ProvenanceDefect),
 }
 
+impl ReportValidationRefusal {
+    const fn tracing_refusal_kind(&self) -> &'static str {
+        match self {
+            Self::PlanWasRefused => "plan_was_refused",
+            Self::ReviewedTargetUnavailable => "reviewed_target_unavailable",
+            Self::TargetContractDiffers => "target_contract_differs",
+            Self::EnvironmentDiffers => "environment_differs",
+            Self::CeremonyIncomplete => "ceremony_incomplete",
+            Self::DuplicateSubmittedBytes => "duplicate_submitted_bytes",
+            Self::StepWentUnanswered(_) => "step_went_unanswered",
+            Self::SubmissionCensusDiffers { .. } => "submission_census_differs",
+            Self::SubmissionNotSent => "submission_not_sent",
+            Self::OutcomeDiffers(_) => "outcome_differs",
+            Self::AcceptedWithoutIdentity(_) => "accepted_without_identity",
+            Self::AcceptedIdentityDiffers(_) => "accepted_identity_differs",
+            Self::WeightObservationDisagrees(_) => "weight_observation_disagrees",
+            Self::SubmissionNamesNoFixture(_) => "submission_names_no_fixture",
+            Self::ExecutorProvenanceUnestablished(_) => "executor_provenance_unestablished",
+        }
+    }
+}
+
 /// What the §17.4 comparison found for one accepted transaction.
 ///
 /// The verdict and the reason travel together. A reader that had only
@@ -713,6 +735,40 @@ pub(crate) fn stage_compact_substrate_pair(
 /// costs nothing in strength: [`ExecutionBinding`] is crate-private, so
 /// the only way in from outside remains a real execution transcript.
 pub(crate) fn validate_bound_run<'run>(
+    binding: &ExecutionBinding,
+    planner: &'run OperationTranscript,
+) -> Result<ValidatedCompactAshOperationReport<'run>, ReportValidationRefusal> {
+    let span = tracing::info_span!(
+        target: "vectors::report",
+        "validate_evidence_report",
+        family = "compact",
+        report_kind = "operation",
+        row_count = u64::try_from(planner.submissions().len()).unwrap_or(u64::MAX)
+    );
+    let _entered = span.enter();
+    let result = validate_bound_run_core(binding, planner);
+    match &result {
+        Ok(report) => tracing::info!(
+            target: "vectors::report",
+            family = "compact",
+            report_kind = "operation",
+            outcome = "completed",
+            completed_count = u64::try_from(report.outcomes().len()).unwrap_or(u64::MAX),
+            "evidence report validated"
+        ),
+        Err(refusal) => tracing::debug!(
+            target: "vectors::report",
+            family = "compact",
+            report_kind = "operation",
+            outcome = "refused",
+            refusal_kind = refusal.tracing_refusal_kind(),
+            "evidence report validated"
+        ),
+    }
+    result
+}
+
+fn validate_bound_run_core<'run>(
     binding: &ExecutionBinding,
     planner: &'run OperationTranscript,
 ) -> Result<ValidatedCompactAshOperationReport<'run>, ReportValidationRefusal> {
@@ -1638,6 +1694,53 @@ pub(crate) mod tests {
     /// produce, and it is also the case the rendering has to spell
     /// correctly.
     const STAGED_BYTES: &[u8] = b"this is not a target transaction";
+
+    #[test]
+    fn report_trace_preserves_control_and_one_missing_submission_refusal() {
+        if crate::tracing_test::isolate_capture_test(
+            module_path!(),
+            "report_trace_preserves_control_and_one_missing_submission_refusal",
+        ) {
+            return;
+        }
+        let planner = accepted_run(STAGED_BYTES, None);
+        let control = binding(
+            vec![submission_step("submit/0", STAGED_BYTES)],
+            vec![answer(ObservedOutcomeLayer::Accepted, Some("aa"))],
+        );
+        let refused = binding(vec![submission_step("submit/0", STAGED_BYTES)], Vec::new());
+        let plain_control = validate_bound_run(&control, &planner);
+        let (traced_control, control_records) =
+            crate::tracing_test::capture(|| validate_bound_run(&control, &planner));
+        assert_eq!(traced_control, plain_control);
+        let completion = control_records
+            .iter()
+            .find(|record| record["fields"]["message"] == "evidence report validated")
+            .expect("report completion");
+        assert_eq!(completion["target"], "vectors::report");
+        assert_eq!(completion["level"], "INFO");
+        assert_eq!(completion["span"]["name"], "validate_evidence_report");
+        assert_eq!(completion["fields"]["outcome"], "completed");
+        assert_eq!(completion["fields"]["completed_count"], 1);
+        let plain_refusal = validate_bound_run(&refused, &planner);
+        let (traced_refusal, refusal_records) =
+            crate::tracing_test::capture(|| validate_bound_run(&refused, &planner));
+        assert_eq!(traced_refusal, plain_refusal);
+        let completion = refusal_records
+            .iter()
+            .find(|record| record["fields"]["message"] == "evidence report validated")
+            .expect("report refusal completion");
+        assert_eq!(completion["target"], "vectors::report");
+        assert_eq!(completion["level"], "DEBUG");
+        assert_eq!(completion["span"]["name"], "validate_evidence_report");
+        assert_eq!(completion["fields"]["outcome"], "refused");
+        assert_eq!(completion["fields"]["refusal_kind"], "step_went_unanswered");
+        assert!(
+            refusal_records
+                .iter()
+                .all(|record| record["level"] != "WARN" && record["level"] != "ERROR")
+        );
+    }
 
     /// One accepted run, for the crate's rendering tests.
     ///

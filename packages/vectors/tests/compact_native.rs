@@ -6,7 +6,6 @@
 )]
 pub mod common;
 
-use std::io::Write as _;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -182,10 +181,9 @@ fn required(name: &str) -> String {
 }
 
 #[test]
+#[ignore = "requires TRIPOD_COMPACT_SUMMARY and capture configuration"]
 fn compact_schedule_summary() {
-    let Ok(path) = std::env::var("TRIPOD_COMPACT_SUMMARY") else {
-        return;
-    };
+    let path = required("TRIPOD_COMPACT_SUMMARY");
     let bundle = fixture_bundle().expect("candidate");
     let mode = required("TRIPOD_COMPACT_MODE");
     let attempt = required("TRIPOD_COMPACT_ATTEMPT");
@@ -674,28 +672,6 @@ fn compact_campaign_runs_against_the_pinned_target() {
         "failed"
     };
     std::fs::write(path.with_extension("capture.timing"), format!("timing-schema compact-phases-1\nceremony-id report\nstatus {status}\nphase-staging-ms {staged_ms}\nphase-execution-ms {execution_ms}\ntotal-ms {}\n", started.elapsed().as_millis())).expect("timing");
-    let mut output = std::io::stdout().lock();
-    writeln!(
-        output,
-        "\nCOMPACT operations {} controls {} suspended {}",
-        capture.operations().len(),
-        planner.accepted_families.len(),
-        planner.suspended.len()
-    )
-    .expect("summary");
-    for finding in &planner.findings {
-        writeln!(output, "{finding}").expect("finding");
-    }
-    for row in &planner.rows {
-        writeln!(
-            output,
-            "roster {} {} {:?}",
-            requirement_name(&row.manifest.requirement),
-            row.control.name(),
-            row.recipe
-        )
-        .expect("roster");
-    }
     outcome.expect("executor completion");
     assert!(planner.failure.is_none(), "{:?}", planner.failure);
 }

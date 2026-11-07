@@ -882,6 +882,27 @@ pub enum MaturityCorpusImportRefusal {
     ConfidentialCampaign(crate::maturity_native::confidential::ConfidentialCampaignRefusal),
 }
 
+impl MaturityCorpusImportRefusal {
+    const fn tracing_refusal_kind(&self) -> &'static str {
+        match self {
+            Self::CorpusCensus => "corpus_census",
+            Self::FileSize { .. } => "file_size",
+            Self::ManifestHash => "manifest_hash",
+            Self::ManifestGrammar => "manifest_grammar",
+            Self::ManifestDigest { .. } => "manifest_digest",
+            Self::RunReportGrammar => "run_report_grammar",
+            Self::RunReportAddress => "run_report_address",
+            Self::CaptureContentHash => "capture_content_hash",
+            Self::CrossFileBinding { .. } => "cross_file_binding",
+            Self::TranscriptGrammar { .. } => "transcript_grammar",
+            Self::PayloadDisagreement { .. } => "payload_disagreement",
+            Self::Derivation(_) => "derivation",
+            Self::RetainedCampaign(_) => "retained_campaign",
+            Self::ConfidentialCampaign(_) => "confidential_campaign",
+        }
+    }
+}
+
 type ImportResult<T> = Result<T, MaturityCorpusImportRefusal>;
 use MaturityCorpusImportRefusal as Refusal;
 
@@ -2603,7 +2624,33 @@ pub fn admit_maturity_corpus<'a>(
     files: &[MaturityArchiveFile<'a>; 4],
     pins: &MaturityCorpusPins<'a>,
 ) -> Result<ValidatedMaturityCorpus, MaturityCorpusImportRefusal> {
-    validate_inputs(files, pins)
+    let span = tracing::info_span!(
+        target: "vectors::corpus",
+        "admit_run_of_record",
+        family = "state",
+        archive_kind = "maturity"
+    );
+    let _entered = span.enter();
+    let result = validate_inputs(files, pins);
+    match &result {
+        Ok(corpus) => tracing::info!(
+            target: "vectors::corpus",
+            family = "state",
+            archive_kind = "maturity",
+            outcome = "completed",
+            row_count = u64::try_from(corpus.exchanges().len()).unwrap_or(u64::MAX),
+            "run of record admitted"
+        ),
+        Err(refusal) => tracing::debug!(
+            target: "vectors::corpus",
+            family = "state",
+            archive_kind = "maturity",
+            outcome = "refused",
+            refusal_kind = refusal.tracing_refusal_kind(),
+            "run of record admitted"
+        ),
+    }
+    result
 }
 
 /// Replay-derived native observations; no Safety standing is changed.
@@ -4728,16 +4775,8 @@ mod tests {
     #[test]
     fn diagnostic_admission_binds_the_whole_archive_and_recordings() {
         use crate::maturity_native::{RecordedBlockScriptError, recorded_block_script_error};
-        use std::io::Write as _;
-        let start = std::time::Instant::now();
         let corpus = admit_diagnostic_maturity_corpus(&DIAGNOSTIC_FILES, &DIAGNOSTIC_PINS)
             .expect("diagnostic archive");
-        writeln!(
-            std::io::stdout(),
-            "census cold diagnostic admission wall {:?}",
-            start.elapsed()
-        )
-        .expect("wall output");
         assert_eq!(corpus.report.run_address(), MATURITY_DIAGNOSTIC_RUN_ADDRESS);
         assert_eq!(corpus.evidence.complete(), Ok(()));
         assert_eq!(corpus.evidence.stopped(), [] as [&str; 0]);
@@ -5237,16 +5276,8 @@ mod tests {
     }
     #[test]
     fn retained_admission_binds_bytes_provenance_census_routes_and_readback() {
-        use std::io::Write as _;
-        let start = std::time::Instant::now();
         let corpus = admit_retained_maturity_corpus(&RETAINED_FILES, &RETAINED_PINS)
             .expect("retained archive");
-        writeln!(
-            std::io::stdout(),
-            "census cold retained admission wall {:?}",
-            start.elapsed()
-        )
-        .expect("wall output");
         assert_eq!(corpus.report.run_address(), MATURITY_RETAINED_RUN_ADDRESS);
         assert_eq!(corpus.evidence.exchanges().len(), 9);
         let families = corpus.evidence.families();
@@ -5557,16 +5588,8 @@ mod tests {
 
     #[test]
     fn confidential_admission_binds_bytes_provenance_census_route_and_readback() {
-        use std::io::Write as _;
-        let start = std::time::Instant::now();
         let corpus = admit_confidential_maturity_corpus(&CONFIDENTIAL_FILES, &CONFIDENTIAL_PINS)
             .expect("confidential archive");
-        writeln!(
-            std::io::stdout(),
-            "census cold confidential admission wall {:?}",
-            start.elapsed()
-        )
-        .expect("wall output");
         assert_eq!(
             corpus.report.run_address(),
             MATURITY_CONFIDENTIAL_RUN_ADDRESS
@@ -6529,6 +6552,47 @@ mod tests {
                 ),
             );
         }
+    }
+
+    #[test]
+    fn corpus_trace_preserves_admission_and_one_byte_short_refusal() {
+        if crate::tracing_test::isolate_capture_test(
+            module_path!(),
+            "corpus_trace_preserves_admission_and_one_byte_short_refusal",
+        ) {
+            return;
+        }
+        let control = OwnedCorpus::new();
+        let plain_control = control.pinned();
+        let (traced_control, control_records) = crate::tracing_test::capture(|| control.pinned());
+        assert_eq!(traced_control, plain_control);
+        let completion = control_records
+            .iter()
+            .find(|record| record["fields"]["message"] == "run of record admitted")
+            .expect("corpus completion");
+        assert_eq!(completion["target"], "vectors::corpus");
+        assert_eq!(completion["level"], "INFO");
+        assert_eq!(completion["span"]["name"], "admit_run_of_record");
+        assert_eq!(completion["fields"]["outcome"], "completed");
+        let mut short = OwnedCorpus::new();
+        let _ = short.bytes[0].pop();
+        let plain_refusal = short.pinned();
+        let (traced_refusal, refusal_records) = crate::tracing_test::capture(|| short.pinned());
+        assert_eq!(traced_refusal, plain_refusal);
+        let completion = refusal_records
+            .iter()
+            .find(|record| record["fields"]["message"] == "run of record admitted")
+            .expect("corpus refusal completion");
+        assert_eq!(completion["target"], "vectors::corpus");
+        assert_eq!(completion["level"], "DEBUG");
+        assert_eq!(completion["span"]["name"], "admit_run_of_record");
+        assert_eq!(completion["fields"]["outcome"], "refused");
+        assert_eq!(completion["fields"]["refusal_kind"], "file_size");
+        assert!(
+            refusal_records
+                .iter()
+                .all(|record| record["level"] != "WARN" && record["level"] != "ERROR")
+        );
     }
 
     fn scripted_response(step: &OperationStep) -> NativeOperationResponse {

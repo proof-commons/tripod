@@ -808,3 +808,150 @@ fn assert_capture_subjects(rendered: &str, planner: &MaturityAnnouncementPlanner
         assert_eq!(subject, step.subject());
     }
 }
+
+#[cfg(test)]
+mod tracing_tests {
+    use std::io::{self, Write};
+    use std::sync::{Arc, Mutex};
+
+    use serde_json::Value;
+    use target_elements_conformance::error::NativeConformanceError;
+    use target_elements_conformance::executor::NativeOperationCapture;
+    use tracing_subscriber::fmt::format::FmtSpan;
+
+    static INSTALL_LOCK: Mutex<()> = Mutex::new(());
+
+    #[derive(Clone)]
+    struct CaptureWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for CaptureWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn capture<R>(run: impl FnOnce() -> R) -> (R, Vec<Value>) {
+        let _install_guard = INSTALL_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let writer = CaptureWriter(Arc::clone(&bytes));
+        let subscriber = tracing_subscriber::fmt()
+            .json()
+            .with_max_level(tracing::Level::TRACE)
+            .with_span_events(FmtSpan::CLOSE)
+            .with_writer(move || writer.clone())
+            .finish();
+        let result = tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
+            run()
+        });
+        let records = bytes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice(line).expect("captured tracing JSON"))
+            .collect();
+        (result, records)
+    }
+
+    fn isolate_capture_test(module: &str, name: &str) -> bool {
+        const CHILD_ENV: &str = "TRIPOD_VECTORS_CAPTURE_TEST_CHILD";
+        if std::env::var_os(CHILD_ENV).is_some() {
+            return false;
+        }
+        let module = module.split_once("::").map_or(module, |(_, rest)| rest);
+        let test_path = format!("{module}::{name}");
+        let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .arg("--exact")
+            .arg(&test_path)
+            .env(CHILD_ENV, "1")
+            .output()
+            .expect("isolated capture test process");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success() && stdout.contains("test result: ok. 1 passed; 0 failed;"),
+            "isolated capture test {test_path} failed or selected no test\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        true
+    }
+
+    #[test]
+    fn ceremony_trace_preserves_control_bytes_and_adjacent_plan_refusal() {
+        if isolate_capture_test(
+            module_path!(),
+            "ceremony_trace_preserves_control_bytes_and_adjacent_plan_refusal",
+        ) {
+            return;
+        }
+        let bytes = b"ceremony control".to_vec();
+        let mut plain_capture = NativeOperationCapture::default();
+        let plain_control =
+            super::common::trace_ceremony("state", "maturity_native", &mut plain_capture, |_| {
+                Ok(bytes.clone())
+            })
+            .expect("control");
+        let mut traced_capture = NativeOperationCapture::default();
+        let (traced_control, control_records) = capture(|| {
+            super::common::trace_ceremony("state", "maturity_native", &mut traced_capture, |_| {
+                Ok(bytes.clone())
+            })
+        });
+        assert_eq!(traced_control.expect("control"), plain_control);
+        assert_eq!(plain_capture, traced_capture);
+        let completion = control_records
+            .iter()
+            .find(|record| record["fields"]["message"] == "ceremony completed")
+            .expect("ceremony completion");
+        assert_eq!(completion["target"], "vectors::native_test");
+        assert_eq!(completion["level"], "INFO");
+        assert_eq!(completion["span"]["name"], "execute_ceremony");
+        assert_eq!(completion["fields"]["outcome"], "completed");
+        let mut plain_capture = NativeOperationCapture::default();
+        let plain_refusal: Result<Vec<u8>, _> =
+            super::common::trace_ceremony("state", "maturity_native", &mut plain_capture, |_| {
+                Err(NativeConformanceError::OperationPlanRefused)
+            });
+        let mut traced_capture = NativeOperationCapture::default();
+        let (traced_refusal, refusal_records): (Result<Vec<u8>, _>, _) = capture(|| {
+            super::common::trace_ceremony("state", "maturity_native", &mut traced_capture, |_| {
+                Err(NativeConformanceError::OperationPlanRefused)
+            })
+        });
+        assert!(matches!(
+            plain_refusal,
+            Err(NativeConformanceError::OperationPlanRefused)
+        ));
+        assert!(matches!(
+            traced_refusal,
+            Err(NativeConformanceError::OperationPlanRefused)
+        ));
+        assert_eq!(plain_capture, traced_capture);
+        let completion = refusal_records
+            .iter()
+            .find(|record| record["fields"]["message"] == "ceremony completed")
+            .expect("ceremony refusal completion");
+        assert_eq!(completion["target"], "vectors::native_test");
+        assert_eq!(completion["level"], "DEBUG");
+        assert_eq!(completion["fields"]["outcome"], "refused");
+        assert_eq!(
+            completion["fields"]["refusal_kind"],
+            "operation_plan_refused"
+        );
+        assert!(
+            refusal_records
+                .iter()
+                .all(|record| record["level"] != "WARN" && record["level"] != "ERROR")
+        );
+    }
+}

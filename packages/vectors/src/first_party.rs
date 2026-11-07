@@ -475,6 +475,50 @@ impl FirstPartyRefusal {
     pub const fn class(self) -> RelationMutation {
         self.class
     }
+
+    /// The observed compiler refusal class, without subject data.
+    const fn tracing_observed_kind(self) -> &'static str {
+        match self.class {
+            RelationMutation::CardinalityBelowMinimum => "cardinality_below_minimum",
+            RelationMutation::CardinalityAboveMaximum { .. } => "cardinality_above_maximum",
+            RelationMutation::UndeclaredObjectFamily => "undeclared_object_family",
+            RelationMutation::WrongRecognizedAsset => "wrong_recognized_asset",
+            RelationMutation::WrongRecognizedObject => "wrong_recognized_object",
+            RelationMutation::AmountMismatch => "amount_mismatch",
+            RelationMutation::MissingRequiredOwner => "missing_required_owner",
+            RelationMutation::UnexpectedProtocolSecret => "unexpected_protocol_secret",
+            RelationMutation::SponsorProtocolOverlap => "sponsor_protocol_overlap",
+            RelationMutation::SponsorMemberUnclaimed => "sponsor_member_unclaimed",
+            RelationMutation::MissingSponsorAuthorization => "missing_sponsor_authorization",
+            RelationMutation::SponsorEnvelopeMultiplicityExceeded => {
+                "sponsor_envelope_multiplicity_exceeded"
+            }
+            RelationMutation::WrongRootEffect => "wrong_root_effect",
+            RelationMutation::MissingRequiredProjection => "missing_required_projection",
+            RelationMutation::ForbiddenProjectionPresent => "forbidden_projection_present",
+            RelationMutation::MissingCanonicalDeltaFamily => "missing_canonical_delta_family",
+            RelationMutation::UnexpectedCanonicalDeltaFamily => "unexpected_canonical_delta_family",
+            RelationMutation::DuplicateCanonicalSourceOrDestination => {
+                "duplicate_canonical_source_or_destination"
+            }
+            RelationMutation::UndeclaredOpenFlow => "undeclared_open_flow",
+            RelationMutation::ConstructibilityWitnessUnavailable => {
+                "constructibility_witness_unavailable"
+            }
+            RelationMutation::PermissionlessPrivateDependency => {
+                "permissionless_private_dependency"
+            }
+            RelationMutation::UnsupportedRepresentation => "unsupported_representation",
+            RelationMutation::UnauthenticatedRepresentation => "unauthenticated_representation",
+            RelationMutation::RequiredLifecycleExitMissing => "required_lifecycle_exit_missing",
+            RelationMutation::ExpressionPredicateFalse => "expression_predicate_false",
+            RelationMutation::ExternalEvidenceMissing => "external_evidence_missing",
+            RelationMutation::ExternalEvidenceFailed => "external_evidence_failed",
+            RelationMutation::ExternalEvidenceIdentityMismatch => {
+                "external_evidence_identity_mismatch"
+            }
+        }
+    }
 }
 
 /// One canonical malformed typed input, and its control.
@@ -603,6 +647,25 @@ pub enum FirstPartyEvidenceRefusal {
     ControlWasRefused,
 }
 
+impl FirstPartyEvidenceRefusal {
+    const fn tracing_refusal_kind(&self) -> &'static str {
+        match self {
+            Self::RequirementNotPublished => "requirement_not_published",
+            Self::NotAFirstPartyRequirement => "not_a_first_party_requirement",
+            Self::CaseNamesAnotherOperation => "case_names_another_operation",
+            Self::RealizationUnavailable => "realization_unavailable",
+            Self::ControlIsNotPublished => "control_is_not_published",
+            Self::ControlHasNoAvailabilityClass => "control_has_no_availability_class",
+            Self::AuthorizationCaseUnderdetermined => "authorization_case_underdetermined",
+            Self::MalformationChangedNothing => "malformation_changed_nothing",
+            Self::MalformedInputWasAccepted => "malformed_input_was_accepted",
+            Self::RefusalNamesAnotherClass(_) => "refusal_names_another_class",
+            Self::RefusalNamesNoClass => "refusal_names_no_class",
+            Self::ControlWasRefused => "control_was_refused",
+        }
+    }
+}
+
 /// One first-party negative requirement, discharged.
 ///
 /// # What holding one of these establishes
@@ -656,6 +719,41 @@ impl ValidatedFirstPartyNegativeEvidence {
 /// [`FirstPartyEvidenceRefusal`], naming which of §4.2's conditions the
 /// offered case does not meet.
 pub fn validate_first_party_negative(
+    plan: &ValidatedTargetOperationPlan,
+    requirement: &CoverageRequirementId,
+    case: &FirstPartyNegativeCase,
+) -> Result<ValidatedFirstPartyNegativeEvidence, FirstPartyEvidenceRefusal> {
+    let span = tracing::debug_span!(
+        target: "vectors::validation",
+        "validate_mutant",
+        family = "compact",
+        boundary = "compiler_required_dependency"
+    );
+    let _entered = span.enter();
+    let result = validate_first_party_negative_core(plan, requirement, case);
+    match &result {
+        Ok(evidence) => tracing::debug!(
+            target: "vectors::validation",
+            family = "compact",
+            boundary = "compiler_required_dependency",
+            outcome = "completed",
+            standing = "refused",
+            observed_refusal_kind = evidence.refusal().tracing_observed_kind(),
+            "mutant validated"
+        ),
+        Err(refusal) => tracing::debug!(
+            target: "vectors::validation",
+            family = "compact",
+            boundary = "compiler_required_dependency",
+            outcome = "refused",
+            refusal_kind = refusal.tracing_refusal_kind(),
+            "mutant validated"
+        ),
+    }
+    result
+}
+
+fn validate_first_party_negative_core(
     plan: &ValidatedTargetOperationPlan,
     requirement: &CoverageRequirementId,
     case: &FirstPartyNegativeCase,
@@ -1883,6 +1981,66 @@ mod tests {
     use realization::{AvailabilityClass, ConstructibilityNodeId};
 
     #[test]
+    fn tracing_variant_names_are_lower_snake_case() {
+        fn names_after<'a>(source: &'a str, marker: &str) -> Vec<&'a str> {
+            let body = source
+                .split_once(marker)
+                .expect("tracing name table")
+                .1
+                .split_once("\n    }\n")
+                .expect("closed tracing name table")
+                .0;
+            body.split('"').skip(1).step_by(2).collect()
+        }
+        fn is_lower_snake_case(name: &str) -> bool {
+            name.bytes()
+                .next()
+                .is_some_and(|byte| byte.is_ascii_lowercase())
+                && name.split('_').all(|part| {
+                    !part.is_empty()
+                        && part
+                            .bytes()
+                            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+                })
+        }
+        let mut names = Vec::new();
+        for (source, marker) in [
+            (include_str!("error.rs"), "fn tracing_refusal_kind"),
+            (include_str!("first_party.rs"), "fn tracing_refusal_kind"),
+            (
+                include_str!("maturity_corpus.rs"),
+                "fn tracing_refusal_kind",
+            ),
+            (include_str!("report.rs"), "fn tracing_refusal_kind"),
+            (include_str!("first_party.rs"), "fn tracing_observed_kind"),
+        ] {
+            let table = names_after(source, marker);
+            assert!(!table.is_empty(), "empty tracing name table: {marker}");
+            names.extend(table);
+        }
+        for name in &names {
+            assert!(is_lower_snake_case(name), "invalid tracing name: {name}");
+        }
+        assert!(names.contains(&"not_a_first_party_requirement"));
+        for (class, expected) in [
+            (
+                RelationMutation::PermissionlessPrivateDependency,
+                "permissionless_private_dependency",
+            ),
+            (
+                RelationMutation::ConstructibilityWitnessUnavailable,
+                "constructibility_witness_unavailable",
+            ),
+        ] {
+            let refusal = super::FirstPartyRefusal {
+                validator: FirstPartyValidator::CompilerRequiredDependency,
+                class,
+            };
+            assert_eq!(refusal.tracing_observed_kind(), expected);
+        }
+    }
+
+    #[test]
     fn compact_first_party_dispositions_retain_all_twenty_subjects() {
         use super::CompactFirstPartyDisposition as D;
         let bundle = fixture_bundle().expect("bundle");
@@ -2454,6 +2612,68 @@ mod tests {
     fn private_dependency() -> FirstPartyNegativeCase {
         compact_ash_permissionless_private_dependency_case()
             .expect("the canonical private-dependency case is available")
+    }
+
+    #[test]
+    fn first_party_trace_separates_observed_refusal_from_operation_refusal() {
+        if crate::tracing_test::isolate_capture_test(
+            module_path!(),
+            "first_party_trace_separates_observed_refusal_from_operation_refusal",
+        ) {
+            return;
+        }
+        let bundle = fixture_bundle().expect("fixture");
+        let plan = bundle.plan();
+        let id = requirement(
+            plan,
+            RelationMutation::PermissionlessPrivateDependency,
+            SponsorCase::Absent,
+        );
+        let control = private_dependency();
+        let FirstPartyNegativeCase::PrivateRequiredDependency { published, .. } = &control;
+        let unchanged = FirstPartyNegativeCase::PrivateRequiredDependency {
+            operation: OperationId::CompactAsh,
+            published: published.clone(),
+            availability: AvailabilityClass::Public,
+        };
+        let plain_control = validate_first_party_negative(plan, &id, &control);
+        let (traced_control, control_records) =
+            crate::tracing_test::capture(|| validate_first_party_negative(plan, &id, &control));
+        assert_eq!(traced_control, plain_control);
+        let completion = control_records
+            .iter()
+            .find(|record| record["fields"]["message"] == "mutant validated")
+            .expect("mutant completion");
+        assert_eq!(completion["target"], "vectors::validation");
+        assert_eq!(completion["level"], "DEBUG");
+        assert_eq!(completion["span"]["name"], "validate_mutant");
+        assert_eq!(completion["fields"]["outcome"], "completed");
+        assert_eq!(completion["fields"]["standing"], "refused");
+        assert_eq!(
+            completion["fields"]["observed_refusal_kind"],
+            "permissionless_private_dependency"
+        );
+        assert!(completion["fields"].get("refusal_kind").is_none());
+        let plain_refusal = validate_first_party_negative(plan, &id, &unchanged);
+        let (traced_refusal, refusal_records) =
+            crate::tracing_test::capture(|| validate_first_party_negative(plan, &id, &unchanged));
+        assert_eq!(traced_refusal, plain_refusal);
+        let completion = refusal_records
+            .iter()
+            .find(|record| record["fields"]["message"] == "mutant validated")
+            .expect("mutant refusal completion");
+        assert_eq!(completion["level"], "DEBUG");
+        assert_eq!(completion["fields"]["outcome"], "refused");
+        assert_eq!(
+            completion["fields"]["refusal_kind"],
+            "malformation_changed_nothing"
+        );
+        assert!(completion["fields"].get("standing").is_none());
+        assert!(
+            refusal_records
+                .iter()
+                .all(|record| record["level"] != "WARN" && record["level"] != "ERROR")
+        );
     }
 
     #[test]

@@ -4,6 +4,7 @@
 # into its role group.
 vectors_source_files = files(
   'src/abi_validation.rs',
+  'src/bin/maturity-observer-cli.rs',
   'src/bundle.rs',
   'src/comparison.rs',
   'src/compact_negative_manifest.rs',
@@ -101,7 +102,7 @@ vectors_source_files = files(
 )
 
 # Crate documentation (DOC owner).
-vectors_doc_files = files('README.md')
+vectors_doc_files = files('README.md', 'TRACING.md')
 
 # Opaque rerun-day archive files deliberately outside the Rust-source
 # census (ADR-014). The semantic transcripts are compiled through

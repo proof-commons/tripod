@@ -254,3 +254,108 @@ pub use violation::{
     NegativeVectorDeclaration, SemanticChange, SourceFixtureRequirement, TargetField,
     UnlinkedReason, first_party_evidence, matching_requirement, resolve_declaration,
 };
+
+#[cfg(test)]
+mod tracing_test {
+    use std::io::{self, Write};
+    use std::sync::{Arc, Mutex};
+
+    use serde_json::Value;
+    use tracing_subscriber::fmt::format::FmtSpan;
+
+    static INSTALL_LOCK: Mutex<()> = Mutex::new(());
+
+    #[derive(Clone)]
+    struct CaptureWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for CaptureWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    pub fn capture<R>(run: impl FnOnce() -> R) -> (R, Vec<Value>) {
+        let _install_guard = INSTALL_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let writer = CaptureWriter(Arc::clone(&bytes));
+        let subscriber = tracing_subscriber::fmt()
+            .json()
+            .with_max_level(tracing::Level::TRACE)
+            .with_span_events(FmtSpan::CLOSE)
+            .with_writer(move || writer.clone())
+            .finish();
+        let result = tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
+            run()
+        });
+        let records = bytes
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+            .map(|line| serde_json::from_slice(line).expect("captured tracing JSON"))
+            .collect();
+        (result, records)
+    }
+
+    pub fn isolate_capture_test(module: &str, name: &str) -> bool {
+        const CHILD_ENV: &str = "TRIPOD_VECTORS_CAPTURE_TEST_CHILD";
+        if std::env::var_os(CHILD_ENV).is_some() {
+            return false;
+        }
+        let module = module.split_once("::").map_or(module, |(_, rest)| rest);
+        let test_path = format!("{module}::{name}");
+        let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
+            .arg("--exact")
+            .arg(&test_path)
+            .env(CHILD_ENV, "1")
+            .output()
+            .expect("isolated capture test process");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success() && stdout.contains("test result: ok. 1 passed; 0 failed;"),
+            "isolated capture test {test_path} failed or selected no test\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        true
+    }
+
+    fn emit_capture_probe() {
+        let span = tracing::info_span!(target: "vectors::test", "capture_cache_probe");
+        let _entered = span.enter();
+    }
+
+    #[test]
+    fn capture_trace_rebuilds_interest_after_uncaptured_call_on_two_threads() {
+        if isolate_capture_test(
+            module_path!(),
+            "capture_trace_rebuilds_interest_after_uncaptured_call_on_two_threads",
+        ) {
+            return;
+        }
+        emit_capture_probe();
+        let first = std::thread::spawn(|| capture(emit_capture_probe).1);
+        let second = std::thread::spawn(|| capture(emit_capture_probe).1);
+        for handle in [first, second] {
+            let records = handle.join().expect("capture thread");
+            let close_count = records
+                .iter()
+                .filter(|record| {
+                    record["span"]["name"] == "capture_cache_probe"
+                        && record["fields"]["message"] == "close"
+                })
+                .count();
+            assert_eq!(close_count, 1);
+        }
+    }
+}

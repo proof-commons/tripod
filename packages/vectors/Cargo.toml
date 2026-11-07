@@ -114,6 +114,7 @@ name = "vectors"
 # authored source for either name (§1.12).
 [dependencies]
 tracing = { workspace = true }
+cli-common = { workspace = true }
 architecture = { workspace = true }
 compiler = { workspace = true }
 linker = { workspace = true }
@@ -125,9 +126,19 @@ transaction = { workspace = true }
 # The archive admission root decodes the retained subjects and responses.
 serde_json = { workspace = true }
 
+[dev-dependencies]
+nix = { workspace = true }
+tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }
+
 [lints]
 workspace = true
 
 [[test]]
 name = "maturity_observer"
 harness = false
+
+[[bin]]
+name = "maturity-observer-cli"
+path = "src/bin/maturity-observer-cli.rs"
+test = false

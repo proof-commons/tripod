@@ -54,7 +54,7 @@ TRIPOD_COMPACT_SCHEDULE=${TRIPOD_COMPACT_SCHEDULE:-1}
 case "$TRIPOD_COMPACT_SCHEDULE" in 1|2) ;; *) die 'unknown schedule';; esac
 export TRIPOD_COMPACT_SCHEDULE
 export TRIPOD_COMPACT_MODE=$mode TRIPOD_COMPACT_ATTEMPT=$attempt
-TRIPOD_COMPACT_SUMMARY="$temporary/summary" "$cargo" test -p tripod-vectors --test compact_native compact_schedule_summary -- --exact > "$temporary/summary.log" 2>&1 || { cat "$temporary/summary.log"; die 'schedule summary failed'; }
+TRIPOD_COMPACT_SUMMARY="$temporary/summary" "$cargo" test -p tripod-vectors --test compact_native compact_schedule_summary -- --exact --ignored > "$temporary/summary.log" 2>&1 || { cat "$temporary/summary.log"; die 'schedule summary failed'; }
 EXPECTED_OPERATIONS=$(field "$temporary/summary" operations) || die 'operation summary missing'
 expected_controls=$(field "$temporary/summary" controls) || die 'control summary missing'
 expected_staged=$(field "$temporary/summary" staged) || die 'staged summary missing'

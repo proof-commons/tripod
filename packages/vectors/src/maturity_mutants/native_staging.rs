@@ -2329,7 +2329,6 @@ mod tests {
 
     #[test]
     fn retained_route_construction_measurements() {
-        use std::io::Write as _;
         let fixture = Fixture::new();
         let context = fixture.context();
         let control = decode(context.submitted_bytes).expect("control");
@@ -2346,7 +2345,6 @@ mod tests {
                 (1701, 2091)
             };
             assert_eq!((bytes.len(), candidate.weight()), expected);
-            writeln!(std::io::stdout(), "weight {subject:?}: control bytes={} weight={}; subject bytes={} weight={}; pin={}", context.submitted_bytes.len(), control.weight(), bytes.len(), candidate.weight(), digest_hex(&bytes)).expect("measurement");
         }
     }
 

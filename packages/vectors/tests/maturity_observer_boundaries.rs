@@ -8,6 +8,10 @@ use vectors::maturity_observer::{
 #[test]
 fn observer_imports_and_input_surface_are_pinned() {
     let source = include_str!("maturity_observer.rs");
+    assert_eq!(
+        include_str!("../src/bin/maturity-observer-cli.rs"),
+        "include!(\"../../tests/maturity_observer.rs\");\n"
+    );
     let imports: Vec<_> = source
         .lines()
         .filter(|line| line.starts_with("use "))
@@ -15,7 +19,9 @@ fn observer_imports_and_input_surface_are_pinned() {
     assert_eq!(
         imports,
         [
-            "use std::io::{self, IsTerminal, Read, Write};",
+            "use cli_common::{CommandExit, install_command_subscriber, run_stdout_json_command};",
+            "use std::io::{self, IsTerminal, Read};",
+            "use std::process::ExitCode;",
             "use vectors::maturity_observer::ObserverManifest;",
             "use vectors::maturity_observer::ObserverNodeReader;",
             "use vectors::maturity_observer::observe_maturity;",
@@ -39,7 +45,9 @@ fn observer_imports_and_input_surface_are_pinned() {
         "std::fs",
         "std::path",
         "std::env",
-        "std::process",
+        "std::process::Command",
+        "std::process::exit",
+        "Command::new",
         "include_bytes!",
         "include_str!",
         "maturity_corpus",
@@ -667,6 +675,138 @@ fn public_operands() -> (Value, Value) {
     let block = encode_hex(readback.block_hash());
     let reading = json!({"chain_name":"elementsregtest","genesis_id":corpus.report().genesis_id(),"block_hash":block,"block_height":readback.block_height(),"active_before":block,"active_after":block,"transaction_id":readback.identity().to_target_display(),"witness_identity":readback.witness_identity().to_target_display(),"raw_transaction":encode_hex(readback.bytes()),"members":[readback.identity().to_target_display()],"relay_floor":"0.00000100","mempool_floor":"0.00000100","block_floor":"0.00000100","block_provenance":"pinned-source-no-override","fee_overrides":[]});
     (manifest, reading)
+}
+
+fn observer_command(input: &[u8]) -> std::process::Output {
+    use std::io::Write as _;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(env!("CARGO_BIN_EXE_maturity-observer-cli"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("observer subprocess");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(input)
+        .expect("write subject");
+    child.wait_with_output().expect("observer exits")
+}
+
+fn observer_stderr_records(bytes: &[u8]) -> Vec<Value> {
+    std::str::from_utf8(bytes)
+        .expect("JSON stderr is UTF-8")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("one JSON record per stderr line"))
+        .collect()
+}
+
+#[test]
+fn observer_subprocess_preserves_empty_and_structured_result() {
+    let empty = observer_command(b"");
+    assert!(empty.status.success());
+    assert_eq!(empty.stdout, [] as [u8; 0]);
+    assert_eq!(empty.stderr, [] as [u8; 0]);
+
+    let (manifest, reading) = public_operands();
+    let expected = render_maturity_observation(
+        &observe_maturity(
+            &ObserverManifest::from_value(manifest.clone()).expect("manifest"),
+            &ObserverNodeReader::from_value(reading.clone()).expect("reading"),
+        )
+        .expect("accepted observation"),
+    );
+    let input = json!({"manifest":manifest,"reading":reading}).to_string();
+    let actual = observer_command(input.as_bytes());
+    assert!(
+        actual.status.success(),
+        "{}",
+        String::from_utf8_lossy(&actual.stderr)
+    );
+    assert_eq!(actual.stdout, format!("{expected}\n").as_bytes());
+    let records = observer_stderr_records(&actual.stderr);
+    assert_ne!(records, [] as [Value; 0]);
+    assert!(records.iter().any(|record| {
+        record["span"]["command"] == "maturity-observer-cli"
+            && record["fields"]["message"] == "command completed"
+    }));
+}
+
+#[test]
+fn observer_subprocess_failure_is_json_stderr_with_empty_stdout() {
+    let failure = observer_command(b"{");
+    assert_eq!(failure.status.code(), Some(1));
+    assert_eq!(failure.stdout, [] as [u8; 0]);
+    let records = observer_stderr_records(&failure.stderr);
+    assert!(
+        records
+            .iter()
+            .any(|record| record["fields"]["exit_class"] == "failure")
+    );
+    assert!(!String::from_utf8_lossy(&failure.stderr).contains("Error:"));
+}
+
+#[test]
+fn observer_subprocess_terminal_stdin_remains_quiet() {
+    use std::fs::File;
+    use std::process::{Command, Stdio};
+    let terminal = nix::pty::openpty(None, None).expect("open terminal");
+    let slave = File::from(terminal.slave);
+    let output = Command::new(env!("CARGO_BIN_EXE_maturity-observer-cli"))
+        .stdin(Stdio::from(slave))
+        .output()
+        .expect("observer exits");
+    assert!(output.status.success());
+    assert_eq!(output.stdout, [] as [u8; 0]);
+    assert_eq!(output.stderr, [] as [u8; 0]);
+}
+
+#[test]
+fn observer_subprocess_terminal_stdout_uses_unfiltered_control_record() {
+    use std::fs::File;
+    use std::io::{Read as _, Seek as _, Write as _};
+    use std::process::{Command, Stdio};
+    let terminal = nix::pty::openpty(None, None).expect("open terminal");
+    let mut master = File::from(terminal.master);
+    let slave = File::from(terminal.slave);
+    let stderr_file = tempfile::tempfile().expect("stderr file");
+    let mut stderr_reader = stderr_file.try_clone().expect("stderr reader");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_maturity-observer-cli"))
+        .env("RUST_LOG", "off")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::from(slave))
+        .stderr(Stdio::from(stderr_file))
+        .spawn()
+        .expect("observer subprocess");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(b"{")
+        .expect("write subject");
+    let (sender, receiver) = std::sync::mpsc::channel::<Vec<u8>>();
+    std::thread::spawn(move || {
+        let mut buffer = [0_u8; 4096];
+        while let Ok(size) = master.read(&mut buffer) {
+            if size == 0 || sender.send(buffer[..size].to_vec()).is_err() {
+                break;
+            }
+        }
+    });
+    assert_eq!(child.wait().expect("observer exits").code(), Some(2));
+    assert!(
+        receiver
+            .recv_timeout(std::time::Duration::from_millis(500))
+            .is_err(),
+        "terminal stdout must stay empty"
+    );
+    stderr_reader.rewind().expect("rewind stderr");
+    let mut stderr = Vec::new();
+    stderr_reader.read_to_end(&mut stderr).expect("read stderr");
+    let records = observer_stderr_records(&stderr);
+    assert!(records.iter().any(|record| record["kind"] == "tty_refusal"));
 }
 
 #[test]

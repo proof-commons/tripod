@@ -250,6 +250,44 @@ pub enum VectorError {
     },
 }
 
+impl VectorError {
+    /// Payload-free variant name for an expected tracing refusal.
+    pub(crate) const fn tracing_refusal_kind(&self) -> &'static str {
+        match self {
+            Self::CompactClosure(_) => "compact_closure",
+            Self::CompactNegativeManifest(_) => "compact_negative_manifest",
+            Self::FixtureBundleUnavailable(_) => "fixture_bundle_unavailable",
+            Self::RelationCensusMismatch { .. } => "relation_census_mismatch",
+            Self::CaseCensusMismatch { .. } => "case_census_mismatch",
+            Self::RelationCaseCensusMismatch { .. } => "relation_case_census_mismatch",
+            Self::UnexpectedRelation(_) => "unexpected_relation",
+            Self::MissingRelation(_) => "missing_relation",
+            Self::DuplicateCoverageRequirement => "duplicate_coverage_requirement",
+            Self::UnmutatableVector(_) => "unmutatable_vector",
+            Self::UnclassifiableNegativeRequirement => "unclassifiable_negative_requirement",
+            Self::FirstPartyEvidenceRefused { .. } => "first_party_evidence_refused",
+            Self::DuplicateSemanticFixture(_) => "duplicate_semantic_fixture",
+            Self::InvalidSemanticFixture(_) => "invalid_semantic_fixture",
+            Self::FixtureContradictsItsClass { .. } => "fixture_contradicts_its_class",
+            Self::ExpectationNotDerivable { .. } => "expectation_not_derivable",
+            Self::ExpectedSuccessorRefused { .. } => "expected_successor_refused",
+            Self::TargetMaterializationFailed { .. } => "target_materialization_failed",
+            Self::MaterializedShapeMismatch(_) => "materialized_shape_mismatch",
+            Self::SuccessorAmountMismatch { .. } => "successor_amount_mismatch",
+            Self::MatrixCoverageMismatch { .. } => "matrix_coverage_mismatch",
+            Self::FundingCardinalityMismatch { .. } => "funding_cardinality_mismatch",
+            Self::DuplicateFundedOutpoint(_) => "duplicate_funded_outpoint",
+            Self::NegativeLinkUnresolved { .. } => "negative_link_unresolved",
+            Self::LiveSubstrateUnavailable => "live_substrate_unavailable",
+            Self::NegativeLinkContradicted { .. } => "negative_link_contradicted",
+            Self::AbiValidationFieldUnderdetermined { .. } => {
+                "abi_validation_field_underdetermined"
+            }
+            Self::FundingNamesAnotherVector { .. } => "funding_names_another_vector",
+        }
+    }
+}
+
 impl From<FixtureBundleRefusal> for VectorError {
     fn from(refusal: FixtureBundleRefusal) -> Self {
         Self::FixtureBundleUnavailable(refusal)

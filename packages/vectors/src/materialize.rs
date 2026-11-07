@@ -481,7 +481,32 @@ pub fn materialize(
     case: &CompactAshSemanticCase,
     funding: &AshFunding,
 ) -> Result<MaterializedTargetVector, VectorError> {
-    build_vector(fixture, case, funding, None)
+    let span = tracing::debug_span!(
+        target: "vectors::materialize",
+        "materialize_subject",
+        family = "compact",
+        sponsored = false
+    );
+    let _entered = span.enter();
+    let result = build_vector(fixture, case, funding, None);
+    match &result {
+        Ok(_) => tracing::debug!(
+            target: "vectors::materialize",
+            family = "compact",
+            sponsored = false,
+            outcome = "completed",
+            "subject materialized"
+        ),
+        Err(refusal) => tracing::debug!(
+            target: "vectors::materialize",
+            family = "compact",
+            sponsored = false,
+            outcome = "refused",
+            refusal_kind = refusal.tracing_refusal_kind(),
+            "subject materialized"
+        ),
+    }
+    result
 }
 
 /// One authorization a sponsored construction needs.
@@ -587,18 +612,45 @@ pub fn materialize_sponsored(
     coins: &[SponsorCoin],
     signatures: &BTreeMap<Outpoint, SponsorSignature>,
 ) -> Result<MaterializedTargetVector, VectorError> {
-    let sponsor = CeremonySponsor {
-        coins,
-        offer: ceremony_offer(coins, case.sponsor().change()).map_err(|cause| {
-            VectorError::TargetMaterializationFailed {
-                vector: vector_id(case),
-                cause,
-            }
-        })?,
-        ash_inputs: case.ash_inputs(),
-        answers: SponsorAnswers::Replaying(signatures),
-    };
-    build_vector(fixture, case, funding, Some(&sponsor))
+    let span = tracing::debug_span!(
+        target: "vectors::materialize",
+        "materialize_subject",
+        family = "compact",
+        sponsored = true
+    );
+    let _entered = span.enter();
+    let result = (|| {
+        let sponsor = CeremonySponsor {
+            coins,
+            offer: ceremony_offer(coins, case.sponsor().change()).map_err(|cause| {
+                VectorError::TargetMaterializationFailed {
+                    vector: vector_id(case),
+                    cause,
+                }
+            })?,
+            ash_inputs: case.ash_inputs(),
+            answers: SponsorAnswers::Replaying(signatures),
+        };
+        build_vector(fixture, case, funding, Some(&sponsor))
+    })();
+    match &result {
+        Ok(_) => tracing::debug!(
+            target: "vectors::materialize",
+            family = "compact",
+            sponsored = true,
+            outcome = "completed",
+            "subject materialized"
+        ),
+        Err(refusal) => tracing::debug!(
+            target: "vectors::materialize",
+            family = "compact",
+            sponsored = true,
+            outcome = "refused",
+            refusal_kind = refusal.tracing_refusal_kind(),
+            "subject materialized"
+        ),
+    }
+    result
 }
 
 /// What the sponsor region's coins hold, as the executor reported them.
@@ -923,6 +975,65 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use transaction::{Outpoint, SyntheticDisclaimer, TargetTransaction, Txid, check_weight};
 
+    fn assert_materialization_trace(
+        records: &[serde_json::Value],
+        sponsored: bool,
+        outcome: &str,
+        refusal_kind: Option<&str>,
+    ) {
+        let event = records
+            .iter()
+            .find(|record| record["fields"]["message"] == "subject materialized")
+            .expect("materialization completion event");
+        assert_eq!(event["target"], "vectors::materialize");
+        assert_eq!(event["level"], "DEBUG");
+        assert_eq!(event["span"]["name"], "materialize_subject");
+        assert_eq!(event["fields"]["family"], "compact");
+        assert_eq!(event["fields"]["sponsored"], sponsored);
+        assert_eq!(event["fields"]["outcome"], outcome);
+        match refusal_kind {
+            Some(kind) => assert_eq!(event["fields"]["refusal_kind"], kind),
+            None => assert!(event["fields"].get("refusal_kind").is_none()),
+        }
+        assert!(
+            records
+                .iter()
+                .all(|record| record["level"] != "WARN" && record["level"] != "ERROR")
+        );
+    }
+
+    #[test]
+    fn materialization_trace_preserves_control_and_adjacent_funding_refusal() {
+        if crate::tracing_test::isolate_capture_test(
+            module_path!(),
+            "materialization_trace_preserves_control_and_adjacent_funding_refusal",
+        ) {
+            return;
+        }
+        let fixture = fixture_bundle().expect("fixture");
+        let census = positive_semantic_census().expect("census");
+        let mut cases = census.iter().filter(|case| is_materializable(case));
+        let case = cases.next().expect("first case");
+        let another = cases.next().expect("adjacent case");
+        let control_funding = placeholder(case);
+        let refused_funding = placeholder(another);
+        let plain_control = materialize(&fixture, case, &control_funding);
+        let (traced_control, control_records) =
+            crate::tracing_test::capture(|| materialize(&fixture, case, &control_funding));
+        assert_eq!(traced_control, plain_control);
+        assert_materialization_trace(&control_records, false, "completed", None);
+        let plain_refusal = materialize(&fixture, case, &refused_funding);
+        let (traced_refusal, refusal_records) =
+            crate::tracing_test::capture(|| materialize(&fixture, case, &refused_funding));
+        assert_eq!(traced_refusal, plain_refusal);
+        assert_materialization_trace(
+            &refusal_records,
+            false,
+            "refused",
+            Some("funding_names_another_vector"),
+        );
+    }
+
     #[test]
     fn compact_constructor_test_staging_observes_only_constructor_refusals() {
         let bundle = fixture_bundle().expect("bundle");
@@ -1146,6 +1257,54 @@ mod tests {
             })
             .collect();
         super::materialize_sponsored(&bundle, &case, &funding, coins, &signatures)
+    }
+
+    #[test]
+    fn sponsored_materialization_trace_preserves_control_and_missing_signature_refusal() {
+        if crate::tracing_test::isolate_capture_test(
+            module_path!(),
+            "sponsored_materialization_trace_preserves_control_and_missing_signature_refusal",
+        ) {
+            return;
+        }
+        let fixture = fixture_bundle().expect("fixture");
+        let case = sponsored_case();
+        let funding = placeholder(&case);
+        let coins = [sponsor_coin(0x01, 100_000)];
+        let tasks = super::sponsor_signing_requests(&fixture, &case, &funding, &coins)
+            .expect("signing tasks");
+        let signatures: BTreeMap<_, _> = tasks
+            .iter()
+            .map(|task| {
+                (
+                    task.coin().outpoint(),
+                    super::SponsorSignature::new(
+                        task.request().transaction().to_vec(),
+                        vec![vec![0x30; 71], vec![0x02; 33]],
+                    ),
+                )
+            })
+            .collect();
+        let missing = BTreeMap::new();
+        let plain_control =
+            super::materialize_sponsored(&fixture, &case, &funding, &coins, &signatures);
+        let (traced_control, control_records) = crate::tracing_test::capture(|| {
+            super::materialize_sponsored(&fixture, &case, &funding, &coins, &signatures)
+        });
+        assert_eq!(traced_control, plain_control);
+        assert_materialization_trace(&control_records, true, "completed", None);
+        let plain_refusal =
+            super::materialize_sponsored(&fixture, &case, &funding, &coins, &missing);
+        let (traced_refusal, refusal_records) = crate::tracing_test::capture(|| {
+            super::materialize_sponsored(&fixture, &case, &funding, &coins, &missing)
+        });
+        assert_eq!(traced_refusal, plain_refusal);
+        assert_materialization_trace(
+            &refusal_records,
+            true,
+            "refused",
+            Some("target_materialization_failed"),
+        );
     }
 
     #[test]
