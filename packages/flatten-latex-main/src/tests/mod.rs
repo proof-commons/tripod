@@ -52,6 +52,504 @@ use tempfile::tempdir;
 
 use super::{FlattenOptions, extract_braced_with_rest, extract_include_with_rest, flatten};
 
+mod tracing_tests {
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::process::Command;
+    use std::sync::{Arc, Mutex};
+
+    use serde_json::{Value, json};
+    use tempfile::tempdir;
+    use tracing::field::{Field, Visit};
+    use tracing::span::{Attributes, Id};
+    use tracing::{Event, Subscriber};
+    use tracing_subscriber::layer::{Context, SubscriberExt};
+    use tracing_subscriber::registry::LookupSpan;
+    use tracing_subscriber::{Layer, Registry};
+
+    use super::super::{ClassifiedError, FailureClass, classification};
+    use super::{FlattenOptions, flatten, write_file};
+
+    // Only one capture may install or drop a scoped dispatcher at a time.
+    static CAPTURE_TESTS: Mutex<()> = Mutex::new(());
+
+    fn capture_test_guard() -> std::sync::MutexGuard<'static, ()> {
+        CAPTURE_TESTS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn run_capture_test_in_child(test_name: &str) -> bool {
+        const CHILD_MARKER: &str = "FLATTEN_LATEX_MAIN_CAPTURE_TEST_CHILD";
+        if std::env::var(CHILD_MARKER).as_deref() == Ok(test_name) {
+            return true;
+        }
+        let output = Command::new(std::env::current_exe().expect("current test executable"))
+            .args(["--exact", test_name])
+            .env(CHILD_MARKER, test_name)
+            .output()
+            .expect("run isolated capture test");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success()
+                && stdout
+                    .lines()
+                    .any(|line| line.starts_with("test result: ok. 1 passed; 0 failed;")),
+            "isolated capture test {test_name} failed or selected no test: status={:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+            output.status
+        );
+        false
+    }
+
+    #[derive(Clone, Debug)]
+    struct Record {
+        kind: &'static str,
+        target: &'static str,
+        level: tracing::Level,
+        name: &'static str,
+        fields: BTreeMap<String, Value>,
+    }
+
+    #[derive(Default)]
+    struct Fields(BTreeMap<String, Value>);
+
+    impl Visit for Fields {
+        fn record_u64(&mut self, field: &Field, value: u64) {
+            self.0.insert(field.name().to_owned(), json!(value));
+        }
+
+        fn record_bool(&mut self, field: &Field, value: bool) {
+            self.0.insert(field.name().to_owned(), json!(value));
+        }
+
+        fn record_str(&mut self, field: &Field, value: &str) {
+            self.0.insert(field.name().to_owned(), json!(value));
+        }
+
+        fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+            self.0
+                .insert(field.name().to_owned(), json!(format!("{value:?}")));
+        }
+    }
+
+    struct CaptureLayer(Arc<Mutex<Vec<Record>>>);
+
+    impl<S> Layer<S> for CaptureLayer
+    where
+        S: Subscriber + for<'lookup> LookupSpan<'lookup>,
+    {
+        fn on_new_span(&self, attrs: &Attributes<'_>, _id: &Id, _ctx: Context<'_, S>) {
+            let mut fields = Fields::default();
+            attrs.record(&mut fields);
+            let metadata = attrs.metadata();
+            self.0.lock().expect("capture lock").push(Record {
+                kind: "span",
+                target: metadata.target(),
+                level: *metadata.level(),
+                name: metadata.name(),
+                fields: fields.0,
+            });
+        }
+
+        fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
+            let mut fields = Fields::default();
+            event.record(&mut fields);
+            let metadata = event.metadata();
+            self.0.lock().expect("capture lock").push(Record {
+                kind: "event",
+                target: metadata.target(),
+                level: *metadata.level(),
+                name: metadata.name(),
+                fields: fields.0,
+            });
+        }
+
+        fn on_close(&self, id: Id, ctx: Context<'_, S>) {
+            let span = ctx.span(&id).expect("span still present at close");
+            let metadata = span.metadata();
+            self.0.lock().expect("capture lock").push(Record {
+                kind: "close",
+                target: metadata.target(),
+                level: *metadata.level(),
+                name: metadata.name(),
+                fields: BTreeMap::new(),
+            });
+        }
+    }
+
+    fn capture<T>(operation: impl FnOnce() -> T) -> (T, Vec<Record>) {
+        let _capture_test = capture_test_guard();
+        let records = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = Registry::default().with(CaptureLayer(Arc::clone(&records)));
+        let result = tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
+            operation()
+        });
+        let captured = records.lock().expect("capture lock").clone();
+        (result, captured)
+    }
+
+    fn completion(records: &[Record]) -> &Record {
+        let events: Vec<_> = records
+            .iter()
+            .filter(|record| {
+                record.kind == "event"
+                    && record.target == "flatten_latex_main::flatten"
+                    && record.fields.contains_key("outcome")
+            })
+            .collect();
+        assert_eq!(
+            events.len(),
+            1,
+            "one completion event per call: {records:?}"
+        );
+        assert_eq!(
+            events[0].fields.get("message"),
+            Some(&json!("flatten completed"))
+        );
+        events[0]
+    }
+
+    fn assert_span(records: &[Record], name: &str, target: &str, level: tracing::Level) {
+        assert!(
+            records.iter().any(|record| record.kind == "span"
+                && record.name == name
+                && record.target == target
+                && record.level == level),
+            "missing span {name}"
+        );
+        assert!(
+            records.iter().any(|record| record.kind == "close"
+                && record.name == name
+                && record.target == target
+                && record.level == level),
+            "missing close {name}"
+        );
+    }
+
+    fn assert_file_spans(records: &[Record]) {
+        let file_spans: Vec<_> = records
+            .iter()
+            .filter(|record| record.kind == "span" && record.name == "process_file")
+            .collect();
+        assert_eq!(file_spans.len(), 2);
+        assert!(
+            file_spans
+                .iter()
+                .any(|record| record.fields.get("depth") == Some(&json!(0))
+                    && record.fields.get("is_main") == Some(&json!(true)))
+        );
+        assert!(
+            file_spans
+                .iter()
+                .any(|record| record.fields.get("depth") == Some(&json!(1))
+                    && record.fields.get("is_main") == Some(&json!(false)))
+        );
+    }
+
+    fn assert_same_error_surface(plain: &anyhow::Error, traced: &anyhow::Error) {
+        let plain_chain: Vec<_> = plain.chain().map(ToString::to_string).collect();
+        let traced_chain: Vec<_> = traced.chain().map(ToString::to_string).collect();
+        assert_eq!(plain_chain, traced_chain, "error chains differ");
+        assert_eq!(format!("{plain:#}"), format!("{traced:#}"));
+        assert_eq!(
+            format!("{plain:#}").matches(&plain.to_string()).count(),
+            1,
+            "the outer message appears once in the chain rendering"
+        );
+        assert!(plain.downcast_ref::<ClassifiedError>().is_some());
+        assert!(traced.downcast_ref::<ClassifiedError>().is_some());
+        assert_eq!(
+            format!("{:?}", classification(plain)),
+            format!("{:?}", classification(traced))
+        );
+    }
+
+    #[test]
+    fn classification_preserves_error_chain_with_and_without_capture() {
+        if !run_capture_test_in_child(
+            "tests::tracing_tests::classification_preserves_error_chain_with_and_without_capture",
+        ) {
+            return;
+        }
+        let dir = tempdir().expect("tempdir");
+        let main = dir.path().join("main.tex");
+        let section = dir.path().join("section.tex");
+        let output = dir.path().join("flat.tex");
+        let options = FlattenOptions::default();
+        write_file(&main, "\\input{missing}\n");
+        write_file(&section, "Section text\n");
+
+        let plain = flatten(&main, std::slice::from_ref(&section), &output, &options)
+            .expect_err("uncaptured missing include");
+        let (captured, records) =
+            capture(|| flatten(&main, std::slice::from_ref(&section), &output, &options));
+        let traced = captured.expect_err("captured missing include");
+        assert_same_error_surface(&plain, &traced);
+        assert!(matches!(
+            classification(&plain),
+            Some(FailureClass::Refused {
+                kind: "missing_include",
+                depth: Some(0)
+            })
+        ));
+        assert_eq!(
+            completion(&records).fields.get("outcome"),
+            Some(&json!("refused"))
+        );
+
+        write_file(&main, "Main text\n");
+        let blocker = dir.path().join("blocker");
+        write_file(&blocker, "not a directory");
+        let blocked_output = blocker.join("child").join("flat.tex");
+        let plain = flatten(&main, &[], &blocked_output, &options)
+            .expect_err("uncaptured publication failure");
+        let (captured, records) = capture(|| flatten(&main, &[], &blocked_output, &options));
+        let traced = captured.expect_err("captured publication failure");
+        assert_same_error_surface(&plain, &traced);
+        assert!(matches!(
+            classification(&plain),
+            Some(FailureClass::Failed {
+                kind: "io",
+                phase: "write"
+            })
+        ));
+        assert_eq!(
+            completion(&records).fields.get("outcome"),
+            Some(&json!("failed"))
+        );
+    }
+
+    #[test]
+    fn scoped_capture_preserves_completed_and_refused_results() {
+        if !run_capture_test_in_child(
+            "tests::tracing_tests::scoped_capture_preserves_completed_and_refused_results",
+        ) {
+            return;
+        }
+        let dir = tempdir().expect("tempdir");
+        let main = dir.path().join("main.tex");
+        let section = dir.path().join("section.tex");
+        let bib = dir.path().join("refs.bib");
+        let plain = dir.path().join("plain.tex");
+        let traced = dir.path().join("traced.tex");
+        write_file(&main, "\\input{section}\n\\addbibresource{refs.bib}\n");
+        write_file(&section, "Section text\n");
+        write_file(&bib, "@book{one, title={One}}\n");
+        let allowed = vec![section, bib];
+        let options = FlattenOptions::default();
+
+        let plain_result = flatten(&main, &allowed, &plain, &options);
+        let (traced_result, records) = capture(|| flatten(&main, &allowed, &traced, &options));
+        assert!(plain_result.is_ok() && traced_result.is_ok());
+        assert_eq!(
+            fs::read(&plain).expect("plain asset"),
+            fs::read(&traced).expect("traced asset")
+        );
+        assert_span(
+            &records,
+            "flatten",
+            "flatten_latex_main::flatten",
+            tracing::Level::INFO,
+        );
+        assert_span(
+            &records,
+            "validate_inputs",
+            "flatten_latex_main::input",
+            tracing::Level::DEBUG,
+        );
+        assert_span(
+            &records,
+            "write_flattened",
+            "flatten_latex_main::output",
+            tracing::Level::DEBUG,
+        );
+        assert_span(
+            &records,
+            "process_file",
+            "flatten_latex_main::input",
+            tracing::Level::DEBUG,
+        );
+        let root = records
+            .iter()
+            .find(|record| record.kind == "span" && record.name == "flatten")
+            .expect("root span");
+        assert_eq!(root.fields.get("allowed_file_count"), Some(&json!(2)));
+        assert_eq!(root.fields.get("strict_bibliography"), Some(&json!(false)));
+        assert_file_spans(&records);
+        let completed = completion(&records);
+        assert_eq!(completed.level, tracing::Level::INFO);
+        for (field, value) in [
+            ("outcome", json!("completed")),
+            ("include_count", json!(1)),
+            ("omitted_include_count", json!(0)),
+            ("bibliography_count", json!(1)),
+            ("file_count", json!(2)),
+            ("max_include_depth", json!(1)),
+        ] {
+            assert_eq!(completed.fields.get(field), Some(&value), "field {field}");
+        }
+
+        write_file(&main, "\\input{missing}\n\\addbibresource{refs.bib}\n");
+        let plain_error =
+            flatten(&main, &allowed, &plain, &options).expect_err("missing include refused");
+        let (traced_result, refused_records) =
+            capture(|| flatten(&main, &allowed, &traced, &options));
+        let traced_error = traced_result.expect_err("missing include refused");
+        assert_eq!(plain_error.to_string(), traced_error.to_string());
+        assert_eq!(
+            fs::read(&plain).expect("prior plain asset"),
+            fs::read(&traced).expect("prior traced asset")
+        );
+        let refused = completion(&refused_records);
+        assert_eq!(refused.level, tracing::Level::DEBUG);
+        assert_eq!(refused.fields.get("outcome"), Some(&json!("refused")));
+        assert_eq!(
+            refused.fields.get("refusal_kind"),
+            Some(&json!("missing_include"))
+        );
+        assert_eq!(refused.fields.get("depth"), Some(&json!(0)));
+        assert!(!refused_records.iter().any(|record| record.kind == "event"
+            && matches!(record.level, tracing::Level::WARN | tracing::Level::ERROR)));
+    }
+
+    #[test]
+    fn lenient_bibliography_warns_without_changing_asset() {
+        if !run_capture_test_in_child(
+            "tests::tracing_tests::lenient_bibliography_warns_without_changing_asset",
+        ) {
+            return;
+        }
+        let dir = tempdir().expect("tempdir");
+        let main = dir.path().join("main.tex");
+        write_file(&main, "\\addbibresource{missing.bib}\n");
+        let plain = dir.path().join("plain.tex");
+        let traced = dir.path().join("traced.tex");
+        let options = FlattenOptions::default();
+        assert!(flatten(&main, &[], &plain, &options).is_ok());
+        let (result, records) = capture(|| flatten(&main, &[], &traced, &options));
+        assert!(result.is_ok());
+        let bytes = fs::read(&traced).expect("asset");
+        assert_eq!(fs::read(&plain).expect("plain asset"), bytes);
+        assert!(String::from_utf8(bytes).expect("utf8 asset").contains(
+            "% WARNING: Bibliography file 'missing.bib' not found among the supplied files"
+        ));
+        let warnings: Vec<_> = records
+            .iter()
+            .filter(|record| record.kind == "event" && record.level == tracing::Level::WARN)
+            .collect();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].target, "flatten_latex_main::resolve");
+        assert_eq!(
+            warnings[0].fields.get("message"),
+            Some(&json!("bibliography omitted"))
+        );
+        assert_eq!(
+            warnings[0].fields.get("strict_bibliography"),
+            Some(&json!(false))
+        );
+        assert_eq!(
+            completion(&records).fields.get("bibliography_count"),
+            Some(&json!(0))
+        );
+    }
+
+    #[test]
+    fn validation_refusal_is_debug_and_preserves_prior_output() {
+        if !run_capture_test_in_child(
+            "tests::tracing_tests::validation_refusal_is_debug_and_preserves_prior_output",
+        ) {
+            return;
+        }
+        let dir = tempdir().expect("tempdir");
+        let main = dir.path().join("main.tex");
+        let missing = dir.path().join("missing.tex");
+        let plain = dir.path().join("plain.tex");
+        let traced = dir.path().join("traced.tex");
+        let options = FlattenOptions::default();
+        write_file(&main, "Main text\n");
+        assert!(flatten(&main, &[], &plain, &options).is_ok());
+        let (control, control_records) = capture(|| flatten(&main, &[], &traced, &options));
+        assert!(control.is_ok());
+        assert_eq!(
+            fs::read(&plain).expect("plain asset"),
+            fs::read(&traced).expect("traced asset")
+        );
+        assert_span(
+            &control_records,
+            "validate_inputs",
+            "flatten_latex_main::input",
+            tracing::Level::DEBUG,
+        );
+
+        let plain_error = flatten(&missing, &[], &plain, &options).expect_err("missing main");
+        let (result, records) = capture(|| flatten(&missing, &[], &traced, &options));
+        let traced_error = result.expect_err("missing main");
+        assert_eq!(plain_error.to_string(), traced_error.to_string());
+        assert_eq!(
+            fs::read(&plain).expect("prior plain asset"),
+            fs::read(&traced).expect("prior traced asset")
+        );
+        assert_span(
+            &records,
+            "validate_inputs",
+            "flatten_latex_main::input",
+            tracing::Level::DEBUG,
+        );
+        let refused = completion(&records);
+        assert_eq!(refused.level, tracing::Level::DEBUG);
+        assert_eq!(refused.fields.get("outcome"), Some(&json!("refused")));
+        assert_eq!(
+            refused.fields.get("refusal_kind"),
+            Some(&json!("invalid_input"))
+        );
+        assert_eq!(refused.fields.get("depth"), Some(&json!(0)));
+        assert!(!records.iter().any(|record| record.kind == "event"
+            && matches!(record.level, tracing::Level::WARN | tracing::Level::ERROR)));
+    }
+
+    #[test]
+    fn uncaptured_call_then_two_thread_captures_each_record_one_span() {
+        if !run_capture_test_in_child(
+            "tests::tracing_tests::uncaptured_call_then_two_thread_captures_each_record_one_span",
+        ) {
+            return;
+        }
+        let dir = tempdir().expect("tempdir");
+        let main = dir.path().join("main.tex");
+        let plain = dir.path().join("plain.tex");
+        write_file(&main, "Main text\n");
+        flatten(&main, &[], &plain, &FlattenOptions::default()).expect("uncaptured flatten");
+        let expected = fs::read(plain).expect("uncaptured asset");
+
+        let handles: Vec<_> = (0..2)
+            .map(|index| {
+                let main = main.clone();
+                let output = dir.path().join(format!("captured-{index}.tex"));
+                std::thread::spawn(move || {
+                    let (result, records) =
+                        capture(|| flatten(&main, &[], &output, &FlattenOptions::default()));
+                    result.expect("captured flatten");
+                    let root_spans = records
+                        .iter()
+                        .filter(|record| {
+                            record.kind == "span"
+                                && record.name == "flatten"
+                                && record.target == "flatten_latex_main::flatten"
+                        })
+                        .count();
+                    assert_eq!(root_spans, 1, "one root span per capture: {records:?}");
+                    fs::read(output).expect("captured asset")
+                })
+            })
+            .collect();
+        for handle in handles {
+            assert_eq!(handle.join().expect("capture thread"), expected);
+        }
+    }
+}
+
 /// Write `content` to `path`, creating parent directories as needed.
 fn write_file(path: &Path, content: &str) {
     if let Some(parent) = path.parent() {
@@ -86,6 +584,39 @@ fn extract_include_handles_input() {
 fn extract_include_handles_subfile() {
     let parsed = extract_include_with_rest("\\subfile{chapter}");
     assert_eq!(parsed, Some(("chapter".to_string(), "")));
+}
+
+#[test]
+fn tracing_category_names_are_snake_case() {
+    const OUTCOMES: &[&str] = &["completed", "refused", "failed"];
+    const REFUSAL_KINDS: &[&str] = &[
+        "invalid_input",
+        "invalid_output",
+        "invalid_reference",
+        "missing_include",
+        "ambiguous_reference",
+        "include_cycle",
+        "unsupported_syntax",
+        "missing_bibliography",
+    ];
+    const ERROR_KINDS: &[&str] = &["io", "publication"];
+    const PHASES: &[&str] = &["validate", "write", "rename"];
+    for name in OUTCOMES
+        .iter()
+        .chain(REFUSAL_KINDS)
+        .chain(ERROR_KINDS)
+        .chain(PHASES)
+    {
+        let mut bytes = name.bytes();
+        assert!(
+            matches!(bytes.next(), Some(first) if first.is_ascii_lowercase())
+                && !name.ends_with('_')
+                && !name.contains("__")
+                && bytes
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_'),
+            "invalid tracing category {name}"
+        );
+    }
 }
 
 #[test]

@@ -1,11 +1,104 @@
 #![doc = include_str!("../README.md")]
 
 use std::ffi::{OsStr, OsString};
+use std::fmt;
 use std::fs::{File, create_dir_all};
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
 use std::path::{Component, Path, PathBuf};
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
+
+#[derive(Clone, Copy, Debug)]
+enum FailureClass {
+    Refused {
+        kind: &'static str,
+        depth: Option<u64>,
+    },
+    Failed {
+        kind: &'static str,
+        phase: &'static str,
+    },
+}
+
+#[derive(Debug)]
+struct ClassifiedError {
+    class: FailureClass,
+    source: anyhow::Error,
+}
+
+impl fmt::Display for ClassifiedError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.source, f)
+    }
+}
+
+impl std::error::Error for ClassifiedError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.source()
+    }
+}
+
+fn classified(error: anyhow::Error, class: FailureClass) -> anyhow::Error {
+    anyhow::Error::new(ClassifiedError {
+        class,
+        source: error,
+    })
+}
+
+fn classification(error: &anyhow::Error) -> Option<FailureClass> {
+    error.chain().find_map(|cause| {
+        cause
+            .downcast_ref::<ClassifiedError>()
+            .map(|fault| fault.class)
+    })
+}
+
+fn refused<T>(kind: &'static str, error: anyhow::Error) -> Result<T> {
+    Err(refused_error(kind, error))
+}
+
+fn refused_error(kind: &'static str, error: anyhow::Error) -> anyhow::Error {
+    classified(error, FailureClass::Refused { kind, depth: None })
+}
+
+fn with_depth(error: anyhow::Error, depth: u64) -> anyhow::Error {
+    if let Some(FailureClass::Refused { kind, depth: None }) = classification(&error) {
+        classified(
+            error,
+            FailureClass::Refused {
+                kind,
+                depth: Some(depth),
+            },
+        )
+    } else {
+        error
+    }
+}
+
+fn failed_if_unclassified(
+    error: anyhow::Error,
+    kind: &'static str,
+    phase: &'static str,
+) -> anyhow::Error {
+    if classification(&error).is_some() {
+        error
+    } else {
+        classified(error, FailureClass::Failed { kind, phase })
+    }
+}
+
+fn observed_count(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+#[derive(Default)]
+struct FlattenCounts {
+    include_count: u64,
+    omitted_include_count: u64,
+    bibliography_count: u64,
+    file_count: u64,
+    max_include_depth: u64,
+}
 
 #[cfg(test)]
 mod tests;
@@ -62,19 +155,91 @@ pub fn flatten(
     output_file: &Path,
     options: &FlattenOptions,
 ) -> Result<()> {
+    let span = tracing::info_span!(
+        target: "flatten_latex_main::flatten",
+        "flatten",
+        allowed_file_count = observed_count(allowed_files.len()),
+        strict_bibliography = options.strict_bibliography,
+    );
+    let _entered = span.enter();
+    let collect_counts =
+        tracing::enabled!(target: "flatten_latex_main::flatten", tracing::Level::INFO);
+    match flatten_inner(
+        main_file,
+        allowed_files,
+        output_file,
+        options,
+        collect_counts,
+    ) {
+        Ok(counts) => {
+            tracing::info!(
+                target: "flatten_latex_main::flatten",
+                outcome = "completed",
+                include_count = counts.include_count,
+                omitted_include_count = counts.omitted_include_count,
+                bibliography_count = counts.bibliography_count,
+                file_count = counts.file_count,
+                max_include_depth = counts.max_include_depth,
+                "flatten completed"
+            );
+            Ok(())
+        }
+        Err(error) => {
+            if tracing::enabled!(target: "flatten_latex_main::flatten", tracing::Level::INFO)
+                || tracing::enabled!(target: "flatten_latex_main::flatten", tracing::Level::DEBUG)
+            {
+                match classification(&error).unwrap_or(FailureClass::Failed {
+                    kind: "io",
+                    phase: "write",
+                }) {
+                    FailureClass::Refused { kind, depth } => tracing::debug!(
+                        target: "flatten_latex_main::flatten",
+                        outcome = "refused",
+                        refusal_kind = kind,
+                        depth = depth.unwrap_or(0),
+                        "flatten completed"
+                    ),
+                    FailureClass::Failed { kind, phase } => tracing::info!(
+                        target: "flatten_latex_main::flatten",
+                        outcome = "failed",
+                        error_kind = kind,
+                        phase,
+                        "flatten completed"
+                    ),
+                }
+            }
+            Err(error)
+        }
+    }
+}
+
+fn flatten_inner(
+    main_file: &Path,
+    allowed_files: &[PathBuf],
+    output_file: &Path,
+    options: &FlattenOptions,
+    collect_counts: bool,
+) -> Result<FlattenCounts> {
     // Confinement before any read or staging: a failed validation must
     // leave an existing output untouched and no staging file behind.
-    ensure_regular_file(main_file, "main file")?;
-    for allowed in allowed_files {
-        ensure_regular_file(allowed, "supplied file")?;
+    {
+        let span = tracing::debug_span!(target: "flatten_latex_main::input", "validate_inputs");
+        let _entered = span.enter();
+        ensure_regular_file(main_file, "main file")
+            .map_err(|error| failed_if_unclassified(error, "io", "validate"))?;
+        for allowed in allowed_files {
+            ensure_regular_file(allowed, "supplied file")
+                .map_err(|error| failed_if_unclassified(error, "io", "validate"))?;
+        }
     }
 
     let output_parent = output_file
         .parent()
-        .ok_or_else(|| anyhow!("output path has no parent"))?;
+        .ok_or_else(|| refused_error("invalid_output", anyhow!("output path has no parent")))?;
     if !output_parent.as_os_str().is_empty() && !output_parent.exists() {
         create_dir_all(output_parent)
-            .with_context(|| format!("creating {}", output_parent.display()))?;
+            .with_context(|| format!("creating {}", output_parent.display()))
+            .map_err(|error| failed_if_unclassified(error, "io", "write"))?;
     }
 
     // Atomic output: write to a uniquely named temporary in the output
@@ -91,15 +256,24 @@ pub fn flatten(
     let staged = tempfile::Builder::new()
         .prefix(".flatten-staged-")
         .tempfile_in(staging_dir)
-        .with_context(|| format!("creating staging file in {}", staging_dir.display()))?;
+        .with_context(|| format!("creating staging file in {}", staging_dir.display()))
+        .map_err(|error| failed_if_unclassified(error, "publication", "write"))?;
 
-    write_flattened(main_file, allowed_files, staged.as_file(), options)?;
+    let counts = write_flattened(
+        main_file,
+        allowed_files,
+        staged.as_file(),
+        options,
+        collect_counts,
+    )
+    .map_err(|error| failed_if_unclassified(error, "io", "write"))?;
 
     staged
         .persist(output_file)
-        .with_context(|| format!("renaming into {}", output_file.display()))?;
+        .with_context(|| format!("renaming into {}", output_file.display()))
+        .map_err(|error| failed_if_unclassified(error, "publication", "rename"))?;
 
-    Ok(())
+    Ok(counts)
 }
 
 /// File-type validation of a supplied path: the flattener inlines a
@@ -115,19 +289,33 @@ pub fn flatten(
 /// the check and the open, so it bought complexity rather than a
 /// boundary. Nothing here closes a time-of-check/time-of-use race.
 fn ensure_regular_file(path: &Path, role: &str) -> Result<()> {
-    let metadata = std::fs::symlink_metadata(path)
-        .with_context(|| format!("inspecting {role} {}", path.display()))?;
+    let metadata = std::fs::symlink_metadata(path).map_err(|error| {
+        let missing = error.kind() == io::ErrorKind::NotFound;
+        let error =
+            anyhow::Error::new(error).context(format!("inspecting {role} {}", path.display()));
+        if missing {
+            refused_error("invalid_input", error)
+        } else {
+            error
+        }
+    })?;
 
     if metadata.file_type().is_symlink() {
-        bail!(
-            "{role} {} is a symbolic link; the flattener inlines regular files named \
-             on its fixed list, and never a link's resolved target",
-            path.display(),
+        return refused(
+            "invalid_input",
+            anyhow!(
+                "{role} {} is a symbolic link; the flattener inlines regular files named \
+                 on its fixed list, and never a link's resolved target",
+                path.display(),
+            ),
         );
     }
 
     if !metadata.file_type().is_file() {
-        bail!("{role} {} is not a regular file", path.display());
+        return refused(
+            "invalid_input",
+            anyhow!("{role} {} is not a regular file", path.display()),
+        );
     }
 
     Ok(())
@@ -138,7 +326,10 @@ fn write_flattened(
     allowed_files: &[PathBuf],
     staged: &File,
     options: &FlattenOptions,
-) -> Result<()> {
+    collect_counts: bool,
+) -> Result<FlattenCounts> {
+    let span = tracing::debug_span!(target: "flatten_latex_main::output", "write_flattened");
+    let _entered = span.enter();
     let mut writer = BufWriter::new(staged);
 
     // The header is fixed: no timestamps or environment-dependent
@@ -162,12 +353,14 @@ fn write_flattened(
         allowed: allowed_files,
         options,
         include_stack: Vec::new(),
+        counts: FlattenCounts::default(),
+        collect_counts,
     };
 
     context.process_file(main_file, &mut writer, true)?;
 
     writer.flush()?;
-    Ok(())
+    Ok(context.counts)
 }
 
 /// Resolve a LaTeX reference name to exactly one file on the supplied
@@ -204,17 +397,23 @@ fn resolve_reference<'a>(
 
     match matches.as_slice() {
         [single] => Ok(*single),
-        [] => bail!(
-            "reference {name:?} does not match any file supplied to the flattener; \
-             the flattener inlines only files on the caller's fixed --file list"
+        [] => refused(
+            "missing_include",
+            anyhow!(
+                "reference {name:?} does not match any file supplied to the flattener; \
+                 the flattener inlines only files on the caller's fixed --file list"
+            ),
         ),
-        many => bail!(
-            "reference {name:?} ambiguously matches {} supplied files: {}",
-            many.len(),
-            many.iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
+        many => refused(
+            "ambiguous_reference",
+            anyhow!(
+                "reference {name:?} ambiguously matches {} supplied files: {}",
+                many.len(),
+                many.iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
         ),
     }
 }
@@ -223,21 +422,29 @@ fn resolve_reference<'a>(
 /// components, rejecting an absolute reference or a `..` traversal outright.
 fn reference_components(name: &str) -> Result<Vec<OsString>> {
     if name.starts_with('/') {
-        bail!("reference {name:?} is an absolute path; references must name a supplied file");
+        return refused(
+            "invalid_reference",
+            anyhow!("reference {name:?} is an absolute path; references must name a supplied file"),
+        );
     }
     let mut components = Vec::new();
     for part in name.split('/') {
         match part {
             "" | "." => {}
-            ".." => bail!(
-                "reference {name:?} contains a parent-directory ('..') component; \
-                 references must name a supplied file, not a path to traverse"
-            ),
+            ".." => {
+                return refused(
+                    "invalid_reference",
+                    anyhow!(
+                        "reference {name:?} contains a parent-directory ('..') component; \
+                         references must name a supplied file, not a path to traverse"
+                    ),
+                );
+            }
             other => components.push(OsString::from(other)),
         }
     }
     if components.is_empty() {
-        bail!("reference {name:?} is empty");
+        return refused("invalid_reference", anyhow!("reference {name:?} is empty"));
     }
     Ok(components)
 }
@@ -275,6 +482,8 @@ struct FlattenContext<'a> {
     allowed: &'a [PathBuf],
     options: &'a FlattenOptions,
     include_stack: Vec<PathBuf>,
+    counts: FlattenCounts,
+    collect_counts: bool,
 }
 
 impl FlattenContext<'_> {
@@ -284,6 +493,21 @@ impl FlattenContext<'_> {
         writer: &mut W,
         is_main: bool,
     ) -> Result<()> {
+        let depth = if self.collect_counts
+            || tracing::enabled!(target: "flatten_latex_main::input", tracing::Level::DEBUG)
+            || tracing::enabled!(target: "flatten_latex_main::flatten", tracing::Level::DEBUG)
+        {
+            observed_count(self.include_stack.len())
+        } else {
+            0
+        };
+        let span = tracing::debug_span!(
+            target: "flatten_latex_main::input",
+            "process_file",
+            depth,
+            is_main
+        );
+        let _entered = span.enter();
         // Cycle detection over the active include chain, by path.
         // Every reference resolves to an entry of the caller's fixed
         // allowlist, so every frame below the entry point is one of a
@@ -299,17 +523,27 @@ impl FlattenContext<'_> {
                 .map(|entry| entry.display().to_string())
                 .collect::<Vec<_>>()
                 .join(" -> ");
-            bail!(
-                "include cycle detected: {} re-enters via {chain}",
-                frame.display(),
-            );
+            return Err(with_depth(
+                refused_error(
+                    "include_cycle",
+                    anyhow!(
+                        "include cycle detected: {} re-enters via {chain}",
+                        frame.display(),
+                    ),
+                ),
+                depth,
+            ));
         }
         self.include_stack.push(frame);
 
         let result = self.process_lines(file_path, writer, is_main);
 
         self.include_stack.pop();
-        result
+        if result.is_ok() && self.collect_counts {
+            self.counts.file_count = self.counts.file_count.saturating_add(1);
+            self.counts.max_include_depth = self.counts.max_include_depth.max(depth);
+        }
+        result.map_err(|error| with_depth(error, depth))
     }
 
     fn process_lines<W: Write>(
@@ -371,6 +605,10 @@ impl FlattenContext<'_> {
                     writer,
                     "% --- flatten-ignore: external include '{included}' omitted from flat build ---"
                 )?;
+                if self.collect_counts {
+                    self.counts.omitted_include_count =
+                        self.counts.omitted_include_count.saturating_add(1);
+                }
                 return Ok(());
             }
             return self.handle_include(line, writer, &included);
@@ -411,9 +649,12 @@ fn ensure_only_trailing_comment(line: &str, command: &str, rest: &str) -> Result
     if active_part(rest).trim().is_empty() {
         Ok(())
     } else {
-        bail!(
-            "unsupported include syntax in {line:?}: content after the {command} command \
-             on the same line cannot be preserved; put the include alone on its line"
+        refused(
+            "unsupported_syntax",
+            anyhow!(
+                "unsupported include syntax in {line:?}: content after the {command} command \
+                 on the same line cannot be preserved; put the include alone on its line"
+            ),
         )
     }
 }
@@ -432,9 +673,12 @@ fn ensure_no_active_include(line: &str) -> Result<()> {
             // A longer control sequence (e.g. `\inputline`) is a
             // different macro, not an include.
             if !after.starts_with(|character: char| character.is_ascii_alphabetic()) {
-                bail!(
-                    "unsupported include syntax in {line:?}: {command} embedded in a line \
-                     the flattener cannot preserve; put the include alone on its line"
+                return refused(
+                    "unsupported_syntax",
+                    anyhow!(
+                        "unsupported include syntax in {line:?}: {command} embedded in a line \
+                         the flattener cannot preserve; put the include alone on its line"
+                    ),
                 );
             }
             search = after;
@@ -477,13 +721,16 @@ fn resolve_probe<'a>(
     match matches.as_slice() {
         [single] => Ok(Some(*single)),
         [] => Ok(None),
-        many => bail!(
-            "conditional probe {name:?} ambiguously matches {} supplied files: {}",
-            many.len(),
-            many.iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", "),
+        many => refused(
+            "ambiguous_reference",
+            anyhow!(
+                "conditional probe {name:?} ambiguously matches {} supplied files: {}",
+                many.len(),
+                many.iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ),
         ),
     }
 }
@@ -566,7 +813,7 @@ fn extract_include_survivors_for_command(branch: &str, command: &str) -> Option<
 
 impl FlattenContext<'_> {
     fn handle_bibliography<W: Write>(
-        &self,
+        &mut self,
         original_line: &str,
         writer: &mut W,
         bib_file: &str,
@@ -595,10 +842,17 @@ impl FlattenContext<'_> {
                     writer,
                     "% --- END embedded bibliography from: {bib_file} ---"
                 )?;
+                if self.collect_counts {
+                    self.counts.bibliography_count =
+                        self.counts.bibliography_count.saturating_add(1);
+                }
             }
             Err(_) if self.options.strict_bibliography => {
-                bail!(
-                    "bibliography file '{bib_file}' not found among the supplied files (strict mode)"
+                return refused(
+                    "missing_bibliography",
+                    anyhow!(
+                        "bibliography file '{bib_file}' not found among the supplied files (strict mode)"
+                    ),
                 );
             }
             Err(_) => {
@@ -606,6 +860,11 @@ impl FlattenContext<'_> {
                     writer,
                     "% WARNING: Bibliography file '{bib_file}' not found among the supplied files"
                 )?;
+                tracing::warn!(
+                    target: "flatten_latex_main::resolve",
+                    strict_bibliography = false,
+                    "bibliography omitted"
+                );
             }
         }
         Ok(())
@@ -637,15 +896,22 @@ impl FlattenContext<'_> {
             // line-based flattener does not support — fail rather than
             // silently dropping it.
             if !false_branch.trim().is_empty() {
-                bail!(
-                    "unsupported conditional include in {original_line:?}: probe '{probe}' is \
-                     absent and the nonempty false branch would be silently dropped"
+                return refused(
+                    "unsupported_syntax",
+                    anyhow!(
+                        "unsupported conditional include in {original_line:?}: probe '{probe}' is \
+                         absent and the nonempty false branch would be silently dropped"
+                    ),
                 );
             }
             writeln!(
                 writer,
                 "% --- flatten: conditional probe '{probe}' absent; false branch taken ---"
             )?;
+            if self.collect_counts {
+                self.counts.omitted_include_count =
+                    self.counts.omitted_include_count.saturating_add(1);
+            }
             return Ok(());
         };
         let included_path = resolve_reference(included, self.allowed, "tex")
@@ -660,9 +926,12 @@ impl FlattenContext<'_> {
         // one supplied file. Divergent probe/include pairs would need
         // real conditional evaluation to preserve semantics.
         if included_path != probe_path {
-            bail!(
-                "unsupported conditional include in {original_line:?}: probe '{probe}' and \
-                 include '{included}' resolve to different supplied files"
+            return refused(
+                "unsupported_syntax",
+                anyhow!(
+                    "unsupported conditional include in {original_line:?}: probe '{probe}' and \
+                     include '{included}' resolve to different supplied files"
+                ),
             );
         }
         writeln!(writer, "% --- BEGIN included content from: {included} ---")?;
@@ -671,6 +940,9 @@ impl FlattenContext<'_> {
         if !surviving_tokens.trim().is_empty() {
             ensure_no_active_include(surviving_tokens)?;
             writeln!(writer, "{surviving_tokens}")?;
+        }
+        if self.collect_counts {
+            self.counts.include_count = self.counts.include_count.saturating_add(1);
         }
         Ok(())
     }
@@ -686,6 +958,9 @@ impl FlattenContext<'_> {
         writeln!(writer, "% --- BEGIN included content from: {included} ---")?;
         self.process_file(&included_path, writer, false)?;
         writeln!(writer, "% --- END included content from: {included} ---")?;
+        if self.collect_counts {
+            self.counts.include_count = self.counts.include_count.saturating_add(1);
+        }
         Ok(())
     }
 }

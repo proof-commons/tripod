@@ -15,4 +15,4 @@ flatten_latex_main_source_files = files(
 flatten_latex_main_excluded_files = files('tests/subprocess_contract.rs')
 
 # Crate documentation (DOC owner).
-flatten_latex_main_doc_files = files('README.md')
+flatten_latex_main_doc_files = files('README.md', 'TRACING.md')

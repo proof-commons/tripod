@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Parser;
-use cli_common::{BaseArgs, install_json_panic_hook, parse_args_or_exit, run_no_stdout_command};
+use cli_common::{BaseArgs, install_command_subscriber, parse_args_or_exit, run_no_stdout_command};
 use flatten_latex_main::{FlattenOptions, flatten};
 
 const COMMAND_NAME: &str = "flatten-latex-main";
@@ -44,7 +44,7 @@ struct Args {
 }
 
 fn main() -> ExitCode {
-    install_json_panic_hook(COMMAND_NAME);
+    install_command_subscriber(COMMAND_NAME);
     let args = parse_args_or_exit::<Args>();
 
     run_no_stdout_command(COMMAND_NAME, args.base.debug, tracing::Level::INFO, || {
@@ -56,7 +56,6 @@ fn main() -> ExitCode {
                 strict_bibliography: args.strict_bib,
             },
         )?;
-        tracing::info!(output = %args.output.display(), "flattened paper written");
         anyhow::Ok(())
     })
 }
