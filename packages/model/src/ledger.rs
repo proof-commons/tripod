@@ -880,6 +880,12 @@ impl ReferenceIndexer {
         chain: &ValidatedChainView,
         genesis_clear_id: [u8; 32],
     ) -> Result<Self, Guard> {
+        let span = tracing::debug_span!(
+            target: "model::ledger",
+            "index_history",
+            history_count = u64::try_from(history.transitions.len()).unwrap_or(u64::MAX),
+        );
+        let _entered = span.enter();
         // ValidatedChainView::new already establishes this, but the
         // indexer is an independent consumer and fails closed rather
         // than trusting the chain view's construction path.
@@ -1940,6 +1946,24 @@ pub enum DifferentialError {
     ReceiptAccountingProjectionMismatch,
 }
 
+impl DifferentialError {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::ContextMismatch => "context_mismatch",
+            Self::EmptyAddressCensus => "empty_address_census",
+            Self::EventSnapshotFailure => "event_snapshot_failure",
+            Self::EventCountMismatch => "event_count_mismatch",
+            Self::EventOrderMismatch => "event_order_mismatch",
+            Self::EventKindMismatch => "event_kind_mismatch",
+            Self::EventPayloadMismatch => "event_payload_mismatch",
+            Self::QueryValidationFailure => "query_validation_failure",
+            Self::QueryMismatch => "query_mismatch",
+            Self::ExpectedZeroAddressNotZero => "expected_zero_address_not_zero",
+            Self::ReceiptAccountingProjectionMismatch => "receipt_accounting_projection_mismatch",
+        }
+    }
+}
+
 impl fmt::Display for DifferentialError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
@@ -2173,6 +2197,49 @@ pub fn compare_attestation_indexers(
     candidate: &impl IndependentAttestationIndexer,
     expected_zero: &ExpectedZeroAttestationAddresses,
 ) -> Result<(), DifferentialError> {
+    let span = tracing::debug_span!(target: "model::ledger", "compare_indexers");
+    let _entered = span.enter();
+    let result = compare_attestation_indexers_core(expected, candidate, expected_zero);
+    match result {
+        Ok((event_count, address_count)) => {
+            tracing::debug!(
+                target: "model::ledger",
+                outcome = "completed",
+                event_count = u64::try_from(event_count).unwrap_or(u64::MAX),
+                address_count = u64::try_from(address_count).unwrap_or(u64::MAX),
+                "model index comparison completed",
+            );
+            Ok(())
+        }
+        Err(
+            error @ (DifferentialError::EventSnapshotFailure
+            | DifferentialError::QueryValidationFailure),
+        ) => {
+            tracing::debug!(
+                target: "model::ledger",
+                outcome = "failed",
+                error_kind = error.name(),
+                "model index comparison completed",
+            );
+            Err(error)
+        }
+        Err(error) => {
+            tracing::debug!(
+                target: "model::ledger",
+                outcome = "refused",
+                refusal_kind = error.name(),
+                "model index comparison completed",
+            );
+            Err(error)
+        }
+    }
+}
+
+fn compare_attestation_indexers_core(
+    expected: &ReferenceIndexer,
+    candidate: &impl IndependentAttestationIndexer,
+    expected_zero: &ExpectedZeroAttestationAddresses,
+) -> Result<(usize, usize), DifferentialError> {
     let expected_snapshot = expected
         .event_snapshot()
         .map_err(|_| DifferentialError::EventSnapshotFailure)?;
@@ -2197,9 +2264,12 @@ pub fn compare_attestation_indexers(
         return Err(DifferentialError::EmptyAddressCensus);
     }
 
+    let event_count = expected_snapshot.events.len();
+    let address_count = addresses.len();
+
     for address in addresses {
         compare_attestation_query(expected, candidate, address)?;
     }
 
-    Ok(())
+    Ok((event_count, address_count))
 }

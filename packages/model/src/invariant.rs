@@ -790,6 +790,45 @@ fn check_maturity_coherence(state: PoolState) -> Result<(), InvariantError> {
 // ´def:verification:invariant-checker´
 
 pub fn check_invariant(world: &World) -> Result<(), InvariantError> {
+    let span = tracing::debug_span!(
+        target: "model::invariant",
+        "check_invariant",
+        utxo_count = u64::try_from(world.utxos.len()).unwrap_or(u64::MAX),
+        history_count = u64::try_from(world.history.transitions.len()).unwrap_or(u64::MAX),
+    );
+    let _entered = span.enter();
+    let result = check_invariant_core(world);
+    match result {
+        Ok(()) => tracing::debug!(
+            target: "model::invariant",
+            outcome = "completed",
+            utxo_count = u64::try_from(world.utxos.len()).unwrap_or(u64::MAX),
+            history_count = u64::try_from(world.history.transitions.len()).unwrap_or(u64::MAX),
+            "model invariant checked",
+        ),
+        Err(error) => {
+            tracing::debug!(
+                target: "model::invariant",
+                outcome = "failed",
+                utxo_count = u64::try_from(world.utxos.len()).unwrap_or(u64::MAX),
+                history_count = u64::try_from(world.history.transitions.len()).unwrap_or(u64::MAX),
+                error_kind = error.name(),
+                "model invariant checked",
+            );
+        }
+    }
+    result
+}
+
+pub(crate) fn report_invariant_failure(error: InvariantError) {
+    tracing::error!(
+        target: "model::invariant",
+        error_kind = error.name(),
+        "model invariant failed",
+    );
+}
+
+pub(crate) fn check_invariant_core(world: &World) -> Result<(), InvariantError> {
     check_root_exactness(world)?;
 
     let (_state_outpoint, state) = world

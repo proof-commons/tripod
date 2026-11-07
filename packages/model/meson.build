@@ -92,13 +92,15 @@ model_source_files = files(
   'src/tests/stronger_fee_auction_tests.rs',
   'src/tests/sweepability_tests.rs',
   'src/tests/test_fixtures.rs',
+  'src/tests/tracing_capture.rs',
+  'src/tests/tracing_boundary_tests.rs',
   'src/tests/transfer_tests.rs',
   'src/transition.rs',
   'src/world.rs',
 )
 
 # Crate documentation (DOC owner).
-model_doc_files = files('README.md')
+model_doc_files = files('README.md', 'TRACING.md')
 
 # Committed generated artifacts (ADR-011: publications, never semantic
 # inputs), owned by generate-all.

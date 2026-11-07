@@ -13,6 +13,7 @@
 
 use super::property_strategy::*;
 use super::test_fixtures;
+use super::tracing_capture::{capture, events, no_warn_or_error};
 use crate::*;
 use proptest::prelude::*;
 
@@ -254,14 +255,24 @@ impl MaintenanceScheduler for BrokenNoProgressScheduler {
 
 #[test]
 fn broken_scheduler_loop_is_rejected_before_step_limit() {
+    if !super::tracing_capture::isolated_capture_child() {
+        return;
+    }
     // Q = 0, so the repeated cycle is an empty cycle: valid, but no
     // maintenance progress.
     let world = test_fixtures::world();
 
-    assert_eq!(
-        drive_quiescence_with_scheduler(&world, &BrokenNoProgressScheduler, 10_000, true),
-        Err(Guard::ZeroProgress),
-    );
+    let plain = drive_quiescence_with_scheduler(&world, &BrokenNoProgressScheduler, 10_000, true);
+    let (traced, records) = capture(|| {
+        drive_quiescence_with_scheduler(&world, &BrokenNoProgressScheduler, 10_000, true)
+    });
+    assert_eq!(traced, plain);
+    assert_eq!(traced, Err(Guard::ZeroProgress));
+    let event = events(&records, "model maintenance finished")[0];
+    assert_eq!(event["level"], "DEBUG");
+    assert_eq!(event["fields"]["refusal_kind"], "ZeroProgress");
+    assert_eq!(event["fields"]["step_count"], 1);
+    assert!(no_warn_or_error(&records));
 }
 
 #[test]

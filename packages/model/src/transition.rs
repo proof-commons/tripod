@@ -30,7 +30,7 @@
 
 use crate::guard::Guard;
 use crate::history::TransitionCertificate;
-use crate::invariant::check_invariant;
+use crate::invariant::{check_invariant_core, report_invariant_failure};
 use crate::scalar::CanonicalOrder;
 use crate::world::World;
 
@@ -44,20 +44,42 @@ pub(crate) mod sealed {
     /// Sealing marker: implemented exactly for the declared operation
     /// constructors. The module is crate-private, so external crates
     /// cannot name it and therefore cannot implement [`super::Transition`].
-    pub trait Sealed {}
+    pub trait Sealed {
+        fn operation_code(&self) -> u16;
+    }
 
-    impl Sealed for CreateRequest {}
-    impl Sealed for CancelRequest {}
-    impl Sealed for AdmitDeposits {}
-    impl Sealed for RunCycle {}
-    impl Sealed for SettleDistribution {}
-    impl Sealed for TransferReceipts {}
-    impl Sealed for RedeemReceipt {}
-    impl Sealed for RelabelReceipts {}
-    impl Sealed for BurnReceipts {}
-    impl Sealed for CompactAsh {}
-    impl Sealed for ClearAsh {}
-    impl Sealed for AnnounceMaturity {}
+    macro_rules! operation_code {
+        ($request:ty, $operation:ident) => {
+            impl Sealed for $request {
+                fn operation_code(&self) -> u16 {
+                    architecture::OperationId::$operation.code()
+                }
+            }
+        };
+    }
+
+    operation_code!(CreateRequest, CreateRequest);
+    operation_code!(CancelRequest, CancelRequest);
+    operation_code!(AdmitDeposits, AdmitDeposits);
+    operation_code!(RunCycle, Cycle);
+    operation_code!(SettleDistribution, SettleDistribution);
+    operation_code!(RedeemReceipt, Redeem);
+    operation_code!(RelabelReceipts, ReceiptRelabel);
+    operation_code!(BurnReceipts, Burn);
+    operation_code!(CompactAsh, CompactAsh);
+    operation_code!(ClearAsh, Clear);
+    operation_code!(AnnounceMaturity, AnnounceMaturity);
+
+    impl Sealed for TransferReceipts {
+        fn operation_code(&self) -> u16 {
+            match self.class {
+                crate::asset::ReceiptClass::Live => architecture::OperationId::TransferLive.code(),
+                crate::asset::ReceiptClass::TimeLocked => {
+                    architecture::OperationId::TransferTimeLocked.code()
+                }
+            }
+        }
+    }
 }
 
 // ´rule:verification:pure-transition´
@@ -70,9 +92,50 @@ pub fn execute<T>(world: &World, transition: &T, order: CanonicalOrder) -> Resul
 where
     T: Transition,
 {
+    let span = tracing::debug_span!(
+        target: "model::transition",
+        "execute",
+        operation_code = sealed::Sealed::operation_code(transition),
+        history_count = u64::try_from(world.history.transitions.len()).unwrap_or(u64::MAX),
+    );
+    let _entered = span.enter();
+    let result = execute_core(world, transition, order);
+    match &result {
+        Ok(next) => tracing::debug!(
+            target: "model::transition",
+            outcome = "completed",
+            operation_code = sealed::Sealed::operation_code(transition),
+            history_count = u64::try_from(next.history.transitions.len()).unwrap_or(u64::MAX),
+            "model transition completed",
+        ),
+        Err(Guard::InvariantFailure) => tracing::debug!(
+            target: "model::transition",
+            outcome = "failed",
+            operation_code = sealed::Sealed::operation_code(transition),
+            error_kind = "invariant_failure",
+            "model transition completed",
+        ),
+        Err(error) => tracing::debug!(
+            target: "model::transition",
+            outcome = "refused",
+            operation_code = sealed::Sealed::operation_code(transition),
+            refusal_kind = error.name(),
+            "model transition completed",
+        ),
+    }
+    result
+}
+
+fn execute_core<T>(world: &World, transition: &T, order: CanonicalOrder) -> Result<World, Guard>
+where
+    T: Transition,
+{
     let next = transition.apply(world, order)?;
 
-    check_invariant(&next).map_err(|_| Guard::InvariantFailure)?;
+    if let Err(error) = check_invariant_core(&next) {
+        report_invariant_failure(error);
+        return Err(Guard::InvariantFailure);
+    }
 
     Ok(next)
 }
@@ -86,6 +149,15 @@ pub enum ExecutionBindingError {
     /// Replaying the supplied request against the predecessor does not
     /// reproduce the supplied successor.
     RequestBindingMismatch,
+}
+
+impl ExecutionBindingError {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::InvalidSuccessorExtension => "invalid_successor_extension",
+            Self::RequestBindingMismatch => "request_binding_mismatch",
+        }
+    }
 }
 
 /// One executed transition: predecessor, the exact request that ran, and
@@ -183,9 +255,41 @@ pub fn bind_execution<T>(
 where
     T: Transition,
 {
+    let span = tracing::debug_span!(
+        target: "model::transition",
+        "bind_execution",
+        operation_code = sealed::Sealed::operation_code(&request),
+        history_count = u64::try_from(before.history.transitions.len()).unwrap_or(u64::MAX),
+    );
+    let _entered = span.enter();
+    let result = bind_execution_core(before, request, after);
+    match &result {
+        Ok(_) => tracing::debug!(
+            target: "model::transition",
+            outcome = "completed",
+            "model binding completed",
+        ),
+        Err(error) => tracing::debug!(
+            target: "model::transition",
+            outcome = "refused",
+            refusal_kind = error.name(),
+            "model binding completed",
+        ),
+    }
+    result
+}
+
+fn bind_execution_core<T>(
+    before: &World,
+    request: T,
+    after: &World,
+) -> Result<ExecutedTransition<T>, ExecutionBindingError>
+where
+    T: Transition,
+{
     let appended = one_appended_certificate(before, after)
         .ok_or(ExecutionBindingError::InvalidSuccessorExtension)?;
-    let replayed = execute(before, &request, appended.order)
+    let replayed = execute_core(before, &request, appended.order)
         .map_err(|_| ExecutionBindingError::RequestBindingMismatch)?;
 
     if replayed != *after {

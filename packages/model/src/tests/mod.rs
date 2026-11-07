@@ -81,6 +81,7 @@ pub mod distribution_fixtures;
 pub mod property_strategy;
 pub mod scenario_fixtures;
 pub mod test_fixtures;
+pub mod tracing_capture;
 
 mod admission_tests;
 mod ash_clear_tests;
@@ -115,6 +116,7 @@ mod specification_bound_tests;
 mod state_metadata_conformance_tests;
 mod stronger_fee_auction_tests;
 mod sweepability_tests;
+mod tracing_boundary_tests;
 mod transfer_tests;
 
 mod active_backing_cap_tests;

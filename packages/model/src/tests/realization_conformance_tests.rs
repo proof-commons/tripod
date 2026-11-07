@@ -7,6 +7,7 @@
 use super::advanced_fixtures::*;
 use super::scenario_fixtures::*;
 use super::test_fixtures;
+use super::tracing_capture::{capture, events};
 use crate::*;
 
 fn phase1_realization() -> realization::ScopedRealizationSpec {
@@ -111,13 +112,23 @@ fn world_with_two_ash() -> World {
 
 #[test]
 fn compact_ash_model_transition_satisfies_realization() {
+    if !super::tracing_capture::isolated_capture_child() {
+        return;
+    }
     let world = world_with_two_ash();
     let transition = CompactAsh {
         ash_inputs: find_ash(&world),
         fee_envelope: FeeEnvelope::default(),
     };
     let execution = execute_bound(&world, transition, next_order(&world)).unwrap();
-    let observation = observe_compact_ash(&execution).unwrap();
+    let plain = observe_compact_ash(&execution);
+    let (traced, records) = capture(|| observe_compact_ash(&execution));
+    assert_eq!(traced, plain);
+    assert_eq!(
+        events(&records, "model projection completed")[0]["fields"]["branch"],
+        "compact_ash",
+    );
+    let observation = traced.unwrap();
     let observation = observation.observation().clone();
     let report = evaluate(&observation);
 
@@ -837,10 +848,20 @@ fn assert_announcement_census(observation: &ModelConformanceObservation) {
 
 #[test]
 fn announce_maturity_model_transition_satisfies_realization() {
+    if !super::tracing_capture::isolated_capture_child() {
+        return;
+    }
     let world = test_fixtures::world();
     let request = announcement_request(&world, FeeEnvelope::default());
     let execution = execute_bound(&world, request, next_order(&world)).unwrap();
-    let observation = observe_announce_maturity(&execution).unwrap();
+    let plain = observe_announce_maturity(&execution);
+    let (traced, records) = capture(|| observe_announce_maturity(&execution));
+    assert_eq!(traced, plain);
+    assert_eq!(
+        events(&records, "model projection completed")[0]["fields"]["branch"],
+        "announce_maturity",
+    );
+    let observation = traced.unwrap();
 
     assert_eq!(execution.certificate().branch, BranchKind::AnnounceMaturity);
     assert_eq!(

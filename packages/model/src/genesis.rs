@@ -13,7 +13,7 @@ use crate::asset::{Asset, Maturity, ReceiptClass};
 use crate::constants::Constants;
 use crate::guard::Guard;
 use crate::history::{GenesisProjection, History};
-use crate::invariant::check_invariant;
+use crate::invariant::{check_invariant_core, report_invariant_failure};
 use crate::manifest::validate_bound_conformance;
 use crate::object::{Meta, Utxo};
 use crate::pool::PoolState;
@@ -29,6 +29,37 @@ pub const GENESIS_OWNER: OwnerKey = OwnerKey([0_u8; 32]);
 pub const OPERATOR_KEY: OwnerKey = GENESIS_OWNER;
 
 pub fn genesis(
+    constants: Constants,
+    genesis_reserve: Sat,
+    genesis_order: CanonicalOrder,
+    genesis_txid: TxId,
+) -> Result<World, Guard> {
+    let span = tracing::info_span!(target: "model::genesis", "genesis");
+    let _entered = span.enter();
+    let result = genesis_core(constants, genesis_reserve, genesis_order, genesis_txid);
+    match &result {
+        Ok(_) => tracing::info!(
+            target: "model::genesis",
+            outcome = "completed",
+            "model genesis completed",
+        ),
+        Err(Guard::InvariantFailure) => tracing::info!(
+            target: "model::genesis",
+            outcome = "failed",
+            error_kind = "invariant_failure",
+            "model genesis completed",
+        ),
+        Err(error) => tracing::debug!(
+            target: "model::genesis",
+            outcome = "refused",
+            refusal_kind = error.name(),
+            "model genesis completed",
+        ),
+    }
+    result
+}
+
+fn genesis_core(
     constants: Constants,
     genesis_reserve: Sat,
     genesis_order: CanonicalOrder,
@@ -198,7 +229,10 @@ pub fn genesis(
         pace_age_blocks: 0,
     };
 
-    check_invariant(&world).map_err(|_| Guard::InvariantFailure)?;
+    if let Err(error) = check_invariant_core(&world) {
+        report_invariant_failure(error);
+        return Err(Guard::InvariantFailure);
+    }
 
     Ok(world)
 }

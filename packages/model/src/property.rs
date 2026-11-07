@@ -1023,6 +1023,15 @@ pub fn drive_property_seed_trace(
     initial: &World,
     seeds: impl IntoIterator<Item = PropertyActionSeed>,
 ) -> World {
+    let span = tracing::debug_span!(
+        target: "model::property",
+        "drive_property_trace",
+        seeded = true,
+    );
+    let _entered = span.enter();
+    let trace_enabled = tracing::enabled!(target: "model::property", tracing::Level::DEBUG);
+    let mut applied_count = 0_u64;
+    let mut rejected_count = 0_u64;
     let mut world = initial.clone();
 
     for seed in seeds {
@@ -1030,12 +1039,28 @@ pub fn drive_property_seed_trace(
 
         match apply_property_action(&world, action) {
             PropertyStepResult::Applied(next) => {
+                if trace_enabled {
+                    applied_count = applied_count.saturating_add(1);
+                }
                 world = next;
             }
 
-            PropertyStepResult::Rejected(_) => {}
+            PropertyStepResult::Rejected(_) => {
+                if trace_enabled {
+                    rejected_count = rejected_count.saturating_add(1);
+                }
+            }
         }
     }
+
+    tracing::debug!(
+        target: "model::property",
+        outcome = "completed",
+        applied_count,
+        rejected_count,
+        step_count = applied_count.saturating_add(rejected_count),
+        "model property trace completed",
+    );
 
     world
 }
@@ -1046,17 +1071,42 @@ pub fn drive_property_trace(
     initial: &World,
     actions: impl IntoIterator<Item = PropertyAction>,
 ) -> World {
+    let span = tracing::debug_span!(
+        target: "model::property",
+        "drive_property_trace",
+        seeded = false,
+    );
+    let _entered = span.enter();
+    let trace_enabled = tracing::enabled!(target: "model::property", tracing::Level::DEBUG);
+    let mut applied_count = 0_u64;
+    let mut rejected_count = 0_u64;
     let mut world = initial.clone();
 
     for action in actions {
         match apply_property_action(&world, action) {
             PropertyStepResult::Applied(next) => {
+                if trace_enabled {
+                    applied_count = applied_count.saturating_add(1);
+                }
                 world = next;
             }
 
-            PropertyStepResult::Rejected(_) => {}
+            PropertyStepResult::Rejected(_) => {
+                if trace_enabled {
+                    rejected_count = rejected_count.saturating_add(1);
+                }
+            }
         }
     }
+
+    tracing::debug!(
+        target: "model::property",
+        outcome = "completed",
+        applied_count,
+        rejected_count,
+        step_count = applied_count.saturating_add(rejected_count),
+        "model property trace completed",
+    );
 
     world
 }

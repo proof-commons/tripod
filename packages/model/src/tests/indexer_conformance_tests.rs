@@ -17,6 +17,7 @@ use super::attestation_history_fixture::{accepted_burn, clear_entry, genesis_cle
 use super::scenario_fixtures::*;
 use super::test_fixtures;
 use super::test_fixtures::{block_hash, chain_view_for_history, txid};
+use super::tracing_capture::{capture, events, no_warn_or_error};
 use crate::ledger::UntrustedIndexerFixture;
 use crate::*;
 
@@ -36,8 +37,15 @@ fn indexed_burn_world() -> (World, ReferenceIndexer) {
 
     let chain = chain_view_for_history(&burned);
 
-    let indexer =
-        ReferenceIndexer::from_assumed_kernel_history(&burned.history, &chain, [0_u8; 32]).unwrap();
+    let (indexer, records) = capture(|| {
+        ReferenceIndexer::from_assumed_kernel_history(&burned.history, &chain, [0_u8; 32])
+    });
+    assert!(
+        records
+            .iter()
+            .any(|record| record["span"]["name"] == "index_history")
+    );
+    let indexer = indexer.unwrap();
 
     (burned, indexer)
 }
@@ -73,6 +81,9 @@ fn anchored_chain_view(
 
 #[test]
 fn over_recognition_is_detected() {
+    if !super::tracing_capture::isolated_capture_child() {
+        return;
+    }
     let (_world, expected) = indexed_burn_world();
 
     let mut checkpoint = UntrustedIndexerFixture::from_indexer(&expected);
@@ -122,6 +133,9 @@ fn over_recognition_is_detected() {
 
 #[test]
 fn under_recognition_is_detected() {
+    if !super::tracing_capture::isolated_capture_child() {
+        return;
+    }
     let (_world, expected) = indexed_burn_world();
 
     let mut checkpoint = UntrustedIndexerFixture::from_indexer(&expected);
@@ -152,6 +166,9 @@ fn under_recognition_is_detected() {
 
 #[test]
 fn identical_event_sets_produce_identical_query() {
+    if !super::tracing_capture::isolated_capture_child() {
+        return;
+    }
     let (_world, expected) = indexed_burn_world();
 
     let candidate = expected.clone();
@@ -166,11 +183,25 @@ fn identical_event_sets_produce_identical_query() {
 
     let expected_zero = ExpectedZeroAttestationAddresses::validate(&expected, [ADDRESS_B]).unwrap();
 
-    compare_attestation_indexers(&expected, &candidate, &expected_zero).unwrap();
+    let plain = compare_attestation_indexers(&expected, &candidate, &expected_zero);
+    let (traced, records) =
+        capture(|| compare_attestation_indexers(&expected, &candidate, &expected_zero));
+    assert_eq!(traced, plain);
+    assert_eq!(
+        events(&records, "model index comparison completed")[0]["fields"]["outcome"],
+        "completed"
+    );
+    assert_eq!(
+        events(&records, "model index comparison completed")[0]["fields"]["event_count"],
+        2
+    );
 }
 
 #[test]
 fn mismatched_contexts_cannot_be_compared() {
+    if !super::tracing_capture::isolated_capture_child() {
+        return;
+    }
     let (_world, expected) = indexed_burn_world();
 
     let candidate = ReferenceIndexer::empty_for_test(test_fixtures::context(5, block_hash(6)));
@@ -388,6 +419,9 @@ impl IndependentAttestationIndexer for FabricatedNonzeroCandidate {
 
 #[test]
 fn query_mismatch_with_equal_event_snapshot_is_detected() {
+    if !super::tracing_capture::isolated_capture_child() {
+        return;
+    }
     let (_world, expected) = indexed_burn_world();
 
     let candidate = WrongAggregateCandidate(expected.clone());
@@ -418,6 +452,9 @@ fn query_mismatch_with_equal_event_snapshot_is_detected() {
 
 #[test]
 fn empty_address_census_is_refused() {
+    if !super::tracing_capture::isolated_capture_child() {
+        return;
+    }
     let expected = synthetic_indexer(&[], &[]);
 
     assert_eq!(
@@ -429,14 +466,22 @@ fn empty_address_census_is_refused() {
 
     let empty = ExpectedZeroAttestationAddresses::empty_for_test(expected.context());
 
+    let plain = compare_attestation_indexers(&expected, &candidate, &empty);
+    let (traced, records) = capture(|| compare_attestation_indexers(&expected, &candidate, &empty));
+    assert_eq!(traced, plain);
+    assert_eq!(traced, Err(DifferentialError::EmptyAddressCensus));
     assert_eq!(
-        compare_attestation_indexers(&expected, &candidate, &empty),
-        Err(DifferentialError::EmptyAddressCensus),
+        events(&records, "model index comparison completed")[0]["fields"]["refusal_kind"],
+        "empty_address_census"
     );
+    assert!(no_warn_or_error(&records));
 }
 
 #[test]
 fn expected_zero_validation_is_context_bound_and_requires_zero() {
+    if !super::tracing_capture::isolated_capture_child() {
+        return;
+    }
     let (_world, expected) = indexed_burn_world();
 
     let expected_zero = ExpectedZeroAttestationAddresses::validate(&expected, [ADDRESS_B]).unwrap();
@@ -456,6 +501,9 @@ fn expected_zero_validation_is_context_bound_and_requires_zero() {
 
 #[test]
 fn expected_zero_address_is_queried_on_the_candidate() {
+    if !super::tracing_capture::isolated_capture_child() {
+        return;
+    }
     let (_world, expected) = indexed_burn_world();
 
     let candidate = FabricatedNonzeroCandidate {
@@ -509,6 +557,9 @@ fn overclaiming_burn_addresses_are_in_the_derived_census() {
 
 #[test]
 fn query_uses_indexer_bound_context() {
+    if !super::tracing_capture::isolated_capture_child() {
+        return;
+    }
     let world = indexed_burn_world().0;
 
     let chain = chain_view_for_history(&world);

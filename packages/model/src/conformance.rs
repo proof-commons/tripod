@@ -47,6 +47,33 @@ pub enum ConformanceProjectionError {
     SponsorProtocolRegionOverlap(u64),
 }
 
+impl ConformanceProjectionError {
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::NoTransition => "no_transition",
+            Self::WrongBranch { .. } => "wrong_branch",
+            Self::MissingConsumedObject(_) => "missing_consumed_object",
+            Self::MissingCreatedObject(_) => "missing_created_object",
+            Self::UnknownFlowSource(_) => "unknown_flow_source",
+            Self::UnknownFlowDestination(_) => "unknown_flow_destination",
+            Self::UnknownDeltaSource(_) => "unknown_delta_source",
+            Self::UnknownDeltaDestination(_) => "unknown_delta_destination",
+            Self::UndeclaredCanonicalAsset => "undeclared_canonical_asset",
+            Self::HistoryLengthOverflow => "history_length_overflow",
+            Self::NotOneTransitionExtension => "not_one_transition_extension",
+            Self::HistoryPrefixChanged => "history_prefix_changed",
+            Self::NonIncreasingOrder => "non_increasing_order",
+            Self::ConsumedCreatedOverlap => "consumed_created_overlap",
+            Self::ConsumedObjectSurvived(_) => "consumed_object_survived",
+            Self::CreatedObjectAlreadyExisted(_) => "created_object_already_existed",
+            Self::InvalidObservation(_) => "invalid_observation",
+            Self::AmountOutOfDomain => "amount_out_of_domain",
+            Self::BoundOutOfDomain => "bound_out_of_domain",
+            Self::SponsorProtocolRegionOverlap(_) => "sponsor_protocol_region_overlap",
+        }
+    }
+}
+
 /// A realization observation plus the external premises the model side
 /// establishes for it.
 ///
@@ -95,12 +122,27 @@ pub fn unresolved_model_evidence(
 pub fn observe_announce_maturity(
     executed: &ExecutedTransition<AnnounceMaturity>,
 ) -> Result<ModelConformanceObservation, ConformanceProjectionError> {
+    let span = tracing::debug_span!(
+        target: "model::conformance",
+        "observe_announce_maturity",
+        branch = "announce_maturity",
+    );
+    let _entered = span.enter();
+    let result = observe_announce_maturity_core(executed);
+    record_projection(&result, "announce_maturity");
+    result
+}
+
+fn observe_announce_maturity_core(
+    executed: &ExecutedTransition<AnnounceMaturity>,
+) -> Result<ModelConformanceObservation, ConformanceProjectionError> {
     validate_announcement_lead_values(&executed.before().constants)?;
     let request = executed.request();
     let observation = observe_transition(
         executed.before(),
         executed.after(),
         BranchKind::AnnounceMaturity,
+        "announce_maturity",
         owner_ids(&request.signers),
         owner_ids(&request.fee_envelope.signers),
         RepresentationMode::Explicit,
@@ -143,10 +185,25 @@ fn validate_announcement_lead_values(
 pub fn observe_compact_ash(
     execution: &ExecutedTransition<CompactAsh>,
 ) -> Result<ModelConformanceObservation, ConformanceProjectionError> {
+    let span = tracing::debug_span!(
+        target: "model::conformance",
+        "observe_compact_ash",
+        branch = "compact_ash",
+    );
+    let _entered = span.enter();
+    let result = observe_compact_ash_core(execution);
+    record_projection(&result, "compact_ash");
+    result
+}
+
+fn observe_compact_ash_core(
+    execution: &ExecutedTransition<CompactAsh>,
+) -> Result<ModelConformanceObservation, ConformanceProjectionError> {
     let observation = observe_transition(
         execution.before(),
         execution.after(),
         BranchKind::CompactAsh,
+        "compact_ash",
         BTreeSet::new(),
         owner_ids(&execution.request().fee_envelope.signers),
         RepresentationMode::Explicit,
@@ -156,6 +213,20 @@ pub fn observe_compact_ash(
 }
 
 pub fn observe_live_transfer(
+    execution: &ExecutedTransition<TransferReceipts>,
+) -> Result<ModelConformanceObservation, ConformanceProjectionError> {
+    let span = tracing::debug_span!(
+        target: "model::conformance",
+        "observe_live_transfer",
+        branch = "live_transfer",
+    );
+    let _entered = span.enter();
+    let result = observe_live_transfer_core(execution);
+    record_projection(&result, "live_transfer");
+    result
+}
+
+fn observe_live_transfer_core(
     execution: &ExecutedTransition<TransferReceipts>,
 ) -> Result<ModelConformanceObservation, ConformanceProjectionError> {
     let request = execution.request();
@@ -171,12 +242,34 @@ pub fn observe_live_transfer(
         execution.before(),
         execution.after(),
         BranchKind::TransferLive,
+        "live_transfer",
         owner_ids(&request.signers),
         owner_ids(&request.fee_envelope.signers),
         RepresentationMode::Explicit,
     )?;
 
     Ok(bind_model_evidence(observation))
+}
+
+fn record_projection(
+    result: &Result<ModelConformanceObservation, ConformanceProjectionError>,
+    branch: &'static str,
+) {
+    match result {
+        Ok(_) => tracing::debug!(
+            target: "model::conformance",
+            outcome = "completed",
+            branch,
+            "model projection completed",
+        ),
+        Err(error) => tracing::debug!(
+            target: "model::conformance",
+            outcome = "refused",
+            branch,
+            refusal_kind = error.name(),
+            "model projection completed",
+        ),
+    }
 }
 
 /// The bound execution's kernel run validated open-asset conservation
@@ -200,10 +293,17 @@ fn observe_transition(
     before: &World,
     after: &World,
     expected_branch: BranchKind,
+    branch: &'static str,
     protocol_signers: BTreeSet<OwnerId>,
     sponsor_signers: BTreeSet<OwnerId>,
     representation: RepresentationMode,
 ) -> Result<OperationObservation, ConformanceProjectionError> {
+    let span = tracing::debug_span!(
+        target: "model::conformance",
+        "observe_transition",
+        branch,
+    );
+    let _entered = span.enter();
     let certificate = appended_certificate(before, after)?;
     validate_certificate_membership(before, after, certificate)?;
 

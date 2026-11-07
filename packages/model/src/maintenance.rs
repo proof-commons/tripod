@@ -35,7 +35,7 @@ use crate::asset::{Asset, Maturity, ReceiptClass};
 use crate::fee::FeeEnvelope;
 use crate::genesis::OPERATOR_KEY;
 use crate::guard::Guard;
-use crate::invariant::check_invariant;
+use crate::invariant::{check_invariant_core, report_invariant_failure};
 use crate::object::Meta;
 use crate::ops::{
     AdmitDeposits, AnnounceMaturity, ClearAsh, CompactAsh, CycleCaller, RedeemReceipt,
@@ -116,7 +116,29 @@ pub trait MaintenanceScheduler {
 pub fn drive_shared_state_to_fixpoint<S>(
     initial: &World,
     scheduler: &S,
+    next_order: impl FnMut() -> CanonicalOrder,
+) -> Result<World, Guard>
+where
+    S: MaintenanceScheduler,
+{
+    let span = tracing::info_span!(
+        target: "model::maintenance",
+        "drive_maintenance",
+        driver = "shared_state_fixpoint",
+    );
+    let _entered = span.enter();
+    let mut step_count = 0;
+    let result =
+        drive_shared_state_to_fixpoint_core(initial, scheduler, next_order, &mut step_count);
+    record_maintenance(&result, "shared_state_fixpoint", step_count);
+    result
+}
+
+fn drive_shared_state_to_fixpoint_core<S>(
+    initial: &World,
+    scheduler: &S,
     mut next_order: impl FnMut() -> CanonicalOrder,
+    step_count: &mut usize,
 ) -> Result<World, Guard>
 where
     S: MaintenanceScheduler,
@@ -129,13 +151,45 @@ where
         let envelope = scheduler.fee_envelope_for(&world, &action)?;
 
         world = apply_maintenance_action(&world, action, envelope, next_order())?;
+        *step_count = step_count.saturating_add(1);
 
-        check_invariant(&world).map_err(|_| Guard::InvariantFailure)?;
+        if let Err(error) = check_invariant_core(&world) {
+            report_invariant_failure(error);
+            return Err(Guard::InvariantFailure);
+        }
 
         require_maintenance_progress(&world, potential_before)?;
     }
 
     Ok(world)
+}
+
+fn record_maintenance<R>(result: &Result<R, Guard>, driver: &'static str, step_count: usize) {
+    match result {
+        Ok(_) => tracing::info!(
+            target: "model::maintenance",
+            outcome = "completed",
+            driver,
+            step_count = u64::try_from(step_count).unwrap_or(u64::MAX),
+            "model maintenance finished",
+        ),
+        Err(Guard::InvariantFailure) => tracing::info!(
+            target: "model::maintenance",
+            outcome = "failed",
+            driver,
+            step_count = u64::try_from(step_count).unwrap_or(u64::MAX),
+            error_kind = "invariant_failure",
+            "model maintenance finished",
+        ),
+        Err(error) => tracing::debug!(
+            target: "model::maintenance",
+            outcome = "refused",
+            driver,
+            step_count = u64::try_from(step_count).unwrap_or(u64::MAX),
+            refusal_kind = error.name(),
+            "model maintenance finished",
+        ),
+    }
 }
 
 // ´def:verification:maintenance-phase-potential´
@@ -652,6 +706,35 @@ pub fn drive_quiescence_with_scheduler<S>(
 where
     S: MaintenanceScheduler,
 {
+    let span = tracing::info_span!(
+        target: "model::maintenance",
+        "drive_maintenance",
+        driver = "quiescence_scheduler",
+        step_limit = u64::try_from(maximum_steps).unwrap_or(u64::MAX),
+    );
+    let _entered = span.enter();
+    let mut step_count = 0;
+    let result = drive_quiescence_with_scheduler_core(
+        initial,
+        scheduler,
+        maximum_steps,
+        force_cadence,
+        &mut step_count,
+    );
+    record_maintenance(&result, "quiescence_scheduler", step_count);
+    result
+}
+
+fn drive_quiescence_with_scheduler_core<S>(
+    initial: &World,
+    scheduler: &S,
+    maximum_steps: usize,
+    force_cadence: bool,
+    step_count: &mut usize,
+) -> Result<(World, QuiescenceReport), Guard>
+where
+    S: MaintenanceScheduler,
+{
     let mut world = initial.clone();
 
     for _ in 0..maximum_steps {
@@ -670,8 +753,12 @@ where
         let envelope = scheduler.fee_envelope_for(&world, &action)?;
 
         world = apply_maintenance_action(&world, action, envelope, next_model_order(&world)?)?;
+        *step_count = step_count.saturating_add(1);
 
-        check_invariant(&world).map_err(|_| Guard::InvariantFailure)?;
+        if let Err(error) = check_invariant_core(&world) {
+            report_invariant_failure(error);
+            return Err(Guard::InvariantFailure);
+        }
 
         require_maintenance_progress(&world, potential_before)?;
     }
@@ -700,12 +787,30 @@ pub fn drive_sponsored_quiescence(
     initial: &World,
     maximum_steps: usize,
 ) -> Result<QuiescenceOutcome, Guard> {
+    let span = tracing::info_span!(
+        target: "model::maintenance",
+        "drive_maintenance",
+        driver = "sponsored_quiescence",
+        step_limit = u64::try_from(maximum_steps).unwrap_or(u64::MAX),
+    );
+    let _entered = span.enter();
+    let mut step_count = 0;
+    let result = drive_sponsored_quiescence_core(initial, maximum_steps, &mut step_count);
+    record_maintenance(&result, "sponsored_quiescence", step_count);
+    result
+}
+
+fn drive_sponsored_quiescence_core(
+    initial: &World,
+    maximum_steps: usize,
+    step_count: &mut usize,
+) -> Result<QuiescenceOutcome, Guard> {
     let scheduler = DeterministicMaintenanceScheduler {
         mode: MaintenanceMode::FullSponsored,
     };
 
     let (world, report) =
-        drive_quiescence_with_scheduler(initial, &scheduler, maximum_steps, true)?;
+        drive_quiescence_with_scheduler_core(initial, &scheduler, maximum_steps, true, step_count)?;
 
     let residuals = quiescence_residuals(&world, &report)?;
 
@@ -722,6 +827,24 @@ pub fn drive_shared_state_sweepability(
     initial: &World,
     maximum_steps: usize,
 ) -> Result<(World, QuiescenceReport), Guard> {
+    let span = tracing::info_span!(
+        target: "model::maintenance",
+        "drive_maintenance",
+        driver = "shared_state_sweepability",
+        step_limit = u64::try_from(maximum_steps).unwrap_or(u64::MAX),
+    );
+    let _entered = span.enter();
+    let mut step_count = 0;
+    let result = drive_shared_state_sweepability_core(initial, maximum_steps, &mut step_count);
+    record_maintenance(&result, "shared_state_sweepability", step_count);
+    result
+}
+
+fn drive_shared_state_sweepability_core(
+    initial: &World,
+    maximum_steps: usize,
+    step_count: &mut usize,
+) -> Result<(World, QuiescenceReport), Guard> {
     let state = initial.state()?.1;
 
     if !state.q.is_zero() || !admission_capacity_plan(initial)?.locally_valid.is_empty() {
@@ -732,7 +855,7 @@ pub fn drive_shared_state_sweepability(
         mode: MaintenanceMode::SharedStateOnly,
     };
 
-    drive_quiescence_with_scheduler(initial, &scheduler, maximum_steps, false)
+    drive_quiescence_with_scheduler_core(initial, &scheduler, maximum_steps, false, step_count)
 }
 
 // ´def:verification:state-candidate´
