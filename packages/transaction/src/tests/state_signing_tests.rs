@@ -265,6 +265,49 @@ fn authorized_over(
         .expect("one well-formed response authorizes the demonstration candidate")
 }
 
+#[test]
+fn scoped_state_authorization_preserves_witness_and_refuses_one_missing_response() {
+    use super::trace_tests::{assert_boundary, capture};
+    isolated_capture_test!(
+        scoped_state_authorization_preserves_witness_and_refuses_one_missing_response
+    );
+
+    let finalized = demonstration();
+    let authorize = |responses: bool| {
+        let state = started(&finalized);
+        let answer = parts(&state);
+        let mut registry = OperatorRightRegistry::default();
+        let right = issue(&mut registry, &state);
+        let offered = if responses {
+            vec![answer.response()]
+        } else {
+            vec![]
+        };
+        state.authorize(&mut registry, right, offered, &FixtureScriptPathVerifier)
+    };
+    let plain = authorize(true).expect("control");
+    let (traced, records) = capture(|| authorize(true));
+    assert_eq!(plain.witness(), traced.expect("traced control").witness());
+    assert_boundary(
+        &records,
+        "transaction::state_signing",
+        "authorize",
+        "completed",
+        None,
+    );
+
+    let plain = authorize(false).unwrap_err();
+    let (traced, records) = capture(|| authorize(false));
+    assert_eq!(plain.refusal, traced.unwrap_err().refusal);
+    assert_boundary(
+        &records,
+        "transaction::state_signing",
+        "authorize",
+        "refused",
+        Some("maturity_operator_authorization_refused"),
+    );
+}
+
 /// The submit-ready state over one finalized announcement.
 fn submit_ready_over(
     finalized: &FinalizedMaturityAnnouncement,

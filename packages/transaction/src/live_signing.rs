@@ -260,6 +260,20 @@ pub fn authorize_live_transfer(
     finalized: FinalizedLiveTransfer,
     responses: impl IntoIterator<Item = (u16, LiveOwnerResponse)>,
 ) -> Result<AuthorizedLiveTransfer, TransactionRefusal> {
+    crate::trace_boundary!(
+        target: "transaction::live_signing",
+        span: "authorize",
+        level: tracing::Level::INFO,
+        family: "live",
+        message: "transaction authorized",
+        result: authorize_live_transfer_core(finalized, responses)
+    )
+}
+
+fn authorize_live_transfer_core(
+    finalized: FinalizedLiveTransfer,
+    responses: impl IntoIterator<Item = (u16, LiveOwnerResponse)>,
+) -> Result<AuthorizedLiveTransfer, TransactionRefusal> {
     let records: BTreeMap<_, _> = finalized
         .receipts()
         .iter()

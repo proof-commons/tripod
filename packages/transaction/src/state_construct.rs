@@ -286,6 +286,24 @@ pub fn construct_maturity_announcement_with_sponsor(
     curve: &impl StateCurveCapability,
     sponsor: Option<&MaturitySponsorContext<'_>>,
 ) -> Result<MaturityConstruction, TransactionRefusal> {
+    crate::trace_boundary!(
+        target: "transaction::state_construct",
+        span: "construct",
+        level: tracing::Level::INFO,
+        family: "state",
+        message: "transaction constructed",
+        result: construct_maturity_announcement_with_sponsor_core(target, abi, validated, request, curve, sponsor)
+    )
+}
+
+fn construct_maturity_announcement_with_sponsor_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    abi: &CandidateMaturityAnnouncementAbi,
+    validated: &ValidatedMaturityStateView,
+    request: &MaturityAnnouncementRequest,
+    curve: &impl StateCurveCapability,
+    sponsor: Option<&MaturitySponsorContext<'_>>,
+) -> Result<MaturityConstruction, TransactionRefusal> {
     construct_maturity_candidate(target, abi, validated, request, curve, sponsor, false)
 }
 

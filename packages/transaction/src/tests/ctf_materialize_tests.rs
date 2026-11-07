@@ -47,6 +47,20 @@ use crate::live_private::{
     ConfidentialConstructionModel, PrivateConstructionNonClaim, SelectedConstructionModel,
 };
 
+#[test]
+fn materialization_refusal_trace_kinds_are_snake_case() {
+    let kinds = super::trace_tests::trace_kind_table(include_str!("../live_materialize.rs"));
+    for (variant, expected) in [
+        (
+            "BoundedParitySearchExhausted",
+            "bounded_parity_search_exhausted",
+        ),
+        ("ExplicitDestinationIsAFee", "explicit_destination_is_a_fee"),
+    ] {
+        assert_eq!(kinds.get(variant).map(String::as_str), Some(expected));
+    }
+}
+
 /// The published disposable protocol asset.
 const ASSET: [u8; 32] = [0x3b; 32];
 
@@ -698,6 +712,156 @@ fn one_valid_intent_materializes_a_proof_bearing_candidate() {
             "and an empty surjection field, which the hybrid form requires",
         );
     }
+}
+
+#[test]
+fn scoped_materialization_trace_preserves_bytes_and_reports_parity_refusal() {
+    use super::trace_tests::{assert_boundary, assert_event_field, capture};
+    isolated_capture_test!(scoped_materialization_trace_preserves_bytes_and_reports_parity_refusal);
+
+    let intent = intent();
+    let view = view();
+    let crypto = StubMaterializer::default();
+    let checker = StubChecker::default();
+    let plain = materialize(&intent, &view, &crypto, &checker).expect("control materializes");
+    let (traced, records) = capture(|| materialize(&intent, &view, &crypto, &checker));
+    assert_eq!(plain, traced.expect("traced control materializes"));
+    assert_boundary(
+        &records,
+        "transaction::live_materialize",
+        "materialize_confidential",
+        "completed",
+        None,
+    );
+
+    let exhausted = view_with(
+        balancing_blinder(),
+        ParityOutcome::Exhausted { attempts: 3 },
+    );
+    let plain = materialize(&intent, &exhausted, &crypto, &checker);
+    let (traced, records) = capture(|| materialize(&intent, &exhausted, &crypto, &checker));
+    assert_eq!(plain, traced);
+    assert_eq!(
+        traced,
+        Err(MaterializationRefusal::BoundedParitySearchExhausted)
+    );
+    assert_boundary(
+        &records,
+        "transaction::live_materialize",
+        "materialize_confidential",
+        "refused",
+        Some("bounded_parity_search_exhausted"),
+    );
+    assert_event_field(
+        &records,
+        "transaction::live_materialize",
+        "attempt_count",
+        "3",
+    );
+}
+
+#[test]
+fn scoped_inner_materialization_spans_cover_preflight_and_first_output_refusals() {
+    use super::trace_tests::{assert_boundary, assert_span_count, capture};
+    use tracing::Level;
+    isolated_capture_test!(
+        scoped_inner_materialization_spans_cover_preflight_and_first_output_refusals
+    );
+
+    let intent = intent();
+    let view = view();
+    let crypto = StubMaterializer::default();
+    let checker = StubChecker::default();
+    let plain = materialize(&intent, &view, &crypto, &checker);
+    let (traced, records) = capture(|| materialize(&intent, &view, &crypto, &checker));
+    assert_eq!(plain, traced);
+    assert_boundary(
+        &records,
+        "transaction::live_materialize",
+        "materialize_confidential",
+        "completed",
+        None,
+    );
+    assert_span_count(
+        &records,
+        "transaction::live_materialize",
+        "preflight",
+        Level::DEBUG,
+        1,
+    );
+    assert_span_count(
+        &records,
+        "transaction::live_materialize",
+        "materialize_output",
+        Level::DEBUG,
+        2,
+    );
+
+    let exhausted = view_with(
+        balancing_blinder(),
+        ParityOutcome::Exhausted { attempts: 3 },
+    );
+    let plain = materialize(&intent, &exhausted, &crypto, &checker);
+    let (traced, records) = capture(|| materialize(&intent, &exhausted, &crypto, &checker));
+    assert_eq!(plain, traced);
+    assert_eq!(
+        traced,
+        Err(MaterializationRefusal::BoundedParitySearchExhausted)
+    );
+    assert_boundary(
+        &records,
+        "transaction::live_materialize",
+        "materialize_confidential",
+        "refused",
+        Some("bounded_parity_search_exhausted"),
+    );
+    assert_span_count(
+        &records,
+        "transaction::live_materialize",
+        "preflight",
+        Level::DEBUG,
+        1,
+    );
+    assert_span_count(
+        &records,
+        "transaction::live_materialize",
+        "materialize_output",
+        Level::DEBUG,
+        0,
+    );
+
+    let disagreeing = StubChecker {
+        disagree_about_destinations: true,
+        ..StubChecker::default()
+    };
+    let plain = materialize(&intent, &view, &crypto, &disagreeing);
+    let (traced, records) = capture(|| materialize(&intent, &view, &crypto, &disagreeing));
+    assert_eq!(plain, traced);
+    assert_eq!(
+        traced,
+        Err(MaterializationRefusal::IndependentCommitmentMismatch { output: 0 })
+    );
+    assert_boundary(
+        &records,
+        "transaction::live_materialize",
+        "materialize_confidential",
+        "refused",
+        Some("independent_commitment_mismatch"),
+    );
+    assert_span_count(
+        &records,
+        "transaction::live_materialize",
+        "preflight",
+        Level::DEBUG,
+        1,
+    );
+    assert_span_count(
+        &records,
+        "transaction::live_materialize",
+        "materialize_output",
+        Level::DEBUG,
+        1,
+    );
 }
 
 /// The frozen candidate's bytes round-trip exactly.

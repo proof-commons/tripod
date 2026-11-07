@@ -236,6 +236,23 @@ pub fn construct(
     view: &PublicConstructionView,
     sponsor: Option<&dyn SponsorCapability>,
 ) -> Result<CandidateCompleteTransaction, TransactionRefusal> {
+    crate::trace_boundary!(
+        target: "transaction::construct",
+        span: "construct",
+        level: tracing::Level::INFO,
+        family: "compact",
+        message: "transaction constructed",
+        result: construct_core(target, abi, request, view, sponsor)
+    )
+}
+
+fn construct_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    abi: &CandidateTransactionAbi,
+    request: &CompactAshRequest,
+    view: &PublicConstructionView,
+    sponsor: Option<&dyn SponsorCapability>,
+) -> Result<CandidateCompleteTransaction, TransactionRefusal> {
     // Stages 1 and 2: validate the request and the public view, and
     // reject duplicate and overlapping outpoints. Each region's own
     // constructor already rejected the duplicates inside it — the

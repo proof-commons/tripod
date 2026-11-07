@@ -52,6 +52,85 @@ fn signed(registry: &mut OperatorRightRegistry, fixture: &OperatorRightFixture) 
     .expect("one authorization");
     scoped
 }
+
+#[test]
+fn scoped_operator_under_right_preserves_witness_and_refuses_missing_response() {
+    use super::trace_tests::{assert_boundary, capture};
+    isolated_capture_test!(
+        scoped_operator_under_right_preserves_witness_and_refuses_missing_response
+    );
+
+    let fixture = fixture();
+    let request = fixture.freeze();
+    let mut plain_registry = OperatorRightRegistry::default();
+    let plain_right = issue(&mut plain_registry, &request);
+    let plain_answer = fixture.response(&request);
+    let plain = authorize_operator_under_right(
+        &mut plain_registry,
+        plain_right,
+        request,
+        [plain_answer],
+        &OperatorRightVerifier::default(),
+    )
+    .expect("control");
+    let request = fixture.freeze();
+    let mut traced_registry = OperatorRightRegistry::default();
+    let traced_right = issue(&mut traced_registry, &request);
+    let traced_answer = fixture.response(&request);
+    let (traced, records) = capture(|| {
+        authorize_operator_under_right(
+            &mut traced_registry,
+            traced_right,
+            request,
+            [traced_answer],
+            &OperatorRightVerifier::default(),
+        )
+    });
+    let witness = |outcome: OperatorRightOutcome<'_>| match outcome {
+        OperatorRightOutcome::Fresh(candidate) => candidate.witness().clone(),
+        OperatorRightOutcome::Cached(cached) => cached.witness,
+    };
+    assert_eq!(witness(plain), witness(traced.expect("traced control")));
+    assert_boundary(
+        &records,
+        "transaction::operator_signing",
+        "authorize",
+        "completed",
+        None,
+    );
+
+    let request = fixture.freeze();
+    let mut plain_registry = OperatorRightRegistry::default();
+    let plain_right = issue(&mut plain_registry, &request);
+    let plain = authorize_operator_under_right(
+        &mut plain_registry,
+        plain_right,
+        request,
+        [],
+        &OperatorRightVerifier::default(),
+    )
+    .unwrap_err();
+    let request = fixture.freeze();
+    let mut traced_registry = OperatorRightRegistry::default();
+    let traced_right = issue(&mut traced_registry, &request);
+    let (traced, records) = capture(|| {
+        authorize_operator_under_right(
+            &mut traced_registry,
+            traced_right,
+            request,
+            [],
+            &OperatorRightVerifier::default(),
+        )
+    });
+    assert_eq!(plain.refusal, traced.unwrap_err().refusal);
+    assert_boundary(
+        &records,
+        "transaction::operator_signing",
+        "authorize",
+        "refused",
+        Some("signing"),
+    );
+}
 fn changed(fixture: &OperatorRightFixture, predecessor: bool) -> TargetTransaction {
     let candidate = fixture.finalized.protected();
     let inputs = if predecessor {
@@ -96,6 +175,306 @@ fn issuance_succeeds_once_and_carries_its_identity() {
         Err(RightRefusal::Outstanding(_))
     ));
     assert_eq!(registry.record().entries().len(), 1);
+}
+
+#[test]
+fn scoped_right_issue_trace_preserves_token_and_duplicate_refusal() {
+    use super::trace_tests::{assert_boundary_at_level, capture};
+    use tracing::Level;
+    isolated_capture_test!(scoped_right_issue_trace_preserves_token_and_duplicate_refusal);
+
+    let fixture = fixture();
+    let request = fixture.freeze();
+    let mut plain_registry = OperatorRightRegistry::default();
+    let plain = plain_registry
+        .issue(scope(&request), request.frozen_bytes())
+        .expect("first issue succeeds");
+    let mut traced_registry = OperatorRightRegistry::default();
+    let (traced, records) =
+        capture(|| traced_registry.issue(scope(&request), request.frozen_bytes()));
+    let traced = traced.expect("traced first issue succeeds");
+    assert_eq!(plain.scope(), traced.scope());
+    assert_eq!(plain.ordinal(), traced.ordinal());
+    assert_boundary_at_level(
+        &records,
+        "transaction::operator_right",
+        "issue_right",
+        "completed",
+        None,
+        Level::DEBUG,
+    );
+
+    let plain_refusal = plain_registry
+        .issue(scope(&request), request.frozen_bytes())
+        .unwrap_err();
+    let (traced_refusal, records) =
+        capture(|| traced_registry.issue(scope(&request), request.frozen_bytes()));
+    assert_eq!(plain_refusal, traced_refusal.unwrap_err());
+    assert_boundary_at_level(
+        &records,
+        "transaction::operator_right",
+        "issue_right",
+        "refused",
+        Some("outstanding"),
+        Level::DEBUG,
+    );
+}
+
+#[test]
+fn scoped_right_replace_preserves_token_and_refuses_a_signed_scope() {
+    use super::trace_tests::{assert_boundary_at_level, capture};
+    use tracing::Level;
+    isolated_capture_test!(scoped_right_replace_preserves_token_and_refuses_a_signed_scope);
+
+    let fixture = fixture();
+    let request = fixture.freeze();
+    let replacement = fixture.freeze_candidate(changed(&fixture, false));
+    let mut plain_registry = OperatorRightRegistry::default();
+    let plain_right = issue(&mut plain_registry, &request);
+    let plain = plain_registry
+        .replace(plain_right, replacement.frozen_bytes())
+        .expect("replace");
+    let mut traced_registry = OperatorRightRegistry::default();
+    let traced_right = issue(&mut traced_registry, &request);
+    let (traced, records) =
+        capture(|| traced_registry.replace(traced_right, replacement.frozen_bytes()));
+    let traced = traced.expect("traced replace");
+    assert_eq!(plain.scope(), traced.scope());
+    assert_eq!(plain.ordinal(), traced.ordinal());
+    assert_boundary_at_level(
+        &records,
+        "transaction::operator_right",
+        "replace_right",
+        "completed",
+        None,
+        Level::DEBUG,
+    );
+
+    let mut plain_registry = OperatorRightRegistry::default();
+    signed(&mut plain_registry, &fixture);
+    let mut plain_foreign = OperatorRightRegistry::default();
+    let plain_right = issue(&mut plain_foreign, &request);
+    let plain = plain_registry
+        .replace(plain_right, request.frozen_bytes())
+        .unwrap_err();
+    let mut traced_registry = OperatorRightRegistry::default();
+    signed(&mut traced_registry, &fixture);
+    let mut traced_foreign = OperatorRightRegistry::default();
+    let traced_right = issue(&mut traced_foreign, &request);
+    let (traced, records) =
+        capture(|| traced_registry.replace(traced_right, request.frozen_bytes()));
+    assert_eq!(plain.refusal, traced.unwrap_err().refusal);
+    assert_boundary_at_level(
+        &records,
+        "transaction::operator_right",
+        "replace_right",
+        "refused",
+        Some("replacement_after_signing"),
+        Level::DEBUG,
+    );
+}
+
+#[test]
+fn scoped_right_consume_preserves_witness_and_refuses_changed_bytes() {
+    use super::trace_tests::{assert_boundary_at_level, capture};
+    use tracing::Level;
+    isolated_capture_test!(scoped_right_consume_preserves_witness_and_refuses_changed_bytes);
+
+    let fixture = fixture();
+    let request = fixture.freeze();
+    let mut plain_registry = OperatorRightRegistry::default();
+    let right = issue(&mut plain_registry, &request);
+    let answer = fixture.response(&request);
+    let plain = plain_registry
+        .consume(right, request, |request| {
+            authorize_operator(request, [answer], &OperatorRightVerifier::default())
+        })
+        .expect("consume");
+    let request = fixture.freeze();
+    let mut traced_registry = OperatorRightRegistry::default();
+    let right = issue(&mut traced_registry, &request);
+    let answer = fixture.response(&request);
+    let (traced, records) = capture(|| {
+        traced_registry.consume(right, request, |request| {
+            authorize_operator(request, [answer], &OperatorRightVerifier::default())
+        })
+    });
+    let witness = |outcome: OperatorRightOutcome<'_>| match outcome {
+        OperatorRightOutcome::Fresh(candidate) => candidate.witness().clone(),
+        OperatorRightOutcome::Cached(cached) => cached.witness,
+    };
+    assert_eq!(witness(plain), witness(traced.expect("traced consume")));
+    assert_boundary_at_level(
+        &records,
+        "transaction::operator_right",
+        "consume_right",
+        "completed",
+        None,
+        Level::DEBUG,
+    );
+
+    let request = fixture.freeze();
+    let mut plain_registry = OperatorRightRegistry::default();
+    let right = issue(&mut plain_registry, &request);
+    let changed_request = fixture.freeze_candidate(changed(&fixture, false));
+    let plain = plain_registry
+        .consume(right, changed_request, |_| {
+            panic!("changed bytes must not sign")
+        })
+        .unwrap_err();
+    let request = fixture.freeze();
+    let mut traced_registry = OperatorRightRegistry::default();
+    let right = issue(&mut traced_registry, &request);
+    let changed_request = fixture.freeze_candidate(changed(&fixture, false));
+    let (traced, records) = capture(|| {
+        traced_registry.consume(right, changed_request, |_| {
+            panic!("changed bytes must not sign")
+        })
+    });
+    assert_eq!(plain.refusal, traced.unwrap_err().refusal);
+    assert_boundary_at_level(
+        &records,
+        "transaction::operator_right",
+        "consume_right",
+        "refused",
+        Some("mismatched_bytes"),
+        Level::DEBUG,
+    );
+}
+
+#[test]
+fn scoped_right_retry_preserves_cache_and_refuses_one_changed_byte() {
+    use super::trace_tests::{assert_boundary_at_level, capture};
+    use tracing::Level;
+    isolated_capture_test!(scoped_right_retry_preserves_cache_and_refuses_one_changed_byte);
+
+    let fixture = fixture();
+    let request = fixture.freeze();
+    let bytes = request.frozen_bytes();
+    let mut plain_registry = OperatorRightRegistry::default();
+    let scoped = signed(&mut plain_registry, &fixture);
+    let plain = plain_registry.retry(&scoped, bytes).expect("cached");
+    let mut traced_registry = OperatorRightRegistry::default();
+    signed(&mut traced_registry, &fixture);
+    let (traced, records) = capture(|| traced_registry.retry(&scoped, bytes));
+    let cached = |outcome: OperatorRightOutcome<'_>| match outcome {
+        OperatorRightOutcome::Cached(cached) => cached.witness,
+        OperatorRightOutcome::Fresh(_) => panic!("retry uses cache"),
+    };
+    assert_eq!(cached(plain), cached(traced.expect("traced cached")));
+    assert_boundary_at_level(
+        &records,
+        "transaction::operator_right",
+        "retry_right",
+        "completed",
+        None,
+        Level::DEBUG,
+    );
+
+    let mut wrong = bytes.to_vec();
+    wrong[0] ^= 1;
+    let plain = plain_registry.retry(&scoped, &wrong);
+    let (traced, records) = capture(|| traced_registry.retry(&scoped, &wrong));
+    assert_eq!(plain.unwrap_err(), traced.unwrap_err());
+    assert_boundary_at_level(
+        &records,
+        "transaction::operator_right",
+        "retry_right",
+        "refused",
+        Some("competing_candidate"),
+        Level::DEBUG,
+    );
+}
+
+#[test]
+fn scoped_right_dispatch_preserves_state_and_refuses_unsigned_scope() {
+    use super::trace_tests::{assert_boundary_at_level, capture};
+    use tracing::Level;
+    isolated_capture_test!(scoped_right_dispatch_preserves_state_and_refuses_unsigned_scope);
+
+    let fixture = fixture();
+    let mut plain_registry = OperatorRightRegistry::default();
+    let scoped = signed(&mut plain_registry, &fixture);
+    let plain = plain_registry.dispatch(&scoped);
+    let mut traced_registry = OperatorRightRegistry::default();
+    signed(&mut traced_registry, &fixture);
+    let (traced, records) = capture(|| traced_registry.dispatch(&scoped));
+    assert_eq!(plain, traced);
+    assert_eq!(
+        plain_registry.record().entries(),
+        traced_registry.record().entries()
+    );
+    assert_boundary_at_level(
+        &records,
+        "transaction::operator_right",
+        "dispatch_right",
+        "completed",
+        None,
+        Level::DEBUG,
+    );
+
+    let request = fixture.freeze();
+    let mut plain_registry = OperatorRightRegistry::default();
+    let right = issue(&mut plain_registry, &request);
+    let plain = plain_registry.dispatch(right.scope());
+    let mut traced_registry = OperatorRightRegistry::default();
+    let right = issue(&mut traced_registry, &request);
+    let (traced, records) = capture(|| traced_registry.dispatch(right.scope()));
+    assert_eq!(plain, traced);
+    assert_boundary_at_level(
+        &records,
+        "transaction::operator_right",
+        "dispatch_right",
+        "refused",
+        Some("not_signed"),
+        Level::DEBUG,
+    );
+}
+
+#[test]
+fn scoped_right_timeout_preserves_state_and_refuses_undispatched_scope() {
+    use super::trace_tests::{assert_boundary_at_level, capture};
+    use tracing::Level;
+    isolated_capture_test!(scoped_right_timeout_preserves_state_and_refuses_undispatched_scope);
+
+    let fixture = fixture();
+    let mut plain_registry = OperatorRightRegistry::default();
+    let scoped = signed(&mut plain_registry, &fixture);
+    plain_registry.dispatch(&scoped).expect("dispatch");
+    let plain = plain_registry.timeout(&scoped);
+    let mut traced_registry = OperatorRightRegistry::default();
+    signed(&mut traced_registry, &fixture);
+    traced_registry.dispatch(&scoped).expect("dispatch");
+    let (traced, records) = capture(|| traced_registry.timeout(&scoped));
+    assert_eq!(plain, traced);
+    assert_eq!(
+        plain_registry.record().entries(),
+        traced_registry.record().entries()
+    );
+    assert_boundary_at_level(
+        &records,
+        "transaction::operator_right",
+        "timeout_right",
+        "completed",
+        None,
+        Level::DEBUG,
+    );
+
+    let mut plain_registry = OperatorRightRegistry::default();
+    signed(&mut plain_registry, &fixture);
+    let plain = plain_registry.timeout(&scoped);
+    let mut traced_registry = OperatorRightRegistry::default();
+    signed(&mut traced_registry, &fixture);
+    let (traced, records) = capture(|| traced_registry.timeout(&scoped));
+    assert_eq!(plain, traced);
+    assert_boundary_at_level(
+        &records,
+        "transaction::operator_right",
+        "timeout_right",
+        "refused",
+        Some("not_dispatched"),
+        Level::DEBUG,
+    );
 }
 
 #[test]

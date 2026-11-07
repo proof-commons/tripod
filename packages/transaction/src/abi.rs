@@ -663,6 +663,21 @@ pub fn derive_candidate_abi(
     bundle: &CandidateLinkedBundle,
     pin: PinnedAshInstance,
 ) -> Result<CandidateTransactionAbi, TransactionRefusal> {
+    crate::trace_boundary!(
+        target: "transaction::abi",
+        span: "derive_abi",
+        level: tracing::Level::INFO,
+        family: "compact",
+        message: "abi derived",
+        result: derive_candidate_abi_core(target, bundle, pin)
+    )
+}
+
+fn derive_candidate_abi_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    bundle: &CandidateLinkedBundle,
+    pin: PinnedAshInstance,
+) -> Result<CandidateTransactionAbi, TransactionRefusal> {
     if bundle.status() != linker::LinkedArtifactStatus::Prototype {
         return Err(TransactionRefusal::BundleIsNotACandidate);
     }

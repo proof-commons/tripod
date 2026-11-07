@@ -97,6 +97,26 @@ fn finalized_over(validated: &ValidatedMaturityStateView) -> FinalizedMaturityAn
     finalize_maturity_announcement(construction)
 }
 
+#[test]
+fn scoped_state_finalization_trace_preserves_finalized_bytes() {
+    use super::state_support::sponsored_construction;
+    use super::trace_tests::{assert_boundary, capture};
+    isolated_capture_test!(scoped_state_finalization_trace_preserves_finalized_bytes);
+
+    let plain = finalize_maturity_announcement(sponsored_construction(false));
+    let (traced, records) =
+        capture(|| finalize_maturity_announcement(sponsored_construction(false)));
+    assert_eq!(plain, traced);
+    assert_eq!(plain.protected_bytes(), traced.protected_bytes());
+    assert_boundary(
+        &records,
+        "transaction::state_finalize",
+        "finalize",
+        "completed",
+        None,
+    );
+}
+
 /// The finalized announcement every positive reads.
 fn demonstration() -> FinalizedMaturityAnnouncement {
     finalized_over(&validated_view())

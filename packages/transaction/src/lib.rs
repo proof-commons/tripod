@@ -1,6 +1,32 @@
 #![doc = include_str!("../README.md")]
 #![forbid(unsafe_code)]
 
+mod trace_support;
+
+macro_rules! trace_boundary {
+    (target: $target:literal, span: $span:literal, level: $level:expr, message: $message:literal, result: $call:expr) => {{
+        let span = tracing::span!(target: $target, $level, $span);
+        let _entered = span.enter();
+        let result = $call;
+        match &result {
+            Ok(_) => tracing::event!(target: $target, $level, outcome = "completed", $message),
+            Err(refusal) => tracing::event!(target: $target, tracing::Level::DEBUG, outcome = "refused", refusal_kind = crate::trace_support::TraceRefusal::tracing_kind(refusal), $message),
+        }
+        result
+    }};
+    (target: $target:literal, span: $span:literal, level: $level:expr, family: $family:literal, message: $message:literal, result: $call:expr) => {{
+        let span = tracing::span!(target: $target, $level, $span, family = $family);
+        let _entered = span.enter();
+        let result = $call;
+        match &result {
+            Ok(_) => tracing::event!(target: $target, $level, outcome = "completed", family = $family, $message),
+            Err(refusal) => tracing::event!(target: $target, tracing::Level::DEBUG, outcome = "refused", family = $family, refusal_kind = crate::trace_support::TraceRefusal::tracing_kind(refusal), $message),
+        }
+        result
+    }};
+}
+pub(crate) use trace_boundary;
+
 pub mod abi;
 pub mod bytes;
 pub mod construct;

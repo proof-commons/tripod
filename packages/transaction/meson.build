@@ -35,6 +35,7 @@ transaction_source_files = files(
   'src/state_view.rs',
   'src/synthetic.rs',
   'src/taproot.rs',
+  'src/trace_support.rs',
   'src/tests/abi_tests.rs',
   'src/tests/construction_tests.rs',
   'src/tests/ctf_materialize_tests.rs',
@@ -65,11 +66,12 @@ transaction_source_files = files(
   'src/tests/state_support.rs',
   'src/tests/state_view_tests.rs',
   'src/tests/taproot_tests.rs',
+  'src/tests/trace_tests.rs',
   'src/view.rs',
 )
 
 # Crate documentation (DOC owner).
-transaction_doc_files = files('README.md')
+transaction_doc_files = files('README.md', 'TRACING.md')
 
 # Same-typed files deliberately outside the crate-source census
 # (ADR-014). The crate declares none yet; the empty list keeps the

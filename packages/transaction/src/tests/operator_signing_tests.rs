@@ -215,6 +215,43 @@ fn refused(change: impl FnOnce(&mut ResponseParts)) -> OperatorSigningRefusal {
     refusal
 }
 
+#[test]
+fn scoped_operator_authorization_preserves_witness_and_refuses_missing_response() {
+    use super::trace_tests::{assert_boundary, capture};
+    isolated_capture_test!(
+        scoped_operator_authorization_preserves_witness_and_refuses_missing_response
+    );
+
+    let fixture = Fixture::new();
+    let request = fixture.freeze();
+    let response = fixture.parts(&request).response();
+    let plain = authorize_operator(request, [response], &TestVerifier::default()).expect("control");
+    let request = fixture.freeze();
+    let response = fixture.parts(&request).response();
+    let (traced, records) =
+        capture(|| authorize_operator(request, [response], &TestVerifier::default()));
+    assert_eq!(plain.witness(), traced.expect("traced control").witness());
+    assert_boundary(
+        &records,
+        "transaction::operator_signing",
+        "authorize",
+        "completed",
+        None,
+    );
+
+    let plain = authorize_operator(fixture.freeze(), [], &TestVerifier::default());
+    let (traced, records) =
+        capture(|| authorize_operator(fixture.freeze(), [], &TestVerifier::default()));
+    assert_eq!(plain.unwrap_err(), traced.unwrap_err());
+    assert_boundary(
+        &records,
+        "transaction::operator_signing",
+        "authorize",
+        "refused",
+        Some("missing_response"),
+    );
+}
+
 fn with_outputs(candidate: &TargetTransaction, outputs: Vec<TargetOutput>) -> TargetTransaction {
     TargetTransaction::with_output_witnesses(
         candidate.version(),

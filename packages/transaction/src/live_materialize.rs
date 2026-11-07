@@ -1824,7 +1824,7 @@ impl ProofFinalizedCandidate {
     /// the same value, wrong emptiness, and fragments all fail it.
     fn freeze(protected: TargetTransaction) -> Result<Self, MaterializationRefusal> {
         let bytes = protected.encode();
-        let round_tripped = TargetTransaction::decode(&bytes)
+        let round_tripped = TargetTransaction::decode_core(&bytes)
             .map_err(|_| MaterializationRefusal::SerializationRoundTripMismatch)?;
         if round_tripped.encode() != bytes || round_tripped != protected {
             return Err(MaterializationRefusal::SerializationRoundTripMismatch);
@@ -2011,6 +2011,74 @@ impl MaterializedConfidentialCandidate {
 /// Every one is a construction refusal, and a preflight refusal names
 /// what was missing rather than an amount, a subtotal, or an opening.
 pub fn materialize_confidential_candidate(
+    intent: &ConfidentialConstructionIntent,
+    fixtures: &FrozenConfidentialFixtureView,
+    crypto: &dyn ConfidentialProofMaterializer,
+    checker: &dyn IndependentCommitmentCheck,
+) -> Result<MaterializedConfidentialCandidate, MaterializationRefusal> {
+    let span = tracing::span!(
+        target: "transaction::live_materialize",
+        tracing::Level::INFO,
+        "materialize_confidential",
+        family = "live",
+        input_count = u64::try_from(intent.inputs().len()).unwrap_or(u64::MAX),
+        output_count = u64::try_from(intent.destinations().len()).unwrap_or(u64::MAX),
+    );
+    let _entered = span.enter();
+    let result = materialize_confidential_candidate_core(intent, fixtures, crypto, checker);
+    match &result {
+        Ok(_) => tracing::event!(
+            target: "transaction::live_materialize",
+            tracing::Level::INFO,
+            outcome = "completed",
+            family = "live",
+            output_count = u64::try_from(intent.destinations().len()).unwrap_or(u64::MAX),
+            "confidential outputs materialized"
+        ),
+        Err(MaterializationRefusal::BoundedParitySearchExhausted) => {
+            if tracing::enabled!(target: "transaction::live_materialize", tracing::Level::DEBUG) {
+                let attempts = fixture_of(intent, fixtures).ok().and_then(|fixture| {
+                    if let ParityOutcome::Exhausted { attempts } = fixture.parity() {
+                        Some(u64::from(attempts))
+                    } else {
+                        None
+                    }
+                });
+                if let Some(attempt_count) = attempts {
+                    tracing::event!(
+                        target: "transaction::live_materialize",
+                        tracing::Level::DEBUG,
+                        outcome = "refused",
+                        family = "live",
+                        refusal_kind = "bounded_parity_search_exhausted",
+                        attempt_count,
+                        "confidential outputs materialized"
+                    );
+                } else {
+                    tracing::event!(
+                        target: "transaction::live_materialize",
+                        tracing::Level::DEBUG,
+                        outcome = "refused",
+                        family = "live",
+                        refusal_kind = "bounded_parity_search_exhausted",
+                        "confidential outputs materialized"
+                    );
+                }
+            }
+        }
+        Err(refusal) => tracing::event!(
+            target: "transaction::live_materialize",
+            tracing::Level::DEBUG,
+            outcome = "refused",
+            family = "live",
+            refusal_kind = crate::trace_support::TraceRefusal::tracing_kind(refusal),
+            "confidential outputs materialized"
+        ),
+    }
+    result
+}
+
+fn materialize_confidential_candidate_core(
     intent: &ConfidentialConstructionIntent,
     fixtures: &FrozenConfidentialFixtureView,
     crypto: &dyn ConfidentialProofMaterializer,
@@ -2220,6 +2288,7 @@ fn output_blinders(
 /// calls return the same type would have removed the check without
 /// removing a line of it.
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(name = "materialize_output", target = "transaction::live_materialize", level = "debug", skip_all, fields(output_index = u64::try_from(index).unwrap_or(u64::MAX)))]
 fn materialize_one_output(
     index: usize,
     projected: &ConfidentialFixtureOutputView,
@@ -2421,6 +2490,12 @@ fn materialize_explicit_destination(
 /// None of it reports a private subtotal. A refusal here names what was
 /// missing, because a refusal that leaked an amount would have published
 /// exactly what the canonical request keeps off the wire.
+#[tracing::instrument(
+    name = "preflight",
+    target = "transaction::live_materialize",
+    level = "debug",
+    skip_all
+)]
 fn preflight(
     intent: &ConfidentialConstructionIntent,
     fixtures: &FrozenConfidentialFixtureView,
@@ -2844,6 +2919,61 @@ fn signer_input_position(index: usize) -> Result<u16, MaterializationRefusal> {
 /// Whether a byte string contains one thirty-two byte scalar.
 fn carries_scalar(bytes: &[u8], scalar: &[u8; SCALAR_BYTES]) -> bool {
     bytes.len() >= SCALAR_BYTES && bytes.windows(SCALAR_BYTES).any(|window| window == scalar)
+}
+
+impl crate::trace_support::TraceRefusal for MaterializationRefusal {
+    #[allow(clippy::too_many_lines)]
+    fn tracing_kind(&self) -> &'static str {
+        match self {
+            Self::PredecessorOpeningMissing { .. } => "predecessor_opening_missing",
+            Self::PredecessorOpeningMismatch { .. } => "predecessor_opening_mismatch",
+            Self::SemanticValueImbalance => "semantic_value_imbalance",
+            Self::ValueBlinderImbalance => "value_blinder_imbalance",
+            Self::InvalidScalar { .. } => "invalid_scalar",
+            Self::InvalidCommitment { .. } => "invalid_commitment",
+            Self::BoundedParitySearchExhausted => "bounded_parity_search_exhausted",
+            Self::NonceMaterializationFailed { .. } => "nonce_materialization_failed",
+            Self::RangeproofMaterializationFailed { .. } => "rangeproof_materialization_failed",
+            Self::SerializationRoundTripMismatch => "serialization_round_trip_mismatch",
+            Self::PostFinalizationMutation { .. } => "post_finalization_mutation",
+            Self::UnknownFixtureHandle { .. } => "unknown_fixture_handle",
+            Self::FixtureDigestMismatch { .. } => "fixture_digest_mismatch",
+            Self::FixtureBindingAmbiguous { .. } => "fixture_binding_ambiguous",
+            Self::FixtureOutputOrderMismatch => "fixture_output_order_mismatch",
+            Self::SignerInputCensusExceedsPositionDomain => {
+                "signer_input_census_exceeds_position_domain"
+            }
+            Self::DuplicateInputOutpoint { .. } => "duplicate_input_outpoint",
+            Self::IncompleteFamilyClassification => "incomplete_family_classification",
+            Self::ProtocolAssetMismatch { .. } => "protocol_asset_mismatch",
+            Self::ConfidentialProtocolAsset { .. } => "confidential_protocol_asset",
+            Self::NonzeroProtocolAssetBlinder { .. } => "nonzero_protocol_asset_blinder",
+            Self::NonProtocolRegionOverlapsProtocol { .. } => {
+                "non_protocol_region_overlaps_protocol"
+            }
+            Self::NonProtocolRegionAffectsProtocolBalance => {
+                "non_protocol_region_affects_protocol_balance"
+            }
+            Self::UnsupportedProfileCombination => "unsupported_profile_combination",
+            Self::IndependentCommitmentMismatch { .. } => "independent_commitment_mismatch",
+            Self::IndependentCommitmentOriginNotDistinct { .. } => {
+                "independent_commitment_origin_not_distinct"
+            }
+            Self::ProofBindingMismatch { .. } => "proof_binding_mismatch",
+            Self::RangeproofEmpty { .. } => "rangeproof_empty",
+            Self::UnexpectedSurjectionProof { .. } => "unexpected_surjection_proof",
+            Self::OutputWitnessCensusMismatch => "output_witness_census_mismatch",
+            Self::OpeningBindingCensusMismatch => "opening_binding_census_mismatch",
+            Self::SignerInputWouldExposeOpening { .. } => "signer_input_would_expose_opening",
+            Self::PerOutputMaterializationRefused => "per_output_materialization_refused",
+            Self::FeeOutputProgramNotEmpty { .. } => "fee_output_program_not_empty",
+            Self::FeeOutputCarriesAnOpening { .. } => "fee_output_carries_an_opening",
+            Self::FeeOutputValueZero { .. } => "fee_output_value_zero",
+            Self::FeeOutputNotRecognizable { .. } => "fee_output_not_recognizable",
+            Self::OutputProgramEmpty { .. } => "output_program_empty",
+            Self::ExplicitDestinationIsAFee { .. } => "explicit_destination_is_a_fee",
+        }
+    }
 }
 
 #[cfg(test)]

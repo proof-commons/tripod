@@ -668,6 +668,21 @@ pub fn derive_live_transfer_abi(
     bundle: &CandidateLinkedLiveTransferBundle,
     curve: &dyn LiveCurveCapability,
 ) -> Result<CandidateLiveTransferAbi, TransactionRefusal> {
+    crate::trace_boundary!(
+        target: "transaction::live_abi",
+        span: "derive_abi",
+        level: tracing::Level::INFO,
+        family: "live",
+        message: "abi derived",
+        result: derive_live_transfer_abi_core(target, bundle, curve)
+    )
+}
+
+fn derive_live_transfer_abi_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    bundle: &CandidateLinkedLiveTransferBundle,
+    curve: &dyn LiveCurveCapability,
+) -> Result<CandidateLiveTransferAbi, TransactionRefusal> {
     if bundle.status() != LinkedArtifactStatus::Prototype {
         return Err(TransactionRefusal::LiveBundleIsNotACandidate);
     }

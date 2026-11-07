@@ -5,7 +5,6 @@
 
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
-use std::time::Instant;
 
 use architecture::{
     AssetId as SemanticAsset, DeltaKind, ObjectId, OperationId, ProjectionId, TagId,
@@ -694,10 +693,8 @@ fn all_twenty_one_honest_subjects_have_the_exact_refusal() {
 
 #[test]
 fn classification_is_independent_of_all_changed_position_claims() {
-    use std::io::Write as _;
     let subjects = subjects();
     let alternatives = claims();
-    let started = Instant::now();
     let mut calls = 0;
     for subject in &subjects {
         for first in &alternatives {
@@ -745,12 +742,6 @@ fn classification_is_independent_of_all_changed_position_claims() {
     fixture().sponsored.validate().unwrap();
     calls += 2;
     assert_eq!(calls, 3443);
-    writeln!(
-        std::io::stdout().lock(),
-        "census classification: {calls} calls; table wall {:?}",
-        started.elapsed()
-    )
-    .unwrap();
 }
 
 #[test]
@@ -1496,10 +1487,8 @@ fn assert_sponsor_projection_statuses(classified: &ValidatedMaturityAbiClassific
 
 #[test]
 fn role_refusals_are_independent_of_changed_position_claims() {
-    use std::io::Write as _;
     let fixture = fixture();
     let alternatives = claims();
-    let started = Instant::now();
     let mut classification_calls = 0;
     let mut role_calls = 0;
     for subject in role_subjects() {
@@ -1559,12 +1548,7 @@ fn role_refusals_are_independent_of_changed_position_claims() {
     assert_eq!(classification_calls, 1118);
     assert_eq!(role_calls, 16);
     let entry_calls = classification_calls + role_calls;
-    let wall = started.elapsed();
-    writeln!(
-        std::io::stdout().lock(),
-        "census roles: {classification_calls} classification calls; {role_calls} role calls; {entry_calls} entry calls; table wall {wall:?}"
-    )
-    .unwrap();
+    assert_eq!(entry_calls, 1134);
 }
 
 #[test]

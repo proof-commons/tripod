@@ -568,6 +568,21 @@ pub fn authorize_operator<'binding>(
     responses: impl IntoIterator<Item = OperatorSigningResponse>,
     verifier: &dyn ScriptPathSignatureVerifier,
 ) -> Result<OperatorAuthorizedCandidate<'binding>, OperatorSigningRefusal> {
+    crate::trace_boundary!(
+        target: "transaction::operator_signing",
+        span: "authorize",
+        level: tracing::Level::INFO,
+        family: "state",
+        message: "transaction authorized",
+        result: authorize_operator_core(request, responses, verifier)
+    )
+}
+
+fn authorize_operator_core<'binding>(
+    request: OperatorSigningRequest<'binding>,
+    responses: impl IntoIterator<Item = OperatorSigningResponse>,
+    verifier: &dyn ScriptPathSignatureVerifier,
+) -> Result<OperatorAuthorizedCandidate<'binding>, OperatorSigningRefusal> {
     let response = single_response(request.input_index(), responses)?;
     request.binding.check(
         &response.operator,
@@ -662,7 +677,54 @@ pub fn authorize_operator_under_right<'binding>(
     crate::operator_right::OperatorRightOutcome<'binding>,
     Box<crate::operator_right::RightFailure>,
 > {
-    registry.consume(right, request, |request| {
-        authorize_operator(request, responses, verifier)
+    crate::trace_boundary!(
+        target: "transaction::operator_signing",
+        span: "authorize",
+        level: tracing::Level::INFO,
+        family: "state",
+        message: "transaction authorized",
+        result: authorize_operator_under_right_core(registry, right, request, responses, verifier)
+    )
+}
+
+pub(crate) fn authorize_operator_under_right_core<'binding>(
+    registry: &mut crate::operator_right::OperatorRightRegistry,
+    right: crate::operator_right::ConstructionRight,
+    request: OperatorSigningRequest<'binding>,
+    responses: impl IntoIterator<Item = OperatorSigningResponse>,
+    verifier: &dyn ScriptPathSignatureVerifier,
+) -> Result<
+    crate::operator_right::OperatorRightOutcome<'binding>,
+    Box<crate::operator_right::RightFailure>,
+> {
+    registry.consume_core(right, request, |request| {
+        authorize_operator_core(request, responses, verifier)
     })
+}
+
+impl crate::trace_support::TraceRefusal for OperatorSigningRefusal {
+    fn tracing_kind(&self) -> &'static str {
+        match self {
+            Self::BindingRevisionMismatch { .. } => "binding_revision_mismatch",
+            Self::GenesisMismatch { .. } => "genesis_mismatch",
+            Self::OperatorKeyIsNotACurvePoint { .. } => "operator_key_is_not_a_curve_point",
+            Self::Census(..) => "census",
+            Self::WrongLeaf { .. } => "wrong_leaf",
+            Self::MissingResponse { .. } => "missing_response",
+            Self::DuplicateResponse { .. } => "duplicate_response",
+            Self::UnexpectedResponse { .. } => "unexpected_response",
+            Self::WrongInput { .. } => "wrong_input",
+            Self::WrongOperator { .. } => "wrong_operator",
+            Self::WrongDeployment { .. } => "wrong_deployment",
+            Self::WrongProfile(..) => "wrong_profile",
+            Self::BindingRefused(..) => "binding_refused",
+            Self::WrongTypeByte { .. } => "wrong_type_byte",
+            Self::EmptySignature { .. } => "empty_signature",
+            Self::MalformedSignature { .. } => "malformed_signature",
+            Self::BoundToOtherBytes { .. } => "bound_to_other_bytes",
+            Self::SignatureDoesNotVerifyForFrozenMessage { .. } => {
+                "signature_does_not_verify_for_frozen_message"
+            }
+        }
+    }
 }

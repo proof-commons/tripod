@@ -122,6 +122,45 @@ fn conforming(finalized: &FinalizedLiveTransfer) -> Vec<(u16, LiveOwnerResponse)
         .collect()
 }
 
+#[test]
+fn scoped_live_signing_preserves_witnesses_and_refuses_one_missing_response() {
+    use super::trace_tests::{assert_boundary, capture};
+    isolated_capture_test!(
+        scoped_live_signing_preserves_witnesses_and_refuses_one_missing_response
+    );
+
+    let finalized = two_owners();
+    let responses = conforming(&finalized);
+    let plain = authorize_live_transfer(finalized.clone(), responses.clone()).expect("control");
+    let (traced, records) =
+        capture(|| authorize_live_transfer(finalized.clone(), responses.clone()));
+    let traced = traced.expect("traced control");
+    assert_eq!(plain.witnesses(), traced.witnesses());
+    assert_boundary(
+        &records,
+        "transaction::live_signing",
+        "authorize",
+        "completed",
+        None,
+    );
+
+    let partial = responses.into_iter().take(1).collect::<Vec<_>>();
+    let plain = authorize_live_transfer(finalized.clone(), partial.clone());
+    let (traced, records) = capture(|| authorize_live_transfer(finalized, partial));
+    assert_eq!(plain, traced);
+    assert_eq!(
+        traced,
+        Err(TransactionRefusal::OwnerResponseMissing { input: 1 })
+    );
+    assert_boundary(
+        &records,
+        "transaction::live_signing",
+        "authorize",
+        "refused",
+        Some("owner_response_missing"),
+    );
+}
+
 /// The signing request for one input.
 fn request_for(finalized: &FinalizedLiveTransfer, input: u16) -> LiveSigningRequest {
     finalized

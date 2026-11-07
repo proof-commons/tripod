@@ -229,7 +229,7 @@ pub fn construct_confidential_maturity_announcement(
     let construction = construction.with_confidential_change(output, witnesses)?;
     let transaction = construction.transaction();
     let bytes = transaction.encode();
-    let decoded = TargetTransaction::decode(&bytes)
+    let decoded = TargetTransaction::decode_core(&bytes)
         .map_err(|_| MaturityConfidentialRefusal::SerializationRoundTripMismatch)?;
     if &decoded != transaction || decoded.encode() != bytes {
         return Err(MaturityConfidentialRefusal::SerializationRoundTripMismatch);

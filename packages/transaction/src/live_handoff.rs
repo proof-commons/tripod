@@ -437,6 +437,22 @@ impl SigningStarted {
         run: LiveDeployment,
         offered: impl IntoIterator<Item = OfferedOwnerAuthorization>,
     ) -> Result<FullyAuthorizedCandidate, SighashHandoffRefusal> {
+        crate::trace_boundary!(
+            target: "transaction::live_handoff",
+            span: "authorize",
+            level: tracing::Level::INFO,
+            family: "live",
+            message: "transaction authorized",
+            result: self.authorize_core(offered_protected_bytes, run, offered)
+        )
+    }
+
+    fn authorize_core(
+        self,
+        offered_protected_bytes: &[u8],
+        run: LiveDeployment,
+        offered: impl IntoIterator<Item = OfferedOwnerAuthorization>,
+    ) -> Result<FullyAuthorizedCandidate, SighashHandoffRefusal> {
         match AcceptedOwnerAuthorizations::bind(self.request, offered_protected_bytes, run, offered)
         {
             Ok(accepted) => Ok(FullyAuthorizedCandidate { accepted }),
@@ -576,5 +592,22 @@ impl SubmitReadyPrivateCandidate {
     #[must_use]
     pub fn authorization(&self, input_index: u32) -> Option<&[u8]> {
         self.accepted.authorization(input_index)
+    }
+}
+
+impl crate::trace_support::TraceRefusal for SighashHandoffRefusal {
+    fn tracing_kind(&self) -> &'static str {
+        match self {
+            Self::OwnerProfileCapabilityRevisionMismatch { .. } => {
+                "owner_profile_capability_revision_mismatch"
+            }
+            Self::WrongCandidate => "wrong_candidate",
+            Self::MissingOwner { .. } => "missing_owner",
+            Self::MutationAfterSigningStarted { .. } => "mutation_after_signing_started",
+            Self::TheCandidateCouldNotBeCensused(..) => "the_candidate_could_not_be_censused",
+            Self::TheAnswersWereNotAnAcceptedResult(..) => {
+                "the_answers_were_not_an_accepted_result"
+            }
+        }
     }
 }

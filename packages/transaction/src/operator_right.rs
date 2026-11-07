@@ -584,6 +584,20 @@ impl OperatorRightRegistry {
         scope: RightScope,
         bytes: &[u8],
     ) -> Result<ConstructionRight, RightRefusal> {
+        crate::trace_boundary!(
+            target: "transaction::operator_right",
+            span: "issue_right",
+            level: tracing::Level::DEBUG,
+            message: "operator right issued",
+            result: self.issue_core(scope, bytes)
+        )
+    }
+
+    fn issue_core(
+        &mut self,
+        scope: RightScope,
+        bytes: &[u8],
+    ) -> Result<ConstructionRight, RightRefusal> {
         self.check_branch(scope.branch())?;
         if let Some(entry) = self
             .entries
@@ -623,6 +637,20 @@ impl OperatorRightRegistry {
         right: ConstructionRight,
         bytes: &[u8],
     ) -> Result<ConstructionRight, Box<RightFailure>> {
+        crate::trace_boundary!(
+            target: "transaction::operator_right",
+            span: "replace_right",
+            level: tracing::Level::DEBUG,
+            message: "operator right replaced",
+            result: self.replace_core(right, bytes)
+        )
+    }
+
+    fn replace_core(
+        &mut self,
+        right: ConstructionRight,
+        bytes: &[u8],
+    ) -> Result<ConstructionRight, Box<RightFailure>> {
         match self.replace_bytes(&right, bytes) {
             Ok(()) => Ok(right),
             Err(refusal) => Err(Box::new(RightFailure { refusal, right })),
@@ -652,6 +680,24 @@ impl OperatorRightRegistry {
     /// Returns the token with a registry or signing refusal; terminal states
     /// remain terminal even when the caller retains the returned token.
     pub fn consume<'binding>(
+        &mut self,
+        right: ConstructionRight,
+        request: OperatorSigningRequest<'binding>,
+        sign: impl FnOnce(
+            OperatorSigningRequest<'binding>,
+        )
+            -> Result<OperatorAuthorizedCandidate<'binding>, OperatorSigningRefusal>,
+    ) -> Result<OperatorRightOutcome<'binding>, Box<RightFailure>> {
+        crate::trace_boundary!(
+            target: "transaction::operator_right",
+            span: "consume_right",
+            level: tracing::Level::DEBUG,
+            message: "operator right consumed",
+            result: self.consume_core(right, request, sign)
+        )
+    }
+
+    pub(crate) fn consume_core<'binding>(
         &mut self,
         right: ConstructionRight,
         request: OperatorSigningRequest<'binding>,
@@ -725,6 +771,20 @@ impl OperatorRightRegistry {
         scope: &RightScope,
         bytes: &[u8],
     ) -> Result<OperatorRightOutcome<'static>, RightRefusal> {
+        crate::trace_boundary!(
+            target: "transaction::operator_right",
+            span: "retry_right",
+            level: tracing::Level::DEBUG,
+            message: "operator right retried",
+            result: self.retry_core(scope, bytes)
+        )
+    }
+
+    fn retry_core(
+        &mut self,
+        scope: &RightScope,
+        bytes: &[u8],
+    ) -> Result<OperatorRightOutcome<'static>, RightRefusal> {
         let index = self.locate(scope)?;
         let entry = &self.entries[index];
         if entry.state == State::Indeterminate {
@@ -751,6 +811,16 @@ impl OperatorRightRegistry {
     /// # Errors
     /// Refuses unknown, stale, unsigned or indeterminate scopes.
     pub fn dispatch(&mut self, scope: &RightScope) -> Result<(), RightRefusal> {
+        crate::trace_boundary!(
+            target: "transaction::operator_right",
+            span: "dispatch_right",
+            level: tracing::Level::DEBUG,
+            message: "operator right dispatched",
+            result: self.dispatch_core(scope)
+        )
+    }
+
+    fn dispatch_core(&mut self, scope: &RightScope) -> Result<(), RightRefusal> {
         let index = self.locate(scope)?;
         let entry = &mut self.entries[index];
         match entry.state {
@@ -772,6 +842,16 @@ impl OperatorRightRegistry {
     /// # Errors
     /// Refuses unknown, stale, undispatched or already indeterminate scopes.
     pub fn timeout(&mut self, scope: &RightScope) -> Result<(), RightRefusal> {
+        crate::trace_boundary!(
+            target: "transaction::operator_right",
+            span: "timeout_right",
+            level: tracing::Level::DEBUG,
+            message: "operator right timed out",
+            result: self.timeout_core(scope)
+        )
+    }
+
+    fn timeout_core(&mut self, scope: &RightScope) -> Result<(), RightRefusal> {
         let index = self.locate(scope)?;
         let entry = &mut self.entries[index];
         match entry.state {
@@ -873,4 +953,33 @@ fn observation(entry: &Entry, event: NonEquivocationEvent) -> NonEquivocationEnt
 
 fn digest(bytes: &[u8]) -> Digest32 {
     tagged_hash("operator-right/candidate", bytes)
+}
+
+impl crate::trace_support::TraceRefusal for RightRefusal {
+    fn tracing_kind(&self) -> &'static str {
+        match self {
+            Self::ZeroBranchIdentifier { .. } => "zero_branch_identifier",
+            Self::PredecessorAbsent { .. } => "predecessor_absent",
+            Self::Outstanding(..) => "outstanding",
+            Self::Consumed(..) => "consumed",
+            Self::CompetingCandidate { .. } => "competing_candidate",
+            Self::ReplacementAfterSigning(..) => "replacement_after_signing",
+            Self::Indeterminate(..) => "indeterminate",
+            Self::StaleBranch(..) => "stale_branch",
+            Self::NoRight(..) => "no_right",
+            Self::MismatchedBytes { .. } => "mismatched_bytes",
+            Self::ForeignRight(..) => "foreign_right",
+            Self::ScopeMismatch { .. } => "scope_mismatch",
+            Self::NotSigned(..) => "not_signed",
+            Self::NotDispatched(..) => "not_dispatched",
+            Self::Signing(..) => "signing",
+            Self::UnexpectedAuthorization(..) => "unexpected_authorization",
+        }
+    }
+}
+
+impl crate::trace_support::TraceRefusal for RightFailure {
+    fn tracing_kind(&self) -> &'static str {
+        crate::trace_support::TraceRefusal::tracing_kind(&self.refusal)
+    }
 }

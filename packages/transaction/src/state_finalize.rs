@@ -680,6 +680,27 @@ impl FinalizedMaturityAnnouncement {
 pub fn finalize_maturity_announcement(
     construction: MaturityConstruction,
 ) -> FinalizedMaturityAnnouncement {
+    let span = tracing::span!(
+        target: "transaction::state_finalize",
+        tracing::Level::INFO,
+        "finalize",
+        family = "state"
+    );
+    let _entered = span.enter();
+    let finalized = finalize_maturity_announcement_core(construction);
+    tracing::event!(
+        target: "transaction::state_finalize",
+        tracing::Level::INFO,
+        outcome = "completed",
+        family = "state",
+        "transaction finalized"
+    );
+    finalized
+}
+
+fn finalize_maturity_announcement_core(
+    construction: MaturityConstruction,
+) -> FinalizedMaturityAnnouncement {
     let protected_bytes = construction.transaction().encode();
     let outputs = MaturityFinalizedOutputCensus {
         outputs: construction.transaction().outputs().to_vec(),

@@ -126,6 +126,38 @@ fn malformed_and_empty_offers_refuse_against_a_nonempty_control() {
 }
 
 #[test]
+fn scoped_state_construction_trace_preserves_candidate_and_refusal() {
+    use super::state_support::{construct_with_sponsor, maturity_sponsor};
+    use super::trace_tests::{assert_boundary, capture};
+    isolated_capture_test!(scoped_state_construction_trace_preserves_candidate_and_refusal);
+
+    let (mut sponsor, public) = maturity_sponsor(true);
+    let plain = construct_with_sponsor(true, &sponsor, &public);
+    let (traced, records) = capture(|| construct_with_sponsor(true, &sponsor, &public));
+    assert_eq!(plain, traced);
+    assert_boundary(
+        &records,
+        "transaction::state_construct",
+        "construct",
+        "completed",
+        None,
+    );
+
+    sponsor.inputs.clear();
+    let plain = construct_with_sponsor(true, &sponsor, &public);
+    let (traced, records) = capture(|| construct_with_sponsor(true, &sponsor, &public));
+    assert_eq!(plain, traced);
+    assert_eq!(traced, Err(TransactionRefusal::EmptySponsorOffer));
+    assert_boundary(
+        &records,
+        "transaction::state_construct",
+        "construct",
+        "refused",
+        Some("empty_sponsor_offer"),
+    );
+}
+
+#[test]
 fn declared_reserve_cannot_alias_the_state_asset() {
     use super::state_support::{construct_with_sponsor, maturity_sponsor};
     let (sponsor, public) = maturity_sponsor(false);

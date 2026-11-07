@@ -276,13 +276,14 @@ pub fn validate_maturity_abi_classification(
 ) -> Result<ValidatedMaturityAbiClassification, MaturityAbiClassificationRefusal> {
     use MaturityAbiClassificationRefusal as Refusal;
     use architecture::OperationId;
-    let transaction = crate::bytes::TargetTransaction::decode(offer.bytes).map_err(|error| {
-        if error == TransactionRefusal::IssuanceInputRefused {
-            Refusal::IssuanceOffered
-        } else {
-            Refusal::Decode(Box::new(error))
-        }
-    })?;
+    let transaction =
+        crate::bytes::TargetTransaction::decode_core(offer.bytes).map_err(|error| {
+            if error == TransactionRefusal::IssuanceInputRefused {
+                Refusal::IssuanceOffered
+            } else {
+                Refusal::Decode(Box::new(error))
+            }
+        })?;
     if transaction.inputs().len() != offer.spent.len() {
         return Err(Refusal::SpentCensus {
             inputs: transaction.inputs().len(),
@@ -1582,6 +1583,20 @@ impl CandidateMaturityAnnouncementAbi {
 /// [`TransactionRefusal::InheritedObligationUnaccounted`] when the two
 /// halves of the partition are not exactly the link's own set.
 pub fn derive_maturity_announcement_abi(
+    target: &ReviewedElementsTapscriptDefinition,
+    validated: &ValidatedMaturityStateView,
+) -> Result<CandidateMaturityAnnouncementAbi, TransactionRefusal> {
+    crate::trace_boundary!(
+        target: "transaction::state_abi",
+        span: "derive_abi",
+        level: tracing::Level::INFO,
+        family: "state",
+        message: "abi derived",
+        result: derive_maturity_announcement_abi_core(target, validated)
+    )
+}
+
+fn derive_maturity_announcement_abi_core(
     target: &ReviewedElementsTapscriptDefinition,
     validated: &ValidatedMaturityStateView,
 ) -> Result<CandidateMaturityAnnouncementAbi, TransactionRefusal> {

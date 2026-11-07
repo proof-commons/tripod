@@ -1386,6 +1386,36 @@ impl TargetTransaction {
     /// round-trip law: a transaction this returns re-encodes to exactly
     /// the bytes it was read from.
     pub fn decode(bytes: &[u8]) -> Result<Self, TransactionRefusal> {
+        let input_bytes = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        let span = tracing::span!(
+            target: "transaction::bytes",
+            tracing::Level::DEBUG,
+            "decode_transaction",
+            input_bytes
+        );
+        let _entered = span.enter();
+        let result = Self::decode_core(bytes);
+        match &result {
+            Ok(_) => tracing::event!(
+                target: "transaction::bytes",
+                tracing::Level::DEBUG,
+                outcome = "completed",
+                input_bytes,
+                "transaction decoded"
+            ),
+            Err(refusal) => tracing::event!(
+                target: "transaction::bytes",
+                tracing::Level::DEBUG,
+                outcome = "refused",
+                input_bytes,
+                refusal_kind = crate::trace_support::TraceRefusal::tracing_kind(refusal),
+                "transaction decoded"
+            ),
+        }
+        result
+    }
+
+    pub(crate) fn decode_core(bytes: &[u8]) -> Result<Self, TransactionRefusal> {
         let mut reader = Reader::new(bytes);
         let version = reader.u32_le()?;
         let flags = reader.byte()?;

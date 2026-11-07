@@ -124,7 +124,7 @@
 //! # Authorization goes only through the construction right
 //!
 //! [`OperatorSigningStarted::authorize`] calls
-//! [`authorize_operator_under_right`] and nothing else. The unmediated
+//! [`crate::operator_signing::authorize_operator_under_right`] and nothing else. The unmediated
 //! entry point exists for the boundary's own tests and says so; the
 //! route with a registry behind it is the one that records what was
 //! issued and signed, and a second route into this chain would leave a
@@ -168,7 +168,7 @@ use crate::operator_right::{
 };
 use crate::operator_signing::{
     OperatorEvidenceStanding, OperatorSigningRequest, OperatorSigningResponse,
-    ScriptPathSignatureVerifier, authorize_operator_under_right,
+    ScriptPathSignatureVerifier, authorize_operator_under_right_core,
 };
 use crate::script_path_signing::SpentOutputCensusEntry;
 use crate::sponsor::{SighashProfile, SignerRole, SponsorCapability, SponsorSigningRequest};
@@ -605,8 +605,26 @@ impl<'finalized> OperatorSigningStarted<'finalized> {
         verifier: &dyn ScriptPathSignatureVerifier,
     ) -> Result<OperatorAuthorizedMaturityAnnouncement<'finalized>, Box<MaturityAuthorizationFailure>>
     {
+        crate::trace_boundary!(
+            target: "transaction::state_signing",
+            span: "authorize",
+            level: tracing::Level::INFO,
+            family: "state",
+            message: "transaction authorized",
+            result: self.authorize_core(registry, right, responses, verifier)
+        )
+    }
+
+    fn authorize_core(
+        self,
+        registry: &mut OperatorRightRegistry,
+        right: ConstructionRight,
+        responses: impl IntoIterator<Item = OperatorSigningResponse>,
+        verifier: &dyn ScriptPathSignatureVerifier,
+    ) -> Result<OperatorAuthorizedMaturityAnnouncement<'finalized>, Box<MaturityAuthorizationFailure>>
+    {
         let Self { finalized, request } = self;
-        match authorize_operator_under_right(registry, right, request, responses, verifier) {
+        match authorize_operator_under_right_core(registry, right, request, responses, verifier) {
             // The fresh outcome is the first accepted signing action,
             // and it is the only outcome this route produces: the
             // registry's consumption always invokes the signer, and the
@@ -1116,4 +1134,10 @@ fn position_of(index: usize) -> u16 {
 
 pub(crate) fn sponsor_position(index: usize) -> Result<u16, TransactionRefusal> {
     u16::try_from(index).map_err(|_| TransactionRefusal::MaturitySponsorInputPositionOutOfRange)
+}
+
+impl crate::trace_support::TraceRefusal for MaturityAuthorizationFailure {
+    fn tracing_kind(&self) -> &'static str {
+        crate::trace_support::TraceRefusal::tracing_kind(&self.refusal)
+    }
 }

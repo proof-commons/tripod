@@ -1065,3 +1065,221 @@ pub enum TransactionRefusal {
         position: u16,
     },
 }
+
+impl crate::trace_support::TraceRefusal for TransactionRefusal {
+    #[allow(clippy::too_many_lines)]
+    fn tracing_kind(&self) -> &'static str {
+        match self {
+            Self::BundleIsNotACandidate => "bundle_is_not_a_candidate",
+            Self::ContractRevisionMismatch => "contract_revision_mismatch",
+            Self::MissingLayout(..) => "missing_layout",
+            Self::MissingLeaf(..) => "missing_leaf",
+            Self::MissingInputRole { .. } => "missing_input_role",
+            Self::MissingOutputRole { .. } => "missing_output_role",
+            Self::MissingDeploymentSymbol { .. } => "missing_deployment_symbol",
+            Self::MalformedDeploymentSymbol { .. } => "malformed_deployment_symbol",
+            Self::CoordinatorNotAtAnchor { .. } => "coordinator_not_at_anchor",
+            Self::MalformedPinnedProgram { .. } => "malformed_pinned_program",
+            Self::PinnedInternalKeyMismatch => "pinned_internal_key_mismatch",
+            Self::PinnedLeafVersionMismatch { .. } => "pinned_leaf_version_mismatch",
+            Self::EmptyAshSelection => "empty_ash_selection",
+            Self::DuplicateOutpoint(..) => "duplicate_outpoint",
+            Self::DuplicatePublicOutputView(..) => "duplicate_public_output_view",
+            Self::DuplicateSponsorOutpoint(..) => "duplicate_sponsor_outpoint",
+            Self::OverlappingOutpoint(..) => "overlapping_outpoint",
+            Self::UnsupportedShape { .. } => "unsupported_shape",
+            Self::AshInputCarriesForeignAsset(..) => "ash_input_carries_foreign_asset",
+            Self::AshInputCarriesForeignProgram(..) => "ash_input_carries_foreign_program",
+            Self::AshInputAmountNotExplicit(..) => "ash_input_amount_not_explicit",
+            Self::SponsorInputAssetNotExplicit(..) => "sponsor_input_asset_not_explicit",
+            Self::SponsorInputCarriesForeignAsset(..) => "sponsor_input_carries_foreign_asset",
+            Self::SponsorProgramClassNotAdmitted(..) => "sponsor_program_class_not_admitted",
+            Self::SponsorChangeWithoutSponsor => "sponsor_change_without_sponsor",
+            Self::SponsorRequestedWithoutCapability => "sponsor_requested_without_capability",
+            Self::SponsorCapabilityWithoutRequest => "sponsor_capability_without_request",
+            Self::EmptySponsorOffer => "empty_sponsor_offer",
+            Self::SuccessorAmountOutOfRange => "successor_amount_out_of_range",
+            Self::SponsorValueDoesNotCoverFee => "sponsor_value_does_not_cover_fee",
+            Self::SponsorSignatureMissing(..) => "sponsor_signature_missing",
+            Self::SponsorSignatureBindingMismatch(..) => "sponsor_signature_binding_mismatch",
+            Self::SponsorWitnessShapeRefused { .. } => "sponsor_witness_shape_refused",
+            Self::ConservationFailed { .. } => "conservation_failed",
+            Self::ResourceBoundExceeded { .. } => "resource_bound_exceeded",
+            Self::LayoutCensusMismatch { .. } => "layout_census_mismatch",
+            Self::TruncatedTargetBytes { .. } => "truncated_target_bytes",
+            Self::TrailingTargetBytes { .. } => "trailing_target_bytes",
+            Self::NonMinimalCompactSize { .. } => "non_minimal_compact_size",
+            Self::UnrecognizedFieldPrefix { .. } => "unrecognized_field_prefix",
+            Self::UnrecognizedWitnessFlag { .. } => "unrecognized_witness_flag",
+            Self::SuperfluousWitnessRecord => "superfluous_witness_record",
+            Self::MalformedAssetIdentifier { .. } => "malformed_asset_identifier",
+            Self::OutpointIndexOutOfRange { .. } => "outpoint_index_out_of_range",
+            Self::IssuanceInputRefused => "issuance_input_refused",
+            Self::PeginInputRefused => "pegin_input_refused",
+            Self::IssuanceProofRefused => "issuance_proof_refused",
+            Self::SurjectionProofRefused => "surjection_proof_refused",
+            Self::RangeProofRefused => "range_proof_refused",
+            Self::RangeProofRequired { .. } => "range_proof_required",
+            Self::OutputWitnessCensusMismatch { .. } => "output_witness_census_mismatch",
+            Self::EmptyInputCensus => "empty_input_census",
+            Self::EmptyOutputCensus => "empty_output_census",
+            Self::WitnessCensusMismatch { .. } => "witness_census_mismatch",
+            Self::LiveBundleIsNotACandidate => "live_bundle_is_not_a_candidate",
+            Self::LiveContractRevisionMismatch => "live_contract_revision_mismatch",
+            Self::LiveLeafVersionDisagreement => "live_leaf_version_disagreement",
+            Self::MissingLiveLeaf(..) => "missing_live_leaf",
+            Self::MissingLiveShapeRanges { .. } => "missing_live_shape_ranges",
+            Self::MissingLiveFamilyRange { .. } => "missing_live_family_range",
+            Self::LiveCoordinatorNotAtAnchor { .. } => "live_coordinator_not_at_anchor",
+            Self::MissingLiveDeploymentSymbol { .. } => "missing_live_deployment_symbol",
+            Self::MalformedLiveDeploymentSymbol { .. } => "malformed_live_deployment_symbol",
+            Self::LiveInternalKeyMalformed { .. } => "live_internal_key_malformed",
+            Self::OwnerKeyIsNotACurvePoint { .. } => "owner_key_is_not_a_curve_point",
+            Self::DestinationOutputKeyUndetermined => "destination_output_key_undetermined",
+            Self::InheritedObligationUnaccounted => "inherited_obligation_unaccounted",
+            Self::DestinationValueIsZero => "destination_value_is_zero",
+            Self::EmptyReceiptSelection => "empty_receipt_selection",
+            Self::DuplicateReceiptOutpoint(..) => "duplicate_receipt_outpoint",
+            Self::EmptyDestinationCensus => "empty_destination_census",
+            Self::SponsorChangeWithoutSponsoredForm => "sponsor_change_without_sponsored_form",
+            Self::DeclaredRolesDoNotCoverDestinations { .. } => {
+                "declared_roles_do_not_cover_destinations"
+            }
+            Self::SelfPaidFeeUnderSponsoredForm => "self_paid_fee_under_sponsored_form",
+            Self::SelfPaidFeeDeclaredMoreThanOnce { .. } => "self_paid_fee_declared_more_than_once",
+            Self::SelfPaidFeeHasNoShapePosition => "self_paid_fee_has_no_shape_position",
+            Self::SelfPaidFeePositionDisagreesWithShape { .. } => {
+                "self_paid_fee_position_disagrees_with_shape"
+            }
+            Self::PublicTestRandomnessWithoutPrivateForm => {
+                "public_test_randomness_without_private_form"
+            }
+            Self::PrivateFormWithoutPublicTestRandomness => {
+                "private_form_without_public_test_randomness"
+            }
+            Self::DestinationOwnerHasNoConstructor { .. } => "destination_owner_has_no_constructor",
+            Self::RepresentationNotLinked => "representation_not_linked",
+            Self::LiveSponsorRequestedWithoutCapability => {
+                "live_sponsor_requested_without_capability"
+            }
+            Self::LiveSponsorCapabilityWithoutRequest => "live_sponsor_capability_without_request",
+            Self::EmptyLiveSponsorOffer => "empty_live_sponsor_offer",
+            Self::SponsorChangeRequestedWithoutDestination => {
+                "sponsor_change_requested_without_destination"
+            }
+            Self::SponsorChangeOfferedWithoutRequest => "sponsor_change_offered_without_request",
+            Self::LiveFormDisagreesWithShape => "live_form_disagrees_with_shape",
+            Self::UnsupportedLiveShape { .. } => "unsupported_live_shape",
+            Self::SponsorOverlapsReceiptFamily(..) => "sponsor_overlaps_receipt_family",
+            Self::MissingPublicReceiptView(..) => "missing_public_receipt_view",
+            Self::ReceiptInputIsNotALiveReceipt(..) => "receipt_input_is_not_a_live_receipt",
+            Self::ReceiptInputCarriesForeignAsset(..) => "receipt_input_carries_foreign_asset",
+            Self::ReceiptInputValueFormRefused(..) => "receipt_input_value_form_refused",
+            Self::MissingPublicSponsorView(..) => "missing_public_sponsor_view",
+            Self::LiveSponsorInputCarriesForeignAsset(..) => {
+                "live_sponsor_input_carries_foreign_asset"
+            }
+            Self::DestinationTotalOutOfRange => "destination_total_out_of_range",
+            Self::LiveConservationFailed { .. } => "live_conservation_failed",
+            Self::ReceiptPositionOutsideFamily { .. } => "receipt_position_outside_family",
+            Self::ConfidentialConstructionModelNotAdmitted => {
+                "confidential_construction_model_not_admitted"
+            }
+            Self::PrivateValueCapabilityAbsent => "private_value_capability_absent",
+            Self::PrivateValueCapabilityWithoutPrivateForm => {
+                "private_value_capability_without_private_form"
+            }
+            Self::DestinationValueCommitmentUndetermined { .. } => {
+                "destination_value_commitment_undetermined"
+            }
+            Self::PrivateFinalizationIsNotTheExplicitLane { .. } => {
+                "private_finalization_is_not_the_explicit_lane"
+            }
+            Self::PrivateOpeningsDoNotCoverTheRequest { .. } => {
+                "private_openings_do_not_cover_the_request"
+            }
+            Self::PrivateOpeningRegionDisagreesWithPosition { .. } => {
+                "private_opening_region_disagrees_with_position"
+            }
+            Self::PrivateSponsorRegionAmountDisagreesWithOffer { .. } => {
+                "private_sponsor_region_amount_disagrees_with_offer"
+            }
+            Self::PrivateMaterializationRefused(..) => "private_materialization_refused",
+            Self::OwnerResponseMissing { .. } => "owner_response_missing",
+            Self::OwnerResponseDuplicated { .. } => "owner_response_duplicated",
+            Self::UnexpectedSigner { .. } => "unexpected_signer",
+            Self::ResponseFromWrongOwner { .. } => "response_from_wrong_owner",
+            Self::ResponseForWrongInput { .. } => "response_for_wrong_input",
+            Self::ResponseUnderWrongSighashProfile { .. } => "response_under_wrong_sighash_profile",
+            Self::ResponseBoundToDifferentBytes { .. } => "response_bound_to_different_bytes",
+            Self::OutputMutatedAfterSigning { .. } => "output_mutated_after_signing",
+            Self::InputExtendedAfterSigning { .. } => "input_extended_after_signing",
+            Self::OutputOmittedAfterSigning { .. } => "output_omitted_after_signing",
+            Self::DuplicateMaturityViewEntry(..) => "duplicate_maturity_view_entry",
+            Self::MissingMaturityViewEntry(..) => "missing_maturity_view_entry",
+            Self::MaturityViewCommitmentRefused { .. } => "maturity_view_commitment_refused",
+            Self::MaturityViewProgramNotReconstructed { .. } => {
+                "maturity_view_program_not_reconstructed"
+            }
+            Self::MissingReviewedTransactionForm { .. } => "missing_reviewed_transaction_form",
+            Self::WitnessItemWidthMismatch { .. } => "witness_item_width_mismatch",
+            Self::MaturitySponsorValueRequiresProofFinalization => {
+                "maturity_sponsor_value_requires_proof_finalization"
+            }
+            Self::MaturitySponsorReserveAliasesStateAsset => {
+                "maturity_sponsor_reserve_aliases_state_asset"
+            }
+            Self::MaturityOutputWitnessChangedAfterFinalization => {
+                "maturity_output_witness_changed_after_finalization"
+            }
+            Self::MaturitySponsorInputPositionOutOfRange => {
+                "maturity_sponsor_input_position_out_of_range"
+            }
+            Self::MaturitySponsorAuthorizationEmpty(..) => "maturity_sponsor_authorization_empty",
+            Self::MaturitySuccessorTransitionRefused { .. } => {
+                "maturity_successor_transition_refused"
+            }
+            Self::MaturitySuccessorSearchRefused { .. } => "maturity_successor_search_refused",
+            Self::MaturitySuccessorContinuityRefused { .. } => {
+                "maturity_successor_continuity_refused"
+            }
+            Self::MaturityDeploymentAssetDisagreesWithView => {
+                "maturity_deployment_asset_disagrees_with_view"
+            }
+            Self::MaturityDeploymentAmountDisagreesWithView => {
+                "maturity_deployment_amount_disagrees_with_view"
+            }
+            Self::MaturityAnnouncementSigningRequestRefused { .. } => {
+                "maturity_announcement_signing_request_refused"
+            }
+            Self::MaturityVersionChangedAfterFinalization { .. } => {
+                "maturity_version_changed_after_finalization"
+            }
+            Self::MaturityLockTimeChangedAfterFinalization { .. } => {
+                "maturity_lock_time_changed_after_finalization"
+            }
+            Self::MaturityBytesDifferAfterFinalization { .. } => {
+                "maturity_bytes_differ_after_finalization"
+            }
+            Self::MaturityMutationAfterSigningStarted { .. } => {
+                "maturity_mutation_after_signing_started"
+            }
+            Self::MaturityOperatorAuthorizationRefused { .. } => {
+                "maturity_operator_authorization_refused"
+            }
+            Self::MaturityConstructionRightRefused { .. } => "maturity_construction_right_refused",
+            Self::MaturitySuccessorMetadataChangedAfterSigning => {
+                "maturity_successor_metadata_changed_after_signing"
+            }
+            Self::MaturitySuccessorProgramChangedAfterSigning { .. } => {
+                "maturity_successor_program_changed_after_signing"
+            }
+            Self::MaturitySponsorInputAddedAfterSigning { .. } => {
+                "maturity_sponsor_input_added_after_signing"
+            }
+            Self::MaturityFeeRoleChangedAfterSigning { .. } => {
+                "maturity_fee_role_changed_after_signing"
+            }
+        }
+    }
+}

@@ -55,6 +55,26 @@ fn variable_abi() -> CandidateMaturityAnnouncementAbi {
 }
 
 #[test]
+fn scoped_state_abi_control_preserves_the_derived_value() {
+    use super::trace_tests::{assert_boundary, capture};
+    isolated_capture_test!(scoped_state_abi_control_preserves_the_derived_value);
+
+    let target = super::reviewed_target();
+    let validated = validated_view();
+    let plain = derive_maturity_announcement_abi(&target, &validated);
+    let (traced, records) = capture(|| derive_maturity_announcement_abi(&target, &validated));
+    assert_eq!(plain, traced);
+    assert!(traced.is_ok());
+    assert_boundary(
+        &records,
+        "transaction::state_abi",
+        "derive_abi",
+        "completed",
+        None,
+    );
+}
+
+#[test]
 fn each_abi_retains_its_records_schedule_and_seven_declared_widths() {
     let whole = abi();
     let variable = variable_abi();

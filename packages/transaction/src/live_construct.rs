@@ -280,7 +280,25 @@ pub fn finalize_live_transfer(
     sponsor: Option<&dyn SponsorCapability>,
     private: Option<&dyn PrivateValueCapability>,
 ) -> Result<LiveFinalization, TransactionRefusal> {
-    finalize_live_transfer_declaring(target, abi, request, view, sponsor, private, &[])
+    crate::trace_boundary!(
+        target: "transaction::live_construct",
+        span: "finalize",
+        level: tracing::Level::INFO,
+        family: "live",
+        message: "transaction finalized",
+        result: finalize_live_transfer_core(target, abi, request, view, sponsor, private)
+    )
+}
+
+fn finalize_live_transfer_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    abi: &CandidateLiveTransferAbi,
+    request: &LiveTransferRequest,
+    view: &PublicConstructionView,
+    sponsor: Option<&dyn SponsorCapability>,
+    private: Option<&dyn PrivateValueCapability>,
+) -> Result<LiveFinalization, TransactionRefusal> {
+    finalize_live_transfer_declaring_core(target, abi, request, view, sponsor, private, &[])
 }
 
 /// The explicit finalization, with each destination's ROLE declared.
@@ -308,6 +326,25 @@ pub fn finalize_live_transfer(
 /// [`TransactionRefusal::SelfPaidFeeDeclaredMoreThanOnce`] for a second
 /// declared fee entry, the target admitting one fee position.
 pub fn finalize_live_transfer_declaring(
+    target: &ReviewedElementsTapscriptDefinition,
+    abi: &CandidateLiveTransferAbi,
+    request: &LiveTransferRequest,
+    view: &PublicConstructionView,
+    sponsor: Option<&dyn SponsorCapability>,
+    private: Option<&dyn PrivateValueCapability>,
+    declared: &[ExplicitDestinationRole],
+) -> Result<LiveFinalization, TransactionRefusal> {
+    crate::trace_boundary!(
+        target: "transaction::live_construct",
+        span: "finalize",
+        level: tracing::Level::INFO,
+        family: "live",
+        message: "transaction finalized",
+        result: finalize_live_transfer_declaring_core(target, abi, request, view, sponsor, private, declared)
+    )
+}
+
+fn finalize_live_transfer_declaring_core(
     target: &ReviewedElementsTapscriptDefinition,
     abi: &CandidateLiveTransferAbi,
     request: &LiveTransferRequest,
@@ -477,6 +514,22 @@ pub fn finalize_live_transfer_declaring(
 /// [`check_weight`], which is the same preflight the compact-ASH
 /// pipeline runs.
 pub fn complete_live_transfer(
+    target: &ReviewedElementsTapscriptDefinition,
+    authorized: AuthorizedLiveTransfer,
+    report: LiveConstructionReport,
+    sponsor: Option<&dyn SponsorCapability>,
+) -> Result<CandidateLiveTransferTransaction, TransactionRefusal> {
+    crate::trace_boundary!(
+        target: "transaction::live_construct",
+        span: "construct",
+        level: tracing::Level::INFO,
+        family: "live",
+        message: "transaction constructed",
+        result: complete_live_transfer_core(target, authorized, report, sponsor)
+    )
+}
+
+fn complete_live_transfer_core(
     target: &ReviewedElementsTapscriptDefinition,
     authorized: AuthorizedLiveTransfer,
     report: LiveConstructionReport,

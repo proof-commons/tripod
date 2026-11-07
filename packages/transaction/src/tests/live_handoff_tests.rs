@@ -114,6 +114,47 @@ fn authorize_every_owner(
     started.authorize(&bytes, deployment(), answers)
 }
 
+#[test]
+fn scoped_handoff_authorization_preserves_bytes_and_refuses_one_missing_owner() {
+    use super::trace_tests::{assert_boundary, capture};
+    isolated_capture_test!(
+        scoped_handoff_authorization_preserves_bytes_and_refuses_one_missing_owner
+    );
+
+    let target = reviewed_target();
+    let materialized = two_owner(&target);
+    let plain = authorize_every_owner(open(&target, &materialized));
+    let (traced, records) = capture(|| authorize_every_owner(open(&target, &materialized)));
+    assert_eq!(plain, traced);
+    assert_boundary(
+        &records,
+        "transaction::live_handoff",
+        "authorize",
+        "completed",
+        None,
+    );
+
+    let refuse = || {
+        let started = open(&target, &materialized);
+        let bytes = started.protected_bytes().to_vec();
+        started.authorize(&bytes, deployment(), [answer(0)])
+    };
+    let plain = refuse();
+    let (traced, records) = capture(refuse);
+    assert_eq!(plain, traced);
+    assert_eq!(
+        traced,
+        Err(SighashHandoffRefusal::MissingOwner { input_index: 1 })
+    );
+    assert_boundary(
+        &records,
+        "transaction::live_handoff",
+        "authorize",
+        "refused",
+        Some("missing_owner"),
+    );
+}
+
 /// The whole order, run once over `materialized`.
 fn submit_ready(
     target: &ReviewedElementsTapscriptDefinition,

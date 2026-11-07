@@ -28,6 +28,14 @@
 //! encoder compared only with itself would agree however wrong it was,
 //! which is the whole reason those two files look the way they do.
 
+macro_rules! isolated_capture_test {
+    ($name:ident) => {
+        if crate::tests::trace_tests::run_isolated_capture_test(module_path!(), stringify!($name)) {
+            return;
+        }
+    };
+}
+
 mod abi_tests;
 mod construction_tests;
 mod ctf_materialize_tests;
@@ -57,6 +65,7 @@ mod state_signing_tests;
 mod state_support;
 mod state_view_tests;
 mod taproot_tests;
+mod trace_tests;
 
 use std::num::{NonZeroU8, NonZeroU32, NonZeroU64};
 use std::sync::LazyLock;

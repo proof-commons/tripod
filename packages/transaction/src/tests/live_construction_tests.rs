@@ -1219,6 +1219,87 @@ fn a_sponsored_transfer_reaches_candidate_bytes_with_the_sponsors_own_witness() 
     );
 }
 
+#[test]
+fn scoped_live_completion_preserves_bytes_and_refuses_a_missing_sponsor() {
+    use super::trace_tests::{assert_boundary, capture};
+    isolated_capture_test!(scoped_live_completion_preserves_bytes_and_refuses_a_missing_sponsor);
+
+    let target = reviewed_target();
+    let abi = live_abi();
+    let (request, stated) = explicit_fixture(
+        &abi,
+        RequestedForm::Sponsored,
+        SponsorChangeRequest::Requested,
+    );
+    let sponsor = FixtureSponsor::new(90, Some(ValueField::Explicit(40)));
+    let finalization =
+        finalize_live_transfer(&target, &abi, &request, &stated, Some(&sponsor), None)
+            .expect("sponsored control finalizes");
+    let report = finalization.report().clone();
+    let finalized = finalization.into_finalized();
+    let responses: Vec<_> = finalized
+        .signing_requests()
+        .iter()
+        .map(|signing| {
+            (
+                signing.input(),
+                crate::live_signing::LiveOwnerResponse::to(signing, vec![0x5c; 8]),
+            )
+        })
+        .collect();
+    let authorized = crate::live_signing::authorize_live_transfer(finalized, responses)
+        .expect("owner controls authorize");
+
+    let plain = crate::live_construct::complete_live_transfer(
+        &target,
+        authorized.clone(),
+        report.clone(),
+        Some(&sponsor),
+    );
+    let (traced, records) = capture(|| {
+        crate::live_construct::complete_live_transfer(
+            &target,
+            authorized.clone(),
+            report.clone(),
+            Some(&sponsor),
+        )
+    });
+    assert_eq!(plain, traced);
+    assert_boundary(
+        &records,
+        "transaction::live_construct",
+        "construct",
+        "completed",
+        None,
+    );
+    assert_ne!(
+        traced.expect("sponsored control completes").bytes().len(),
+        0
+    );
+
+    let plain = crate::live_construct::complete_live_transfer(
+        &target,
+        authorized.clone(),
+        report.clone(),
+        None,
+    );
+    let (traced, records) = capture(|| {
+        crate::live_construct::complete_live_transfer(&target, authorized, report, None)
+    });
+    assert_eq!(plain, traced);
+    assert_eq!(
+        traced,
+        Err(TransactionRefusal::LiveSponsorRequestedWithoutCapability)
+    );
+    assert_boundary(
+        &records,
+        "transaction::live_construct",
+        "construct",
+        "refused",
+        Some("live_sponsor_requested_without_capability"),
+    );
+}
+
 // -------------------------------------------------------------------------
 // The private lane's own entry point (rule:guide-ctf-exec:per-output-retirement)
 // -------------------------------------------------------------------------
@@ -1600,6 +1681,111 @@ fn a_declared_fee_selects_the_fee_bearing_sponsorless_shape() {
     assert!(!shape.sponsored());
     assert_eq!(shape.receipt_outputs(), 1);
     assert_eq!(shape.fee(), FeePresence::Present);
+}
+
+#[test]
+fn scoped_live_finalization_preserves_control_and_one_form_refusal() {
+    use super::trace_tests::{assert_boundary, capture};
+    isolated_capture_test!(scoped_live_finalization_preserves_control_and_one_form_refusal);
+
+    let target = reviewed_target();
+    let abi = live_abi();
+    let (request, view) = explicit_fixture(
+        &abi,
+        RequestedForm::Sponsorless,
+        SponsorChangeRequest::NotRequested,
+    );
+    let plain = finalize_live_transfer(&target, &abi, &request, &view, None, None);
+    let (traced, records) =
+        capture(|| finalize_live_transfer(&target, &abi, &request, &view, None, None));
+    assert_eq!(plain, traced);
+    assert_boundary(
+        &records,
+        "transaction::live_construct",
+        "finalize",
+        "completed",
+        None,
+    );
+
+    let (sponsored, view) = explicit_fixture(
+        &abi,
+        RequestedForm::Sponsored,
+        SponsorChangeRequest::NotRequested,
+    );
+    let plain = finalize_live_transfer(&target, &abi, &sponsored, &view, None, None);
+    let (traced, records) =
+        capture(|| finalize_live_transfer(&target, &abi, &sponsored, &view, None, None));
+    assert_eq!(plain, traced);
+    assert_eq!(
+        traced,
+        Err(TransactionRefusal::LiveSponsorRequestedWithoutCapability)
+    );
+    assert_boundary(
+        &records,
+        "transaction::live_construct",
+        "finalize",
+        "refused",
+        Some("live_sponsor_requested_without_capability"),
+    );
+}
+
+#[test]
+fn scoped_live_declaring_finalization_preserves_control_and_one_role_refusal() {
+    use super::trace_tests::{assert_boundary, capture};
+    isolated_capture_test!(
+        scoped_live_declaring_finalization_preserves_control_and_one_role_refusal
+    );
+
+    let target = reviewed_target();
+    let abi = fee_bearing_live_abi();
+    let (request, view) = self_paying_fixture(&abi, 250);
+    let plain = finalize_live_transfer_declaring(
+        &target,
+        &abi,
+        &request,
+        &view,
+        None,
+        None,
+        &SELF_PAYING_ROLES,
+    );
+    let (traced, records) = capture(|| {
+        finalize_live_transfer_declaring(
+            &target,
+            &abi,
+            &request,
+            &view,
+            None,
+            None,
+            &SELF_PAYING_ROLES,
+        )
+    });
+    assert_eq!(plain, traced);
+    assert_boundary(
+        &records,
+        "transaction::live_construct",
+        "finalize",
+        "completed",
+        None,
+    );
+
+    let duplicate = [ExplicitDestinationRole::Fee, ExplicitDestinationRole::Fee];
+    let plain =
+        finalize_live_transfer_declaring(&target, &abi, &request, &view, None, None, &duplicate);
+    let (traced, records) = capture(|| {
+        finalize_live_transfer_declaring(&target, &abi, &request, &view, None, None, &duplicate)
+    });
+    assert_eq!(plain, traced);
+    assert_eq!(
+        traced,
+        Err(TransactionRefusal::SelfPaidFeeDeclaredMoreThanOnce { declared: 2 })
+    );
+    assert_boundary(
+        &records,
+        "transaction::live_construct",
+        "finalize",
+        "refused",
+        Some("self_paid_fee_declared_more_than_once"),
+    );
 }
 
 #[test]

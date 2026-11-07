@@ -53,6 +53,7 @@ target-elements = { workspace = true }
 # real relocatable bundle.
 [dev-dependencies]
 compiler = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true
