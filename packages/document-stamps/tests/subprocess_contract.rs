@@ -70,6 +70,90 @@ fn base_args(root: &Path) -> Vec<String> {
     ]
 }
 
+fn run_git(root: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(args)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_GLOBAL", root.join("no-global-gitconfig"))
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .output()
+        .expect("fixture Git runs");
+    assert!(
+        output.status.success(),
+        "fixture Git {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn committed_repository() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("fixture repository");
+    let paper = dir.path().join("papers/attestation");
+    std::fs::create_dir_all(&paper).expect("paper directory");
+    std::fs::write(paper.join("main.tex"), b"main\n").expect("paper input");
+    run_git(dir.path(), &["init", "-q", "--object-format=sha1"]);
+    run_git(dir.path(), &["add", "--", "papers/attestation/main.tex"]);
+    run_git(
+        dir.path(),
+        &[
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            "fixture",
+        ],
+    );
+    dir
+}
+
+fn stderr_records(output: &Output) -> Vec<Value> {
+    let stderr = std::str::from_utf8(&output.stderr).expect("stderr is utf8");
+    stderr
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("every stderr line is JSON"))
+        .collect()
+}
+
+fn assert_command_success(records: &[Value], output_mode: &str, result_published: bool) {
+    let completed: Vec<_> = records
+        .iter()
+        .filter(|record| {
+            record["target"] == "cli_common::command"
+                && record["fields"]["message"] == "command completed"
+        })
+        .collect();
+    assert_eq!(completed.len(), 1, "one terminal event: {records:?}");
+    assert_eq!(completed[0]["level"], "INFO");
+    assert_eq!(completed[0]["fields"]["exit_class"], "success");
+    assert_eq!(completed[0]["fields"]["output_mode"], output_mode);
+    assert_eq!(completed[0]["fields"]["result_published"], result_published);
+}
+
+fn assert_command_close(records: &[Value], output_mode: &str) {
+    let closes: Vec<_> = records
+        .iter()
+        .filter(|record| {
+            record["target"] == "cli_common::command"
+                && record["fields"]["message"] == "span closed"
+                && record["span"]["name"] == "command"
+        })
+        .collect();
+    assert_eq!(closes.len(), 1, "one command close: {records:?}");
+    let close = closes[0];
+    assert_eq!(close["level"], "INFO");
+    assert_eq!(close["span"]["command"], "attestation-stamps");
+    assert_eq!(close["span"]["output_mode"], output_mode);
+    assert!(close["fields"]["busy_ns"].is_u64());
+    assert!(close["fields"]["idle_ns"].is_u64());
+}
+
 fn run_case(root: &Path, paths: &RenderPaths, case: RenderCase) -> Output {
     let mut args = base_args(root);
 
@@ -189,6 +273,158 @@ fn the_removed_success_stamp_flag_is_rejected() {
     );
 }
 
+#[test]
+fn successful_modes_keep_stdout_contract_and_emit_command_records() {
+    let dir = committed_repository();
+    let args = base_args(dir.path());
+    let output = attestation_stamps()
+        .args(&args)
+        .env("RUST_LOG", "info")
+        .output()
+        .expect("JSON mode runs");
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = std::str::from_utf8(&output.stdout).expect("stdout is utf8");
+    assert!(stdout.ends_with('\n'));
+    assert_eq!(stdout.lines().count(), 1, "one JSON result line");
+    let result: Value = serde_json::from_str(stdout).expect("result is JSON");
+    assert!(result["date"].is_string());
+    assert!(result["timestamp"]["epoch"].is_i64());
+    assert!(result["document_uuid"].is_string());
+    assert!(result["instance_uuid"].is_string());
+    let records = stderr_records(&output);
+    assert_command_success(&records, "stdout", true);
+    assert_command_close(&records, "stdout");
+
+    let filtered = attestation_stamps()
+        .args(&args)
+        .env("RUST_LOG", "off")
+        .output()
+        .expect("filtered JSON mode runs");
+    assert_eq!(filtered.status.code(), Some(0));
+    assert_eq!(filtered.stdout, output.stdout);
+    assert!(
+        filtered.stderr.is_empty(),
+        "filtered diagnostics are silent"
+    );
+
+    let paths = RenderPaths::new(dir.path());
+    std::fs::write(&paths.template, "date=@ATTESTATION_DATE@\n").expect("render template");
+    let mut render_args = args;
+    push_path_arg(&mut render_args, "--template", &paths.template);
+    push_path_arg(&mut render_args, "--stamps-output", &paths.stamps_output);
+    push_path_arg(&mut render_args, "--epoch-output", &paths.epoch_output);
+    let output = attestation_stamps()
+        .args(render_args)
+        .env("RUST_LOG", "info")
+        .output()
+        .expect("render mode runs");
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.is_empty(), "render mode leaves stdout empty");
+    assert_eq!(
+        std::fs::read_to_string(&paths.stamps_output).expect("rendered stamps"),
+        format!("date={}\n", result["date"].as_str().expect("date"))
+    );
+    assert_eq!(
+        std::fs::read_to_string(&paths.epoch_output).expect("rendered epoch"),
+        format!(
+            "{}\n",
+            result["timestamp"]["epoch"].as_i64().expect("epoch")
+        )
+    );
+    let records = stderr_records(&output);
+    assert_command_success(&records, "none", false);
+    assert_command_close(&records, "none");
+}
+
+#[test]
+fn help_version_and_usage_control_records_ignore_diagnostic_filter() {
+    for (flag, kind, status) in [("--help", "help", 0), ("--version", "version", 0)] {
+        let output = attestation_stamps()
+            .arg(flag)
+            .env("RUST_LOG", "off")
+            .output()
+            .expect("control invocation runs");
+        assert_eq!(output.status.code(), Some(status));
+        assert_eq!(output.stdout.as_slice(), b"");
+        let records = stderr_records(&output);
+        assert_eq!(records.len(), 1, "one {kind} control record");
+        assert_eq!(records[0]["command"], "attestation-stamps");
+        assert_eq!(records[0]["kind"], kind);
+        assert!(records[0]["schema"].is_number());
+    }
+
+    let output = attestation_stamps()
+        .arg("--unknown-secret=do-not-echo")
+        .env("RUST_LOG", "off")
+        .output()
+        .expect("usage invocation runs");
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout.as_slice(), b"");
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("do-not-echo"));
+    let records = stderr_records(&output);
+    assert_eq!(records.len(), 1, "one usage control record");
+    assert_eq!(records[0]["command"], "attestation-stamps");
+    assert_eq!(records[0]["kind"], "usage_error");
+}
+
+#[test]
+fn runtime_failure_has_empty_stdout_and_subscriber_error() {
+    let dir = committed_repository();
+    let mut args = base_args(dir.path());
+    let missing_git = dir.path().join("missing-private-git");
+    args[1] = missing_git.to_str().expect("utf8 temp path").to_owned();
+    let output = attestation_stamps()
+        .args(args)
+        .env("RUST_LOG", "info")
+        .output()
+        .expect("failing command runs");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        output.stdout.is_empty(),
+        "failed result leaves stdout empty"
+    );
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("missing-private-git"));
+    let records = stderr_records(&output);
+    let failures: Vec<_> = records
+        .iter()
+        .filter(|record| {
+            record["target"] == "cli_common::command"
+                && record["fields"]["message"] == "command failed"
+        })
+        .collect();
+    assert_eq!(failures.len(), 1, "one terminal failure: {records:?}");
+    assert_eq!(failures[0]["level"], "ERROR");
+    assert_eq!(failures[0]["fields"]["exit_class"], "failure");
+    assert_eq!(failures[0]["fields"]["phase"], "execute");
+    assert!(failures[0]["fields"]["error"].is_string());
+    assert_command_close(&records, "stdout");
+}
+
+#[test]
+fn early_panic_is_an_unfiltered_subscriber_control_record() {
+    const CHILD: &str = "TRIPOD_DOCUMENT_STAMPS_PANIC_TEST_CHILD";
+    if std::env::var_os(CHILD).is_some() {
+        cli_common::install_command_subscriber("attestation-stamps");
+        panic!("private-panic-marker");
+    }
+
+    let output = Command::new(std::env::current_exe().expect("test executable"))
+        .arg("--exact")
+        .arg("early_panic_is_an_unfiltered_subscriber_control_record")
+        .env(CHILD, "1")
+        .env("RUST_LOG", "off")
+        .output()
+        .expect("panic child runs");
+    assert_eq!(output.status.code(), Some(1));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("private-panic-marker"));
+    let records = stderr_records(&output);
+    assert_eq!(records.len(), 1, "one panic control record");
+    assert_eq!(records[0]["command"], "attestation-stamps");
+    assert_eq!(records[0]["kind"], "panic");
+    assert_eq!(records[0]["fields"]["exit_code"], 1);
+    assert!(records[0]["fields"]["payload"].is_null());
+}
+
 // ---------------------------------------------------------------------------
 // PTY-based TTY-refusal coverage (F1-024).
 //
@@ -300,6 +536,7 @@ mod pty {
 
         let mut command = attestation_stamps();
         command.args(json_mode_args(dir.path()));
+        command.env("RUST_LOG", "off");
 
         let (status, pty_stdout, stderr) = run_with_terminal_stdout(command);
 
@@ -309,6 +546,14 @@ mod pty {
         let record = find_record(&stderr, "tty_refusal").expect("one tty_refusal record");
         assert_eq!(record["fields"]["stream"], "stdout");
         assert_eq!(record["fields"]["exit_code"], 2);
+        assert_eq!(
+            String::from_utf8(stderr)
+                .expect("stderr is utf8")
+                .lines()
+                .count(),
+            1,
+            "control route is the only stderr record with RUST_LOG=off"
+        );
     }
 
     #[test]

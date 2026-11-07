@@ -95,6 +95,94 @@ pub enum StampError {
     OutputWriteFailed,
 }
 
+impl StampError {
+    /// Fixed, payload-free category for a completion record.
+    const fn kind(&self) -> (&'static str, bool) {
+        match self {
+            Self::AliasedOutputs(_) => ("aliased_outputs", true),
+            Self::RepositoryRootMismatch => ("repository_root_mismatch", true),
+            Self::UnsupportedGitObjectFormat(_) => ("unsupported_git_object_format", true),
+            Self::GitCommandFailed => ("git_command_failed", false),
+            Self::InvalidGitOutput => ("invalid_git_output", false),
+            Self::SelectedRevisionIsNotHead => ("selected_revision_is_not_head", true),
+            Self::DirtyPaperSubtree => ("dirty_paper_subtree", true),
+            Self::InvalidInputPath => ("invalid_input_path", true),
+            Self::InputOutsidePaperTree => ("input_outside_paper_tree", true),
+            Self::DuplicateInput => ("duplicate_input", true),
+            Self::InvalidTrackedInput => ("invalid_tracked_input", true),
+            Self::InputReadFailed => ("input_read_failed", false),
+            Self::MissingPathHistory => ("missing_path_history", true),
+            Self::InvalidTreeObjectId => ("invalid_tree_object_id", false),
+            Self::TreePrefixResolutionFailure => ("tree_prefix_resolution_failure", true),
+            Self::TemplateReadFailed => ("template_read_failed", false),
+            Self::UnresolvedPlaceholder => ("unresolved_placeholder", true),
+            Self::OutputWriteFailed => ("output_write_failed", false),
+        }
+    }
+}
+
+fn count(value: usize) -> u64 {
+    u64::try_from(value).unwrap_or(u64::MAX)
+}
+
+struct DeriveFailure {
+    error: StampError,
+    phase: &'static str,
+}
+
+struct Derived {
+    values: AttestationStampValues,
+    input_bytes: Option<u64>,
+}
+
+fn derive_failure(phase: &'static str) -> impl FnOnce(StampError) -> DeriveFailure {
+    move |error| DeriveFailure { error, phase }
+}
+
+fn record_derive_result(result: &Result<Derived, DeriveFailure>, input_count: u64) {
+    match result {
+        Ok(Derived {
+            input_bytes: Some(input_bytes),
+            ..
+        }) => tracing::info!(
+            target: "document_stamps::derive",
+            outcome = "completed",
+            input_count,
+            input_bytes = *input_bytes,
+            "stamp values derived"
+        ),
+        Ok(_) => tracing::info!(
+            target: "document_stamps::derive",
+            outcome = "completed",
+            input_count,
+            "stamp values derived"
+        ),
+        Err(failure) => {
+            let (kind, refused) = failure.error.kind();
+            let phase = failure.phase;
+            if refused {
+                tracing::debug!(
+                    target: "document_stamps::derive",
+                    outcome = "refused",
+                    input_count,
+                    refusal_kind = kind,
+                    phase,
+                    "stamp values derived"
+                );
+            } else {
+                tracing::info!(
+                    target: "document_stamps::derive",
+                    outcome = "failed",
+                    input_count,
+                    error_kind = kind,
+                    phase,
+                    "stamp values derived"
+                );
+            }
+        }
+    }
+}
+
 /// The four prepared values emitted as one JSON object.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AttestationStampValues {
@@ -150,7 +238,28 @@ pub fn run(request: &StampRequest) -> Result<AttestationStampValues, StampError>
         git: request.git.clone(),
         repository_root: request.repository_root.clone(),
     };
-    derive(&git, request)
+    run_with_git(&git, request)
+}
+
+fn run_with_git(
+    git: &dyn GitRunner,
+    request: &StampRequest,
+) -> Result<AttestationStampValues, StampError> {
+    let input_count = count(request.inputs.len());
+    let span = tracing::span!(
+        target: "document_stamps::derive",
+        tracing::Level::INFO,
+        "derive",
+        input_count
+    );
+    let _entered = span.enter();
+    let summarize_bytes =
+        tracing::enabled!(target: "document_stamps::derive", tracing::Level::INFO);
+    let result = derive_with_phase(git, request, summarize_bytes);
+    record_derive_result(&result, input_count);
+    result
+        .map(|derived| derived.values)
+        .map_err(|failure| failure.error)
 }
 
 /// A request to derive the values and render the build inputs.
@@ -178,10 +287,75 @@ pub struct RenderRequest<'a> {
 /// the template cannot be read, if a placeholder is left unresolved, or
 /// if an output cannot be written.
 pub fn render(request: &RenderRequest<'_>) -> Result<(), StampError> {
-    let values = run(request.stamps)?;
-    let template = std::fs::read_to_string(request.template)
-        .map_err(|_error| StampError::TemplateReadFailed)?;
-    render_outputs(
+    let git = SystemGit {
+        git: request.stamps.git.clone(),
+        repository_root: request.stamps.repository_root.clone(),
+    };
+    render_with_git(&git, request)
+}
+
+fn render_with_git(git: &dyn GitRunner, request: &RenderRequest<'_>) -> Result<(), StampError> {
+    let input_count = count(request.stamps.inputs.len());
+    let output_count = 2_u64;
+    let span = tracing::span!(
+        target: "document_stamps::render",
+        tracing::Level::INFO,
+        "render",
+        input_count
+    );
+    let _entered = span.enter();
+    let result = render_with_phase(git, request);
+    match &result {
+        Ok(Some(changed_count)) => tracing::info!(
+            target: "document_stamps::render",
+            outcome = "completed",
+            input_count,
+            output_count,
+            changed_count = *changed_count,
+            "stamps rendered"
+        ),
+        Ok(None) => {}
+        Err(failure) => {
+            let (kind, refused) = failure.error.kind();
+            let phase = failure.phase;
+            if refused {
+                tracing::debug!(
+                    target: "document_stamps::render",
+                    outcome = "refused",
+                    input_count,
+                    output_count,
+                    refusal_kind = kind,
+                    phase,
+                    "stamps rendered"
+                );
+            } else {
+                tracing::info!(
+                    target: "document_stamps::render",
+                    outcome = "failed",
+                    input_count,
+                    output_count,
+                    error_kind = kind,
+                    phase,
+                    "stamps rendered"
+                );
+            }
+        }
+    }
+    result
+        .map(|_changed_count| ())
+        .map_err(|failure| failure.error)
+}
+
+fn render_with_phase(
+    git: &dyn GitRunner,
+    request: &RenderRequest<'_>,
+) -> Result<Option<u64>, DeriveFailure> {
+    let values = derive_with_phase(git, request.stamps, false)?.values;
+    let template = std::fs::read_to_string(request.template).map_err(|_error| DeriveFailure {
+        error: StampError::TemplateReadFailed,
+        phase: "template",
+    })?;
+    render_outputs_with_phase(
         &template,
         &values,
         request.stamps_output,
@@ -189,22 +363,46 @@ pub fn render(request: &RenderRequest<'_>) -> Result<(), StampError> {
     )
 }
 
+#[cfg(test)]
 fn render_outputs(
     template: &str,
     values: &AttestationStampValues,
     stamps_output: &Path,
     epoch_output: &Path,
 ) -> Result<(), StampError> {
+    render_outputs_with_phase(template, values, stamps_output, epoch_output)
+        .map(|_changed_count| ())
+        .map_err(|failure| failure.error)
+}
+
+fn render_outputs_with_phase(
+    template: &str,
+    values: &AttestationStampValues,
+    stamps_output: &Path,
+    epoch_output: &Path,
+) -> Result<Option<u64>, DeriveFailure> {
     // Role uniqueness before any staging or publication (F2-005): the
     // two outputs publish by independent renames, so one destination
     // serving both roles would exit success with only stamps.tex bytes.
     cli_common::ensure_distinct_outputs(&[
         ("stamps-output", stamps_output),
         ("epoch-output", epoch_output),
-    ])?;
+    ])
+    .map_err(|error| DeriveFailure {
+        error: StampError::AliasedOutputs(error),
+        phase: "validate",
+    })?;
 
-    let rendered = render_stamps(template, values)?;
+    let rendered = render_stamps(template, values).map_err(derive_failure("template"))?;
     let epoch_bytes = format!("{}\n", values.timestamp.epoch);
+
+    let span = tracing::span!(
+        target: "document_stamps::publication",
+        tracing::Level::DEBUG,
+        "publish_outputs",
+        output_count = 2_u64
+    );
+    let _entered = span.enter();
 
     // Stage both outputs before publishing either: any read, temp-file
     // create, write, or fsync failure for either destination therefore
@@ -213,17 +411,25 @@ fn render_outputs(
     // cannot be renamed as a single transaction, so publishing is still
     // two renames; if the second rename fails the build fails and the
     // next invocation repairs the pair (F1-034).
-    let staged_stamps = stage_if_changed(stamps_output, rendered.as_bytes())?;
-    let staged_epoch = stage_if_changed(epoch_output, epoch_bytes.as_bytes())?;
+    let staged_stamps =
+        stage_if_changed(stamps_output, rendered.as_bytes()).map_err(derive_failure("stage"))?;
+    let staged_epoch =
+        stage_if_changed(epoch_output, epoch_bytes.as_bytes()).map_err(derive_failure("stage"))?;
+    let changed_count = if tracing::enabled!(target: "document_stamps::render", tracing::Level::INFO)
+    {
+        Some(u64::from(staged_stamps.is_some()) + u64::from(staged_epoch.is_some()))
+    } else {
+        None
+    };
 
     // Publish the dependency-first metadata first and the more visible
     // stamps.tex last, so a rename failure between the two tends to
     // leave the visible TeX metadata old rather than pairing new TeX
     // metadata with an old epoch. This is a recovery preference, not a
     // proof of atomicity.
-    publish(staged_epoch)?;
-    publish(staged_stamps)?;
-    Ok(())
+    publish(staged_epoch).map_err(derive_failure("publish"))?;
+    publish(staged_stamps).map_err(derive_failure("publish"))?;
+    Ok(changed_count)
 }
 
 /// Substitute the four placeholders into the template, fail-closed if any
@@ -306,7 +512,7 @@ struct GitInvocation {
 trait GitRunner {
     /// Run Git with the given arguments (a `-C <root>` prefix is applied
     /// by the implementation), capturing stdout.
-    fn run(&self, args: &[&str]) -> Result<GitInvocation, StampError>;
+    fn run(&self, operation: &'static str, args: &[&str]) -> Result<GitInvocation, StampError>;
 }
 
 /// The production runner: a real `git` process.
@@ -316,16 +522,20 @@ struct SystemGit {
 }
 
 impl GitRunner for SystemGit {
-    fn run(&self, args: &[&str]) -> Result<GitInvocation, StampError> {
+    fn run(&self, operation: &'static str, args: &[&str]) -> Result<GitInvocation, StampError> {
+        let span = tracing::span!(
+            target: "document_stamps::git",
+            tracing::Level::DEBUG,
+            "git_command",
+            git_operation = operation
+        );
+        let _entered = span.enter();
         let output = std::process::Command::new(&self.git)
             .arg("-C")
             .arg(&self.repository_root)
             .args(args)
             .output()
-            .map_err(|error| {
-                tracing::error!(error = %error, "invoking git failed");
-                StampError::GitCommandFailed
-            })?;
+            .map_err(|_error| StampError::GitCommandFailed)?;
         Ok(GitInvocation {
             status_success: output.status.success(),
             stdout: output.stdout,
@@ -334,10 +544,13 @@ impl GitRunner for SystemGit {
 }
 
 /// Run Git and require a zero exit, returning trimmed stdout as text.
-fn run_text(git: &dyn GitRunner, args: &[&str]) -> Result<String, StampError> {
-    let invocation = git.run(args)?;
+fn run_text(
+    git: &dyn GitRunner,
+    operation: &'static str,
+    args: &[&str],
+) -> Result<String, StampError> {
+    let invocation = git.run(operation, args)?;
     if !invocation.status_success {
-        tracing::error!("git command exited non-zero");
         return Err(StampError::GitCommandFailed);
     }
     let text =
@@ -348,8 +561,12 @@ fn run_text(git: &dyn GitRunner, args: &[&str]) -> Result<String, StampError> {
 /// Run Git and require a zero exit, returning raw stdout bytes. Used for
 /// binary-safe blob reads where trimming or UTF-8 decoding would corrupt
 /// the content.
-fn run_bytes(git: &dyn GitRunner, args: &[&str]) -> Result<Vec<u8>, StampError> {
-    let invocation = git.run(args)?;
+fn run_bytes(
+    git: &dyn GitRunner,
+    operation: &'static str,
+    args: &[&str],
+) -> Result<Vec<u8>, StampError> {
+    let invocation = git.run(operation, args)?;
     if !invocation.status_success {
         return Err(StampError::GitCommandFailed);
     }
@@ -360,38 +577,77 @@ fn run_bytes(git: &dyn GitRunner, args: &[&str]) -> Result<Vec<u8>, StampError> 
 // Derivation
 // ---------------------------------------------------------------------------
 
+#[cfg(test)]
 fn derive(
     git: &dyn GitRunner,
     request: &StampRequest,
 ) -> Result<AttestationStampValues, StampError> {
-    verify_repository_root(git, &request.repository_root)?;
-    verify_object_format(git)?;
-    verify_selected_revision_is_head(git, &request.tree_ref)?;
+    derive_with_phase(git, request, false)
+        .map(|derived| derived.values)
+        .map_err(|failure| failure.error)
+}
 
-    let tree_path = canonical_relative_path(&request.tree)?;
-    let tree = path_to_str(&tree_path)?;
-    reject_dirty_subtree(git, tree)?;
+fn derive_with_phase(
+    git: &dyn GitRunner,
+    request: &StampRequest,
+    summarize_bytes: bool,
+) -> Result<Derived, DeriveFailure> {
+    let tree_path = validate_repository(git, request)?;
+    let tree = path_to_str(&tree_path).map_err(derive_failure("validate"))?;
 
-    let inputs = canonical_inputs(git, request, &request.tree_ref, &tree_path)?;
+    let inputs = canonical_inputs(git, request, &request.tree_ref, &tree_path)
+        .map_err(derive_failure("inputs"))?;
+    let input_bytes = if summarize_bytes {
+        Some(inputs.iter().fold(0_u64, |total, input| {
+            total.saturating_add(count(input.bytes.len()))
+        }))
+    } else {
+        None
+    };
 
     let document_uuid = bytes_to_uuid_text(&document_digest(&inputs));
-    let instance_uuid = instance_uuid(git, &request.tree_ref, tree)?;
-    let timestamp = paper_timestamp(git, &request.tree_ref, tree)?;
-    let date = input_date(git, &request.tree_ref, &inputs)?;
+    let instance_uuid =
+        instance_uuid(git, &request.tree_ref, tree).map_err(derive_failure("git"))?;
+    let timestamp = paper_timestamp(git, &request.tree_ref, tree).map_err(derive_failure("git"))?;
+    let date = input_date(git, &request.tree_ref, &inputs).map_err(derive_failure("git"))?;
 
     // Re-check cleanliness after reading every input, narrowing (not
     // closing) the window in which the worktree changes mid-derivation.
     // A live-worktree build cannot be made fully transactional across the
     // subsequent TeX run; canonical release still needs a quiescent
     // checkout and the final clean-tree gate.
-    reject_dirty_subtree(git, tree)?;
+    reject_dirty_subtree(git, tree).map_err(derive_failure("validate"))?;
 
-    Ok(AttestationStampValues {
-        date,
-        timestamp,
-        document_uuid,
-        instance_uuid,
+    Ok(Derived {
+        values: AttestationStampValues {
+            date,
+            timestamp,
+            document_uuid,
+            instance_uuid,
+        },
+        input_bytes,
     })
+}
+
+fn validate_repository(
+    git: &dyn GitRunner,
+    request: &StampRequest,
+) -> Result<PathBuf, DeriveFailure> {
+    let span = tracing::span!(
+        target: "document_stamps::derive",
+        tracing::Level::DEBUG,
+        "validate_repository"
+    );
+    let _entered = span.enter();
+    verify_repository_root(git, &request.repository_root).map_err(derive_failure("validate"))?;
+    verify_object_format(git).map_err(derive_failure("validate"))?;
+    verify_selected_revision_is_head(git, &request.tree_ref).map_err(derive_failure("validate"))?;
+
+    let tree_path = canonical_relative_path(&request.tree).map_err(derive_failure("validate"))?;
+    let tree = path_to_str(&tree_path).map_err(derive_failure("validate"))?;
+    reject_dirty_subtree(git, tree).map_err(derive_failure("validate"))?;
+
+    Ok(tree_path)
 }
 
 /// Structurally canonicalize a repository-relative path, rejecting
@@ -432,7 +688,7 @@ fn literal_pathspec(relative_path: &str) -> String {
 }
 
 fn verify_repository_root(git: &dyn GitRunner, repository_root: &Path) -> Result<(), StampError> {
-    let toplevel = run_text(git, &["rev-parse", "--show-toplevel"])?;
+    let toplevel = run_text(git, "rev_parse", &["rev-parse", "--show-toplevel"])?;
     let reported =
         std::fs::canonicalize(&toplevel).map_err(|_error| StampError::RepositoryRootMismatch)?;
     let expected = std::fs::canonicalize(repository_root)
@@ -445,7 +701,7 @@ fn verify_repository_root(git: &dyn GitRunner, repository_root: &Path) -> Result
 }
 
 fn verify_object_format(git: &dyn GitRunner) -> Result<(), StampError> {
-    let format = run_text(git, &["rev-parse", "--show-object-format"])?;
+    let format = run_text(git, "rev_parse", &["rev-parse", "--show-object-format"])?;
     if format == "sha1" {
         Ok(())
     } else {
@@ -471,8 +727,16 @@ fn peel_to_commit(reference: &str) -> String {
 /// at exactly `HEAD` is accepted: the rule is commit-object equality, not
 /// literal string equality.
 fn verify_selected_revision_is_head(git: &dyn GitRunner, tree_ref: &str) -> Result<(), StampError> {
-    let selected = run_text(git, &["rev-parse", "--verify", &peel_to_commit(tree_ref)])?;
-    let head = run_text(git, &["rev-parse", "--verify", &peel_to_commit("HEAD")])?;
+    let selected = run_text(
+        git,
+        "rev_parse",
+        &["rev-parse", "--verify", &peel_to_commit(tree_ref)],
+    )?;
+    let head = run_text(
+        git,
+        "rev_parse",
+        &["rev-parse", "--verify", &peel_to_commit("HEAD")],
+    )?;
 
     if selected.eq_ignore_ascii_case(&head) {
         Ok(())
@@ -482,14 +746,17 @@ fn verify_selected_revision_is_head(git: &dyn GitRunner, tree_ref: &str) -> Resu
 }
 
 fn reject_dirty_subtree(git: &dyn GitRunner, tree: &str) -> Result<(), StampError> {
-    let invocation = git.run(&[
+    let invocation = git.run(
         "status",
-        "--porcelain=v1",
-        "-z",
-        "--untracked-files=all",
-        "--",
-        &literal_pathspec(tree),
-    ])?;
+        &[
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--",
+            &literal_pathspec(tree),
+        ],
+    )?;
     if !invocation.status_success {
         return Err(StampError::GitCommandFailed);
     }
@@ -514,6 +781,14 @@ fn canonical_inputs(
     tree_ref: &str,
     tree: &Path,
 ) -> Result<Vec<CanonicalInput>, StampError> {
+    let input_count = count(request.inputs.len());
+    let span = tracing::span!(
+        target: "document_stamps::derive",
+        tracing::Level::DEBUG,
+        "canonical_inputs",
+        input_count
+    );
+    let _entered = span.enter();
     let mut inputs = Vec::with_capacity(request.inputs.len());
     for raw in &request.inputs {
         inputs.push(canonical_input(
@@ -553,7 +828,7 @@ fn canonical_input(
     let blob = tracked_blob(git, tree_ref, &relative_path)?;
 
     // Digest authority is the committed blob, not the worktree.
-    let committed_bytes = run_bytes(git, &["cat-file", "blob", &blob.object_id])?;
+    let committed_bytes = run_bytes(git, "cat_file", &["cat-file", "blob", &blob.object_id])?;
 
     // The paper build renders the worktree, so bind each rendered input
     // to its committed blob: any divergence is a dirty-subtree failure.
@@ -590,6 +865,7 @@ fn tracked_blob(
 ) -> Result<TrackedBlob, StampError> {
     let listing = run_text(
         git,
+        "ls_tree",
         &["ls-tree", tree_ref, "--", &literal_pathspec(relative_path)],
     )?;
 
@@ -638,6 +914,14 @@ fn update_framed(hasher: &mut Sha256, bytes: &[u8]) {
 
 /// Canonical SHA-256 over the sorted inputs, truncated to 128 bits.
 fn document_digest(inputs: &[CanonicalInput]) -> [u8; 16] {
+    let input_count = count(inputs.len());
+    let span = tracing::span!(
+        target: "document_stamps::derive",
+        tracing::Level::DEBUG,
+        "document_digest",
+        input_count
+    );
+    let _entered = span.enter();
     let mut hasher = Sha256::new();
     hasher.update(DOCUMENT_DOMAIN);
     for input in inputs {
@@ -669,6 +953,7 @@ fn instance_uuid(git: &dyn GitRunner, tree_ref: &str, tree: &str) -> Result<Stri
     // `<rev>:<dir>` resolves a directory path directly to its tree oid.
     let full = run_text(
         git,
+        "rev_parse",
         &["rev-parse", "--verify", &format!("{tree_ref}:{tree}")],
     )?;
     let full = normalize_tree_oid(&full)?;
@@ -676,7 +961,10 @@ fn instance_uuid(git: &dyn GitRunner, tree_ref: &str, tree: &str) -> Result<Stri
     // The prefix check peels to `^{tree}` so a unique non-tree object (or
     // an ambiguous prefix) is a hard failure, not a silent success.
     let prefix = &full[..32];
-    let invocation = git.run(&["rev-parse", "--verify", &peel_to_tree(prefix)])?;
+    let invocation = git.run(
+        "rev_parse",
+        &["rev-parse", "--verify", &peel_to_tree(prefix)],
+    )?;
     if !invocation.status_success {
         return Err(StampError::TreePrefixResolutionFailure);
     }
@@ -735,7 +1023,7 @@ fn input_date(
 }
 
 fn commit_epoch(git: &dyn GitRunner, args: &[&str]) -> Result<i64, StampError> {
-    let text = run_text(git, args)?;
+    let text = run_text(git, "log", args)?;
     if text.is_empty() {
         return Err(StampError::MissingPathHistory);
     }

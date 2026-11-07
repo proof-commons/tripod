@@ -21,8 +21,509 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use tracing::field::{Field, Visit};
+use tracing_subscriber::Layer;
+use tracing_subscriber::layer::Context;
+use tracing_subscriber::prelude::*;
 
 use super::*;
+
+#[derive(Debug)]
+struct CapturedRecord {
+    kind: &'static str,
+    name: String,
+    target: String,
+    level: tracing::Level,
+    fields: HashMap<String, String>,
+}
+
+#[derive(Default)]
+struct FieldCapture(HashMap<String, String>);
+
+impl Visit for FieldCapture {
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        self.0.insert(field.name().to_owned(), format!("{value:?}"));
+    }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        self.0.insert(field.name().to_owned(), value.to_owned());
+    }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.0.insert(field.name().to_owned(), value.to_string());
+    }
+}
+
+struct CaptureLayer(Arc<Mutex<Vec<CapturedRecord>>>);
+
+// Scoped dispatchers rebuild a process-wide callsite cache. Serialize their
+// installation so parallel tests cannot replace one another's interest.
+static CAPTURE_INSTALL: Mutex<()> = Mutex::new(());
+const CAPTURE_CHILD: &str = "TRIPOD_DOCUMENT_STAMPS_CAPTURE_CHILD";
+
+impl<S: tracing::Subscriber> Layer<S> for CaptureLayer {
+    fn on_new_span(
+        &self,
+        attrs: &tracing::span::Attributes<'_>,
+        _id: &tracing::span::Id,
+        _ctx: Context<'_, S>,
+    ) {
+        let mut fields = FieldCapture::default();
+        attrs.record(&mut fields);
+        let metadata = attrs.metadata();
+        self.0.lock().expect("capture lock").push(CapturedRecord {
+            kind: "span",
+            name: metadata.name().to_owned(),
+            target: metadata.target().to_owned(),
+            level: *metadata.level(),
+            fields: fields.0,
+        });
+    }
+
+    fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
+        let mut fields = FieldCapture::default();
+        event.record(&mut fields);
+        let metadata = event.metadata();
+        self.0.lock().expect("capture lock").push(CapturedRecord {
+            kind: "event",
+            name: metadata.name().to_owned(),
+            target: metadata.target().to_owned(),
+            level: *metadata.level(),
+            fields: fields.0,
+        });
+    }
+}
+
+fn capture<T>(run: impl FnOnce() -> T) -> (T, Vec<CapturedRecord>) {
+    let _install = CAPTURE_INSTALL.lock().expect("capture install lock");
+    let records = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(CaptureLayer(Arc::clone(&records)));
+    let result = tracing::subscriber::with_default(subscriber, || {
+        tracing::callsite::rebuild_interest_cache();
+        run()
+    });
+    let records = std::mem::take(&mut *records.lock().expect("capture lock"));
+    (result, records)
+}
+
+fn capture_test_child(test_name: &str) -> bool {
+    if std::env::var(CAPTURE_CHILD).is_ok_and(|name| name == test_name) {
+        return true;
+    }
+    let output = std::process::Command::new(std::env::current_exe().expect("test executable"))
+        .arg("--exact")
+        .arg(test_name)
+        .env(CAPTURE_CHILD, test_name)
+        .output()
+        .expect("capture test child");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let passed_one = stdout
+        .lines()
+        .any(|line| line.starts_with("test result: ok. 1 passed; 0 failed;"));
+    assert!(
+        output.status.success() && passed_one,
+        "capture child {test_name} failed or selected the wrong number of tests: status={:?}\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status
+    );
+    false
+}
+
+#[test]
+fn scoped_capture_keeps_digest_span_after_uncaptured_first_touch_on_threads() {
+    if !capture_test_child(
+        "tests::scoped_capture_keeps_digest_span_after_uncaptured_first_touch_on_threads",
+    ) {
+        return;
+    }
+    let plain = document_digest(&[input("a.tex", "100644", b"main")]);
+    let handles: Vec<_> = (0..2)
+        .map(|_| {
+            std::thread::spawn(|| capture(|| document_digest(&[input("a.tex", "100644", b"main")])))
+        })
+        .collect();
+    for handle in handles {
+        let (digest, records) = handle.join().expect("capture thread");
+        assert_eq!(digest, plain);
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| {
+                    record.kind == "span"
+                        && record.name == "document_digest"
+                        && record.target == "document_stamps::derive"
+                        && record.level == tracing::Level::DEBUG
+                })
+                .count(),
+            1,
+            "one digest span per scoped capture: {records:?}"
+        );
+    }
+}
+
+fn one_event<'a>(records: &'a [CapturedRecord], target: &str, message: &str) -> &'a CapturedRecord {
+    let matches: Vec<_> = records
+        .iter()
+        .filter(|record| {
+            record.kind == "event"
+                && record.target == target
+                && record
+                    .fields
+                    .get("message")
+                    .is_some_and(|value| value.trim_matches('"') == message)
+        })
+        .collect();
+    assert_eq!(matches.len(), 1, "one completion event: {records:?}");
+    matches[0]
+}
+
+fn no_warn_or_error(records: &[CapturedRecord]) {
+    assert!(
+        records.iter().all(|record| record.kind != "event"
+            || (record.level != tracing::Level::WARN && record.level != tracing::Level::ERROR)),
+        "unexpected diagnostic: {records:?}"
+    );
+}
+
+#[test]
+fn derive_records_completed_control_and_dirty_refusal() {
+    if !capture_test_child("tests::derive_records_completed_control_and_dirty_refusal") {
+        return;
+    }
+    let (clean, clean_git) = scenario(
+        &[("papers/attestation/main.tex", b"main")],
+        "sha1",
+        false,
+        TREE_OID,
+        "1784118896",
+        "1784000000",
+    );
+    let plain = run_with_git(&clean_git, &clean.request).expect("plain control");
+    let (captured, records) = capture(|| run_with_git(&clean_git, &clean.request));
+    assert_eq!(captured.expect("captured control"), plain);
+    assert!(records.iter().any(|record| {
+        record.kind == "span"
+            && record.name == "derive"
+            && record.target == "document_stamps::derive"
+            && record.level == tracing::Level::INFO
+            && record
+                .fields
+                .get("input_count")
+                .is_some_and(|value| value == "1")
+    }));
+    let event = one_event(&records, "document_stamps::derive", "stamp values derived");
+    assert_eq!(event.level, tracing::Level::INFO);
+    assert_eq!(
+        event.fields.get("outcome").map(String::as_str),
+        Some("completed")
+    );
+    assert_eq!(
+        event.fields.get("input_count").map(String::as_str),
+        Some("1")
+    );
+    assert_eq!(
+        event.fields.get("input_bytes").map(String::as_str),
+        Some("4")
+    );
+
+    let (dirty, dirty_git) = scenario(
+        &[("papers/attestation/main.tex", b"main")],
+        "sha1",
+        true,
+        TREE_OID,
+        "1784118896",
+        "1784000000",
+    );
+    assert!(matches!(
+        run_with_git(&dirty_git, &dirty.request),
+        Err(StampError::DirtyPaperSubtree)
+    ));
+    let (captured, records) = capture(|| run_with_git(&dirty_git, &dirty.request));
+    assert!(matches!(captured, Err(StampError::DirtyPaperSubtree)));
+    let event = one_event(&records, "document_stamps::derive", "stamp values derived");
+    assert_eq!(event.level, tracing::Level::DEBUG);
+    assert_eq!(
+        event.fields.get("outcome").map(String::as_str),
+        Some("refused")
+    );
+    assert_eq!(
+        event.fields.get("refusal_kind").map(String::as_str),
+        Some("dirty_paper_subtree")
+    );
+    assert_eq!(
+        event.fields.get("phase").map(String::as_str),
+        Some("validate")
+    );
+    no_warn_or_error(&records);
+}
+
+#[test]
+fn derive_phase_spans_and_git_spawn_failure_are_payload_free() {
+    if !capture_test_child("tests::derive_phase_spans_and_git_spawn_failure_are_payload_free") {
+        return;
+    }
+    let (scenario, fake) = scenario(
+        &[("papers/attestation/main.tex", b"main")],
+        "sha1",
+        false,
+        TREE_OID,
+        "1784118896",
+        "1784000000",
+    );
+    let plain = run_with_git(&fake, &scenario.request).expect("plain control");
+    let (captured, records) = capture(|| run_with_git(&fake, &scenario.request));
+    assert_eq!(captured.expect("captured control"), plain);
+    for name in ["validate_repository", "canonical_inputs", "document_digest"] {
+        assert!(
+            records.iter().any(|record| {
+                record.kind == "span"
+                    && record.name == name
+                    && record.target == "document_stamps::derive"
+                    && record.level == tracing::Level::DEBUG
+            }),
+            "missing {name} span: {records:?}"
+        );
+    }
+
+    let mut failed_request = scenario.request.clone();
+    let missing_git = scenario
+        .request
+        .repository_root
+        .join("missing-git-private-path");
+    failed_request.git = missing_git.clone();
+    let system = SystemGit {
+        git: missing_git,
+        repository_root: failed_request.repository_root.clone(),
+    };
+    assert!(matches!(
+        run_with_git(&system, &failed_request),
+        Err(StampError::GitCommandFailed)
+    ));
+    let (result, records) = capture(|| run_with_git(&system, &failed_request));
+    assert!(matches!(result, Err(StampError::GitCommandFailed)));
+    assert!(records.iter().any(|record| {
+        record.kind == "span"
+            && record.name == "git_command"
+            && record.target == "document_stamps::git"
+            && record.level == tracing::Level::DEBUG
+            && record
+                .fields
+                .get("git_operation")
+                .is_some_and(|value| value == "rev_parse")
+    }));
+    let event = one_event(&records, "document_stamps::derive", "stamp values derived");
+    assert_eq!(event.level, tracing::Level::INFO);
+    assert_eq!(
+        event.fields.get("outcome").map(String::as_str),
+        Some("failed")
+    );
+    assert_eq!(
+        event.fields.get("error_kind").map(String::as_str),
+        Some("git_command_failed")
+    );
+    assert_eq!(
+        event.fields.get("phase").map(String::as_str),
+        Some("validate")
+    );
+    assert!(!format!("{records:?}").contains("missing-git-private-path"));
+    no_warn_or_error(&records);
+}
+
+#[test]
+fn render_records_completed_control_without_changing_assets() {
+    if !capture_test_child("tests::render_records_completed_control_without_changing_assets") {
+        return;
+    }
+    let (scenario, fake) = scenario(
+        &[("papers/attestation/main.tex", b"main")],
+        "sha1",
+        false,
+        TREE_OID,
+        "1784118896",
+        "1784000000",
+    );
+    let plain_dir = tempfile::tempdir().expect("plain outputs");
+    let captured_dir = tempfile::tempdir().expect("captured outputs");
+    let plain_template = plain_dir.path().join("stamps.tex.in");
+    let captured_template = captured_dir.path().join("stamps.tex.in");
+    std::fs::write(&plain_template, RENDER_TEMPLATE).expect("plain template");
+    std::fs::write(&captured_template, RENDER_TEMPLATE).expect("captured template");
+    let plain_stamps = plain_dir.path().join("stamps.tex");
+    let plain_epoch = plain_dir.path().join("source-date-epoch");
+    let captured_stamps = captured_dir.path().join("stamps.tex");
+    let captured_epoch = captured_dir.path().join("source-date-epoch");
+    let plain_request = RenderRequest {
+        stamps: &scenario.request,
+        template: &plain_template,
+        stamps_output: &plain_stamps,
+        epoch_output: &plain_epoch,
+    };
+    let captured_request = RenderRequest {
+        stamps: &scenario.request,
+        template: &captured_template,
+        stamps_output: &captured_stamps,
+        epoch_output: &captured_epoch,
+    };
+    render_with_git(&fake, &plain_request).expect("plain render");
+    let (result, records) = capture(|| render_with_git(&fake, &captured_request));
+    result.expect("captured render");
+    assert_eq!(
+        std::fs::read(&captured_stamps).expect("stamps"),
+        std::fs::read(&plain_stamps).expect("plain stamps")
+    );
+    assert_eq!(
+        std::fs::read(&captured_epoch).expect("epoch"),
+        std::fs::read(&plain_epoch).expect("plain epoch")
+    );
+    assert!(records.iter().any(|record| record.kind == "span"
+        && record.name == "render"
+        && record.target == "document_stamps::render"
+        && record.level == tracing::Level::INFO));
+    assert!(records.iter().any(|record| {
+        record.kind == "span"
+            && record.name == "publish_outputs"
+            && record.target == "document_stamps::publication"
+            && record.level == tracing::Level::DEBUG
+            && record
+                .fields
+                .get("output_count")
+                .is_some_and(|value| value == "2")
+    }));
+    let event = one_event(&records, "document_stamps::render", "stamps rendered");
+    assert_eq!(event.level, tracing::Level::INFO);
+    assert_eq!(
+        event.fields.get("outcome").map(String::as_str),
+        Some("completed")
+    );
+    assert_eq!(
+        event.fields.get("output_count").map(String::as_str),
+        Some("2")
+    );
+    assert_eq!(
+        event.fields.get("changed_count").map(String::as_str),
+        Some("2")
+    );
+    assert!(
+        !records
+            .iter()
+            .any(|record| record.kind == "event" && record.target == "document_stamps::derive")
+    );
+
+    let (result, records) = capture(|| render_with_git(&fake, &captured_request));
+    result.expect("unchanged rerun");
+    let event = one_event(&records, "document_stamps::render", "stamps rendered");
+    assert_eq!(
+        event.fields.get("changed_count").map(String::as_str),
+        Some("0")
+    );
+}
+
+#[test]
+fn render_records_template_refusal_without_changing_assets() {
+    if !capture_test_child("tests::render_records_template_refusal_without_changing_assets") {
+        return;
+    }
+    let (scenario, fake) = scenario(
+        &[("papers/attestation/main.tex", b"main")],
+        "sha1",
+        false,
+        TREE_OID,
+        "1784118896",
+        "1784000000",
+    );
+    let dir = tempfile::tempdir().expect("output directory");
+    let captured_template = dir.path().join("stamps.tex.in");
+    let captured_stamps = dir.path().join("stamps.tex");
+    let captured_epoch = dir.path().join("source-date-epoch");
+    std::fs::write(&captured_template, "@ATTESTATION_UNKNOWN@").expect("refusal template");
+    std::fs::write(&captured_stamps, b"OLD STAMPS").expect("seed stamps");
+    std::fs::write(&captured_epoch, b"OLD EPOCH").expect("seed epoch");
+    let captured_request = RenderRequest {
+        stamps: &scenario.request,
+        template: &captured_template,
+        stamps_output: &captured_stamps,
+        epoch_output: &captured_epoch,
+    };
+    assert!(matches!(
+        render_with_git(&fake, &captured_request),
+        Err(StampError::UnresolvedPlaceholder)
+    ));
+    let before_stamps = std::fs::read(&captured_stamps).expect("before stamps");
+    let before_epoch = std::fs::read(&captured_epoch).expect("before epoch");
+    let (result, records) = capture(|| render_with_git(&fake, &captured_request));
+    assert!(matches!(result, Err(StampError::UnresolvedPlaceholder)));
+    assert_eq!(
+        std::fs::read(&captured_stamps).expect("after stamps"),
+        before_stamps
+    );
+    assert_eq!(
+        std::fs::read(&captured_epoch).expect("after epoch"),
+        before_epoch
+    );
+    let event = one_event(&records, "document_stamps::render", "stamps rendered");
+    assert_eq!(event.level, tracing::Level::DEBUG);
+    assert_eq!(
+        event.fields.get("outcome").map(String::as_str),
+        Some("refused")
+    );
+    assert_eq!(
+        event.fields.get("refusal_kind").map(String::as_str),
+        Some("unresolved_placeholder")
+    );
+    assert_eq!(
+        event.fields.get("phase").map(String::as_str),
+        Some("template")
+    );
+    assert!(!event.fields.contains_key("changed_count"));
+    no_warn_or_error(&records);
+}
+
+#[test]
+fn render_stage_failure_has_no_completed_change_count() {
+    if !capture_test_child("tests::render_stage_failure_has_no_completed_change_count") {
+        return;
+    }
+    let (scenario, fake) = scenario(
+        &[("papers/attestation/main.tex", b"main")],
+        "sha1",
+        false,
+        TREE_OID,
+        "1784118896",
+        "1784000000",
+    );
+    let dir = tempfile::tempdir().expect("output directory");
+    let template = dir.path().join("stamps.tex.in");
+    std::fs::write(&template, RENDER_TEMPLATE).expect("template");
+    let stamps = dir.path().join("stamps.tex");
+    let epoch = dir.path().join("missing").join("source-date-epoch");
+    let request = RenderRequest {
+        stamps: &scenario.request,
+        template: &template,
+        stamps_output: &stamps,
+        epoch_output: &epoch,
+    };
+    assert!(matches!(
+        render_with_git(&fake, &request),
+        Err(StampError::OutputWriteFailed)
+    ));
+    let (result, records) = capture(|| render_with_git(&fake, &request));
+    assert!(matches!(result, Err(StampError::OutputWriteFailed)));
+    let event = one_event(&records, "document_stamps::render", "stamps rendered");
+    assert_eq!(event.level, tracing::Level::INFO);
+    assert_eq!(
+        event.fields.get("outcome").map(String::as_str),
+        Some("failed")
+    );
+    assert_eq!(
+        event.fields.get("error_kind").map(String::as_str),
+        Some("output_write_failed")
+    );
+    assert_eq!(event.fields.get("phase").map(String::as_str), Some("stage"));
+    assert!(!event.fields.contains_key("changed_count"));
+    assert!(!stamps.exists());
+}
 
 // ---------------------------------------------------------------------------
 // Fake Git runner
@@ -59,7 +560,7 @@ fn literal(path: &str) -> String {
 }
 
 impl GitRunner for FakeGit {
-    fn run(&self, args: &[&str]) -> Result<GitInvocation, StampError> {
+    fn run(&self, _operation: &'static str, args: &[&str]) -> Result<GitInvocation, StampError> {
         let key: Vec<String> = args.iter().map(|arg| (*arg).to_owned()).collect();
         let (success, stdout) = self
             .responses

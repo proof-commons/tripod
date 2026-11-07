@@ -15,4 +15,4 @@ document_stamps_source_files = files(
 document_stamps_excluded_files = files('tests/subprocess_contract.rs')
 
 # Crate documentation (DOC owner).
-document_stamps_doc_files = files('README.md')
+document_stamps_doc_files = files('README.md', 'TRACING.md')
