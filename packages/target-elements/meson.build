@@ -37,11 +37,12 @@ target_elements_source_files = files(
   'src/tests/registry_mutation_tests.rs',
   'src/tests/status_closure_tests.rs',
   'src/tests/transaction_form_tests.rs',
+  'src/tests/tracing_tests.rs',
   'src/tests/weld_tests.rs',
 )
 
 # Crate documentation (DOC owner).
-target_elements_doc_files = files('README.md')
+target_elements_doc_files = files('README.md', 'TRACING.md')
 
 # Same-typed files deliberately outside the crate-source census
 # (ADR-014): integration-test sources are cargo test inputs, not label

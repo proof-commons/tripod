@@ -497,6 +497,38 @@ impl TargetProjection {
 pub fn validate_target_definition(
     definition: TargetDefinition,
 ) -> Result<ValidatedTargetDefinition, Vec<TargetError>> {
+    let span = tracing::debug_span!(
+        target: "target_elements::definition",
+        "validate_definition",
+        contract_version = definition.version.get(),
+        opcode_count = u64::try_from(definition.opcodes.len()).unwrap_or(u64::MAX),
+        encoding_count = u64::try_from(definition.encodings.len()).unwrap_or(u64::MAX),
+        capability_count = u64::try_from(definition.capabilities.len()).unwrap_or(u64::MAX),
+        evidence_count = u64::try_from(definition.evidence_requirements.len()).unwrap_or(u64::MAX),
+    );
+    let _entered = span.enter();
+    let result = validate_target_definition_core(definition);
+    match &result {
+        Ok(_) => tracing::debug!(
+            target: "target_elements::definition",
+            outcome = "completed",
+            defect_count = 0_u64,
+            "target definition checked"
+        ),
+        Err(errors) => tracing::debug!(
+            target: "target_elements::definition",
+            outcome = "refused",
+            defect_count = u64::try_from(errors.len()).unwrap_or(u64::MAX),
+            refusal_kind = errors[0].refusal_kind(),
+            "target definition checked"
+        ),
+    }
+    result
+}
+
+fn validate_target_definition_core(
+    definition: TargetDefinition,
+) -> Result<ValidatedTargetDefinition, Vec<TargetError>> {
     let mut errors = Vec::new();
 
     // The leaf version is not re-checked here: `LeafVersion::new` is
@@ -646,7 +678,42 @@ fn validate_opcodes(definition: &TargetDefinition, errors: &mut Vec<TargetError>
 /// consumer.
 pub fn reviewed_elements_tapscript() -> Result<ReviewedElementsTapscriptDefinition, Vec<TargetError>>
 {
-    validate_target_definition(reviewed_elements_declaration())
+    reviewed_definition_with(reviewed_elements_declaration)
+}
+
+/// Runs one declaration under the reviewed-definition observation boundary.
+pub(crate) fn reviewed_definition_with(
+    declaration: impl FnOnce() -> TargetDefinition,
+) -> Result<ReviewedElementsTapscriptDefinition, Vec<TargetError>> {
+    let span = tracing::debug_span!(
+        target: "target_elements::definition",
+        "reviewed_definition",
+        contract_version = TargetContractVersion::V2.get(),
+    );
+    let _entered = span.enter();
+    let result = reviewed_definition_core(declaration());
+    match &result {
+        Ok(_) => tracing::debug!(
+            target: "target_elements::definition",
+            outcome = "completed",
+            defect_count = 0_u64,
+            "reviewed definition built"
+        ),
+        Err(errors) => tracing::debug!(
+            target: "target_elements::definition",
+            outcome = "refused",
+            defect_count = u64::try_from(errors.len()).unwrap_or(u64::MAX),
+            refusal_kind = errors[0].refusal_kind(),
+            "reviewed definition built"
+        ),
+    }
+    result
+}
+
+fn reviewed_definition_core(
+    declaration: TargetDefinition,
+) -> Result<ReviewedElementsTapscriptDefinition, Vec<TargetError>> {
+    validate_target_definition_core(declaration)
         .map(|definition| ReviewedElementsTapscriptDefinition { definition })
 }
 
@@ -688,12 +755,38 @@ fn reviewed_elements_declaration() -> TargetDefinition {
 pub fn validate_as_reviewed_elements(
     offered: ValidatedTargetDefinition,
 ) -> Result<ReviewedElementsTapscriptDefinition, TargetError> {
+    let span = tracing::debug_span!(
+        target: "target_elements::definition",
+        "promote_reviewed_definition",
+        contract_version = offered.definition().version().get(),
+    );
+    let _entered = span.enter();
+    let result = validate_as_reviewed_elements_core(offered);
+    match &result {
+        Ok(_) => tracing::debug!(
+            target: "target_elements::definition",
+            outcome = "completed",
+            "reviewed definition promotion checked"
+        ),
+        Err(error) => tracing::debug!(
+            target: "target_elements::definition",
+            outcome = "refused",
+            refusal_kind = error.refusal_kind(),
+            "reviewed definition promotion checked"
+        ),
+    }
+    result
+}
+
+fn validate_as_reviewed_elements_core(
+    offered: ValidatedTargetDefinition,
+) -> Result<ReviewedElementsTapscriptDefinition, TargetError> {
     // A defective first-party declaration is reported by
     // `reviewed_elements_tapscript` and by a test that calls it; here
     // it can only mean the comparison has no reviewed value to make,
     // so the offered contract is not it.
-    let expected =
-        reviewed_elements_tapscript().map_err(|_| TargetError::ReviewedDefinitionMismatch)?;
+    let expected = reviewed_definition_core(reviewed_elements_declaration())
+        .map_err(|_| TargetError::ReviewedDefinitionMismatch)?;
     if offered == *expected.validated() {
         Ok(ReviewedElementsTapscriptDefinition {
             definition: offered,

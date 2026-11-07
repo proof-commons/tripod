@@ -2,9 +2,7 @@
 //!
 //! Every validation failure in this crate is reported as a
 //! [`TargetError`]. The enum is deliberately hand-written rather than
-//! derived: the package carries no dependencies at all, so neither a
-//! derive macro nor a `Display` helper crate is available, and none is
-//! wanted for a vocabulary this small.
+//! derived: no `Display` helper crate is needed for this vocabulary.
 //!
 //! # Admission rule
 //!
@@ -394,6 +392,95 @@ pub enum TargetError {
     /// deployment may narrow what the target permits; it cannot widen
     /// it.
     IncompatibleResourceOverride(ResourceDimension),
+}
+
+macro_rules! target_refusal_kinds {
+    ($($variant:pat => $name:literal,)+) => {
+        impl TargetError {
+            /// Stable payload-free `snake_case` variant name for a tracing refusal.
+            #[must_use]
+            pub(crate) const fn refusal_kind(&self) -> &'static str {
+                match self {
+                    $($variant => $name,)+
+                }
+            }
+        }
+
+        #[cfg(test)]
+        pub(crate) const REFUSAL_KIND_NAMES: &[&str] = &[$($name,)+];
+    };
+}
+
+target_refusal_kinds! {
+    TargetError::UnsupportedTargetContractVersion { .. } => "unsupported_target_contract_version",
+    TargetError::UnreviewedLeafVersion { .. } => "unreviewed_leaf_version",
+    TargetError::ReviewedDefinitionMismatch => "reviewed_definition_mismatch",
+    TargetError::MissingOpcodeContract(_) => "missing_opcode_contract",
+    TargetError::OpcodeIdMismatch { .. } => "opcode_id_mismatch",
+    TargetError::DuplicateOpcodeCode(_) => "duplicate_opcode_code",
+    TargetError::UnsupportedOpcodeExecutionDomain(_) => "unsupported_opcode_execution_domain",
+    TargetError::InvalidOpcodeStackContract(_) => "invalid_opcode_stack_contract",
+    TargetError::IncompleteSuccessContract(_) => "incomplete_success_contract",
+    TargetError::DuplicateSuccessCase { .. } => "duplicate_success_case",
+    TargetError::ContradictorySuccessCase(_) => "contradictory_success_case",
+    TargetError::InvalidRetainedOperandContract(_) => "invalid_retained_operand_contract",
+    TargetError::UndeclaredCarriedOperand(_) => "undeclared_carried_operand",
+    TargetError::MissingOpcodeFailureContract(_) => "missing_opcode_failure_contract",
+    TargetError::ContradictoryFailureCause { .. } => "contradictory_failure_cause",
+    TargetError::MissingOpcodeResourceCost(_) => "missing_opcode_resource_cost",
+    TargetError::MissingOpcodeEvidence(_) => "missing_opcode_evidence",
+    TargetError::MissingEncodingSpec(_) => "missing_encoding_spec",
+    TargetError::EncodingClassMismatch { .. } => "encoding_class_mismatch",
+    TargetError::DuplicateEncodingPrefix { .. } => "duplicate_encoding_prefix",
+    TargetError::InvalidEncodingWidth(_) => "invalid_encoding_width",
+    TargetError::MissingByteOrder(_) => "missing_byte_order",
+    TargetError::SpuriousByteOrder(_) => "spurious_byte_order",
+    TargetError::EncodingByteOrderMismatch(_) => "encoding_byte_order_mismatch",
+    TargetError::EncodingDomainMismatch(_) => "encoding_domain_mismatch",
+    TargetError::EncodingWidthMismatch(_) => "encoding_width_mismatch",
+    TargetError::EncodingCanonicalityMismatch(_) => "encoding_canonicality_mismatch",
+    TargetError::MissingEncodingEvidence(_) => "missing_encoding_evidence",
+    TargetError::ContradictorySighashDimension(_) => "contradictory_sighash_dimension",
+    TargetError::UnclassifiedSighashDimension(_) => "unclassified_sighash_dimension",
+    TargetError::OverlappingSequenceFields => "overlapping_sequence_fields",
+    TargetError::MissingTimelockMode => "missing_timelock_mode",
+    TargetError::UnclassifiedConfidentialCapability(_) => "unclassified_confidential_capability",
+    TargetError::MissingResourceDimension(_) => "missing_resource_dimension",
+    TargetError::InvalidResourceContract(_) => "invalid_resource_contract",
+    TargetError::PolicyLooserThanConsensus(_) => "policy_looser_than_consensus",
+    TargetError::MissingCapabilityContract(_) => "missing_capability_contract",
+    TargetError::CapabilityIdMismatch { .. } => "capability_id_mismatch",
+    TargetError::UnknownCapabilityPrerequisite(_) => "unknown_capability_prerequisite",
+    TargetError::CapabilityNamesUnknownOpcode { .. } => "capability_names_unknown_opcode",
+    TargetError::CapabilityNamesUnknownEncoding { .. } => "capability_names_unknown_encoding",
+    TargetError::MissingCapabilityEvidence(_) => "missing_capability_evidence",
+    TargetError::CapabilityStatusExceedsPrerequisite { .. } => "capability_status_exceeds_prerequisite",
+    TargetError::CapabilityDependencyCycle { .. } => "capability_dependency_cycle",
+    TargetError::UnknownEvidenceRequirement(_) => "unknown_evidence_requirement",
+    TargetError::EvidenceRequirementIdMismatch { .. } => "evidence_requirement_id_mismatch",
+    TargetError::MissingStaleCondition(_) => "missing_stale_condition",
+    TargetError::MissingPushForm(_) => "missing_push_form",
+    TargetError::InvalidPushForm(_) => "invalid_push_form",
+    TargetError::DuplicatePushOpcode(_) => "duplicate_push_opcode",
+    TargetError::MissingPushFormEvidence(_) => "missing_push_form_evidence",
+    TargetError::MissingPushEnforcement(_) => "missing_push_enforcement",
+    TargetError::PushContractMismatch => "push_contract_mismatch",
+    TargetError::SignatureContractMismatch => "signature_contract_mismatch",
+    TargetError::TimelockContractMismatch => "timelock_contract_mismatch",
+    TargetError::ConfidentialContractMismatch => "confidential_contract_mismatch",
+    TargetError::IssuanceContractMismatch => "issuance_contract_mismatch",
+    TargetError::ResourceContractMismatch => "resource_contract_mismatch",
+    TargetError::StackGrowthContractMismatch => "stack_growth_contract_mismatch",
+    TargetError::EvidenceContractMismatch => "evidence_contract_mismatch",
+    TargetError::ProductionBindingUnsupported => "production_binding_unsupported",
+    TargetError::ZeroNetworkId => "zero_network_id",
+    TargetError::ZeroGenesisId => "zero_genesis_id",
+    TargetError::TargetDeploymentVersionMismatch => "target_deployment_version_mismatch",
+    TargetError::ActivationLeafVersionMismatch => "activation_leaf_version_mismatch",
+    TargetError::InconsistentActivationDeclaration => "inconsistent_activation_declaration",
+    TargetError::UnsupportedRequiredCapability(_) => "unsupported_required_capability",
+    TargetError::UnknownOverrideDimension(_) => "unknown_override_dimension",
+    TargetError::IncompatibleResourceOverride(_) => "incompatible_resource_override",
 }
 
 impl fmt::Display for TargetError {

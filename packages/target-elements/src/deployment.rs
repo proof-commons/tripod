@@ -295,6 +295,38 @@ pub fn validate_development_binding(
     definition: &ValidatedTargetDefinition,
     binding: DevelopmentDeploymentBinding,
 ) -> Result<ValidatedDevelopmentBinding, TargetError> {
+    let span = tracing::debug_span!(
+        target: "target_elements::deployment",
+        "validate_development_binding",
+        contract_version = binding.target_version.get(),
+        required_capability_count = u64::try_from(binding.activation.required_capabilities.len())
+            .unwrap_or(u64::MAX),
+        override_count = binding.resource_overrides.as_ref().map_or(0, |overrides| {
+            u64::try_from(overrides.policy.bounds().len()).unwrap_or(u64::MAX)
+        }),
+    );
+    let _entered = span.enter();
+    let result = validate_development_binding_core(definition, binding);
+    match &result {
+        Ok(_) => tracing::debug!(
+            target: "target_elements::deployment",
+            outcome = "completed",
+            "development binding checked"
+        ),
+        Err(error) => tracing::debug!(
+            target: "target_elements::deployment",
+            outcome = "refused",
+            refusal_kind = error.refusal_kind(),
+            "development binding checked"
+        ),
+    }
+    result
+}
+
+fn validate_development_binding_core(
+    definition: &ValidatedTargetDefinition,
+    binding: DevelopmentDeploymentBinding,
+) -> Result<ValidatedDevelopmentBinding, TargetError> {
     // Refused first and unconditionally. There is no path by which a
     // production binding becomes valid, and no later check can undo
     // this one.
@@ -440,7 +472,34 @@ pub fn validate_reviewed_development_binding(
     target: &ReviewedElementsTapscriptDefinition,
     binding: DevelopmentDeploymentBinding,
 ) -> Result<ReviewedDevelopmentBinding, TargetError> {
-    let deployment = validate_development_binding(target.validated(), binding)?;
+    let span = tracing::debug_span!(
+        target: "target_elements::deployment",
+        "validate_reviewed_development_binding",
+        contract_version = binding.target_version.get(),
+    );
+    let _entered = span.enter();
+    let result = validate_reviewed_development_binding_core(target, binding);
+    match &result {
+        Ok(_) => tracing::debug!(
+            target: "target_elements::deployment",
+            outcome = "completed",
+            "reviewed development binding checked"
+        ),
+        Err(error) => tracing::debug!(
+            target: "target_elements::deployment",
+            outcome = "refused",
+            refusal_kind = error.refusal_kind(),
+            "reviewed development binding checked"
+        ),
+    }
+    result
+}
+
+fn validate_reviewed_development_binding_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    binding: DevelopmentDeploymentBinding,
+) -> Result<ReviewedDevelopmentBinding, TargetError> {
+    let deployment = validate_development_binding_core(target.validated(), binding)?;
     Ok(ReviewedDevelopmentBinding {
         target: target.projection(),
         deployment,
