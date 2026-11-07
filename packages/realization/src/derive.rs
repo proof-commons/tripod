@@ -102,12 +102,44 @@ impl ScopedRealizationSpec {
     /// realization binds a different architecture identity; otherwise
     /// any owner-validation failure.
     pub fn validate_against(&self, architecture: &Architecture) -> Result<(), RealizationError> {
-        let expected = ArchitectureBinding::from_architecture(architecture)?;
+        let span = tracing::span!(
+            target: "realization::validate",
+            tracing::Level::DEBUG,
+            "validate_spec",
+            operation_count = crate::trace_count(self.operations.len()),
+            relation_count = crate::trace_count(self.relation_graph.node_count())
+        );
+        let _guard = span.enter();
+        let result = self.validate_against_core(architecture);
+        match &result {
+            Ok(()) => tracing::debug!(
+                target: "realization::validate",
+                outcome = "completed",
+                operation_count = crate::trace_count(self.operations.len()),
+                relation_count = crate::trace_count(self.relation_graph.node_count()),
+                "realization validated"
+            ),
+            Err(error) if error.trace_failed() => tracing::debug!(
+                target: "realization::validate",
+                outcome = "failed",
+                error_kind = error.trace_kind(),
+                "realization validated"
+            ),
+            Err(error) => tracing::debug!(
+                target: "realization::validate",
+                outcome = "refused",
+                refusal_kind = error.trace_kind(),
+                "realization validated"
+            ),
+        }
+        result
+    }
 
+    fn validate_against_core(&self, architecture: &Architecture) -> Result<(), RealizationError> {
+        let expected = ArchitectureBinding::from_architecture(architecture)?;
         if expected != self.architecture {
             return Err(RealizationError::ArchitectureBindingMismatch);
         }
-
         crate::validate::validate_scoped_realization(architecture, self)
     }
 
@@ -185,16 +217,7 @@ impl ScopedRealizationSpec {
         &self,
         observation: &OperationObservation,
     ) -> Result<crate::ConformanceReport, RealizationError> {
-        crate::evaluate::evaluate_operation(
-            &self.relation_graph,
-            &self.relation_node_by_id,
-            &self.relation_evaluation_order,
-            &self.expression_graph,
-            &self.expression_node_by_id,
-            &self.expression_evaluation_order,
-            observation,
-            None,
-        )
+        crate::evaluate::evaluate_traced(self, observation, None)
     }
 
     /// Evaluate an observation with a supplied operator-membership decision.
@@ -213,22 +236,33 @@ impl ScopedRealizationSpec {
         observation: &OperationObservation,
         operator_membership: &crate::ObservedOperatorMembership,
     ) -> Result<crate::ConformanceReport, RealizationError> {
-        crate::evaluate::evaluate_operation(
-            &self.relation_graph,
-            &self.relation_node_by_id,
-            &self.relation_evaluation_order,
-            &self.expression_graph,
-            &self.expression_node_by_id,
-            &self.expression_evaluation_order,
-            observation,
-            Some(operator_membership),
-        )
+        crate::evaluate::evaluate_traced(self, observation, Some(operator_membership))
     }
 
     /// Project this realization into stable typed values.
     #[must_use]
     pub fn project(&self) -> ScopedRealizationProjection {
-        project_scoped_realization(self)
+        self.project_traced()
+    }
+
+    fn project_traced(&self) -> ScopedRealizationProjection {
+        let span = tracing::span!(
+            target: "realization::derive",
+            tracing::Level::DEBUG,
+            "project_spec",
+            operation_count = crate::trace_count(self.operations.len()),
+            relation_count = crate::trace_count(self.relation_graph.node_count())
+        );
+        let _guard = span.enter();
+        let projection = project_scoped_realization_core(self);
+        tracing::debug!(
+            target: "realization::derive",
+            outcome = "completed",
+            operation_count = crate::trace_count(self.operations.len()),
+            relation_count = crate::trace_count(self.relation_graph.node_count()),
+            "realization projected"
+        );
+        projection
     }
 }
 
@@ -269,21 +303,72 @@ pub fn derive(
     architecture: &Architecture,
     scope: RealizationScope,
 ) -> Result<ScopedRealizationSpec, RealizationError> {
-    let binding = ArchitectureBinding::from_architecture(architecture)?;
-
-    scope.validate_against(architecture)?;
-
-    let mut operations = BTreeMap::new();
-
-    for operation in scope.operations() {
-        let declaration = declarations::derive_operation(architecture, *operation)?;
-
-        if operations.insert(*operation, declaration).is_some() {
-            return Err(RealizationError::DuplicateOperationDeclaration(*operation));
+    let span = tracing::span!(
+        target: "realization::derive",
+        tracing::Level::INFO,
+        "derive",
+        scope_operation_count = crate::trace_count(scope.operations().len())
+    );
+    let _guard = span.enter();
+    let mut phase = "binding";
+    let result = (|| {
+        let binding = ArchitectureBinding::from_architecture(architecture)?;
+        phase = "scope";
+        scope.validate_against(architecture)?;
+        phase = "declaration";
+        let mut operations = BTreeMap::new();
+        for operation in scope.operations() {
+            let declaration = declarations::derive_operation(architecture, *operation)?;
+            if operations.insert(*operation, declaration).is_some() {
+                return Err(RealizationError::DuplicateOperationDeclaration(*operation));
+            }
+        }
+        phase = "assembly";
+        assemble_scoped_realization_with_phase(architecture, binding, scope, operations, &mut phase)
+    })();
+    match &result {
+        Ok(spec) => tracing::info!(
+            target: "realization::derive",
+            outcome = "completed",
+            operation_count = crate::trace_count(spec.operations.len()),
+            expression_count = crate::trace_count(spec.expression_graph.node_count()),
+            relation_count = crate::trace_count(spec.relation_graph.node_count()),
+            constructibility_node_count = crate::trace_count(spec.constructibility_graph.node_count()),
+            lifecycle_node_count = crate::trace_count(spec.lifecycle_graph.node_count()),
+            disclosure_node_count = crate::trace_count(spec.disclosure_graph.node_count()),
+            "realization derived"
+        ),
+        Err(error) if error.trace_failed() => tracing::info!(
+            target: "realization::derive",
+            outcome = "failed",
+            error_kind = error.trace_kind(),
+            phase,
+            "realization derived"
+        ),
+        Err(error) => {
+            if tracing::enabled!(target: "realization::derive", tracing::Level::DEBUG) {
+                if let Some(defect_count) = error.trace_defect_count() {
+                    tracing::debug!(
+                        target: "realization::derive",
+                        outcome = "refused",
+                        refusal_kind = error.trace_kind(),
+                        phase,
+                        defect_count,
+                        "realization derived"
+                    );
+                } else {
+                    tracing::debug!(
+                        target: "realization::derive",
+                        outcome = "refused",
+                        refusal_kind = error.trace_kind(),
+                        phase,
+                        "realization derived"
+                    );
+                }
+            }
         }
     }
-
-    assemble_scoped_realization(architecture, binding, scope, operations)
+    result
 }
 
 /// Build and validate one realization from explicit operation
@@ -293,12 +378,31 @@ pub fn derive(
 /// validation path shared by [`derive`] and by test fixtures that
 /// permute or mutate declarations — every constructed value passes
 /// through the same builders and `validate_scoped_realization`.
+#[cfg(test)]
 pub(crate) fn assemble_scoped_realization(
     architecture: &Architecture,
     binding: ArchitectureBinding,
     scope: RealizationScope,
     operations: BTreeMap<OperationId, OperationRealization>,
 ) -> Result<ScopedRealizationSpec, RealizationError> {
+    let mut phase = "assembly";
+    assemble_scoped_realization_with_phase(architecture, binding, scope, operations, &mut phase)
+}
+
+fn assemble_scoped_realization_with_phase(
+    architecture: &Architecture,
+    binding: ArchitectureBinding,
+    scope: RealizationScope,
+    operations: BTreeMap<OperationId, OperationRealization>,
+    phase: &mut &'static str,
+) -> Result<ScopedRealizationSpec, RealizationError> {
+    let span = tracing::span!(
+        target: "realization::derive",
+        tracing::Level::DEBUG,
+        "assemble",
+        operation_count = crate::trace_count(operations.len())
+    );
+    let _guard = span.enter();
     for (operation, declaration) in &operations {
         crate::validate::validate_operation_ownership(*operation, declaration)?;
     }
@@ -407,6 +511,7 @@ pub(crate) fn assemble_scoped_realization(
         authorizations,
     };
 
+    *phase = "validation";
     crate::validate::validate_scoped_realization(architecture, &result)?;
 
     Ok(result)
@@ -415,6 +520,12 @@ pub(crate) fn assemble_scoped_realization(
 /// Project a scoped realization into stable typed values.
 #[must_use]
 pub fn project_scoped_realization(
+    realization: &ScopedRealizationSpec,
+) -> ScopedRealizationProjection {
+    realization.project_traced()
+}
+
+fn project_scoped_realization_core(
     realization: &ScopedRealizationSpec,
 ) -> ScopedRealizationProjection {
     ScopedRealizationProjection {

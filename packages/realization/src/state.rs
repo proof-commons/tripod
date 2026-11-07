@@ -317,6 +317,23 @@ pub fn announce_maturity(
     announced_cycle: Cycle,
     bounds: AnnouncementLeadBounds,
 ) -> Result<StateMetadata, MaturityTransitionRefusal> {
+    let result = announce_maturity_core(predecessor, announced_cycle, bounds);
+    if let Err(refusal) = result {
+        tracing::debug!(
+            target: "realization::state",
+            outcome = "refused",
+            refusal_kind = refusal.name(),
+            "maturity transition refused"
+        );
+    }
+    result
+}
+
+fn announce_maturity_core(
+    predecessor: &StateMetadata,
+    announced_cycle: Cycle,
+    bounds: AnnouncementLeadBounds,
+) -> Result<StateMetadata, MaturityTransitionRefusal> {
     match predecessor.maturity {
         Maturity::Unannounced => {}
         Maturity::Announced { .. } => {

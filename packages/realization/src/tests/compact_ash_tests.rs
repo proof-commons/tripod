@@ -63,7 +63,7 @@ fn unclaimed_lbtc(side: ObservedSide, ordinal: u32) -> ObservedObject {
     }
 }
 
-fn valid_observation() -> OperationObservation {
+pub(super) fn valid_observation() -> OperationObservation {
     let input0 = ObservedObjectRef {
         side: ObservedSide::Input,
         ordinal: 0,

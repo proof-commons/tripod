@@ -296,6 +296,20 @@ fn take<const N: usize>(input: &[u8], cursor: &mut usize) -> Result<[u8; N], Sta
 
 /// Decode one canonical STATE metadata representation strictly.
 pub fn decode_state_metadata(bytes: &[u8]) -> Result<EncodedStateMetadata, StateMetadataRefusal> {
+    let result = decode_state_metadata_core(bytes);
+    if let Err(refusal) = result {
+        tracing::debug!(
+            target: "realization::state_codec",
+            outcome = "refused",
+            refusal_kind = refusal.name(),
+            input_bytes = crate::trace_count(bytes.len()),
+            "state metadata refused"
+        );
+    }
+    result
+}
+
+fn decode_state_metadata_core(bytes: &[u8]) -> Result<EncodedStateMetadata, StateMetadataRefusal> {
     if bytes.len() < STATE_METADATA_DOMAIN.len() {
         return Err(StateMetadataRefusal::WrongLength);
     }

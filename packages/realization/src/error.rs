@@ -599,3 +599,135 @@ pub enum RealizationError {
         mode: RepresentationMode,
     },
 }
+
+impl RealizationError {
+    /// A payload-free, stable variant identifier for tracing.
+    #[allow(clippy::too_many_lines)]
+    pub(crate) fn trace_kind(&self) -> &'static str {
+        match self {
+            Self::ArchitectureValidationFailed { errors } => errors
+                .first()
+                .map_or("architecture_validation_failed", ManifestError::name),
+            Self::ArchitectureHashUnavailable => "architecture_hash_unavailable",
+            Self::ObservedRegionOverlap(_) => "observed_region_overlap",
+            Self::EmptyScope => "empty_scope",
+            Self::DuplicateScopeOperation(_) => "duplicate_scope_operation",
+            Self::OperationOutsideArchitecture(_) => "operation_outside_architecture",
+            Self::OperationOutsideScope(_) => "operation_outside_scope",
+            Self::ArchitectureBindingMismatch => "architecture_binding_mismatch",
+            Self::IncompleteScope { .. } => "incomplete_scope",
+            Self::AmountOutOfDomain { .. } => "amount_out_of_domain",
+            Self::AmountOverflow => "amount_overflow",
+            Self::AmountUnderflow => "amount_underflow",
+            Self::CountOverflow => "count_overflow",
+            Self::CycleOverflow => "cycle_overflow",
+            Self::InvalidAnnouncementLeadBounds { .. } => "invalid_announcement_lead_bounds",
+            Self::MissingAnnouncementLeadBound(_) => "missing_announcement_lead_bound",
+            Self::CycleBoundUsedAsCount(_) => "cycle_bound_used_as_count",
+            Self::InvalidSingletonDeclaration { .. } => "invalid_singleton_declaration",
+            Self::DuplicateExpression(_) => "duplicate_expression",
+            Self::UnknownExpressionDependency { .. } => "unknown_expression_dependency",
+            Self::ExpressionDependencyCycle { .. } => "expression_dependency_cycle",
+            Self::ExpressionTypeMismatch { .. } => "expression_type_mismatch",
+            Self::ExpressionOperandTypeMismatch { .. } => "expression_operand_type_mismatch",
+            Self::BinaryOperandTypeMismatch { .. } => "binary_operand_type_mismatch",
+            Self::InvalidSumType(_) => "invalid_sum_type",
+            Self::InvalidOrderedType(_) => "invalid_ordered_type",
+            Self::FactExpressionIdentityMismatch { .. } => "fact_expression_identity_mismatch",
+            Self::DuplicateFactValue(_) => "duplicate_fact_value",
+            Self::FactTypeMismatch { .. } => "fact_type_mismatch",
+            Self::MissingFactValue(_) => "missing_fact_value",
+            Self::ForeignExpressionFact { .. } => "foreign_expression_fact",
+            Self::UnderivableOwnerFact { .. } => "underivable_owner_fact",
+            Self::UnknownEvaluatedExpression { .. } | Self::UnknownRelation(_) => {
+                "internal_invariant"
+            }
+            Self::TooManyExpressionOperands { .. } => "too_many_expression_operands",
+            Self::UnknownPredicateExpression { .. } => "unknown_predicate_expression",
+            Self::NonBooleanPredicateExpression { .. } => "non_boolean_predicate_expression",
+            Self::SponsorValueRead => "sponsor_value_read",
+            Self::UnsupportedOperationDeclaration(_) => "unsupported_operation_declaration",
+            Self::DuplicateOperationDeclaration(_) => "duplicate_operation_declaration",
+            Self::OperationDeclarationIdentityMismatch { .. } => {
+                "operation_declaration_identity_mismatch"
+            }
+            Self::ForeignExpressionOwnership { .. } => "foreign_expression_ownership",
+            Self::ForeignRelationOwnership { .. } => "foreign_relation_ownership",
+            Self::ForeignRelationDependency { .. } => "foreign_relation_dependency",
+            Self::ForeignProofAlternativeBinding { .. } => "foreign_proof_alternative_binding",
+            Self::ForeignConstructibilityOwnership { .. } => "foreign_constructibility_ownership",
+            Self::ForeignDisclosureOwnership { .. } => "foreign_disclosure_ownership",
+            Self::UnknownDisclosureRelation { .. } => "unknown_disclosure_relation",
+            Self::MissingArchitectureOperation(_) => "missing_architecture_operation",
+            Self::ArchitectureOperationMismatch { .. } => "architecture_operation_mismatch",
+            Self::MissingArchitectureRelation { .. } => "missing_architecture_relation",
+            Self::ArchitectureRelationMismatch { .. } => "architecture_relation_mismatch",
+            Self::SurplusArchitectureRelation { .. } => "surplus_architecture_relation",
+            Self::RelationKindMismatch { .. } => "relation_kind_mismatch",
+            Self::RelationSubjectMismatch { .. } => "relation_subject_mismatch",
+            Self::MissingArchitectureObject(_) => "missing_architecture_object",
+            Self::DuplicateRelation(_) => "duplicate_relation",
+            Self::UnknownRelationDependency { .. } => "unknown_relation_dependency",
+            Self::DuplicateRelationDependency(_) => "duplicate_relation_dependency",
+            Self::RelationDependencyCycle { .. } => "relation_dependency_cycle",
+            Self::MissingBoundValue(_) => "missing_bound_value",
+            Self::UnknownObservedObject(_) => "unknown_observed_object",
+            Self::DuplicateObservedObject(_) => "duplicate_observed_object",
+            Self::DuplicateObservedReference => "duplicate_observed_reference",
+            Self::DuplicateObservedRoot(_) => "duplicate_observed_root",
+            Self::WrongObservedReferenceSide(_) => "wrong_observed_reference_side",
+            Self::ObservedCanonicalPartitionOverlap => "observed_canonical_partition_overlap",
+            Self::ObservedOpenFlowOverlap(_) => "observed_open_flow_overlap",
+            Self::AnchorInObservedOpenFlow(_) => "anchor_in_observed_open_flow",
+            Self::DuplicateConstructibilityNode(_) => "duplicate_constructibility_node",
+            Self::UnknownConstructibilityNode(_) => "unknown_constructibility_node",
+            Self::DuplicateConstructibilityDependency(_) => "duplicate_constructibility_dependency",
+            Self::ConstructibilityCycle { .. } => "constructibility_cycle",
+            Self::MissingConstructibilityOperation(_) => "missing_constructibility_operation",
+            Self::PermissionlessPrivateDependency { .. } => "permissionless_private_dependency",
+            Self::ConstructibilityAuthorizationMismatch(_) => {
+                "constructibility_authorization_mismatch"
+            }
+            Self::ConstructibilityWitnessUnavailable { .. } => {
+                "constructibility_witness_unavailable"
+            }
+            Self::SponsorDependencyEscaped { .. } => "sponsor_dependency_escaped",
+            Self::CrossOperationConstructibilityDependency { .. } => {
+                "cross_operation_constructibility_dependency"
+            }
+            Self::DuplicateLifecycleNode(_) => "duplicate_lifecycle_node",
+            Self::UnknownLifecycleNode(_) => "unknown_lifecycle_node",
+            Self::DuplicateLifecycleDependency(_) => "duplicate_lifecycle_dependency",
+            Self::LifecycleCycle { .. } => "lifecycle_cycle",
+            Self::MissingLifecycleRepresentation { .. } => "missing_lifecycle_representation",
+            Self::MissingLifecycleExitNode { .. } => "missing_lifecycle_exit_node",
+            Self::MissingLifecyclePath { .. } => "missing_lifecycle_path",
+            Self::MalformedLifecycleEdge { .. } => "malformed_lifecycle_edge",
+            Self::CrossObjectLifecycleEdge { .. } => "cross_object_lifecycle_edge",
+            Self::UndeclaredLifecycleNode(_) => "undeclared_lifecycle_node",
+            Self::LifecycleExitWithoutRepresentation { .. } => {
+                "lifecycle_exit_without_representation"
+            }
+            Self::DuplicateDisclosureNode(_) => "duplicate_disclosure_node",
+            Self::UnknownDisclosureNode(_) => "unknown_disclosure_node",
+            Self::DuplicateDisclosureDependency(_) => "duplicate_disclosure_dependency",
+            Self::RepresentationLifecycleMismatch { .. } => "representation_lifecycle_mismatch",
+        }
+    }
+
+    pub(crate) fn trace_failed(&self) -> bool {
+        matches!(
+            self,
+            Self::ArchitectureHashUnavailable
+                | Self::UnknownEvaluatedExpression { .. }
+                | Self::UnknownRelation(_)
+        )
+    }
+
+    pub(crate) fn trace_defect_count(&self) -> Option<u64> {
+        match self {
+            Self::ArchitectureValidationFailed { errors } => Some(crate::trace_count(errors.len())),
+            _ => None,
+        }
+    }
+}

@@ -290,6 +290,90 @@ impl ConformanceReport {
 }
 
 /// Evaluate all relations owned by one operation.
+pub(crate) fn evaluate_traced(
+    realization: &crate::ScopedRealizationSpec,
+    observation: &OperationObservation,
+    operator_membership: Option<&ObservedOperatorMembership>,
+) -> Result<ConformanceReport, RealizationError> {
+    let operation_code = observation.operation.code();
+    let span = tracing::span!(
+        target: "realization::evaluate",
+        tracing::Level::DEBUG,
+        "evaluate_operation",
+        operation_code,
+        relation_count = crate::trace_count(realization.relation_graph.node_count()),
+        expression_count = crate::trace_count(realization.expression_graph.node_count()),
+        operator_membership_supplied = operator_membership.is_some()
+    );
+    let _guard = span.enter();
+    let result = evaluate_operation(
+        &realization.relation_graph,
+        &realization.relation_node_by_id,
+        &realization.relation_evaluation_order,
+        &realization.expression_graph,
+        &realization.expression_node_by_id,
+        &realization.expression_evaluation_order,
+        observation,
+        operator_membership,
+    );
+    match &result {
+        Ok(report) if tracing::enabled!(target: "realization::evaluate", tracing::Level::DEBUG) => {
+            let (
+                mut passed_count,
+                mut statically_validated_count,
+                mut evidence_required_count,
+                mut failed_count,
+                mut blocked_count,
+            ) = (0_u64, 0_u64, 0_u64, 0_u64, 0_u64);
+            for verdict in &report.verdicts {
+                match verdict.status {
+                    RelationStatus::Passed => passed_count = passed_count.saturating_add(1),
+                    RelationStatus::StaticallyValidated => {
+                        statically_validated_count = statically_validated_count.saturating_add(1);
+                    }
+                    RelationStatus::EvidenceRequired { .. } => {
+                        evidence_required_count = evidence_required_count.saturating_add(1);
+                    }
+                    RelationStatus::Failed { .. } => failed_count = failed_count.saturating_add(1),
+                    RelationStatus::Blocked { .. } => {
+                        blocked_count = blocked_count.saturating_add(1);
+                    }
+                }
+            }
+            tracing::debug!(
+                target: "realization::evaluate",
+                outcome = "completed",
+                operation_code,
+                conformant = report.is_conformant(),
+                evidence_complete = report.is_evidence_complete(),
+                passed_count,
+                statically_validated_count,
+                evidence_required_count,
+                failed_count,
+                blocked_count,
+                "operation evaluated"
+            );
+        }
+        Ok(_) => {}
+        Err(error) if error.trace_failed() => tracing::debug!(
+            target: "realization::evaluate",
+            outcome = "failed",
+            operation_code,
+            error_kind = error.trace_kind(),
+            "operation evaluated"
+        ),
+        Err(error) => tracing::debug!(
+            target: "realization::evaluate",
+            outcome = "refused",
+            operation_code,
+            refusal_kind = error.trace_kind(),
+            "operation evaluated"
+        ),
+    }
+    result
+}
+
+/// Evaluate all relations owned by one operation.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn evaluate_operation(
     relation_graph: &DiGraph<RelationDeclaration, RelationEdge, u32>,
@@ -301,7 +385,7 @@ pub(crate) fn evaluate_operation(
     observation: &OperationObservation,
     operator_membership: Option<&ObservedOperatorMembership>,
 ) -> Result<ConformanceReport, RealizationError> {
-    let observation = observation.clone().validate_and_normalize()?;
+    let observation = observation.clone().validate_and_normalize_core()?;
     let evaluated = evaluate_operation_expressions(
         relation_graph,
         expression_graph,

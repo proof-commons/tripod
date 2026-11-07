@@ -28,6 +28,10 @@ pub mod value;
 mod declarations;
 mod validate;
 
+pub(crate) fn trace_count(count: usize) -> u64 {
+    u64::try_from(count).unwrap_or(u64::MAX)
+}
+
 pub use binding::ArchitectureBinding;
 pub(crate) use constructibility::validate_constructibility;
 pub use constructibility::{

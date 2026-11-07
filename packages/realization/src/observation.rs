@@ -275,7 +275,46 @@ impl OperationObservation {
     ///   would return a malformed-observation error instead, which says
     ///   the observation could not be read rather than that the
     ///   operation does not conform.
-    pub fn validate_and_normalize(mut self) -> Result<Self, RealizationError> {
+    pub fn validate_and_normalize(self) -> Result<Self, RealizationError> {
+        let span = tracing::span!(
+            target: "realization::observation",
+            tracing::Level::DEBUG,
+            "normalize_observation",
+            operation_code = self.operation.code(),
+            object_count = crate::trace_count(self.objects.len()),
+            region_count = crate::trace_count(1 + self.other_regions.len())
+        );
+        let _guard = span.enter();
+        let operation_code = self.operation.code();
+        let result = self.validate_and_normalize_core();
+        match &result {
+            Ok(observation) => tracing::debug!(
+                target: "realization::observation",
+                outcome = "completed",
+                operation_code,
+                object_count = crate::trace_count(observation.objects.len()),
+                region_count = crate::trace_count(1 + observation.other_regions.len()),
+                "observation normalized"
+            ),
+            Err(error) if error.trace_failed() => tracing::debug!(
+                target: "realization::observation",
+                outcome = "failed",
+                operation_code,
+                error_kind = error.trace_kind(),
+                "observation normalized"
+            ),
+            Err(error) => tracing::debug!(
+                target: "realization::observation",
+                outcome = "refused",
+                operation_code,
+                refusal_kind = error.trace_kind(),
+                "observation normalized"
+            ),
+        }
+        result
+    }
+
+    pub(crate) fn validate_and_normalize_core(mut self) -> Result<Self, RealizationError> {
         validate_count_bound_units(&self.bounds)?;
         self.objects.sort_by_key(|object| object.reference);
 

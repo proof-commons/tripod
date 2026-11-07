@@ -42,12 +42,15 @@ realization_source_files = files(
   'src/tests/state_codec_tests.rs',
   'src/tests/state_tests.rs',
   'src/tests/type_tests.rs',
+  'src/tests/tracing_tests.rs',
+  'src/tests/tracing_evaluation_tests.rs',
+  'src/tests/tracing_refusal_tests.rs',
   'src/validate.rs',
   'src/value.rs',
 )
 
 # Crate documentation (DOC owner).
-realization_doc_files = files('README.md')
+realization_doc_files = files('README.md', 'TRACING.md')
 
 # Integration-test sources are cargo test inputs rather than label
 # graph subjects. The explicit exclusion keeps the tracked-file census
