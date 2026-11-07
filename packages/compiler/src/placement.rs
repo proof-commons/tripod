@@ -960,6 +960,31 @@ pub fn enumerate_feasible_placements(
     eligibility: &[CarrierEligibility],
     limits: PlacementSearchLimits,
 ) -> Result<FeasiblePlacements, CompileError> {
+    let relation_case_count = crate::instrumentation::count(plans.len());
+    let span = tracing::debug_span!(target: "compiler::placement", "enumerate_feasible_placements", state_limit = limits.maximum_states.get(), candidate_limit = limits.maximum_candidates.get(), relation_case_count);
+    let _entered = span.enter();
+    let mut search = PlacementSearchReport::default();
+    let result = enumerate_feasible_placements_core(plans, eligibility, limits, &mut search);
+    match &result {
+        Ok(_) => {
+            tracing::debug!(target: "compiler::placement", outcome = "completed", visited_state_count = search.states_visited, complete_assignment_count = search.complete_assignments, feasible_placement_count = search.feasible_placements, retained_option_count = search.retained_options, message = "placement search completed");
+        }
+        Err(error) if error.tracing_failed() => {
+            tracing::debug!(target: "compiler::placement", outcome = "failed", error_kind = error.tracing_kind(), visited_state_count = search.states_visited, complete_assignment_count = search.complete_assignments, feasible_placement_count = search.feasible_placements, retained_option_count = search.retained_options, message = "placement search completed");
+        }
+        Err(error) => {
+            tracing::debug!(target: "compiler::placement", outcome = "refused", refusal_kind = error.tracing_kind(), visited_state_count = search.states_visited, complete_assignment_count = search.complete_assignments, feasible_placement_count = search.feasible_placements, retained_option_count = search.retained_options, message = "placement search completed");
+        }
+    }
+    result.map(|candidates| FeasiblePlacements { candidates, search })
+}
+
+fn enumerate_feasible_placements_core(
+    plans: &[RelationCasePlan],
+    eligibility: &[CarrierEligibility],
+    limits: PlacementSearchLimits,
+    search: &mut PlacementSearchReport,
+) -> Result<Vec<PlacementCandidate>, CompileError> {
     validate_placement_census(plans, eligibility)?;
 
     // The input order of the eligibility and plan slices is never
@@ -1006,13 +1031,10 @@ pub fn enumerate_feasible_placements(
         options.push(retained_options(plan, analysis)?);
     }
 
-    let mut search = PlacementSearchReport {
-        retained_options: options
-            .iter()
-            .map(|list| u64::try_from(list.len()).unwrap_or(u64::MAX))
-            .sum(),
-        ..PlacementSearchReport::default()
-    };
+    search.retained_options = options
+        .iter()
+        .map(|list| u64::try_from(list.len()).unwrap_or(u64::MAX))
+        .sum();
     let mut candidates = Vec::new();
     let mut state = PlacementSearchState {
         keys: &keys,
@@ -1020,7 +1042,7 @@ pub fn enumerate_feasible_placements(
         plans,
         eligibility,
         limits,
-        search: &mut search,
+        search: &mut *search,
         candidates: &mut candidates,
     };
 
@@ -1030,7 +1052,7 @@ pub fn enumerate_feasible_placements(
     candidates.dedup();
     search.feasible_placements = u64::try_from(candidates.len()).unwrap_or(u64::MAX);
 
-    Ok(FeasiblePlacements { candidates, search })
+    Ok(candidates)
 }
 
 /// Validate one complete placement against every hard constraint.
@@ -1396,6 +1418,9 @@ pub fn place_feasible_proof_plans(
     candidates: &[ProofPlanCandidate],
     limits: PlacementSearchLimits,
 ) -> Result<PlacedProofPlans, CompileError> {
+    let proof_plan_count = crate::instrumentation::count(candidates.len());
+    let span = tracing::debug_span!(target: "compiler::placement", "place_feasible_proof_plans", proof_plan_count);
+    let _entered = span.enter();
     let mut placed = Vec::with_capacity(candidates.len());
 
     for candidate in candidates {

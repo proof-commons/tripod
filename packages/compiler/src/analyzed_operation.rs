@@ -439,10 +439,14 @@ pub fn analyze_candidate_operations_reported(
     candidate: &ProofPlanCandidate,
     limits: PlacementSearchLimits,
 ) -> Result<ReportedOperationAnalyses, CompileError> {
+    let operations = case_operations(relations);
+    let operation_count = crate::instrumentation::count(operations.len());
+    let span = tracing::debug_span!(target: "compiler::analysis", "analyze_candidate_operations_reported", operation_count);
+    let _entered = span.enter();
     let mut factors = BTreeMap::new();
     let mut reports = BTreeMap::new();
 
-    for operation in case_operations(relations) {
+    for operation in operations {
         let (analyzed, search) =
             analyze_operation_reported(relations, requirements, candidate, operation, limits)?;
 

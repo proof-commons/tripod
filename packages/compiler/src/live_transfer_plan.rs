@@ -1163,12 +1163,30 @@ pub fn plan_live_transfer_target_operation(
     input: &BoundCompilerInput,
     placement_limits: PlacementSearchLimits,
 ) -> Result<ValidatedLiveTransferOperationPlan, CompileError> {
-    let analyzed = analyze_scoped_program(input, placement_limits)?;
-    let plan = derive_live_transfer_plan(&analyzed)?;
-
-    validate_live_transfer_plan(&analyzed, &plan)?;
-
-    Ok(plan)
+    let operation_code = PLANNED.code();
+    let scope_operation_count = crate::instrumentation::count(input.scope().operations().len());
+    let span = tracing::info_span!(
+        target: "compiler::plan",
+        "plan_target_operation",
+        operation_code,
+        family = "live",
+        scope_operation_count
+    );
+    let _entered = span.enter();
+    let result = (|| {
+        let analyzed = analyze_scoped_program(input, placement_limits)?;
+        let proof_plan_count = if tracing::enabled!(target: "compiler::plan", tracing::Level::INFO)
+        {
+            crate::instrumentation::count(analyzed.proof_plans.len())
+        } else {
+            0
+        };
+        let plan = derive_live_transfer_plan(&analyzed)?;
+        validate_live_transfer_plan(&analyzed, &plan)?;
+        Ok((plan, proof_plan_count))
+    })();
+    crate::instrumentation::plan_completion(&result, operation_code, "live");
+    result.map(|(plan, _)| plan)
 }
 
 /// Derive the plan from a complete analyzed program.

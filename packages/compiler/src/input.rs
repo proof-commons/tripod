@@ -174,34 +174,62 @@ pub fn bind_input(
     scope: CompilationScope,
     policy: AnalysisPolicy,
 ) -> Result<BoundCompilerInput, CompileError> {
-    // The owner validates; the compiler never trusts a handed value.
-    realization
-        .validate_against(architecture)
-        .map_err(|error| match error {
-            RealizationError::ArchitectureBindingMismatch => {
-                CompileError::ArchitectureBindingMismatch
+    let scope_operation_count = crate::instrumentation::count(scope.operations().len());
+    let span = tracing::debug_span!(target: "compiler::input", "bind_input", scope_operation_count);
+    let _entered = span.enter();
+    let result = (|| {
+        // The owner validates; the compiler never trusts a handed value.
+        realization
+            .validate_against(architecture)
+            .map_err(|error| match error {
+                RealizationError::ArchitectureBindingMismatch => {
+                    CompileError::ArchitectureBindingMismatch
+                }
+                _ => CompileError::InvalidRealization,
+            })?;
+
+        // The realization's explicit partial scope is retained honestly:
+        // compiler scope must be a subset, never a completion of it.
+        for operation in scope.operations() {
+            if realization.operation(*operation).is_none() {
+                return Err(CompileError::IncompleteRealizationScope {
+                    operation: *operation,
+                });
             }
-            _ => CompileError::InvalidRealization,
-        })?;
-
-    // The realization's explicit partial scope is retained honestly:
-    // compiler scope must be a subset, never a completion of it.
-    for operation in scope.operations() {
-        if realization.operation(*operation).is_none() {
-            return Err(CompileError::IncompleteRealizationScope {
-                operation: *operation,
-            });
         }
-    }
 
-    Ok(BoundCompilerInput {
-        realization,
-        scope,
-        policy,
-        architecture_operations: architecture
-            .operations
-            .iter()
-            .map(|operation| operation.id)
-            .collect(),
-    })
+        Ok(BoundCompilerInput {
+            realization,
+            scope,
+            policy,
+            architecture_operations: architecture
+                .operations
+                .iter()
+                .map(|operation| operation.id)
+                .collect(),
+        })
+    })();
+    match &result {
+        Ok(_) => tracing::debug!(
+            target: "compiler::input",
+            outcome = "completed",
+            scope_operation_count,
+            message = "input binding completed"
+        ),
+        Err(error) if error.tracing_failed() => tracing::debug!(
+            target: "compiler::input",
+            outcome = "failed",
+            error_kind = error.tracing_kind(),
+            scope_operation_count,
+            message = "input binding completed"
+        ),
+        Err(error) => tracing::debug!(
+            target: "compiler::input",
+            outcome = "refused",
+            refusal_kind = error.tracing_kind(),
+            scope_operation_count,
+            message = "input binding completed"
+        ),
+    }
+    result
 }

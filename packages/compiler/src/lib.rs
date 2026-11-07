@@ -16,6 +16,7 @@ mod expression;
 mod fold;
 mod foundation;
 pub mod input;
+mod instrumentation;
 mod layout;
 mod lifecycle;
 pub mod live_transfer_plan;

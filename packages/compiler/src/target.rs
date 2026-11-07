@@ -159,9 +159,48 @@ pub fn analyze_target_requirements(
     input: &BoundCompilerInput,
     placement_limits: PlacementSearchLimits,
 ) -> Result<TargetRequirementSet, CompileError> {
-    let analyzed = analyze_scoped_program(input, placement_limits)?;
-
-    project_target_requirements(&analyzed)
+    let scope_operation_count = crate::instrumentation::count(input.scope().operations().len());
+    let span = tracing::info_span!(
+        target: "compiler::target",
+        "analyze_target_requirements",
+        scope_operation_count
+    );
+    let _entered = span.enter();
+    let result: Result<(TargetRequirementSet, u64), CompileError> = (|| {
+        let analyzed = analyze_scoped_program(input, placement_limits)?;
+        let proof_plan_count = if tracing::enabled!(target: "compiler::target", tracing::Level::INFO)
+        {
+            crate::instrumentation::count(analyzed.proof_plans.len())
+        } else {
+            0
+        };
+        let requirements = project_target_requirements(&analyzed)?;
+        Ok((requirements, proof_plan_count))
+    })();
+    match &result {
+        Ok((_, proof_plan_count)) => tracing::info!(
+            target: "compiler::target",
+            outcome = "completed",
+            operation_count = scope_operation_count,
+            proof_plan_count = *proof_plan_count,
+            message = "target requirements analyzed"
+        ),
+        Err(error) if error.tracing_failed() => tracing::info!(
+            target: "compiler::target",
+            outcome = "failed",
+            operation_count = scope_operation_count,
+            error_kind = error.tracing_kind(),
+            message = "target requirements analyzed"
+        ),
+        Err(error) => tracing::debug!(
+            target: "compiler::target",
+            outcome = "refused",
+            operation_count = scope_operation_count,
+            refusal_kind = error.tracing_kind(),
+            message = "target requirements analyzed"
+        ),
+    }
+    result.map(|(requirements, _)| requirements)
 }
 
 /// Derive the requirement set from a complete analyzed program.

@@ -1492,3 +1492,211 @@ pub enum CompileError {
         relation: realization::RelationId,
     },
 }
+
+impl CompileError {
+    /// Static variant name for a payload-free tracing classification.
+    #[allow(clippy::too_many_lines)] // Exhaustive names must stay beside the enum.
+    pub(crate) const fn tracing_kind(&self) -> &'static str {
+        match self {
+            Self::UnsupportedRealizationSchema { .. } => "unsupported_realization_schema",
+            Self::InvalidRealization => "invalid_realization",
+            Self::ArchitectureBindingMismatch => "architecture_binding_mismatch",
+            Self::IncompleteRealizationScope { .. } => "incomplete_realization_scope",
+            Self::DuplicateScopeOperation { .. } => "duplicate_scope_operation",
+            Self::EmptyCompilationScope => "empty_compilation_scope",
+            Self::DuplicateRelation { .. } => "duplicate_relation",
+            Self::UnknownRelationDependencyEndpoint { .. } => {
+                "unknown_relation_dependency_endpoint"
+            }
+            Self::DuplicateRelationDependency { .. } => "duplicate_relation_dependency",
+            Self::RelationDependencyEscapesScope { .. } => "relation_dependency_escapes_scope",
+            Self::RelationDependencyCycle { .. } => "relation_dependency_cycle",
+            Self::RelationCensusMismatch { .. } => "relation_census_mismatch",
+            Self::ForeignProofAlternative { .. } => "foreign_proof_alternative",
+            Self::DuplicateExpression { .. } => "duplicate_expression",
+            Self::DuplicateExpressionDependency { .. } => "duplicate_expression_dependency",
+            Self::UnknownExpressionDependencyEndpoint { .. } => {
+                "unknown_expression_dependency_endpoint"
+            }
+            Self::ExpressionDependencyEscapesScope { .. } => "expression_dependency_escapes_scope",
+            Self::ExpressionDependencyCycle { .. } => "expression_dependency_cycle",
+            Self::ExpressionCensusMismatch { .. } => "expression_census_mismatch",
+            Self::UnknownPredicateExpression { .. } => "unknown_predicate_expression",
+            Self::NonBooleanPredicateExpression { .. } => "non_boolean_predicate_expression",
+            Self::PredicateExpressionOutsideScope { .. } => "predicate_expression_outside_scope",
+            Self::ConstantFoldTypeMismatch { .. } => "constant_fold_type_mismatch",
+            Self::ConstantFoldOverflow { .. } => "constant_fold_overflow",
+            Self::ConstantFoldAmountOutOfDomain { .. } => "constant_fold_amount_out_of_domain",
+            Self::ConstantFoldMissingOperand { .. } => "constant_fold_missing_operand",
+            Self::MissingSourceRequirement { .. } => "missing_source_requirement",
+            Self::UnauthenticatedSourceRequirement { .. } => "unauthenticated_source_requirement",
+            Self::SourceConstructibilityMismatch { .. } => "source_constructibility_mismatch",
+            Self::SponsorValueRead => "sponsor_value_read",
+            Self::DuplicateConstructibilityNode { .. } => "duplicate_constructibility_node",
+            Self::DuplicateConstructibilityDependency { .. } => {
+                "duplicate_constructibility_dependency"
+            }
+            Self::UnknownConstructibilityNode { .. } => "unknown_constructibility_node",
+            Self::ConstructibilityCycle { .. } => "constructibility_cycle",
+            Self::ConstructibilityCrossOperationDependency { .. } => {
+                "constructibility_cross_operation_dependency"
+            }
+            Self::PermissionlessPrivateDependency { .. } => "permissionless_private_dependency",
+            Self::ConstructibilityWitnessUnavailable { .. } => {
+                "constructibility_witness_unavailable"
+            }
+            Self::SponsorDependencyEscaped { .. } => "sponsor_dependency_escaped",
+            Self::MissingRepresentationChoice { .. } => "missing_representation_choice",
+            Self::MissingLifecyclePath { .. } => "missing_lifecycle_path",
+            Self::MissingDisclosureReason { .. } => "missing_disclosure_reason",
+            Self::PermissionlessPrivateFact { .. } => "permissionless_private_fact",
+            Self::UnexpectedDisclosure { .. } => "unexpected_disclosure",
+            Self::MixedRepresentationConservation { .. } => "mixed_representation_conservation",
+            Self::MissingProofAlternative { .. } => "missing_proof_alternative",
+            Self::InvalidExternalEvidenceProofAlternatives { .. } => {
+                "invalid_external_evidence_proof_alternatives"
+            }
+            Self::NoFeasibleProofPlan { .. } => "no_feasible_proof_plan",
+            Self::ProofSearchStateLimitExceeded { .. } => "proof_search_state_limit_exceeded",
+            Self::ProofCandidateLimitExceeded { .. } => "proof_candidate_limit_exceeded",
+            Self::DuplicateExecutionCase { .. } => "duplicate_execution_case",
+            Self::ExecutionCaseCensusMismatch { .. } => "execution_case_census_mismatch",
+            Self::DuplicateRelationCasePlan { .. } => "duplicate_relation_case_plan",
+            Self::RelationCaseCensusMismatch { .. } => "relation_case_census_mismatch",
+            Self::MissingCanonicalCoordinator { .. } => "missing_canonical_coordinator",
+            Self::UnconditionalRelationOnOptionalCarrier { .. } => {
+                "unconditional_relation_on_optional_carrier"
+            }
+            Self::NoEligibleCarrier { .. } => "no_eligible_carrier",
+            Self::MissingLayoutRequirement { .. } => "missing_layout_requirement",
+            Self::PlacementCensusMismatch { .. } => "placement_census_mismatch",
+            Self::GlobalRelationHasOnlyLocalCarrier { .. } => {
+                "global_relation_has_only_local_carrier"
+            }
+            Self::UnpermittedCarrierPlacement { .. } => "unpermitted_carrier_placement",
+            Self::DuplicatePlacedCarrier { .. } => "duplicate_placed_carrier",
+            Self::NonCanonicalCarrierAssignment { .. } => "non_canonical_carrier_assignment",
+            Self::UnexpectedLayoutRequirement { .. } => "unexpected_layout_requirement",
+            Self::PlacementSearchStateLimitExceeded { .. } => {
+                "placement_search_state_limit_exceeded"
+            }
+            Self::PlacementCandidateLimitExceeded { .. } => "placement_candidate_limit_exceeded",
+            Self::DuplicateCoverageRequirement { .. } => "duplicate_coverage_requirement",
+            Self::CoverageCensusMismatch { .. } => "coverage_census_mismatch",
+            Self::MissingPositiveCoverage { .. } => "missing_positive_coverage",
+            Self::MissingNegativeCoverage { .. } => "missing_negative_coverage",
+            Self::MissingInactiveCoverage { .. } => "missing_inactive_coverage",
+            Self::UnexpectedCoverageRejection { .. } => "unexpected_coverage_rejection",
+            Self::MissingCarrierCoverage { .. } => "missing_carrier_coverage",
+            Self::UnexpectedRuntimeCarrierCoverage { .. } => "unexpected_runtime_carrier_coverage",
+            Self::MissingProjectionCoverage { .. } => "missing_projection_coverage",
+            Self::MissingCoverageLayoutRequirement { .. } => "missing_coverage_layout_requirement",
+            Self::UnexpectedCoverageLayoutRequirement { .. } => {
+                "unexpected_coverage_layout_requirement"
+            }
+            Self::MissingRepresentationCoverage { .. } => "missing_representation_coverage",
+            Self::UnknownCoverageSymbol { .. } => "unknown_coverage_symbol",
+            Self::DuplicateCoverageDependency { .. } => "duplicate_coverage_dependency",
+            Self::CoverageDependencyEndpointClass { .. } => "coverage_dependency_endpoint_class",
+            Self::CoverageDependencyCycle { .. } => "coverage_dependency_cycle",
+            Self::CrossOperationCoverageDependency { .. } => "cross_operation_coverage_dependency",
+            Self::DuplicatePlacedProofPlan => "duplicate_placed_proof_plan",
+            Self::PlacedProofPlanCensusMismatch { .. } => "placed_proof_plan_census_mismatch",
+            Self::MissingSelectedProof { .. } => "missing_selected_proof",
+            Self::UnapprovedSelectedProof { .. } => "unapproved_selected_proof",
+            Self::UnexpectedSelectedProof { .. } => "unexpected_selected_proof",
+            Self::AnalyzedCapabilityClosureMismatch { .. } => {
+                "analyzed_capability_closure_mismatch"
+            }
+            Self::AnalyzedSourceClosureMismatch { .. } => "analyzed_source_closure_mismatch",
+            Self::AnalyzedEvidenceClosureMismatch { .. } => "analyzed_evidence_closure_mismatch",
+            Self::AnalyzedDisclosureClosureMismatch => "analyzed_disclosure_closure_mismatch",
+            Self::AnalyzedRequirementFactUnavailable { .. } => {
+                "analyzed_requirement_fact_unavailable"
+            }
+            Self::AnalyzedLifecycleClosureMismatch { .. } => "analyzed_lifecycle_closure_mismatch",
+            Self::AnalyzedOperationOutOfScope { .. } => "analyzed_operation_out_of_scope",
+            Self::ForeignOperationFactor { .. } => "foreign_operation_factor",
+            Self::AnalyzedOperationCensusMismatch { .. } => "analyzed_operation_census_mismatch",
+            Self::InvalidRelationCaseRequirements { .. } => "invalid_relation_case_requirements",
+            Self::CrossOperationRelationDependency { .. } => "cross_operation_relation_dependency",
+            Self::AnalyzedOperationProofPlanMismatch { .. } => {
+                "analyzed_operation_proof_plan_mismatch"
+            }
+            Self::DuplicateAnalyzedProofPlan => "duplicate_analyzed_proof_plan",
+            Self::AnalyzedArchitectureScopeStatusMismatch { .. } => {
+                "analyzed_architecture_scope_status_mismatch"
+            }
+            Self::AnalyzedSourceBindingMismatch { .. } => "analyzed_source_binding_mismatch",
+            Self::AnalyzedFoundationMismatch { .. } => "analyzed_foundation_mismatch",
+            Self::AnalyzedProofPlanCensusMismatch { .. } => "analyzed_proof_plan_census_mismatch",
+            Self::AnalyzedProofPlanKeyMismatch => "analyzed_proof_plan_key_mismatch",
+            Self::AnalyzedRelationRequirementCensusMismatch { .. } => {
+                "analyzed_relation_requirement_census_mismatch"
+            }
+            Self::AnalyzedProofDispositionMismatch { .. } => "analyzed_proof_disposition_mismatch",
+            Self::AnalyzedRelationRequirementMismatch { .. } => {
+                "analyzed_relation_requirement_mismatch"
+            }
+            Self::AnalyzedPlacementFactorMismatch { .. } => "analyzed_placement_factor_mismatch",
+            Self::AnalyzedLayoutCensusMismatch { .. } => "analyzed_layout_census_mismatch",
+            Self::AnalyzedRelationCaseMismatch { .. } => "analyzed_relation_case_mismatch",
+            Self::AnalyzedCoverageCensusMismatch { .. } => "analyzed_coverage_census_mismatch",
+            Self::AnalyzedLifecycleStatusMismatch => "analyzed_lifecycle_status_mismatch",
+            Self::UnexpectedCombinedPlacementProduct { .. } => {
+                "unexpected_combined_placement_product"
+            }
+            Self::UndecidableSponsorRegion { .. } => "undecidable_sponsor_region",
+            Self::AnalyzedExecutionReportMismatch { .. } => "analyzed_execution_report_mismatch",
+            Self::NoncanonicalCapabilityCensus { .. } => "noncanonical_capability_census",
+            Self::NoncanonicalEvidenceRoleCensus { .. } => "noncanonical_evidence_role_census",
+            Self::TargetOperationOutOfScope { .. } => "target_operation_out_of_scope",
+            Self::NoAdmissiblePhase4Plan { .. } => "no_admissible_phase4_plan",
+            Self::AmbiguousTargetOperationPlan { .. } => "ambiguous_target_operation_plan",
+            Self::TargetPlanRelationCensusMismatch { .. } => "target_plan_relation_census_mismatch",
+            Self::TargetPlanRelationRequirementMismatch => {
+                "target_plan_relation_requirement_mismatch"
+            }
+            Self::TargetPlanSourceMismatch => "target_plan_source_mismatch",
+            Self::TargetPlanCaseCensusMismatch => "target_plan_case_census_mismatch",
+            Self::TargetPlanCarrierCensusMismatch => "target_plan_carrier_census_mismatch",
+            Self::TargetPlanLayoutCensusMismatch => "target_plan_layout_census_mismatch",
+            Self::TargetPlanCoverageCensusMismatch => "target_plan_coverage_census_mismatch",
+            Self::DuplicateTargetCoverageRequirement { .. } => {
+                "duplicate_target_coverage_requirement"
+            }
+            Self::TargetPlanRepresentationMismatch { .. } => "target_plan_representation_mismatch",
+            Self::TargetPlanLifecycleMismatch => "target_plan_lifecycle_mismatch",
+            Self::TargetPlanCapabilityCensusMismatch => "target_plan_capability_census_mismatch",
+            Self::TargetPlanEvidenceCensusMismatch => "target_plan_evidence_census_mismatch",
+            Self::MaturityAnnouncementContractDefect { .. } => {
+                "maturity_announcement_contract_defect"
+            }
+            Self::MissingMaturityAnnouncementRepresentation { .. } => {
+                "missing_maturity_announcement_representation"
+            }
+            Self::LiveTransferContractDefect { .. } => "live_transfer_contract_defect",
+            Self::LiveTransferDeferralDefect { .. } => "live_transfer_deferral_defect",
+            Self::MissingLiveTransferRepresentation { .. } => {
+                "missing_live_transfer_representation"
+            }
+            Self::LiveTransferRepresentationDivergence { .. } => {
+                "live_transfer_representation_divergence"
+            }
+        }
+    }
+
+    /// Whether a returned error reflects an internal assembly failure.
+    pub(crate) const fn tracing_failed(&self) -> bool {
+        matches!(
+            self,
+            Self::DuplicateAnalyzedProofPlan
+                | Self::AnalyzedSourceBindingMismatch { .. }
+                | Self::AnalyzedFoundationMismatch { .. }
+                | Self::AnalyzedProofPlanCensusMismatch { .. }
+                | Self::AnalyzedProofPlanKeyMismatch
+                | Self::AnalyzedExecutionReportMismatch { .. }
+                | Self::TargetPlanSourceMismatch
+        )
+    }
+}

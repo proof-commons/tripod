@@ -37,7 +37,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::LazyLock,
-    time::Instant,
 };
 
 use architecture::{ObjectId, OpenFlowKind, OperationId};
@@ -1252,15 +1251,12 @@ fn no_relation_dependency_crosses_an_operation() {
 ///
 /// ```sh
 /// cargo test -p tripod-compiler \
-///   combined_scope_product_matches_operation_factors -- --ignored --nocapture
+///   combined_scope_product_matches_operation_factors -- --ignored
 /// ```
-///
-/// Printing is the point of the manual lane — the gate record wants the
-/// measured factor sizes, product size, and wall time — so the workspace
-/// stdout denial is lifted here and nowhere else.
+/// The assertions retain the factor, product, global, and plan counts;
+/// the test harness records elapsed wall time without a local timer.
 #[test]
 #[ignore = "phase-exit regression; run with -- --ignored"]
-#[allow(clippy::print_stdout)]
 fn combined_scope_product_matches_operation_factors() {
     let analyzed = &COMBINED;
     let relations = build_relation_analysis(&analyzed.input).expect("combined relations");
@@ -1268,12 +1264,11 @@ fn combined_scope_product_matches_operation_factors() {
         .expect("feasible proof plans")
         .candidates;
 
-    let started = Instant::now();
     let placed = place_feasible_proof_plans(&relations, &candidates, limits())
         .expect("combined-scope placement product");
-    let elapsed = started.elapsed();
 
     assert_eq!(placed.placed.len(), candidates.len());
+    let mut observed_counts = BTreeSet::new();
 
     for entry in &placed.placed {
         // The old whole-plan enumerator's combined set, as assignment
@@ -1321,15 +1316,14 @@ fn combined_scope_product_matches_operation_factors() {
             }
         }
 
-        println!(
-            "factor sizes {:?}; product {}; global {}",
-            factors.iter().map(Vec::len).collect::<Vec<_>>(),
-            product.len(),
-            global.len(),
-        );
-
         assert_eq!(global, product);
         assert_eq!(global.len(), factors[0].len() * factors[1].len());
+        observed_counts.insert((
+            factors[0].len(),
+            factors[1].len(),
+            product.len(),
+            global.len(),
+        ));
 
         // The production analyzed value stores the factors only: the
         // product just enumerated appears nowhere inside it.
@@ -1337,11 +1331,9 @@ fn combined_scope_product_matches_operation_factors() {
             assert!(factor.feasible_placements.len() < global.len());
         }
     }
-
-    println!(
-        "combined-scope product over {} plans in {:.1} s",
-        candidates.len(),
-        elapsed.as_secs_f64(),
+    assert_eq!(
+        (candidates.len(), observed_counts),
+        (4, BTreeSet::from([(216, 216, 46_656, 46_656)]))
     );
 }
 

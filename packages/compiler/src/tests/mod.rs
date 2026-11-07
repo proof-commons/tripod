@@ -38,6 +38,8 @@ mod relation_tests;
 mod requirement_tests;
 mod source_tests;
 mod target_tests;
+mod tracing_boundary_tests;
+mod tracing_capture;
 
 use architecture::OperationId;
 

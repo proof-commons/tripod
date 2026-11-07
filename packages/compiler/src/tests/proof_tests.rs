@@ -37,6 +37,83 @@ fn limited_input(
     .expect("bind input")
 }
 
+#[test]
+fn proof_search_tracing_matches_report_and_budget_refusal() {
+    use super::tracing_capture::{FieldValue, capture, isolate_capture_test};
+
+    if isolate_capture_test(
+        "tests::proof_tests::proof_search_tracing_matches_report_and_budget_refusal",
+    ) {
+        return;
+    }
+
+    let input = bound_input(&[OperationId::CompactAsh]);
+    let plain = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).unwrap();
+    let (captured, records) =
+        capture(|| enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).unwrap());
+    assert_eq!(plain, captured);
+    assert_eq!(
+        format!("{plain:?}").into_bytes(),
+        format!("{captured:?}").into_bytes()
+    );
+    let events = records
+        .iter()
+        .filter(|record| !record.is_span && record.target == "compiler::proof")
+        .collect::<Vec<_>>();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].level, tracing::Level::DEBUG);
+    assert_eq!(
+        events[0].fields.get("outcome"),
+        Some(&FieldValue::Str("completed".into()))
+    );
+    assert_eq!(
+        events[0].fields.get("visited_state_count"),
+        Some(&FieldValue::U64(plain.search.states_visited))
+    );
+    assert_eq!(
+        events[0].fields.get("feasible_assignment_count"),
+        Some(&FieldValue::U64(plain.search.feasible_assignments))
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record.is_span && record.name == "enumerate_feasible_plans")
+            .count(),
+        1
+    );
+
+    let input = limited_input(&[OperationId::CompactAsh], 1, 10_000);
+    let plain = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).unwrap_err();
+    let (captured, records) =
+        capture(|| enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).unwrap_err());
+    assert_eq!(
+        plain,
+        CompileError::ProofSearchStateLimitExceeded { maximum: 1 }
+    );
+    assert_eq!(plain, captured);
+    assert_eq!(
+        format!("{plain:?}").into_bytes(),
+        format!("{captured:?}").into_bytes()
+    );
+    let events = records
+        .iter()
+        .filter(|record| !record.is_span && record.target == "compiler::proof")
+        .collect::<Vec<_>>();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].level, tracing::Level::DEBUG);
+    assert_eq!(
+        events[0].fields.get("outcome"),
+        Some(&FieldValue::Str("refused".into()))
+    );
+    assert_eq!(
+        events[0].fields.get("refusal_kind"),
+        Some(&FieldValue::Str("proof_search_state_limit_exceeded".into()))
+    );
+    assert!(records.iter().all(
+        |record| record.level != tracing::Level::WARN && record.level != tracing::Level::ERROR
+    ));
+}
+
 // --- obligation classification (§11) ---
 
 #[test]

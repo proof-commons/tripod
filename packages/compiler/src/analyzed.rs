@@ -244,6 +244,9 @@ pub fn analyze_scoped_program(
     input: &BoundCompilerInput,
     placement_limits: PlacementSearchLimits,
 ) -> Result<ScopedAnalyzedProgram, CompileError> {
+    let scope_operation_count = crate::instrumentation::count(input.scope().operations().len());
+    let span = tracing::debug_span!(target: "compiler::analysis", "analyze_scoped_program", scope_operation_count, proof_state_limit = input.policy().proof_search_limits.maximum_states.get(), placement_state_limit = placement_limits.maximum_states.get());
+    let _entered = span.enter();
     // 1: the bound input is re-checked rather than trusted.
     revalidate_input(input)?;
 

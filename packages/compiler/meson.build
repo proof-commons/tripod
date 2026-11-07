@@ -18,6 +18,7 @@ compiler_source_files = files(
   'src/fold.rs',
   'src/foundation.rs',
   'src/input.rs',
+  'src/instrumentation.rs',
   'src/layout.rs',
   'src/lib.rs',
   'src/lifecycle.rs',
@@ -68,10 +69,12 @@ compiler_source_files = files(
   'src/tests/requirement_tests.rs',
   'src/tests/source_tests.rs',
   'src/tests/target_tests.rs',
+  'src/tests/tracing_boundary_tests.rs',
+  'src/tests/tracing_capture.rs',
 )
 
 # Crate documentation (DOC owner).
-compiler_doc_files = files('README.md')
+compiler_doc_files = files('README.md', 'TRACING.md')
 
 # Integration-test sources are cargo test inputs rather than label
 # graph subjects. The explicit exclusion keeps the tracked-file census

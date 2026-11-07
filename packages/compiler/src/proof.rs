@@ -256,6 +256,30 @@ pub fn enumerate_feasible_plans(
     input: &BoundCompilerInput,
     view: &CapabilityView,
 ) -> Result<FeasibleProofPlans, CompileError> {
+    let limits = input.policy().proof_search_limits;
+    let span = tracing::debug_span!(target: "compiler::proof", "enumerate_feasible_plans", state_limit = limits.maximum_states.get(), candidate_limit = limits.maximum_candidates.get());
+    let _entered = span.enter();
+    let mut search = ProofSearchReport::default();
+    let result = enumerate_feasible_plans_core(input, view, &mut search);
+    match &result {
+        Ok(_) => {
+            tracing::debug!(target: "compiler::proof", outcome = "completed", visited_state_count = search.states_visited, complete_assignment_count = search.complete_assignments, feasible_assignment_count = search.feasible_assignments, capability_rejection_count = search.rejected_by_capability, source_rejection_count = search.rejected_by_source, constructibility_rejection_count = search.rejected_by_constructibility, representation_rejection_count = search.rejected_by_representation, disclosure_rejection_count = search.rejected_by_disclosure, message = "proof search completed");
+        }
+        Err(error) if error.tracing_failed() => {
+            tracing::debug!(target: "compiler::proof", outcome = "failed", error_kind = error.tracing_kind(), visited_state_count = search.states_visited, complete_assignment_count = search.complete_assignments, feasible_assignment_count = search.feasible_assignments, capability_rejection_count = search.rejected_by_capability, source_rejection_count = search.rejected_by_source, constructibility_rejection_count = search.rejected_by_constructibility, representation_rejection_count = search.rejected_by_representation, disclosure_rejection_count = search.rejected_by_disclosure, message = "proof search completed");
+        }
+        Err(error) => {
+            tracing::debug!(target: "compiler::proof", outcome = "refused", refusal_kind = error.tracing_kind(), visited_state_count = search.states_visited, complete_assignment_count = search.complete_assignments, feasible_assignment_count = search.feasible_assignments, capability_rejection_count = search.rejected_by_capability, source_rejection_count = search.rejected_by_source, constructibility_rejection_count = search.rejected_by_constructibility, representation_rejection_count = search.rejected_by_representation, disclosure_rejection_count = search.rejected_by_disclosure, message = "proof search completed");
+        }
+    }
+    result.map(|candidates| FeasibleProofPlans { candidates, search })
+}
+
+fn enumerate_feasible_plans_core(
+    input: &BoundCompilerInput,
+    view: &CapabilityView,
+    search: &mut ProofSearchReport,
+) -> Result<Vec<ProofPlanCandidate>, CompileError> {
     let relations = build_relation_analysis(input)?;
     let constructibility = build_constructibility_analysis(input)?;
     let lifecycle = build_lifecycle_analysis(input, &relations)?;
@@ -335,7 +359,6 @@ pub fn enumerate_feasible_plans(
     }
 
     let limits = input.policy().proof_search_limits;
-    let mut search = ProofSearchReport::default();
     let mut candidates = Vec::new();
     let mut state = SearchState {
         input,
@@ -348,7 +371,7 @@ pub fn enumerate_feasible_plans(
         fixed_required_capabilities: &fixed_required_capabilities,
         fixed_source_requirements: &fixed_source_requirements,
         limits,
-        search: &mut search,
+        search: &mut *search,
         candidates: &mut candidates,
     };
 
@@ -373,7 +396,7 @@ pub fn enumerate_feasible_plans(
     search.feasible_assignments =
         u64::try_from(candidates.len()).expect("candidate count fits u64");
 
-    Ok(FeasibleProofPlans { candidates, search })
+    Ok(candidates)
 }
 
 struct SearchState<'a> {

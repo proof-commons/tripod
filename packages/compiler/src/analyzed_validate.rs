@@ -443,6 +443,9 @@ pub fn validate_scoped_analyzed_program(
     limits: PlacementSearchLimits,
     program: &ScopedAnalyzedProgram,
 ) -> Result<(), CompileError> {
+    let proof_plan_count = crate::instrumentation::count(program.proof_plans.len());
+    let span = tracing::debug_span!(target: "compiler::analysis", "validate_scoped_analyzed_program", proof_plan_count);
+    let _entered = span.enter();
     let expected = derive_expectations(input, limits)?;
 
     validate_against_expectations(input, &expected, program)
