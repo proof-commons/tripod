@@ -86,7 +86,10 @@ use target_elements::{
 use crate::capability::BackendPatternId;
 use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
-use crate::operation_assessment::{EmissionRefusal, OperationAssessmentSet, assess_operation_plan};
+use crate::operation_assessment::{
+    EmissionRefusal, OperationAssessmentSet,
+    assess_operation_plan_untraced as assess_operation_plan,
+};
 use crate::pattern::{
     AbiAssumption, CompactAshSymbols, CompactEmittedRepresentationRefusal,
     ash_input_recognition_fragment, compare_compact_recognition, coordinator_program,
@@ -97,7 +100,10 @@ use crate::policy::{
 };
 use crate::program::TapscriptProgram;
 use crate::shape::{CandidateShapeSet, CompactAshShape, SponsorChangePresence};
-use crate::stack::{AbstractLimits, AbstractStackState, resource_projection, validate_program};
+use crate::stack::{
+    AbstractLimits, AbstractStackState, resource_projection,
+    validate_program_untraced as validate_program,
+};
 
 // --- Program and leaf roles ------------------------------------------
 
@@ -1411,6 +1417,34 @@ pub enum BundleRefusal {
     },
 }
 
+impl BundleRefusal {
+    const fn refusal_kind(&self) -> &'static str {
+        match self {
+            Self::PlanClaimsReleaseComplete => "plan_claims_release_complete",
+            Self::Assessment(_) => "assessment",
+            Self::Program(_) => "program",
+            Self::EmissionRefused { .. } => "emission_refused",
+            Self::PatternSelectionMismatch { .. } => "pattern_selection_mismatch",
+            Self::LeafDoesNotScheduleFromEmptyStack { .. } => {
+                "leaf_does_not_schedule_from_empty_stack"
+            }
+            Self::LeafNeverSucceeds { .. } => "leaf_never_succeeds",
+            Self::SharedLeafRelationMismatch { .. } => "shared_leaf_relation_mismatch",
+            Self::LayoutPositionClaimedTwice { .. } => "layout_position_claimed_twice",
+            Self::LayoutPositionUnaccounted { .. } => "layout_position_unaccounted",
+            Self::ProbeProgramShapeChanged { .. } => "probe_program_shape_changed",
+            Self::RelocationSiteIsNotAPush { .. } => "relocation_site_is_not_a_push",
+            Self::RelocationSiteContextMismatch { .. } => "relocation_site_context_mismatch",
+            Self::VariableWidthBytePatch { .. } => "variable_width_byte_patch",
+            Self::PlaceholderWidthMismatch { .. } => "placeholder_width_mismatch",
+            Self::NoOperationAnchor => "no_operation_anchor",
+            Self::DuplicateCarrierRequirement => "duplicate_carrier_requirement",
+            Self::NoRealizableCarrierAssignment { .. } => "no_realizable_carrier_assignment",
+            Self::TiedCarrierAssignments { .. } => "tied_carrier_assignments",
+        }
+    }
+}
+
 // --- The bundle -------------------------------------------------------
 
 /// The candidate relocatable backend bundle (§13.1).
@@ -1634,6 +1668,52 @@ impl CandidateRelocatableTapscriptBundle {
 /// [`BundleRefusal`] names when a program, a placement, a relocation,
 /// or a layout does not check out.
 pub fn emit_candidate_bundle(
+    target: &ReviewedElementsTapscriptDefinition,
+    plan: &ValidatedTargetOperationPlan,
+    policy: CompactAshBackendPolicy,
+    symbols: CompactAshSymbols,
+) -> Result<CandidateRelocatableTapscriptBundle, BundleRefusal> {
+    let enabled = tracing::enabled!(target: "tapscript::bundle", tracing::Level::INFO);
+    let shape_count = if enabled {
+        u64::try_from(policy.cardinality().shapes().count()).unwrap_or(u64::MAX)
+    } else {
+        0
+    };
+    let span = tracing::info_span!(
+        target: "tapscript::bundle",
+        "emit_candidate_bundle",
+        family = "compact",
+        shape_count
+    );
+    let _entered = span.enter();
+    let result = emit_candidate_bundle_untraced(target, plan, policy, symbols);
+    match &result {
+        Ok(bundle) if enabled => tracing::info!(
+            target: "tapscript::bundle",
+            outcome = "completed",
+            family = "compact",
+            leaf_count = u64::try_from(bundle.constructor().leaves().len()).unwrap_or(u64::MAX),
+            relocation_count = u64::try_from(bundle.relocations().len()).unwrap_or(u64::MAX),
+            script_bytes = bundle.total_script_bytes(),
+            outstanding_obligation_count = u64::try_from(
+                bundle.outstanding_lifecycle().requirements().count()
+            )
+            .unwrap_or(u64::MAX),
+            "candidate bundle emitted"
+        ),
+        Ok(_) => {}
+        Err(refusal) => tracing::debug!(
+            target: "tapscript::bundle",
+            outcome = "refused",
+            family = "compact",
+            refusal_kind = refusal.refusal_kind(),
+            "candidate bundle refused"
+        ),
+    }
+    result
+}
+
+fn emit_candidate_bundle_untraced(
     target: &ReviewedElementsTapscriptDefinition,
     plan: &ValidatedTargetOperationPlan,
     policy: CompactAshBackendPolicy,

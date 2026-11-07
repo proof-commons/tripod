@@ -369,6 +369,50 @@ pub fn assess_operation_plan(
     target: &ReviewedElementsTapscriptDefinition,
     plan: &ValidatedTargetOperationPlan,
 ) -> Result<OperationAssessmentSet, TapscriptError> {
+    let enabled = tracing::enabled!(
+        target: "tapscript::operation_assessment",
+        tracing::Level::DEBUG
+    );
+    let requirement_count = if enabled {
+        u64::try_from(
+            plan.capabilities()
+                .count()
+                .saturating_add(plan.layout().count())
+                .saturating_add(plan.external_evidence().count()),
+        )
+        .unwrap_or(u64::MAX)
+    } else {
+        0
+    };
+    let span = tracing::debug_span!(
+        target: "tapscript::operation_assessment",
+        "assess_operation_plan",
+        requirement_count
+    );
+    let _entered = span.enter();
+    let result = assess_operation_plan_untraced(target, plan);
+    match &result {
+        Ok(assessment) if enabled => tracing::debug!(
+            target: "tapscript::operation_assessment",
+            outcome = "completed",
+            verdict_count = u64::try_from(assessment.verdicts().count()).unwrap_or(u64::MAX),
+            "operation assessed"
+        ),
+        Ok(_) => {}
+        Err(refusal) => tracing::debug!(
+            target: "tapscript::operation_assessment",
+            outcome = "refused",
+            refusal_kind = refusal.refusal_kind(),
+            "operation assessment refused"
+        ),
+    }
+    result
+}
+
+pub(crate) fn assess_operation_plan_untraced(
+    target: &ReviewedElementsTapscriptDefinition,
+    plan: &ValidatedTargetOperationPlan,
+) -> Result<OperationAssessmentSet, TapscriptError> {
     let mut verdicts: BTreeMap<OperationRequirement, OperationVerdict> = BTreeMap::new();
 
     let mut admit = |verdict: OperationVerdict| -> Result<(), TapscriptError> {

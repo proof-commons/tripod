@@ -113,7 +113,8 @@ use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::live_constructor::{
     CandidateTransferLifecycle, LiveConstructorRefusal, LiveTransferLeafRole, OwnerKey,
-    OwnerKeyRejection, StaticLiveReceiptConstructor, derive_live_receipt_constructor_composing,
+    OwnerKeyRejection, StaticLiveReceiptConstructor,
+    derive_live_receipt_constructor_composing_untraced as derive_live_receipt_constructor_composing,
 };
 use crate::live_pattern::{
     FinalStackDefect, LiveProgramRefusal, LiveTransferPatternId, LiveTransferSymbols,
@@ -126,7 +127,9 @@ use crate::live_plan::{
 };
 use crate::live_shape::{LiveTransferShape, LiveTransferShapeSet};
 use crate::program::TapscriptProgram;
-use crate::stack::{AbstractLimits, resource_projection, validate_program};
+use crate::stack::{
+    AbstractLimits, resource_projection, validate_program_untraced as validate_program,
+};
 
 // --- Symbols ----------------------------------------------------------
 
@@ -500,6 +503,24 @@ pub enum LiveBundleRefusal {
     },
 }
 
+impl LiveBundleRefusal {
+    const fn refusal_kind(&self) -> &'static str {
+        match self {
+            Self::Program(_) => "program",
+            Self::Fragment(_) => "fragment",
+            Self::Probe(_) => "probe",
+            Self::ProbeOwnerRefused { .. } => "probe_owner_refused",
+            Self::LeafDoesNotSchedule { .. } => "leaf_does_not_schedule",
+            Self::LeafFailsTheFinalStackRule { .. } => "leaf_fails_the_final_stack_rule",
+            Self::FamilyRangesIncomplete { .. } => "family_ranges_incomplete",
+            Self::SharedLeafRelationMismatch { .. } => "shared_leaf_relation_mismatch",
+            Self::ProbeProgramShapeChanged { .. } => "probe_program_shape_changed",
+            Self::RelocationSiteIsNotAPush { .. } => "relocation_site_is_not_a_push",
+            Self::RelocationSiteContextMismatch { .. } => "relocation_site_context_mismatch",
+        }
+    }
+}
+
 impl From<LiveProgramRefusal> for LiveBundleRefusal {
     fn from(refusal: LiveProgramRefusal) -> Self {
         Self::Program(refusal)
@@ -759,6 +780,50 @@ impl CandidateRelocatableLiveTransferBundle {
 /// or an admitted shape does not check out; and any of the assembly,
 /// probe, and placement refusals [`LiveBundleRefusal`] names.
 pub fn emit_candidate_live_bundle(
+    target: &ReviewedElementsTapscriptDefinition,
+    plan: &ValidatedLiveTransferOperationPlan,
+    constructor: &StaticLiveReceiptConstructor,
+    symbols: LiveTransferSymbols,
+) -> Result<CandidateRelocatableLiveTransferBundle, LiveBundleRefusal> {
+    let enabled = tracing::enabled!(target: "tapscript::live_bundle", tracing::Level::INFO);
+    let shape_count = if enabled {
+        u64::try_from(constructor.shapes().shapes().count()).unwrap_or(u64::MAX)
+    } else {
+        0
+    };
+    let span = tracing::info_span!(
+        target: "tapscript::live_bundle",
+        "emit_candidate_live_bundle",
+        family = "live",
+        shape_count
+    );
+    let _entered = span.enter();
+    let result = emit_candidate_live_bundle_untraced(target, plan, constructor, symbols);
+    match &result {
+        Ok(bundle) if enabled => tracing::info!(
+            target: "tapscript::live_bundle",
+            outcome = "completed",
+            family = "live",
+            leaf_count = u64::try_from(bundle.leaves().len()).unwrap_or(u64::MAX),
+            relocation_count = u64::try_from(bundle.relocations().len()).unwrap_or(u64::MAX),
+            script_bytes = bundle.total_script_bytes(),
+            outstanding_obligation_count = u64::try_from(bundle.lifecycle().outstanding().get())
+                .unwrap_or(u64::MAX),
+            "live candidate bundle emitted"
+        ),
+        Ok(_) => {}
+        Err(refusal) => tracing::debug!(
+            target: "tapscript::live_bundle",
+            outcome = "refused",
+            family = "live",
+            refusal_kind = refusal.refusal_kind(),
+            "live candidate bundle refused"
+        ),
+    }
+    result
+}
+
+fn emit_candidate_live_bundle_untraced(
     target: &ReviewedElementsTapscriptDefinition,
     plan: &ValidatedLiveTransferOperationPlan,
     constructor: &StaticLiveReceiptConstructor,

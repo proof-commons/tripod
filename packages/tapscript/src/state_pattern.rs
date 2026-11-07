@@ -30,7 +30,8 @@ use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::pattern::{fragment_prerequisites, number, op, require_explicit};
 use crate::program::TapscriptProgram;
 use crate::stack::{
-    AbstractLimits, AbstractStackState, SignatureSuccessForm, resource_projection, validate_program,
+    AbstractLimits, AbstractStackState, SignatureSuccessForm, resource_projection,
+    validate_program_untraced as validate_program,
 };
 
 census_enum! {

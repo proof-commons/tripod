@@ -603,6 +603,47 @@ pub fn assess_maturity_announcement_program(
     plan: &ValidatedMaturityAnnouncementOperationPlan,
     program: &StateAnnouncementProgram,
 ) -> Result<MaturityAssessmentSet, TapscriptError> {
+    let span = tracing::debug_span!(
+        target: "tapscript::maturity_assessment",
+        "assess_maturity_announcement_program",
+        record_count = u64::try_from(program.components().len()).unwrap_or(u64::MAX)
+    );
+    let _entered = span.enter();
+    let result = assess_maturity_announcement_program_untraced(target, plan, program);
+    match &result {
+        Ok(assessment)
+            if tracing::enabled!(
+                target: "tapscript::maturity_assessment",
+                tracing::Level::DEBUG
+            ) =>
+        {
+            tracing::debug!(
+                target: "tapscript::maturity_assessment",
+                outcome = "completed",
+                record_count = u64::try_from(program.components().len()).unwrap_or(u64::MAX),
+                verdict_count = u64::try_from(
+                    assessment.projections.values().map(BTreeMap::len).sum::<usize>()
+                )
+                .unwrap_or(u64::MAX),
+                "maturity announcement assessed"
+            );
+        }
+        Ok(_) => {}
+        Err(refusal) => tracing::debug!(
+            target: "tapscript::maturity_assessment",
+            outcome = "refused",
+            refusal_kind = refusal.refusal_kind(),
+            "maturity announcement refused"
+        ),
+    }
+    result
+}
+
+fn assess_maturity_announcement_program_untraced(
+    target: &ReviewedElementsTapscriptDefinition,
+    plan: &ValidatedMaturityAnnouncementOperationPlan,
+    program: &StateAnnouncementProgram,
+) -> Result<MaturityAssessmentSet, TapscriptError> {
     assess_maturity_program_parts(
         target.validated(),
         plan,
@@ -695,7 +736,7 @@ pub fn maturity_announcement_record_census(
     plan: &ValidatedMaturityAnnouncementOperationPlan,
     program: &StateAnnouncementProgram,
 ) -> Result<BTreeMap<Representation, MaturityRecordCensus>, TapscriptError> {
-    let assessment = assess_maturity_announcement_program(target, plan, program)?;
+    let assessment = assess_maturity_announcement_program_untraced(target, plan, program)?;
     Ok(plan
         .representations()
         .map(|projection| {

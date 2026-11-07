@@ -60,7 +60,7 @@ use crate::program::TapscriptProgram;
 use crate::shape::{CompactAshShape, SponsorChangePresence};
 use crate::stack::{
     AbstractExecutionResult, AbstractLimits, AbstractStackState, resource_projection,
-    validate_program,
+    validate_program_untraced as validate_program,
 };
 
 /// The semantic or target-structural relation one pattern owns.
@@ -530,7 +530,7 @@ impl BackendPattern {
 ///
 /// # Errors
 ///
-/// Any failure of [`validate_program`], which is a defect in the
+/// Any failure of [`crate::stack::validate_program`], which is a defect in the
 /// fragment rather than a property of the target: the validator refuses
 /// a program whose operand it cannot admit, and a pattern built from
 /// one would be a pattern nobody could schedule.

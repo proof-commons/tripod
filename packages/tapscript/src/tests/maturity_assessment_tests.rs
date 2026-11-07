@@ -486,6 +486,37 @@ static RECORD_ASSESSMENT: LazyLock<MaturityAssessmentSet> = LazyLock::new(|| {
     assess_maturity_announcement_program(&reviewed_target(), &PLAN, &fixtures().program).unwrap()
 });
 
+#[test]
+fn tracing_maturity_assessment_keeps_verdicts_and_counts() {
+    super::tracing_capture::run_isolated(
+        "tests::maturity_assessment_tests::tracing_maturity_assessment_keeps_verdicts_and_counts",
+        || {
+            let target = reviewed_target();
+            let program = &fixtures().program;
+            let plain = assess_maturity_announcement_program(&target, &PLAN, program);
+            let (observed, records) = super::tracing_capture::capture(|| {
+                assess_maturity_announcement_program(&target, &PLAN, program)
+            });
+            assert_eq!(plain, observed);
+            let events: Vec<_> = records
+                .iter()
+                .filter(|record| {
+                    record.kind == "event" && record.target == "tapscript::maturity_assessment"
+                })
+                .collect();
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].level, tracing::Level::DEBUG);
+            assert_eq!(events[0].fields["outcome"], "completed");
+            assert!(events[0].fields.contains_key("verdict_count"));
+            assert!(records.iter().all(|record| {
+                record.kind != "event"
+                    || (record.level != tracing::Level::WARN
+                        && record.level != tracing::Level::ERROR)
+            }));
+        },
+    );
+}
+
 const RECORD_GROUPS: [(G, D, Ground); 18] = [
     (
         G::CurrentInputIndex,

@@ -15,10 +15,11 @@ use thiserror::Error;
 use crate::capability::census_enum;
 use crate::operator_authorization::{OperatorSighashProfile, selected_operator_profile};
 use crate::pattern::{fragment_prerequisites, op};
+use crate::stack::validate_program_untraced as validate_program;
 use crate::state_pattern::StatePatternConstructibility;
 use crate::{
     AbstractExecutionResult, AbstractLimits, AbstractStackState, SignatureSuccessForm, StackItem,
-    TapscriptError, TapscriptInstruction, TapscriptProgram, resource_projection, validate_program,
+    TapscriptError, TapscriptInstruction, TapscriptProgram, resource_projection,
 };
 
 census_enum! {

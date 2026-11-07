@@ -806,6 +806,29 @@ pub enum LiveConstructorRefusal {
     },
 }
 
+impl LiveConstructorRefusal {
+    const fn refusal_kind(&self) -> &'static str {
+        match self {
+            Self::PlanClaimsReleaseComplete => "plan_claims_release_complete",
+            Self::PlanImplementsNoExit => "plan_implements_no_exit",
+            Self::LifecycleExitBothImplementedAndOutstanding => {
+                "lifecycle_exit_both_implemented_and_outstanding"
+            }
+            Self::ProtocolFamilyNotAdmitted => "protocol_family_not_admitted",
+            Self::ProtocolFamilyForbiddenOnItsOwnSides => {
+                "protocol_family_forbidden_on_its_own_sides"
+            }
+            Self::ProtocolAndSponsorFamiliesCoincide => "protocol_and_sponsor_families_coincide",
+            Self::OwnerFamilyIsNotTheProtocolFamily => "owner_family_is_not_the_protocol_family",
+            Self::RepresentationNotAdmitted { .. } => "representation_not_admitted",
+            Self::KeyPathWouldBeTheOnlySpendingRoute => "key_path_would_be_the_only_spending_route",
+            Self::LeafOfAnotherRepresentation { .. } => "leaf_of_another_representation",
+            Self::LeafSetIncomplete { .. } => "leaf_set_incomplete",
+            Self::LeafServesNoAdmittedShape { .. } => "leaf_serves_no_admitted_shape",
+        }
+    }
+}
+
 // --- The constructor --------------------------------------------------
 
 /// The static candidate live-receipt constructor (§7).
@@ -1071,6 +1094,57 @@ pub fn derive_live_receipt_constructor(
 /// [`LiveConstructorRefusal::RepresentationNotAdmitted`] naming
 /// whichever side is not admitted.
 pub fn derive_live_receipt_constructor_composing(
+    target: &ReviewedElementsTapscriptDefinition,
+    plan: &ValidatedLiveTransferOperationPlan,
+    composition: LiveTransferComposition,
+    owner: OwnerKey,
+    shapes: LiveTransferShapeSet,
+    leaves: BTreeSet<LiveTransferLeafRole>,
+) -> Result<StaticLiveReceiptConstructor, LiveConstructorRefusal> {
+    let enabled = tracing::enabled!(target: "tapscript::live_constructor", tracing::Level::DEBUG);
+    let shape_count = if enabled {
+        u64::try_from(shapes.shapes().count()).unwrap_or(u64::MAX)
+    } else {
+        0
+    };
+    let span = tracing::debug_span!(
+        target: "tapscript::live_constructor",
+        "derive_live_receipt_constructor",
+        family = "live",
+        shape_count
+    );
+    let _entered = span.enter();
+    let result = derive_live_receipt_constructor_composing_untraced(
+        target,
+        plan,
+        composition,
+        owner,
+        shapes,
+        leaves,
+    );
+    match &result {
+        Ok(constructor) if enabled => tracing::debug!(
+            target: "tapscript::live_constructor",
+            outcome = "completed",
+            family = "live",
+            leaf_count = u64::try_from(constructor.leaves().count()).unwrap_or(u64::MAX),
+            outstanding_obligation_count = u64::try_from(constructor.lifecycle().outstanding().get())
+                .unwrap_or(u64::MAX),
+            "live constructor assessed"
+        ),
+        Ok(_) => {}
+        Err(refusal) => tracing::debug!(
+            target: "tapscript::live_constructor",
+            outcome = "refused",
+            family = "live",
+            refusal_kind = refusal.refusal_kind(),
+            "live constructor refused"
+        ),
+    }
+    result
+}
+
+pub(crate) fn derive_live_receipt_constructor_composing_untraced(
     target: &ReviewedElementsTapscriptDefinition,
     plan: &ValidatedLiveTransferOperationPlan,
     composition: LiveTransferComposition,

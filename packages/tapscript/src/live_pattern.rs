@@ -108,7 +108,7 @@ use crate::pattern::{
 use crate::program::TapscriptProgram;
 use crate::stack::{
     AbstractExecutionResult, AbstractLimits, AbstractStackState, SignatureSuccessForm,
-    resource_projection, validate_program,
+    resource_projection, validate_program_untraced as validate_program,
 };
 
 // --- Link-time symbols ------------------------------------------------
@@ -1889,7 +1889,7 @@ fn alternate_key_field_width(
 ///
 /// # Errors
 ///
-/// Any failure of [`validate_program`] or of the mutated fragment's
+/// Any failure of [`crate::stack::validate_program`] or of the mutated fragment's
 /// assembly, which is a defect in this crate rather than a property of
 /// the target.
 pub fn owner_key_mutation_outcome(
@@ -1986,7 +1986,7 @@ pub enum FinalStackDefect {
 ///
 /// # Errors
 ///
-/// Any failure of [`validate_program`], which is a defect in the program
+/// Any failure of [`crate::stack::validate_program`], which is a defect in the program
 /// rather than a §10.9 finding: a program the walk cannot schedule has
 /// no final stack to be wrong about.
 pub fn final_stack_defects(
@@ -2382,7 +2382,7 @@ impl LiveTransferPattern {
 ///
 /// # Errors
 ///
-/// Any failure of [`validate_program`], which is a defect in the
+/// Any failure of [`crate::stack::validate_program`], which is a defect in the
 /// fragment rather than a property of the target: a pattern built from a
 /// fragment nobody can schedule would be a pattern nobody can emit.
 #[expect(

@@ -15,6 +15,7 @@ use target_elements::{
 use thiserror::Error;
 
 use crate::pattern::{fragment_prerequisites, number, op};
+use crate::stack::validate_program_untraced as validate_program;
 use crate::state_announcement::{
     StateAnnouncementId, StateAnnouncementRecipe, StateAnnouncementResidual,
     StateAnnouncementSymbol, StateAnnouncementWitness,
@@ -32,7 +33,7 @@ use crate::state_pattern::{
 };
 use crate::{
     AbstractExecutionResult, AbstractLimits, AbstractStackState, StackItem, TapscriptError,
-    TapscriptInstruction, TapscriptProgram, resource_projection, validate_program,
+    TapscriptInstruction, TapscriptProgram, resource_projection,
 };
 
 /// Stack adapters have their own ranges, separate from component identities.

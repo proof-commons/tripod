@@ -1176,11 +1176,62 @@ pub fn assess_requirements(
     target: &ReviewedElementsTapscriptDefinition,
     requirements: &TargetRequirementSet,
 ) -> Result<TargetAssessmentSet, TapscriptError> {
-    TargetAssessmentSet::of_censuses(
+    let enabled = tracing::enabled!(target: "tapscript::capability", tracing::Level::DEBUG);
+    let requirement_count = if enabled {
+        u64::try_from(
+            requirements
+                .capabilities()
+                .count()
+                .saturating_add(requirements.external_evidence().count()),
+        )
+        .unwrap_or(u64::MAX)
+    } else {
+        0
+    };
+    let span = tracing::debug_span!(
+        target: "tapscript::capability",
+        "assess_requirements",
+        requirement_count
+    );
+    let _entered = span.enter();
+    let result = TargetAssessmentSet::of_censuses(
         target,
         &requirements.capabilities().collect(),
         &requirements.external_evidence().collect(),
-    )
+    );
+    match &result {
+        Ok(assessment) if enabled => {
+            let mut supported_count = 0_u64;
+            let mut unsupported_count = 0_u64;
+            for (_, capability) in assessment.capability_assessments() {
+                match capability.disposition() {
+                    AssessmentDisposition::Unsupported
+                    | AssessmentDisposition::MissingTargetPrimitives => {
+                        unsupported_count = unsupported_count.saturating_add(1);
+                    }
+                    _ => supported_count = supported_count.saturating_add(1),
+                }
+            }
+            tracing::debug!(
+                target: "tapscript::capability",
+                outcome = "completed",
+                requirement_count,
+                supported_count,
+                unsupported_count,
+                evidence_count = u64::try_from(assessment.evidence_assessments().count())
+                    .unwrap_or(u64::MAX),
+                "requirements assessed"
+            );
+        }
+        Ok(_) => {}
+        Err(refusal) => tracing::debug!(
+            target: "tapscript::capability",
+            outcome = "refused",
+            refusal_kind = refusal.refusal_kind(),
+            "requirements refused"
+        ),
+    }
+    result
 }
 
 /// Assess the complete compiler censuses against this target.

@@ -70,6 +70,8 @@ mod state_constructor_tests;
 mod state_operator_tests;
 mod state_pattern_tests;
 mod state_program_tests;
+mod tracing_capture;
+mod tracing_tests;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU64;

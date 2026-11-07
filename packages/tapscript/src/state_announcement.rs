@@ -26,7 +26,10 @@ use crate::error::TapscriptError;
 use crate::instruction::{StackItem, TapscriptInstruction};
 use crate::pattern::{fragment_prerequisites, number, op, require_explicit};
 use crate::program::TapscriptProgram;
-use crate::stack::{AbstractLimits, AbstractStackState, resource_projection, validate_program};
+use crate::stack::{
+    AbstractLimits, AbstractStackState, resource_projection,
+    validate_program_untraced as validate_program,
+};
 use crate::state_pattern::{StatePatternConstructibility, StatePatternSymbol};
 use crate::state_program::StateWitnessSchedule;
 

@@ -542,6 +542,60 @@ pub fn validate_program(
     initial: &AbstractStackState,
     limits: AbstractLimits,
 ) -> Result<AbstractExecutionResult, TapscriptError> {
+    let span = tracing::debug_span!(
+        target: "tapscript::stack",
+        "validate_program",
+        instruction_count = u64::try_from(program.len()).unwrap_or(u64::MAX),
+        state_limit = limits.maximum_states(),
+        stack_limit = limits.maximum_stack_depth()
+    );
+    let _entered = span.enter();
+    let mut visited = 0_u64;
+    let result = validate_program_core(target, program, initial, limits, &mut visited);
+    match &result {
+        Ok(execution) => {
+            tracing::debug!(
+                target: "tapscript::stack",
+                outcome = "completed",
+                visited_state_count = visited,
+                success_path_count = u64::try_from(execution.success().len()).unwrap_or(u64::MAX),
+                failure_path_count = u64::try_from(execution.nonaborting_failure().len())
+                    .unwrap_or(u64::MAX),
+                abort_path_count = u64::try_from(execution.aborts().len()).unwrap_or(u64::MAX),
+                "program validation completed"
+            );
+        }
+        Err(refusal) => {
+            tracing::debug!(
+                target: "tapscript::stack",
+                outcome = "refused",
+                refusal_kind = refusal.refusal_kind(),
+                visited_state_count = visited,
+                "program validation refused"
+            );
+        }
+    }
+    result
+}
+
+/// Internal validation entry point for composed package operations.
+pub(crate) fn validate_program_untraced(
+    target: &ReviewedElementsTapscriptDefinition,
+    program: &TapscriptProgram,
+    initial: &AbstractStackState,
+    limits: AbstractLimits,
+) -> Result<AbstractExecutionResult, TapscriptError> {
+    let mut visited = 0_u64;
+    validate_program_core(target, program, initial, limits, &mut visited)
+}
+
+fn validate_program_core(
+    target: &ReviewedElementsTapscriptDefinition,
+    program: &TapscriptProgram,
+    initial: &AbstractStackState,
+    limits: AbstractLimits,
+    visited: &mut u64,
+) -> Result<AbstractExecutionResult, TapscriptError> {
     let offered = u64::try_from(program.len()).unwrap_or(u64::MAX);
     if offered > limits.maximum_instructions() {
         return Err(TapscriptError::InstructionLimitExceeded {
@@ -556,7 +610,6 @@ pub fn validate_program(
     live.insert((initial.clone(), false, KnownLiterals::default()));
     let mut aborts: BTreeSet<FailureCause> = BTreeSet::new();
     let mut signature_forms: BTreeMap<usize, BTreeSet<SignatureSuccessForm>> = BTreeMap::new();
-    let mut visited = 0_u64;
     check_depth(initial, limits)?;
 
     for (index, instruction) in program.instructions().iter().enumerate() {
@@ -568,15 +621,10 @@ pub fn validate_program(
                 signature_forms.entry(index).or_default().extend(forms);
             }
             for (reached, constants) in transfer.success {
-                admit(
-                    &mut next,
-                    (reached, *failed, constants),
-                    &mut visited,
-                    limits,
-                )?;
+                admit(&mut next, (reached, *failed, constants), visited, limits)?;
             }
             for (reached, constants) in transfer.nonaborting_failure {
-                admit(&mut next, (reached, true, constants), &mut visited, limits)?;
+                admit(&mut next, (reached, true, constants), visited, limits)?;
             }
         }
         live = next;
@@ -663,7 +711,7 @@ pub fn program_stack_profile(
         let Ok(prefix) = TapscriptProgram::new(program.instructions()[..length].to_vec()) else {
             continue;
         };
-        let Ok(outcome) = validate_program(target, &prefix, initial, limits) else {
+        let Ok(outcome) = validate_program_untraced(target, &prefix, initial, limits) else {
             continue;
         };
         for state in outcome

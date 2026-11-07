@@ -21,6 +21,7 @@ use super::reviewed_target;
 use super::state_program_tests::{
     fixtures, independent_leaf_hash, production_tree, tagged_hash, variable_program,
 };
+use super::tracing_capture::capture;
 
 const GOLDEN_PROGRAM: &str = "4c56747269706f642f73746174652d6d6574616461746100000001000000000000000100000000000000020000000000000003000000000000000400000000000000050000000000000000000000000000000000000000000069";
 const GOLDEN_LEAF: &str = "b4c768ef06438b3d328b54591651ce9d19e56f6cf608daa592ba3259a319b599";
@@ -132,6 +133,53 @@ fn derive(
         StateNonceBudget::new(attempts).unwrap(),
         curve,
     )
+}
+
+#[test]
+fn tracing_nonce_search_keeps_result_and_reports_budget_neighbor_refusal() {
+    super::tracing_capture::run_isolated(
+        "tests::state_constructor_tests::tracing_nonce_search_keeps_result_and_reports_budget_neighbor_refusal",
+        || {
+            let curve = || ScriptedCurve::new([StateTweakOutcome::TweakAboveGroupOrder]);
+            let plain = derive(4, 2, &curve());
+            let (observed, records) = capture(|| derive(4, 2, &curve()));
+            assert_eq!(plain, observed);
+            assert!(plain.is_ok());
+            let events: Vec<_> = records
+                .iter()
+                .filter(|record| {
+                    record.kind == "event" && record.target == "tapscript::state_constructor"
+                })
+                .collect();
+            assert_eq!(events.len(), 1, "captured records: {records:?}");
+            assert_eq!(events[0].fields["outcome"], "completed");
+            assert_eq!(events[0].fields["attempt_count"], "2");
+            assert_eq!(events[0].fields["rejected_nonce_count"], "1");
+
+            let plain_refusal = derive(4, 1, &curve());
+            let (observed_refusal, refused_records) = capture(|| derive(4, 1, &curve()));
+            assert_eq!(plain_refusal, observed_refusal);
+            assert!(plain_refusal.is_err());
+            let refused: Vec<_> = refused_records
+                .iter()
+                .filter(|record| {
+                    record.kind == "event" && record.target == "tapscript::state_constructor"
+                })
+                .collect();
+            assert_eq!(refused.len(), 1);
+            assert_eq!(refused[0].level, tracing::Level::DEBUG);
+            assert_eq!(refused[0].fields["outcome"], "refused");
+            assert_eq!(
+                refused[0].fields["refusal_kind"],
+                "representation_search_exhausted"
+            );
+            assert!(records.iter().chain(&refused_records).all(|record| {
+                record.kind != "event"
+                    || (record.level != tracing::Level::WARN
+                        && record.level != tracing::Level::ERROR)
+            }));
+        },
+    );
 }
 
 fn tree_for_schedule(schedule: StateWitnessSchedule) -> StateStaticSubtree {

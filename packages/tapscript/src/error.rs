@@ -230,6 +230,37 @@ pub enum TapscriptError {
     },
 }
 
+impl TapscriptError {
+    /// A stable payload-free `snake_case` name for tracing a typed refusal.
+    pub(crate) const fn refusal_kind(&self) -> &'static str {
+        match self {
+            Self::OversizedStackItem { .. } => "oversized_stack_item",
+            Self::ScriptNumberOutOfRange { .. } => "script_number_out_of_range",
+            Self::MalformedEncodedItem { .. } => "malformed_encoded_item",
+            Self::PrefixSetNotDiscriminable { .. } => "prefix_set_not_discriminable",
+            Self::NonMinimalScriptNumber => "non_minimal_script_number",
+            Self::InstructionLimitExceeded { .. } => "instruction_limit_exceeded",
+            Self::UnknownOpcodeByte(_) => "unknown_opcode_byte",
+            Self::TruncatedInstruction => "truncated_instruction",
+            Self::StackUnderflow { .. } => "stack_underflow",
+            Self::StackTypeMismatch { .. } => "stack_type_mismatch",
+            Self::AbstractStateLimitExceeded { .. } => "abstract_state_limit_exceeded",
+            Self::StackLimitExceeded { .. } => "stack_limit_exceeded",
+            Self::ResultAlternativeLimitExceeded { .. } => "result_alternative_limit_exceeded",
+            Self::NonMinimalPush => "non_minimal_push",
+            Self::DuplicateCapabilityAssessment(_) => "duplicate_capability_assessment",
+            Self::CapabilityAssessmentCensusMismatch { .. } => {
+                "capability_assessment_census_mismatch"
+            }
+            Self::DuplicateEvidenceAssessment(_) => "duplicate_evidence_assessment",
+            Self::EvidenceAssessmentCensusMismatch { .. } => "evidence_assessment_census_mismatch",
+            Self::DuplicateOperationRequirement => "duplicate_operation_requirement",
+            Self::MaturityAssessmentCensusMismatch { .. } => "maturity_assessment_census_mismatch",
+            Self::MaturityGroupDisagreement { .. } => "maturity_group_disagreement",
+        }
+    }
+}
+
 impl fmt::Display for TapscriptError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

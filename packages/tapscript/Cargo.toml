@@ -28,6 +28,7 @@ thiserror = { workspace = true }
 # Architecture is needed only to construct compiler-owned test fixtures.
 [dev-dependencies]
 architecture = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [lints]
 workspace = true

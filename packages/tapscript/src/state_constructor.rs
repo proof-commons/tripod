@@ -17,10 +17,11 @@ use target_elements::{
 };
 use thiserror::Error;
 
+use crate::stack::validate_program_untraced as validate_program;
 use crate::{
     AbstractExecutionResult, AbstractLimits, AbstractStackState, InternalKeyPolicy, KeyPathPolicy,
     ProgramStackProfile, StackItem, TapscriptInstruction, TapscriptProgram, program_stack_profile,
-    resource_projection, validate_program,
+    resource_projection,
 };
 
 /// Public curve arithmetic supplied by a downstream implementation.
@@ -119,6 +120,35 @@ pub enum StateConstructorRefusal {
         /// The number of attempts available to the search from zero.
         attempts: u32,
     },
+}
+
+impl StateConstructorRefusal {
+    const fn refusal_kind(&self) -> &'static str {
+        match self {
+            Self::MetadataEncodingRefused => "metadata_encoding_refused",
+            Self::MetadataLeafNotUnspendable => "metadata_leaf_not_unspendable",
+            Self::StaticSubtreeEmpty => "static_subtree_empty",
+            Self::StaticSubtreeIncomplete => "static_subtree_incomplete",
+            Self::DuplicateLeaf => "duplicate_leaf",
+            Self::ConflictingLeaf => "conflicting_leaf",
+            Self::WrongLeafVersion => "wrong_leaf_version",
+            Self::WrongInternalKey => "wrong_internal_key",
+            Self::InternalKeyNotAPoint => "internal_key_not_a_point",
+            Self::CanonicalBranchSideNotSatisfied => "canonical_branch_side_not_satisfied",
+            Self::RepresentationSearchExhausted => "representation_search_exhausted",
+            Self::TweakAboveGroupOrder => "tweak_above_group_order",
+            Self::TweakedPointIsIdentity => "tweaked_point_is_identity",
+            Self::ControlPathTooDeep => "control_path_too_deep",
+            Self::ExecutingLeafAbsent => "executing_leaf_absent",
+            Self::ExecutingLeafRepeated => "executing_leaf_repeated",
+            Self::ConstructorReferenceCycleUnresolved => "constructor_reference_cycle_unresolved",
+            Self::ResourceBoundExceeded => "resource_bound_exceeded",
+            Self::NoncanonicalRepresentationNonce { .. } => "noncanonical_representation_nonce",
+            Self::OfferedRepresentationBeyondSearchBudget { .. } => {
+                "offered_representation_beyond_search_budget"
+            }
+        }
+    }
 }
 
 impl StateConstructorRefusal {
@@ -959,10 +989,61 @@ impl CandidateStateConstructor {
         budget: StateNonceBudget,
         curve: &impl StateCurveCapability,
     ) -> Result<Self, StateConstructorRefusal> {
+        let span = tracing::info_span!(
+            target: "tapscript::state_constructor",
+            "derive_state_constructor",
+            family = "state",
+            attempt_limit = u64::from(budget.attempts()),
+            static_leaf_count = u64::try_from(static_subtree.leaves().len()).unwrap_or(u64::MAX)
+        );
+        let _entered = span.enter();
+        let mut counts = (0_u64, 0_u64);
+        let result = Self::derive_untraced(
+            target,
+            metadata,
+            static_subtree,
+            policy,
+            budget,
+            curve,
+            &mut counts,
+        );
+        let (attempt_count, rejected_nonce_count) = counts;
+        match &result {
+            Ok(_) => tracing::info!(
+                target: "tapscript::state_constructor",
+                outcome = "completed",
+                family = "state",
+                attempt_count,
+                rejected_nonce_count,
+                "state nonce search completed"
+            ),
+            Err(refusal) => tracing::debug!(
+                target: "tapscript::state_constructor",
+                outcome = "refused",
+                family = "state",
+                refusal_kind = refusal.refusal_kind(),
+                attempt_count,
+                rejected_nonce_count,
+                "state nonce search refused"
+            ),
+        }
+        result
+    }
+
+    fn derive_untraced(
+        target: &ReviewedElementsTapscriptDefinition,
+        metadata: &StateMetadata,
+        static_subtree: &StateStaticSubtree,
+        policy: StateInternalKeyPolicy,
+        budget: StateNonceBudget,
+        curve: &impl StateCurveCapability,
+        counts: &mut (u64, u64),
+    ) -> Result<Self, StateConstructorRefusal> {
         StateInternalKeyPolicy::new(*policy.key(), curve)?;
         validate_static_paths(static_subtree)?;
         let mut rejected = Vec::new();
         for attempt in 0..budget.attempts() {
+            counts.0 = counts.0.saturating_add(1);
             let representation = StateRepresentationNonce::new(attempt);
             let encoded = EncodedStateMetadata {
                 semantic: *metadata,
@@ -992,7 +1073,10 @@ impl CandidateStateConstructor {
                         },
                     });
                 }
-                Err(refusal) if refusal.retryable() => rejected.push((representation, refusal)),
+                Err(refusal) if refusal.retryable() => {
+                    counts.1 = counts.1.saturating_add(1);
+                    rejected.push((representation, refusal));
+                }
                 Err(refusal) => return Err(refusal),
             }
         }

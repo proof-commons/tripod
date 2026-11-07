@@ -57,6 +57,8 @@ tapscript_source_files = files(
   'src/tests/schedule_tests.rs',
   'src/tests/shape_tests.rs',
   'src/tests/stack_tests.rs',
+  'src/tests/tracing_capture.rs',
+  'src/tests/tracing_tests.rs',
   'src/tests/state_announcement_tests.rs',
   'src/tests/state_constructor_tests.rs',
   'src/tests/state_operator_tests.rs',
@@ -66,7 +68,7 @@ tapscript_source_files = files(
 )
 
 # Crate documentation (DOC owner).
-tapscript_doc_files = files('README.md')
+tapscript_doc_files = files('README.md', 'TRACING.md')
 
 # Same-typed files deliberately outside the crate-source census
 # (ADR-014): integration-test sources are cargo test inputs, not label
