@@ -646,12 +646,12 @@ pub enum NativeConformanceError {
 
 macro_rules! tracing_kind_table {
     ($($pattern:pat => $name:literal,)+) => {
-        /// A bounded static category for tracing; never formats error payloads.
+        /// Returns the stable `snake_case` variant name for tracing, without field data.
         #[allow(
             clippy::too_many_lines,
             reason = "each typed variant needs its own stable trace name"
         )]
-        pub(crate) const fn tracing_kind(&self) -> &'static str {
+        pub const fn tracing_kind(&self) -> &'static str {
             match self {
                 $($pattern => $name,)+
             }
