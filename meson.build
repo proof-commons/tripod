@@ -192,7 +192,7 @@ census_paths = [attestation_main_path, realization_path, specification_register_
                 model_labels_json_path] \
                + attestation_section_paths + adr_paths + plan_paths + doc_paths \
                + model_source_paths + crate_source_paths + script_source_paths \
-               + generated_paths
+               + generated_paths + ['clippy.toml']
 
 # Tracked paths that are categorically never lint subjects: dotfiles,
 # archives, shell helper scripts, build and package definitions,

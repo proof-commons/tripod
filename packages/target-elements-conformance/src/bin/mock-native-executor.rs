@@ -80,8 +80,9 @@ use std::process::ExitCode;
 
 use clap::{Parser, ValueEnum};
 use cli_common::{
-    CommandExit, command_completed, command_failed, command_span, configure_command_diagnostics,
-    emit_control_plane_record, install_command_subscriber, parse_args_from,
+    CommandExit, command_completed, command_failed_kind, command_span,
+    configure_command_diagnostics, emit_control_plane_record, install_command_subscriber,
+    parse_args_from,
 };
 use target_elements::{
     ActivationDeclaration, DeploymentEnvironment, DevelopmentDeploymentBinding, LeafVersion,
@@ -450,11 +451,11 @@ fn main() -> ExitCode {
             CommandExit::Success.exit_code()
         }
         Ok(exit) => {
-            command_failed("execute", &"protocol");
+            command_failed_kind("execute", "protocol");
             exit.exit_code()
         }
         Err(_) => {
-            command_failed("execute", &"io");
+            command_failed_kind("execute", "io");
             CommandExit::Failure.exit_code()
         }
     }

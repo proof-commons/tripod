@@ -54,9 +54,9 @@ argument text, which may embed an inline secret:
 ## Quickstart
 
 A complete helper binary. `BaseArgs` contributes the shared `--debug`
-flag; `run_stdout_json_command` installs the JSON panic hook,
-initialises JSON stderr tracing with `RUST_LOG` / `--debug` precedence,
-refuses terminal stdout, writes the returned value as the single JSON
+flag; `install_command_subscriber` installs the JSON panic hook and shared
+stderr subscriber before parsing. `run_stdout_json_command` applies
+`RUST_LOG` / `--debug` precedence, refuses terminal stdout, writes the returned value as the single JSON
 result object, and maps a returned error onto exit class 1 after
 passing its display text through redaction.
 
@@ -91,7 +91,7 @@ struct Report {
 fn main() -> ExitCode {
     // Installed before parsing: a panic anywhere in the process must
     // still fail closed with one JSON record, never Rust's text hook.
-    cli_common::install_json_panic_hook(COMMAND_NAME);
+    cli_common::install_command_subscriber(COMMAND_NAME);
     let args = parse_args_or_exit::<Args>();
 
     run_stdout_json_command(
@@ -141,8 +141,7 @@ published items are re-exported here.
 - `enum ControlPlaneRecordKind { Help, Version, UsageError, TtyRefusal, Panic, Status, Diagnostic }` and the matching
   `enum ControlPlaneFields` payloads; `enum StandardStream { Stdout, Stderr }`.
 - `emit_control_plane_record(&ControlPlaneRecord) -> io::Result<()>` —
-  one JSON line on stderr under a process-wide write lock. Does not
-  depend on `tracing`, so it is usable before a subscriber exists.
+  one JSON line on stderr through the subscriber's locked control route.
 - `struct CliExit { record, exit }` — a record paired with the class to
   exit under; `new`, `exit_code`.
 
@@ -178,17 +177,17 @@ published items are re-exported here.
 
 ### Process scaffolding
 
-- `install_json_panic_hook(command_name: &str)` — replaces Rust's text
-  panic hook with one best-effort JSON record, then exits class 1.
+- `install_command_subscriber(command_name: &str)` — installs the shared
+  subscriber and replaces Rust's text panic hook with one best-effort JSON record.
 - `set_panic_payload_reporting_enabled(bool)` — payload reporting starts
   **disabled**; call with the parsed `--debug` value once argv is known.
 - `tracing_filter(debug: bool, default_level: tracing::Level) -> TracingFilter`
   — resolves the directive with `RUST_LOG` first, then `--debug`, then
   the supplied default; the chosen `TracingFilterSource` is reported.
-- `init_json_tracing`, `try_init_json_tracing`,
-  `init_json_tracing_with_debug`, `try_init_json_tracing_with_debug` —
-  JSON subscriber on stderr. The `try_` forms return `false` when a
-  subscriber is already installed.
+- `configure_command_diagnostics(debug, default_level)` — reloads the
+  process filter after argument parsing.
+- `command_failed_kind(phase, kind)` and `command_child_status(output_mode, child_exit_code)` —
+  terminal events for fixed failure kinds and relayed child statuses.
 - `stdout_tty_refusal_record(&str) -> Option<ControlPlaneRecord>` and
   `refuse_if_stdout_is_tty(&str)` — the terminal check as a value, and
   as an emit-and-exit.
@@ -197,8 +196,8 @@ published items are re-exported here.
 
 ### Runners
 
-Each installs the panic hook, sets payload reporting from `debug`, and
-initialises JSON tracing before running the closure.
+Call `install_command_subscriber` before parsing. Each runner then sets payload
+reporting from `debug` and reloads the diagnostic filter before running the closure.
 
 - `run_stdout_json_command(name, debug, default_level, run) -> ExitCode`
   — refuses terminal stdout, then emits the closure's `Ok` value.

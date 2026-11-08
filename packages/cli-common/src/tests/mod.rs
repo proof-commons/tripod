@@ -37,7 +37,7 @@
 //! | `usage_error_text_never_reproduces_secrets` | Usage records omit argument values.         |
 //! | `keeps_public_key_fields_visible`      | Public key metadata is not treated as secret.    |
 //!
-//! `refuse_if_stdout_is_tty` and `init_json_tracing` mutate
+//! `refuse_if_stdout_is_tty` and `install_command_subscriber` mutate
 //! global process state (the `process::exit` path and the
 //! installed tracing subscriber) and are deliberately
 //! exercised only by the per-binary integration tests of the

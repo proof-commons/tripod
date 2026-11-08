@@ -22,7 +22,7 @@ static FILTER_HANDLE: OnceLock<reload::Handle<EnvFilter, Registry>> = OnceLock::
 /// Install the command's subscriber and panic hook before parsing arguments.
 ///
 /// Calling this again preserves the subscriber and replaces the hook for the
-/// command name supplied by the caller. Legacy startup helpers delegate here.
+/// command name supplied by the caller.
 pub fn install_command_subscriber(command_name: &str) {
     ensure_subscriber();
     set_json_panic_hook(command_name);
@@ -51,11 +51,6 @@ fn ensure_subscriber() {
             tracing::warn!(target: "cli_common::command", "filter directive rejected");
         }
     }
-}
-
-pub fn reload_diagnostic_filter(directive: &str) -> bool {
-    ensure_subscriber();
-    reload_command_filter(directive)
 }
 
 pub fn reload_command_filter(directive: &str) -> bool {

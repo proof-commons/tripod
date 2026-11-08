@@ -2,7 +2,7 @@ use std::process::Command;
 
 use cli_common::{
     ControlPlaneRecord, emit_control_plane_record, install_command_subscriber,
-    install_json_panic_hook, run_no_stdout_command,
+    run_no_stdout_command,
 };
 
 const CHILD_MODE: &str = "CLI_COMMON_BOOTSTRAP_CHILD";
@@ -12,11 +12,12 @@ fn subscriber_bootstrap_child() {
     let Ok(mode) = std::env::var(CHILD_MODE) else {
         return;
     };
-    if mode == "legacy" {
-        install_json_panic_hook("bootstrap-test");
-        let _exit = run_no_stdout_command("bootstrap-test", false, tracing::Level::INFO, || {
+    if mode == "runner" {
+        install_command_subscriber("bootstrap-test");
+        let exit = run_no_stdout_command("bootstrap-test", false, tracing::Level::INFO, || {
             Ok::<(), &'static str>(())
         });
+        assert_eq!(exit, std::process::ExitCode::SUCCESS);
         return;
     }
     install_command_subscriber("bootstrap-test");
@@ -83,6 +84,16 @@ fn subscriber_bootstrap_enabled_span_has_one_numeric_close_record() {
 }
 
 #[test]
-fn subscriber_bootstrap_legacy_startup_keeps_success_stderr_quiet() {
-    assert_eq!(child_stderr("legacy", ""), "");
+fn subscriber_bootstrap_runner_success_has_event_and_close() {
+    let stderr = child_stderr("runner", "info");
+    let lines = stderr.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 2);
+    let completed: serde_json::Value = serde_json::from_str(lines[0]).expect("JSON outcome");
+    assert_eq!(completed["target"], "cli_common::command");
+    assert_eq!(completed["level"], "INFO");
+    assert_eq!(completed["fields"]["message"], "command completed");
+    assert_eq!(completed["fields"]["exit_class"], "success");
+    let close: serde_json::Value = serde_json::from_str(lines[1]).expect("JSON close record");
+    assert_eq!(close["span"]["name"], "command");
+    assert!(close["fields"]["busy_ns"].is_u64());
 }

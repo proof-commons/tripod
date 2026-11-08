@@ -12,9 +12,9 @@ use std::process::ExitCode;
 
 use clap::Parser;
 use cli_common::{
-    CommandExit, command_completed, command_failed, command_span, configure_command_diagnostics,
-    emit_control_plane_record, install_command_subscriber, parse_args_from,
-    set_panic_payload_reporting_enabled,
+    CommandExit, command_child_status, command_completed, command_failed_kind, command_span,
+    configure_command_diagnostics, emit_control_plane_record, install_command_subscriber,
+    parse_args_from, set_panic_payload_reporting_enabled,
 };
 use execwrap::{ExecError, RoutingConfig, preflight_routing, run};
 
@@ -113,7 +113,7 @@ fn main() -> ExitCode {
         Err(_) => {
             let span = command_span(COMMAND_NAME, "asset");
             let _entered = span.enter();
-            command_failed("routing", &"io");
+            command_failed_kind("routing", "io");
             return CommandExit::Failure.exit_code();
         }
     }
@@ -124,18 +124,18 @@ fn main() -> ExitCode {
     if let Some(directory) = &args.change_directory
         && env::set_current_dir(directory).is_err()
     {
-        command_failed("setup", &"change_directory");
+        command_failed_kind("setup", "change_directory");
         return CommandExit::Failure.exit_code();
     }
 
     let outcome = match run(&args.command, &cfg, |_| {}) {
         Ok(outcome) => outcome,
         Err(ExecError::Spawn { .. }) => {
-            command_failed("child", &"spawn");
+            command_failed_kind("child", "spawn");
             return CommandExit::Failure.exit_code();
         }
         Err(_) => {
-            command_failed("child", &"io");
+            command_failed_kind("child", "io");
             return CommandExit::Failure.exit_code();
         }
     };
@@ -143,7 +143,7 @@ fn main() -> ExitCode {
     // Losing captured output is a wrapper failure even when the child
     // succeeded: a build must not silently continue on truncated logs.
     if outcome.data_loss && outcome.exit_code == 0 {
-        command_failed("child", &"data_loss");
+        command_failed_kind("child", "data_loss");
         return CommandExit::Failure.exit_code();
     }
 
@@ -151,18 +151,11 @@ fn main() -> ExitCode {
     if outcome.exit_code == 0 {
         command_completed("asset", false);
     } else if outcome.data_loss {
-        command_failed("child", &"data_loss");
+        command_failed_kind("child", "data_loss");
     } else if (3..=255).contains(&outcome.exit_code) {
-        tracing::info!(
-            target: "cli_common::command",
-            exit_class = "child_status",
-            child_exit_code = outcome.exit_code,
-            output_mode = "asset",
-            result_published = false,
-            "command completed"
-        );
+        command_child_status("asset", outcome.exit_code);
     } else {
-        command_failed("child", &"child_exit");
+        command_failed_kind("child", "child_exit");
     }
     exit
 }

@@ -34,9 +34,6 @@ pub const CONTROL_PLANE_SCHEMA: u32 = 1;
 pub const REDACTED: &str = "[redacted]";
 
 static PANIC_REPORTED: AtomicBool = AtomicBool::new(false);
-// Old binaries still use the startup delegate. Preserve their quiet clean-run
-// stderr until they move to the explicit bootstrap.
-static LEGACY_STARTUP: AtomicBool = AtomicBool::new(false);
 // Fail closed: panic payloads may contain secrets, so they are omitted
 // until a parsed `--debug` flag explicitly enables them (ADR-010). A
 // panic before debug status is known therefore reports thread and
@@ -726,15 +723,6 @@ fn write_json_line<W: Write, T: serde::Serialize>(writer: &mut W, value: &T) -> 
     writer.flush()
 }
 
-/// Install a JSON-only panic hook for ADR-010 command-line entrypoints.
-///
-/// The hook emits one best-effort control-plane record on stderr and terminates
-/// the process with exit code 1 without invoking Rust's default text panic hook.
-pub fn install_json_panic_hook(command_name: &str) {
-    LEGACY_STARTUP.store(true, Ordering::Relaxed);
-    install_command_subscriber(command_name);
-}
-
 pub(crate) fn set_json_panic_hook(command_name: &str) {
     let command_name = command_name.to_string();
     std::panic::set_hook(Box::new(move |panic_info| {
@@ -812,38 +800,6 @@ pub fn refuse_if_stdout_is_tty(binary_name: &str) {
     }
 }
 
-/// Initialise `tracing-subscriber` with JSON output on stderr.
-pub fn init_json_tracing(level: tracing::Level) {
-    let _installed = try_init_json_tracing(level);
-}
-
-/// Try to initialise `tracing-subscriber` with JSON output on stderr.
-///
-/// Returns `false` if another subscriber is already installed.
-#[must_use]
-pub fn try_init_json_tracing(level: tracing::Level) -> bool {
-    let filter = tracing_filter(false, level);
-    try_init_json_tracing_with_directive(&filter.directive)
-}
-
-/// Initialise JSON stderr tracing with `RUST_LOG` / `--debug` precedence.
-pub fn init_json_tracing_with_debug(debug: bool, default_level: tracing::Level) {
-    let _installed = try_init_json_tracing_with_debug(debug, default_level);
-}
-
-/// Try to initialise JSON stderr tracing with `RUST_LOG` / `--debug` precedence.
-///
-/// Returns `false` if another subscriber is already installed.
-#[must_use]
-pub fn try_init_json_tracing_with_debug(debug: bool, default_level: tracing::Level) -> bool {
-    let filter = tracing_filter(debug, default_level);
-    try_init_json_tracing_with_directive(&filter.directive)
-}
-
-fn try_init_json_tracing_with_directive(filter_directive: &str) -> bool {
-    subscriber::reload_diagnostic_filter(filter_directive)
-}
-
 /// Serialise `value` as one JSON object + trailing newline to stdout.
 ///
 /// # Errors
@@ -858,13 +814,7 @@ pub fn emit<T: serde::Serialize>(value: &T) -> io::Result<()> {
 /// Reload the process diagnostic filter after parsing command arguments.
 pub fn configure_command_diagnostics(debug: bool, default_level: tracing::Level) {
     let filter = tracing_filter(debug, default_level);
-    if LEGACY_STARTUP.load(Ordering::Relaxed) && filter.source == TracingFilterSource::DefaultLevel
-    {
-        let directive = format!("{},cli_common::command=warn", filter.directive);
-        let _reloaded = subscriber::reload_command_filter(&directive);
-    } else {
-        let _reloaded = subscriber::reload_command_filter(&filter.directive);
-    }
+    let _reloaded = subscriber::reload_command_filter(&filter.directive);
 }
 
 /// Open the shared INFO command span for a custom main or command runner.
@@ -878,6 +828,11 @@ pub fn command_completed(output_mode: &'static str, result_published: bool) {
     tracing::info!(target: "cli_common::command", exit_class = "success", output_mode, result_published, "command completed");
 }
 
+/// Record a relayed child status after the child has finished.
+pub fn command_child_status(output_mode: &'static str, child_exit_code: i32) {
+    tracing::info!(target: "cli_common::command", exit_class = "child_status", child_exit_code, output_mode, result_published = false, "command completed");
+}
+
 /// Record one operational command failure after central text redaction.
 pub fn command_failed(phase: &'static str, error: &impl std::fmt::Display) {
     if tracing::enabled!(target: "cli_common::command", tracing::Level::ERROR) {
@@ -885,9 +840,16 @@ pub fn command_failed(phase: &'static str, error: &impl std::fmt::Display) {
     }
 }
 
+/// Record an operational failure identified by a fixed, safe kind word.
+pub fn command_failed_kind(phase: &'static str, kind: &'static str) {
+    if tracing::enabled!(target: "cli_common::command", tracing::Level::ERROR) {
+        tracing::error!(target: "cli_common::command", exit_class = "failure", phase, error = %kind, "command failed");
+    }
+}
+
 /// Run a stdout-producing single-JSON-object command.
 ///
-/// The runner installs the JSON panic hook, initialises JSON stderr tracing,
+/// With the subscriber installed by the binary before parsing, the runner
 /// refuses terminal stdout, writes successful result data to stdout, and maps
 /// failures to ADR-010 baseline exit classes.
 pub fn run_stdout_json_command<Output, CommandError, Run>(
@@ -931,8 +893,8 @@ where
 
 /// Run a side-effect command that does not emit stdout result data.
 ///
-/// The runner installs the JSON panic hook, initialises JSON stderr tracing, and
-/// maps failures to ADR-010 baseline exit classes. It deliberately does not
+/// With the subscriber installed by the binary before parsing, the runner maps
+/// failures to ADR-010 baseline exit classes. It deliberately does not
 /// perform stdout TTY refusal because the command has no stdout result data.
 pub fn run_no_stdout_command<CommandError, Run>(
     command_name: &str,
@@ -963,8 +925,8 @@ where
 
 /// Run an async side-effect command that does not emit stdout result data.
 ///
-/// The runner installs the JSON panic hook, initialises JSON stderr tracing, and
-/// maps failures to ADR-010 baseline exit classes. It deliberately does not
+/// With the subscriber installed by the binary before parsing, the runner maps
+/// failures to ADR-010 baseline exit classes. It deliberately does not
 /// perform stdout TTY refusal because the command has no stdout result data.
 pub async fn run_no_stdout_command_async<CommandError, Run, RunFuture>(
     command_name: &str,
@@ -999,8 +961,8 @@ where
 
 /// Run an ADR-014 checker that produces a JSON report on success.
 ///
-/// Installs the JSON panic hook and stderr tracing, runs the check, and
-/// publishes the result through [`finish_check_command`] under the
+/// With the subscriber installed by the binary before parsing, runs the check
+/// and publishes the result through [`finish_check_command`] under the
 /// active output mode: direct-mode stdout (refused on a terminal, exit
 /// class 2) or a build-mode report asset plus success stamp. The `run`
 /// closure must emit its own per-item diagnostics on stderr and return
@@ -1087,6 +1049,10 @@ pub(crate) struct LockedStderrWriter {
     stderr: io::Stderr,
 }
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "The shared tracing subscriber owns the single locked stderr writer required by ADR-010"
+)]
 impl LockedStderrWriter {
     pub(crate) fn new() -> Self {
         Self {

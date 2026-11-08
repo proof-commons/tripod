@@ -8,7 +8,10 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::prelude::*;
 
-use crate::{CommandExit, PublicationAsset, publish_batch, run_no_stdout_command};
+use crate::{
+    CommandExit, PublicationAsset, command_child_status, command_failed_kind, publish_batch,
+    run_no_stdout_command,
+};
 
 #[derive(Clone, Debug)]
 struct Observation {
@@ -91,6 +94,10 @@ impl<S: Subscriber> Layer<S> for Capture {
 struct Fields(Map<String, Value>);
 
 impl Visit for Fields {
+    fn record_i64(&mut self, field: &Field, value: i64) {
+        self.0.insert(field.name().to_owned(), json!(value));
+    }
+
     fn record_u64(&mut self, field: &Field, value: u64) {
         self.0.insert(field.name().to_owned(), json!(value));
     }
@@ -107,6 +114,47 @@ impl Visit for Fields {
         self.0
             .insert(field.name().to_owned(), json!(format!("{value:?}")));
     }
+}
+
+#[test]
+fn fixed_kind_failure_has_the_existing_error_shape() {
+    if !run_in_isolated_capture_process("fixed_kind_failure_has_the_existing_error_shape") {
+        return;
+    }
+    let ((), records) = capture(|| command_failed_kind("execute", "protocol"));
+    let event = {
+        let records = records.lock().expect("capture lock");
+        assert_eq!(records.len(), 1);
+        records[0].clone()
+    };
+    assert_eq!(event.target, "cli_common::command");
+    assert_eq!(event.level, "ERROR");
+    assert_eq!(event.fields.len(), 4);
+    assert_eq!(event.fields["message"], "command failed");
+    assert_eq!(event.fields["exit_class"], "failure");
+    assert_eq!(event.fields["phase"], "execute");
+    assert_eq!(event.fields["error"], "protocol");
+}
+
+#[test]
+fn relayed_child_status_has_the_existing_terminal_shape() {
+    if !run_in_isolated_capture_process("relayed_child_status_has_the_existing_terminal_shape") {
+        return;
+    }
+    let ((), records) = capture(|| command_child_status("asset", 7));
+    let event = {
+        let records = records.lock().expect("capture lock");
+        assert_eq!(records.len(), 1);
+        records[0].clone()
+    };
+    assert_eq!(event.target, "cli_common::command");
+    assert_eq!(event.level, "INFO");
+    assert_eq!(event.fields.len(), 5);
+    assert_eq!(event.fields["message"], "command completed");
+    assert_eq!(event.fields["exit_class"], "child_status");
+    assert_eq!(event.fields["child_exit_code"], 7);
+    assert_eq!(event.fields["output_mode"], "asset");
+    assert_eq!(event.fields["result_published"], false);
 }
 
 #[test]

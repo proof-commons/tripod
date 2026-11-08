@@ -1,0 +1,8 @@
+disallowed-methods = [
+    { path = "std::io::stderr", reason = "First-party stderr is written only by the shared tracing subscriber" },
+]
+
+disallowed-macros = [
+    { path = "std::eprint", reason = "First-party stderr is written only by the shared tracing subscriber" },
+    { path = "std::eprintln", reason = "First-party stderr is written only by the shared tracing subscriber" },
+]
