@@ -19,6 +19,7 @@ vectors_source_files = files(
   'src/fixture.rs',
   'src/historical_candidate.rs',
   'src/keyed_birth.rs',
+  'src/keyed_birth_corpus.rs',
   'src/keyed_birth_native.rs',
   'src/keyed_birth/tests.rs',
   'src/confidential_materializer.rs',
@@ -112,6 +113,11 @@ vectors_doc_files = files('README.md', 'TRACING.md')
 # `include_bytes!`; timing sidecars and the predecessor setup transcript
 # remain audit-only bytes.
 vectors_fixture_files = files(
+  'fixtures/keyed-birth-run-of-record/ce8d7525556e.report.capture',
+  'fixtures/keyed-birth-run-of-record/ce8d7525556e.report.timing',
+  'fixtures/keyed-birth-run-of-record/ce8d7525556e.report.capture.timing',
+  'fixtures/keyed-birth-run-of-record/RUN-REPORT',
+  'fixtures/keyed-birth-run-of-record/MANIFEST.sha256',
   'fixtures/adapter-request-comparisons/COMPARISONS',
   'fixtures/closure-compact-live.golden',
   'fixtures/historical-candidate-0.7.15-dev-operator-successor.leaves',

@@ -524,3 +524,99 @@ was blocked on knowing whether the target could do this at all.
 Evidence lives in `target-elements-conformance` and in the Guide-10 gate record
 in [the backlog](../backlog.md) (§2.14). Guide 11 public declassification
 remains the open third foundational prototype.
+
+## Keyed-covenant evidence · `sec:state-constructor:keyed-evidence`
+
+This is the distinct Wave-1 keyed-covenant evidence set required by
+(`obl:guide15-exec:measurement-home`). It does not inherit the STATE prototype's
+acceptance or discharge later keyed measurements.
+
+### Measurement (a): born-first · `rec:state-constructor:keyed-birth`
+
+The archive is `packages/vectors/fixtures/keyed-birth-run-of-record/`: the capture,
+outer timing, ceremony timing, `RUN-REPORT` and original `MANIFEST.sha256` were
+copied from run `w20c1-birth-20261108T151743Z`, with all five node-side SHA-256
+digests verified before and after transfer into the fixture directory. The
+manifest covers the capture, outer timing and report; the reader independently
+pins all five files, including the ceremony timing omitted by that manifest.
+`packages/vectors/src/keyed_birth_corpus.rs` decodes the capture and the complete
+fourteen-response Debug carrier retained in `RUN-REPORT`, checks their links and
+projections, replays `replay_birth_capture`, and rebuilds `Wave1TargetPacket` and
+`BirthCampaignManifest`. The immutable capture still says `admitted false`:
+admission is the reader's result, not an edit to the observation.
+
+This capture omitted complete executor responses from its exchange records, so
+admission uses an archive-specific decoder for the run report's Debug transcript.
+Later keyed captures retain each complete response in the capture itself in its
+wire JSON form, so their admission readers read no debug text.
+
+Bindings: reviewed `elements-tapscript-v2`, development `elementsregtest`, leaf
+version 196, protocol 8, adapter `elements-native-executor` 2.1.0, node Elements
+Core daemon v28.99.0. The exact node revision, functional-framework revision,
+intended source tip, executable digest and retained `PROVENANCE.txt` content are
+bound in the capture's handshake and `executable_provenance`; these are source
+provenance, not protocol identities. The capture binds the observed network and
+genesis to the development declaration and retains the active domain/leaf and
+capability census. Execution used `localhost/tripod-native:f44` and
+`/elements/bin/elementsd`. Policy is separate: explicit policy asset,
+`node-defaults` are declared selections; exact startup arguments are retained
+observations, and relay and mempool floors are
+observed at 100 sat/kvB each; block floor 100 sat/kvB is declared by pinned-source
+`DEFAULT_BLOCK_MIN_TX_FEE`, with no override, not a node observation. The reader
+checks that every response reports the same policy and startup arguments.
+
+| Subject | Spent output index | Current input index | Admission result |
+| --- | --- | --- | --- |
+| A0 | 0 | 0 | Mined control, height 4 |
+| A1 | 1 | 0 | Born-first `EqualVerify` refusal, paired with A0 |
+| A2 | 0 | 1 | Mined control, height 7 |
+| A3 | 1 | 1 | Born-first `EqualVerify` refusal, paired with A2 |
+
+Both refusals retain exactly `mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)`
+as their relay reason and a script-path rejection
+class. Attribution requires the exact birth leaf's sole equality at byte offset
+8, the accepted pair, and exclusion of the sponsor's own equality/signature
+sites. A different or ambiguous site remains open. The archive retains the
+consensus route and evidence, txid/wtxid, block hashes, heights, and complete raw
+mined bytes; controls use the `relay-and-template` route. Four mined readbacks
+occur at heights 3 and 4 for the first parent/control and 6 and 7 for the second.
+There are fourteen exchanges: two fundings, six signings, two parents, two
+controls accepted (twelve acceptances), and the two refusals. Negatives were
+constructed and signed before their controls. Each pair fixes its parent,
+programs, assets, values, successors and funding outpoint; the reserved funding
+output is index 1 in both placements, with fresh funding for the second pair.
+Only the spent output index changes per negative; transaction identities,
+sponsor authorization and observation results are declared collateral. Sponsor
+outputs are 100,000 sat each, equal parent covenant outputs 10,000 sat each,
+and explicit parent/child fees 1,000 sat: fixture choices, not funding floors.
+
+Retained walls are 0.984 s in `RUN-REPORT` and 0.985 s in the outer timing;
+the ceremony sidecar records passed without a numeric wall. The orchestrator's
+capture report gives 0.99 s for the ignored test and 0.2 s node startup, with
+one transient RPC connection retry before startup. Those infrastructure details
+are not subject verdicts or additional measured covenant dimensions.
+
+**Pinned-source reading (not a native observation):** paths below are relative
+to the Elements source root identified by the retained executable provenance,
+read on the node at `/var/home/tripod/loops/toolchains/elements/b7fc5d08/src`.
+`src/script/interpreter.cpp:1836` pushes the selected input's txid, calls
+`push4_le(stack, inp.prevout.n)` at line 1840, then pushes a separate one-byte
+flag item at line 1843. `src/script/interpreter.cpp:86` defines `push4_le` using
+little-endian conversion and the four-byte `uint32_t` width, not script-number
+encoding. `src/script/interpreter.cpp:137` derives the flag item separately
+from asset issuance and peg-in state. `src/primitives/transaction.h:41` and
+`:45` declare the two high flag bits; `src/primitives/transaction.h:50` gives
+the index mask `0x3fffffff`. For non-coinbase Elements inputs, deserialization
+extracts those flags at lines 217 and 220, and stores the masked index in
+`prevout.n` at line 226. Thus inspection reports the index without issuance or
+peg-in flag bits, followed by the separate flags item. The coinbase exception
+at lines 209–213 is outside these subjects.
+
+Absent dimensions: no issuance subjects, no peg-in subjects, and no native
+stack-depth/altstack/element/budget measurements. Static fragment stack checks
+are separate evidence. No funding floor, authenticated current-program
+equality, sole-leaf census, whole keyed realization, or measurements (b) onward
+are admitted here. Current-input outpoint inspection is accepted as the
+born-first realization mechanism because the four admitted subjects and the
+pinned index/flag reading meet the acceptance condition named by ruling 160
+(`rec:phase7:wave1-birth-admission`). The bite-1.0 gate is not closed.

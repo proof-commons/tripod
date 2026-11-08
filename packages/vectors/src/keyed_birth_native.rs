@@ -656,35 +656,51 @@ pub fn replay_birth_campaign(
 /// Returns `Replay` for broken journal links or the construction's exact refusal.
 pub fn replay_birth_capture(
     target: &ReviewedElementsTapscriptDefinition,
-    capture: &NativeOperationCapture,
+    capture: &(impl BirthCaptureJournal + ?Sized),
 ) -> Result<BirthCampaignPlanner, BirthNativeRefusal> {
-    let exchanges = capture
-        .operations()
-        .iter()
-        .enumerate()
-        .map(|(ordinal, operation)| {
-            if operation.operation_id() != format!("operation-{ordinal}")
-                || operation.request_id() != format!("request-{ordinal}")
-                || operation.response_id() != Some(format!("response-{ordinal}").as_str())
-                || operation.response_request_id() != Some(operation.request_id())
-                || operation.response_operation_id() != Some(operation.operation_id())
-                || operation.request().schema != NATIVE_PROTOCOL_SCHEMA
-            {
-                return Err(BirthNativeRefusal::Replay);
-            }
-            Ok((
-                OperationStep::new(
-                    &operation.request().case.step,
-                    operation.request().subject.clone(),
-                ),
-                operation
-                    .response()
-                    .ok_or(BirthNativeRefusal::Replay)?
-                    .clone(),
-            ))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    replay_birth_campaign(target, &exchanges)
+    replay_birth_campaign(target, &capture.birth_exchanges()?)
+}
+
+/// A linked capture journal, including an archive decoded without a live executor.
+pub trait BirthCaptureJournal {
+    /// Return the retained exchanges after checking request/response linkage.
+    /// # Errors
+    /// Returns `Replay` when linkage or a response is missing.
+    fn birth_exchanges(
+        &self,
+    ) -> Result<Vec<(OperationStep, NativeOperationResponse)>, BirthNativeRefusal>;
+}
+
+impl BirthCaptureJournal for NativeOperationCapture {
+    fn birth_exchanges(
+        &self,
+    ) -> Result<Vec<(OperationStep, NativeOperationResponse)>, BirthNativeRefusal> {
+        self.operations()
+            .iter()
+            .enumerate()
+            .map(|(ordinal, operation)| {
+                if operation.operation_id() != format!("operation-{ordinal}")
+                    || operation.request_id() != format!("request-{ordinal}")
+                    || operation.response_id() != Some(format!("response-{ordinal}").as_str())
+                    || operation.response_request_id() != Some(operation.request_id())
+                    || operation.response_operation_id() != Some(operation.operation_id())
+                    || operation.request().schema != NATIVE_PROTOCOL_SCHEMA
+                {
+                    return Err(BirthNativeRefusal::Replay);
+                }
+                Ok((
+                    OperationStep::new(
+                        &operation.request().case.step,
+                        operation.request().subject.clone(),
+                    ),
+                    operation
+                        .response()
+                        .ok_or(BirthNativeRefusal::Replay)?
+                        .clone(),
+                ))
+            })
+            .collect()
+    }
 }
 
 /// Classify a replayed pair conservatively, leaving ambiguous sites open.
