@@ -6,6 +6,7 @@
 pub mod common;
 
 mod keyed_birth;
+mod keyed_continuation;
 
 use std::fmt::Write as _;
 use std::path::Path;
