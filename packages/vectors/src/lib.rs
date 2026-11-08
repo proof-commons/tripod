@@ -17,6 +17,7 @@ pub mod first_party;
 pub mod fixture;
 pub mod historical_candidate;
 pub mod keyed_birth;
+pub mod keyed_birth_native;
 pub mod live_capability;
 pub mod live_comparison;
 pub mod live_conservation_negatives;

@@ -78,3 +78,95 @@ Four adoption vectors are built as real target transactions, each with the censu
 Half of that gate is node-free and half is not, and the record says which. What the bytes decide, they decide here: output zero's program is authenticated by a curve relation over witness-supplied metadata rather than by a byte equality, and the operator's signature is a witness fact, so neither is settled by any comparison over the leaf's literals. The other half is a run, and an ignored, environment-gated test performs it. That test issues a singleton asset on a target node, funds a coin of it at the constructor's own output program, funds the shapes' foreign coins in the target's own reserve asset, and rebuilds each of the four shapes over that funding — the positions, amounts and programs are the vector's, and the outpoints, the two assets and the witnesses are the run's, because those are what a node requires to be real — before submitting them. What the node establishes is the commitment chain: its interpreter accepts the revealed leaf against the funded output's key, which is the whole path from the linked bytes through the static subtree and the output key to the control block that the node-free half only recomputed, and it then refuses at the committed operator key's verification, which is the leaf's first instruction pair. The archived whole-item run cannot establish an accepted case, whereas the pinned variable-schedule run of record establishes one accepted submission; three facts of the archived deployment explain its limit: the committed operator key is public, meaningless material no scalar belongs to, and the leaf verifies a signature under it; the pinned singleton asset is a fixture constant, while a node derives an asset identity from its own issuing outpoint; and the announcement's witness roles are populated and its successor's representation nonce searched by nothing in that archived exercise, which the linked bundle's own outstanding set records rather than leaves to be discovered. So every case is refused before any compared field is read. Two rules of the target's own decide where each case stops, and the run records both: its relay policy admits no tapscript stack item as wide as the announcement's predecessor-metadata role declares, so a spend carrying that role at its declared width is refused before any script runs and the placeholder is capped at the limit; and its amount verification refuses an output of explicit value zero before it examines any witness, so the one retained shape that carries such an output — an output zero short of the amount the leaf pins, which below a pinned amount of one can only be zero — is refused before the leaf while the other three are refused inside it. The variable-schedule run of record supplies the accepted control, while the linked bundle retains the relay-width rule as a construction obligation.
 
 The STATE constructor-continuity projector reconstructs both constructors from submitted bytes under the retained witness schedule, and its validated continuity report keeps the schedule and byte identity with each comparison (`0.6.243-dev`). The archived whole-item corpus preserves the relay-refused run; the pinned second corpus at `packages/vectors/fixtures/maturity-variable-run-of-record/` admits an accepted variable-schedule submission with exact mined readback on `0.6.245-dev`. That acceptance was observed with `-minrelaytxfee=0` and `-blockmintxfee=0`; the accepted-byte row's classification stands in the Phase-6 card's accepted-byte classification record.
+
+## Keyed birth capture (Guide-15 Wave 1)
+
+`keyed_birth_native` constructs the A0–A3 experiment without admitting a run.
+Each placement requests two sponsor outputs of 100,000 satoshis. Output zero
+pays a locally constructed parent with equal 10,000-satoshi covenant outputs
+at positions zero and one, 79,000 satoshis change and an explicit 1,000-satoshi
+fee. Output one funds both children of that pair: each retains a 10,000-satoshi
+successor, 99,000 satoshis sponsor change and a 1,000-satoshi fee. The second
+placement gets fresh funding. Amounts are fixture choices, not funding floors;
+these rows claim no issuance, peg-in or flags coverage. Fourteen requests run
+in order: fund/sign-parent/submit-parent/sign-negative/submit-negative/sign-control/
+submit-control, repeated for the second placement. Parent readback is retained
+before a child is constructed. The birth leaf appends true to the typed fragment,
+under the reviewed leaf version and the constructor's fixed unspendable key.
+
+The following is the exact capture command, run from the clean repository root
+**inside `localhost/tripod-native:f44`**, never on the `CoreOS` host or in the
+document image. The orchestrator mounts the pinned toolchain read-only at
+`/elements` (including its `PROVENANCE.txt` and shared library), the checkout
+at `/src`, and supplies a fresh writable `$BIRTH_REPORT_DIR`, writable `$TMPDIR`
+and `$HOME`, and the usual isolated Cargo toolchain/cache/target mounts.
+`$ELEMENTS_INTENDED_TIP` is the full source-provenance tip from that toolchain's
+`PROVENANCE.txt`; `$BIRTH_NETWORK_ID` and `$BIRTH_GENESIS_ID` are the reviewed
+64-character lowercase hexadecimal deployment identifiers, in display order.
+The directory must not contain a previous capture, timing file, report or manifest.
+
+```sh
+env \
+  TRIPOD_LIVE_EXECUTOR="$PWD/scripts/elements-native-executor.sh" \
+  TRIPOD_LIVE_REPORT_DIR="$BIRTH_REPORT_DIR" \
+  TRIPOD_LIVE_SUITE_SHORT_SHA="$(git rev-parse --short=12 HEAD)" \
+  TRIPOD_LIVE_SUITE_COMMIT="$(git rev-parse HEAD)" \
+  TRIPOD_LIVE_SUITE_TREE="$(git rev-parse HEAD^{tree})" \
+  TRIPOD_LIVE_NETWORK_ID="$BIRTH_NETWORK_ID" \
+  TRIPOD_LIVE_GENESIS_ID="$BIRTH_GENESIS_ID" \
+  ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD=/elements/bin/elementsd \
+  ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI=/elements/bin/elements-cli \
+  ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK=/elements/src/test/functional \
+  ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP="$ELEMENTS_INTENDED_TIP" \
+  ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID="$BIRTH_NETWORK_ID" \
+  ELEMENTS_NATIVE_EXECUTOR_ENABLE_WALLET=1 \
+  ELEMENTS_NATIVE_EXECUTOR_ZK_LIBRARY=/elements/lib/libsecp256k1.so \
+  ELEMENTS_NATIVE_EXECUTOR_FEE_POLICY=node-defaults \
+  ELEMENTS_NATIVE_EXECUTOR_MATURITY_OBSERVATION=1 \
+  ELEMENTS_NATIVE_EXECUTOR_PYTHON=python3 \
+  ELEMENTS_NATIVE_EXECUTOR_LAUNCH_PREFIX= \
+  ELEMENTS_NATIVE_EXECUTOR_UPSTREAM_BASE= \
+  ELEMENTS_NATIVE_EXECUTOR_LOCAL_TOPICS= \
+  cargo test -p tripod-vectors --profile gate --test maturity_native \
+    keyed_birth::keyed_birth_campaign_runs_against_a_real_target -- --ignored --exact --nocapture
+```
+
+These are all application-specific environment inputs. `PATH` resolves Cargo
+and Python; `HOME`, `TMPDIR`, `CARGO_HOME`, `CARGO_TARGET_DIR` and `RUSTUP_HOME`
+belong to the wrapper's toolchain and writable-directory setup. The observation
+switch uses the existing executor's policy/readback route; it does not change
+the protocol. The executor deadline is 900 seconds. The driver hashes the actual
+`elementsd` and retains the sibling toolchain provenance file inside the capture.
+The birth tests are included from `tests/keyed_birth/mod.rs` in the existing
+`maturity_native` integration target. This submodule preserves Cargo's automatic
+test discovery and the root Meson target census.
+
+The file set follows the existing report-capture carrier:
+`<short>.report.capture`, `<short>.report.timing`, `RUN-REPORT`, and
+`MANIFEST.sha256` covering those three files. `diagnostics/` additionally retains
+executor diagnostics. The enhanced capture binds target, deployment, handshake,
+observed environment, source identities, and every request/response link. Its
+birth payload retains frozen parent and child bytes, sponsor signing echoes,
+funding facts, policy and startup arguments, relay result and exact reason,
+consensus route and evidence, accepted txid/wtxid, block hash/height and raw mined
+readback. The timing and run report record elapsed wall and eligibility; a
+failed run retains the transcript before asserting failure. A preflight or
+artifact-write failure may leave only partial files and is always ineligible.
+
+A run of record must report that file set and its digests, suite commit/tree,
+toolchain provenance and executable digest, image, deployment, protocol/adapter/
+node versions, policy origins, startup arguments, fourteen-operation census,
+all four classifications, exact refusal texts, accepted readbacks, wall time
+and any timeout or infrastructure failure. Relay and mempool floors are observed;
+the block floor remains the pinned source's declaration. A negative's refused
+relay route is script-verdict evidence, not a claim of direct block rejection.
+Attribution requires the exact `OP_EQUALVERIFY` error, the birth leaf's sole
+equality at byte offset eight, a matching mined control, and exclusion of the
+sponsor's equality and signature sites. The public-key hash check excludes its
+P2WPKH equality; CHECKSIG cannot emit that equality error. This is not independent
+ECDSA verification or a claim that the negative executed its sponsor signature.
+Ambiguous errors, earlier-layer refusals, altered pairs, signing mismatches,
+missing readbacks, open classifications, incomplete transcripts or provenance
+disagreements make a run ineligible. Capture eligibility is not admission:
+the later admission step binds `Wave1TargetPacket` and `BirthCampaignManifest`
+to the reviewed archive and measurement home.
