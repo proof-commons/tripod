@@ -123,7 +123,7 @@ fn decode_hex(text: &str) -> Result<Vec<u8>, BirthNativeRefusal> {
         .collect()
 }
 
-fn coin_output(coin: &FundedOutput) -> Result<BirthOutput, BirthNativeRefusal> {
+pub(crate) fn coin_output(coin: &FundedOutput) -> Result<BirthOutput, BirthNativeRefusal> {
     let asset = Txid::from_target_display(&coin.asset).map_err(|_| BirthNativeRefusal::Funding)?;
     Ok(BirthOutput {
         program: decode_hex(&coin.script)?,
@@ -132,7 +132,7 @@ fn coin_output(coin: &FundedOutput) -> Result<BirthOutput, BirthNativeRefusal> {
     })
 }
 
-fn coin_outpoint(coin: &FundedOutput) -> Result<Outpoint, BirthNativeRefusal> {
+pub(crate) fn coin_outpoint(coin: &FundedOutput) -> Result<Outpoint, BirthNativeRefusal> {
     Outpoint::new(
         Txid::from_target_display(&coin.outpoint.txid).map_err(|_| BirthNativeRefusal::Funding)?,
         coin.outpoint.vout,
@@ -140,7 +140,7 @@ fn coin_outpoint(coin: &FundedOutput) -> Result<Outpoint, BirthNativeRefusal> {
     .map_err(|_| BirthNativeRefusal::Funding)
 }
 
-const fn output(fact: &BirthOutput, value: u64, program: Vec<u8>) -> TargetOutput {
+pub(crate) const fn output(fact: &BirthOutput, value: u64, program: Vec<u8>) -> TargetOutput {
     TargetOutput::new(
         AssetField::Explicit(AssetId::from_internal(fact.asset)),
         ValueField::Explicit(value),
@@ -149,7 +149,7 @@ const fn output(fact: &BirthOutput, value: u64, program: Vec<u8>) -> TargetOutpu
     )
 }
 
-fn transaction(
+pub(crate) fn transaction(
     inputs: Vec<TargetInput>,
     outputs: Vec<TargetOutput>,
     witnesses: Vec<InputWitness>,
@@ -184,7 +184,7 @@ pub fn build_birth_parent(
     )
 }
 
-fn identity(tx: &TargetTransaction) -> Txid {
+pub(crate) fn identity(tx: &TargetTransaction) -> Txid {
     Txid::from_internal(sha256(&sha256(&tx.encode_without_witness())))
 }
 
@@ -635,7 +635,21 @@ pub fn replay_birth_campaign(
 ) -> Result<BirthCampaignPlanner, BirthNativeRefusal> {
     let _span =
         tracing::debug_span!("replay_birth_campaign", exchanges = exchanges.len()).entered();
-    let mut planner = BirthCampaignPlanner::new(target)?;
+    let planner = replay_operations(
+        BirthCampaignPlanner::new(target)?,
+        exchanges,
+        BirthCampaignPlanner::refusal,
+    )?;
+    planner.complete()?;
+    Ok(planner)
+}
+
+/// Replay exact requests through the same planner used for live staging.
+pub(crate) fn replay_operations<P: TargetOperationPlanner>(
+    mut planner: P,
+    exchanges: &[(OperationStep, NativeOperationResponse)],
+    refusal: impl Fn(&P) -> Option<BirthNativeRefusal>,
+) -> Result<P, BirthNativeRefusal> {
     let mut expected = planner
         .next_step(None)
         .map_err(|_| BirthNativeRefusal::Replay)?;
@@ -645,9 +659,11 @@ pub fn replay_birth_campaign(
         }
         expected = planner
             .next_step(Some((step.case(), response)))
-            .map_err(|_| planner.refusal.unwrap_or(BirthNativeRefusal::Replay))?;
+            .map_err(|_| refusal(&planner).unwrap_or(BirthNativeRefusal::Replay))?;
     }
-    planner.complete()?;
+    if expected.is_some() {
+        return Err(BirthNativeRefusal::Replay);
+    }
     Ok(planner)
 }
 

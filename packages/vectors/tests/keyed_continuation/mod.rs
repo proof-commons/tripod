@@ -1,6 +1,8 @@
 //! Offline projection checks in the existing maturity-native integration target.
 //! Synthetic bytes are not native transactions or constructor evidence.
 
+mod native;
+
 use std::collections::BTreeSet;
 
 use target_elements::{

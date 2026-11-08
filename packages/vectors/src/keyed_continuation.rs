@@ -268,7 +268,9 @@ fn validate_context(context: &ContinuationPairContext) -> Result<(), Continuatio
     Ok(())
 }
 
-fn validate_subjects(subjects: &[ContinuationSubject]) -> Result<(), ContinuationManifestRefusal> {
+pub(crate) fn validate_subjects(
+    subjects: &[ContinuationSubject],
+) -> Result<(), ContinuationManifestRefusal> {
     use ContinuationManifestRefusal as R;
     use ContinuationSubjectId as I;
     if !subjects.iter().map(|s| s.id).eq(I::ALL) {

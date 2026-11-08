@@ -44,7 +44,7 @@ fn public_key() -> Vec<u8> {
     key
 }
 
-fn coin(pair: u8, index: u32) -> FundedOutput {
+pub fn coin(pair: u8, index: u32) -> FundedOutput {
     FundedOutput {
         outpoint: WireOutpoint {
             txid: common::hex_bytes(&[pair + 1; 32]),
@@ -66,7 +66,7 @@ fn policy() -> Value {
     })
 }
 
-fn response(step: &OperationStep, ordinal: usize) -> NativeOperationResponse {
+pub fn response(step: &OperationStep, ordinal: usize) -> NativeOperationResponse {
     let mut response = NativeOperationResponse {
         schema: NATIVE_PROTOCOL_SCHEMA,
         case: step.case().clone(),
@@ -446,11 +446,11 @@ fn wrong_parent_readback_and_reused_pair_funding_refuse() {
     ));
 }
 
-fn required(name: &str) -> String {
+pub fn required(name: &str) -> String {
     common::environment(name).unwrap_or_else(|| panic!("{name} is required"))
 }
 
-fn executable_provenance() -> Value {
+pub fn executable_provenance() -> Value {
     let binary = required("ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD");
     let path = Path::new(&binary)
         .parent()
@@ -468,7 +468,7 @@ fn executable_provenance() -> Value {
     })
 }
 
-fn write_run_files(directory: &Path, short: &str, report: &str, elapsed: f64, eligible: bool) {
+pub fn write_run_files(directory: &Path, short: &str, report: &str, elapsed: f64, eligible: bool) {
     std::fs::write(directory.join("RUN-REPORT"), report).expect("run report");
     let timing = format!(
         "timing-schema 1\nceremony-id report\nstatus {}\nwall-seconds {elapsed:.3}\n",

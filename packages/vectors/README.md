@@ -170,3 +170,93 @@ missing readbacks, open classifications, incomplete transcripts or provenance
 disagreements make a run ineligible. Capture eligibility is not admission:
 the later admission step binds `Wave1TargetPacket` and `BirthCampaignManifest`
 to the reviewed archive and measurement home.
+
+## Key-free continuation capture (Guide-15 Wave 1)
+
+`keyed_continuation_native` stages eleven exchanges: two-output sponsor funding,
+parent signing/submission, then signing/submission for wrong program, wrong
+version, displaced successor and the control, in that order. Sponsor output one
+is reserved for all four children. The mined parent has a 10,000-satoshi primary
+output at birth position zero, a 10,000-satoshi alternative-program output at
+one, 79,000 satoshis sponsor change and a 1,000-satoshi fee. Each child spends
+parent output zero plus the 100,000-satoshi reserve, with 10,000 satoshis successor,
+99,000 satoshis alternative-program change and a 1,000-satoshi fee. Displacement
+exchanges the two complete spendable outputs. These amounts are fixtures, not
+floors; the alternative-program change is disposable experiment funding.
+
+The primary leaf is born first, continue first and final true. The alternative
+recipe inserts an empty push/drop immediately before final true. Both commitments
+are reconstructed under the reviewed leaf version and the same fixed unspendable
+internal key, never supplied as programs. No semantic key literal or key-separation
+claim is made; the manifest's public-key slot is the all-zero placeholder for this
+key-free campaign. Wrong-key, mixed-key and coexistence rows remain deferred.
+
+Run the following exact command from the clean repository root **inside
+`localhost/tripod-native:f44`**, with the same read-only `/elements`, `/src` and
+isolated writable toolchain/cache mounts described for birth above. Supply fresh
+`$CONTINUATION_REPORT_DIR`, deployment identifiers `$CONTINUATION_NETWORK_ID` and
+`$CONTINUATION_GENESIS_ID`, and `$ELEMENTS_INTENDED_TIP` from `PROVENANCE.txt`.
+Neither the `CoreOS` host nor the document image can run this capture.
+
+```sh
+env \
+  TRIPOD_LIVE_EXECUTOR="$PWD/scripts/elements-native-executor.sh" \
+  TRIPOD_LIVE_REPORT_DIR="$CONTINUATION_REPORT_DIR" \
+  TRIPOD_LIVE_SUITE_SHORT_SHA="$(git rev-parse --short=12 HEAD)" \
+  TRIPOD_LIVE_SUITE_COMMIT="$(git rev-parse HEAD)" \
+  TRIPOD_LIVE_SUITE_TREE="$(git rev-parse HEAD^{tree})" \
+  TRIPOD_LIVE_NETWORK_ID="$CONTINUATION_NETWORK_ID" \
+  TRIPOD_LIVE_GENESIS_ID="$CONTINUATION_GENESIS_ID" \
+  ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD=/elements/bin/elementsd \
+  ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI=/elements/bin/elements-cli \
+  ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK=/elements/src/test/functional \
+  ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP="$ELEMENTS_INTENDED_TIP" \
+  ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID="$CONTINUATION_NETWORK_ID" \
+  ELEMENTS_NATIVE_EXECUTOR_ENABLE_WALLET=1 \
+  ELEMENTS_NATIVE_EXECUTOR_ZK_LIBRARY=/elements/lib/libsecp256k1.so \
+  ELEMENTS_NATIVE_EXECUTOR_FEE_POLICY=node-defaults \
+  ELEMENTS_NATIVE_EXECUTOR_MATURITY_OBSERVATION=1 \
+  ELEMENTS_NATIVE_EXECUTOR_PYTHON=python3 \
+  ELEMENTS_NATIVE_EXECUTOR_LAUNCH_PREFIX= \
+  ELEMENTS_NATIVE_EXECUTOR_UPSTREAM_BASE= \
+  ELEMENTS_NATIVE_EXECUTOR_LOCAL_TOPICS= \
+  cargo test -p tripod-vectors --profile gate --test maturity_native \
+    keyed_continuation::native::keyed_continuation_campaign_runs_against_a_real_target -- --ignored --exact --nocapture
+```
+
+These are all application-specific environment inputs. The wrapper supplies
+`PATH`, `HOME`, `TMPDIR`, `CARGO_HOME`, `CARGO_TARGET_DIR` and `RUSTUP_HOME` for the
+toolchain and writable directories. The existing executor protocol and adapter
+are unchanged; its deadline is 900 seconds. This test is a submodule of the
+existing `maturity_native` integration target, not a new Cargo target.
+
+The five files are `<short>.report.capture`, `<short>.report.timing`,
+`<short>.report.capture.timing`, `RUN-REPORT` and `MANIFEST.sha256`, which covers
+all four other files. `diagnostics/` retains executor diagnostics separately.
+The enhanced capture's payload includes `wire_journal`: every complete request
+and response serialized with the protocol's JSON serializer, with journal-local
+operation/request/response links, handshake and environment. This includes full
+funding facts, signing echoes, frozen submission bytes, policy and startup
+arguments, relay result/reason, consensus route/evidence, accepted txid/wtxid,
+block hash/height and raw mined readback. Admission replays that JSON, never
+debug text. Incomplete runs retain available responses and null missing responses
+before asserting ineligibility. A preflight or write failure may leave partial
+files and is ineligible.
+
+A run of record reports those files and digests, suite commit/tree, image,
+deployment, executable digest and source provenance, protocol/adapter/node
+versions, policy origins and startup arguments, eleven-exchange census, four
+classifications, exact refusal texts/readbacks, wall and infrastructure failures.
+Relay/mempool policy is observed; the block floor remains a source declaration.
+The control requires exact mined readback. Negatives require the exact verifying
+equality error, a mined same-coin control and replayed one-coordinate pairs:
+birth stays zero, sponsor hash equality is checked, wrong version preserves the
+payload, and program/displacement rows preserve version one. The three equality
+offsets are 8, 15 and 16; an undifferentiated error alone identifies none of them.
+The classification is coordinate-based isolation, not a native opcode trace or
+independent ECDSA verification. Refused relay is not direct-block rejection.
+Ambiguous or sponsor-site errors, earlier-layer refusals (including version-zero
+policy refusal), missing readbacks, malformed links, incomplete responses or open
+rows make the run ineligible. Repair such a subject or stop its obligation;
+capture eligibility never constitutes admission. No issuance, peg-in, funding
+floor, native stack metrics or key-dependent measurement is claimed.
