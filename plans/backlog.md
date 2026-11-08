@@ -467,7 +467,7 @@ credentials, or production authority.
 | Phase 4 | HISTORICAL | exit recorded in §2.8, the Phase-4 card, [the Guide-12 completion record](history/guide-12-completion-report.md), and the [closed task rows](history/backlog-history.md#exited-phase-task-rows) |
 | Phase 5 | HISTORICAL | exit recorded in §2.20 and §2.21, the countersigned assessment on the Phase-5 card, [the review archive](reviews/review-9-0.5.17-dev.md), and the [closed task rows](history/backlog-history.md#exited-phase-task-rows) |
 | Phase 6 | HISTORICAL | exit recorded in §2.26, the exit assessment on the Phase-6 card, the gate record at (`sec:phase6:gate-record`), and the [closed task rows](history/backlog-history.md#phase-6-closed-task-rows) |
-| Phase 7 | Active | the Phase-7 card and chartered execution guide `plans/guides/guide_fifteen.md`; Wave 0 first, new semantics held until its exit |
+| Phase 7 | Active | Wave 0 has its completed baseline at (`rec:backlog:wave0-baseline`), and Wave-1 realization routes are adopted as rulings 158 to 165 at (`rule:phase7:wave1-realization-rulings`), with selections awaiting their stated acceptance conditions and no realization or evidence claimed. |
 
 ### 4.2 Historical finding families · `tab:backlog:historical-findings`
 
