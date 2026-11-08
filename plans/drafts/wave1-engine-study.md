@@ -212,6 +212,8 @@ The pilot helper always binds the two-operation realization (`packages/compiler/
 
 ## 5. Ambiguities and open questions · `sec:w1engine:questions`
 
+The five proposed answers below were adopted as rulings 166 to 170 at (`rule:phase7:wave1-engine-rulings`), which now govern.
+
 **Question (Interface authority and location)** · `q:w1engine:authority`
 
 Proposed answer: keep record types crate-private in compiler and both lowering modules reached through `bind_input`, with the fixed owner type carrying statically bound re-derivation as described in B. Each lowering reads only its owner-validated declarations; compiler file location does not transfer semantic ownership. The dependency direction remains architecture → realization → compiler. For production, put record types below both producers: realization if both declarations stay there, or an interface package when a separate keyed crate becomes a real second producer. A trait in compiler implemented by realization would create a cycle. Preserve today's independent validation depth: `derive_expectations` re-runs every stage and rebuilds the source (`packages/compiler/src/analyzed_validate.rs:334`, `packages/compiler/src/analyzed_validate.rs:398`); re-run lowering from retained source, never trust a digest or flag. This proposed answer authorizes no new package and awaits disposition.
