@@ -953,5 +953,38 @@ mod tracing_tests {
                 .iter()
                 .all(|record| record["level"] != "WARN" && record["level"] != "ERROR")
         );
+        let mut plain_capture = NativeOperationCapture::default();
+        let plain_failure: Result<Vec<u8>, _> =
+            super::common::trace_ceremony("state", "maturity_native", &mut plain_capture, |_| {
+                Err(NativeConformanceError::ExecutorTimeout)
+            });
+        let mut traced_capture = NativeOperationCapture::default();
+        let (traced_failure, failure_records): (Result<Vec<u8>, _>, _) = capture(|| {
+            super::common::trace_ceremony("state", "maturity_native", &mut traced_capture, |_| {
+                Err(NativeConformanceError::ExecutorTimeout)
+            })
+        });
+        assert!(matches!(
+            plain_failure,
+            Err(NativeConformanceError::ExecutorTimeout)
+        ));
+        assert!(matches!(
+            traced_failure,
+            Err(NativeConformanceError::ExecutorTimeout)
+        ));
+        assert_eq!(plain_capture, traced_capture);
+        let completion = failure_records
+            .iter()
+            .find(|record| record["fields"]["message"] == "ceremony completed")
+            .expect("ceremony failure completion");
+        assert_eq!(completion["target"], "vectors::native_test");
+        assert_eq!(completion["level"], "INFO");
+        assert_eq!(completion["fields"]["outcome"], "failed");
+        assert_eq!(completion["fields"]["error_kind"], "executor_timeout");
+        assert!(
+            failure_records
+                .iter()
+                .all(|record| record["level"] != "WARN" && record["level"] != "ERROR")
+        );
     }
 }

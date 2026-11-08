@@ -80,11 +80,11 @@ pub fn trace_ceremony<T>(
             refusal_kind = "operation_plan_refused",
             "ceremony completed"
         ),
-        Err(_) => tracing::info!(
+        Err(error) => tracing::info!(
             target: "vectors::native_test",
             family,
             outcome = "failed",
-            error_kind = "executor",
+            error_kind = error.tracing_kind(),
             "ceremony completed"
         ),
     }
