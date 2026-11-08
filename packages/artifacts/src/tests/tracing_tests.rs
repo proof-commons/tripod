@@ -8,10 +8,7 @@ use serde_json::Value;
 use tracing_subscriber::fmt::format::FmtSpan;
 
 use super::fixture_census;
-use crate::{
-    ARTIFACT_NAMES, ArtifactFreshness, LABEL_REFUSAL_KINDS, MANIFEST_REFUSAL_KINDS, check,
-    expected_artifacts, label_refusal_kind, manifest_refusal_kind, weld,
-};
+use crate::{ARTIFACT_NAMES, ArtifactFreshness, check, expected_artifacts, weld};
 
 static CAPTURE_INSTALL: Mutex<()> = Mutex::new(());
 const CAPTURE_CHILD_ENV: &str = "TRIPOD_ARTIFACTS_CAPTURE_CHILD";
@@ -117,7 +114,12 @@ fn error_text<T>(result: anyhow::Result<T>) -> String {
 }
 
 #[test]
-fn refusal_kind_tables_use_snake_case_wire_names() {
+fn shared_refusal_names_use_snake_case_wire_names() {
+    use architecture::{
+        AssetId, BoundId, DecisionId, ManifestError, ObjectId, OperationId, QuantityId, RootId,
+    };
+    use labels::LabelErrorCode;
+
     let valid = |name: &str| {
         name.split('_').all(|word| {
             word.bytes()
@@ -128,16 +130,89 @@ fn refusal_kind_tables_use_snake_case_wire_names() {
                     .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
         })
     };
-    assert_eq!(MANIFEST_REFUSAL_KINDS.len(), 12);
-    assert_eq!(LABEL_REFUSAL_KINDS.len(), 29);
-    for name in MANIFEST_REFUSAL_KINDS.iter().chain(LABEL_REFUSAL_KINDS) {
+    let manifest_errors = [
+        ManifestError::DuplicateId {
+            category: "asset",
+            id: "test".to_owned(),
+        },
+        ManifestError::MissingId {
+            category: "asset",
+            id: "test".to_owned(),
+        },
+        ManifestError::InvalidAsset {
+            asset: AssetId::Lbtc,
+            reason: "test",
+        },
+        ManifestError::InvalidRoot {
+            root: RootId::State,
+            reason: "test",
+        },
+        ManifestError::InvalidObject {
+            object: ObjectId::State,
+            reason: "test",
+        },
+        ManifestError::InvalidOperation {
+            operation: OperationId::Cycle,
+            reason: "test",
+        },
+        ManifestError::InvalidQuantity {
+            quantity: QuantityId::Floor,
+            reason: "test",
+        },
+        ManifestError::InvalidBound {
+            bound: BoundId::AdmissionBatchMax,
+            reason: "test",
+        },
+        ManifestError::InvalidDecision {
+            decision: DecisionId::NoOnchainAttestationAccumulator,
+            reason: "test",
+        },
+        ManifestError::InvalidDocument { reason: "test" },
+        ManifestError::UnpinnedSpecification,
+        ManifestError::DraftPublication,
+    ];
+    let label_codes = [
+        LabelErrorCode::Io,
+        LabelErrorCode::UnclosedMarkdownFence,
+        LabelErrorCode::NestedMarkdownFence,
+        LabelErrorCode::UnclosedInlineCode,
+        LabelErrorCode::AsymmetricCitation,
+        LabelErrorCode::MalformedCitationGroup,
+        LabelErrorCode::DuplicateMint,
+        LabelErrorCode::MissingMint,
+        LabelErrorCode::UnknownOwner,
+        LabelErrorCode::UnknownImportedLabel,
+        LabelErrorCode::InvalidImportedCitationForm,
+        LabelErrorCode::InvalidLabel,
+        LabelErrorCode::InvalidStatusTag,
+        LabelErrorCode::DuplicateLatexLabel,
+        LabelErrorCode::ArchitectureLabelMissing,
+        LabelErrorCode::AttestationAnchorSetMismatch,
+        LabelErrorCode::AttestationIndexStale,
+        LabelErrorCode::GeneratedRegisterMissing,
+        LabelErrorCode::GeneratedRegisterStale,
+        LabelErrorCode::CensusStale,
+        LabelErrorCode::CensusUnreadable,
+        LabelErrorCode::UnknownKind,
+        LabelErrorCode::ReservedKindWithoutProfile,
+        LabelErrorCode::InventoryKindOutOfPlace,
+        LabelErrorCode::KindVocabularyDrift,
+        LabelErrorCode::UncataloguedHeadPair,
+        LabelErrorCode::UnregisteredOwner,
+        LabelErrorCode::NearMissSpan,
+        LabelErrorCode::MalformedLabelShape,
+    ];
+    assert_eq!(manifest_errors.len(), 12);
+    assert_eq!(label_codes.len(), 29);
+    for name in manifest_errors
+        .iter()
+        .map(ManifestError::name)
+        .chain(label_codes.iter().copied().map(LabelErrorCode::as_str))
+    {
         assert!(valid(name), "invalid refusal_kind: {name}");
     }
-    assert_eq!(
-        manifest_refusal_kind(&architecture::ManifestError::DraftPublication),
-        "draft_publication"
-    );
-    assert_eq!(label_refusal_kind(labels::LabelErrorCode::Io), "io");
+    assert_eq!(ManifestError::DraftPublication.name(), "draft_publication");
+    assert_eq!(LabelErrorCode::Io.as_str(), "io");
 }
 
 #[test]
