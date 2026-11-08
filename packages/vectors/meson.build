@@ -18,6 +18,8 @@ vectors_source_files = files(
   'src/first_party.rs',
   'src/fixture.rs',
   'src/historical_candidate.rs',
+  'src/keyed_birth.rs',
+  'src/keyed_birth/tests.rs',
   'src/confidential_materializer.rs',
   'src/confidential_predecessor.rs',
   'src/confidential_sponsor_reserve.rs',

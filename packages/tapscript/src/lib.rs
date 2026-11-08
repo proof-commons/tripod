@@ -6,6 +6,7 @@ pub mod bundle;
 pub mod capability;
 pub mod error;
 pub mod instruction;
+pub mod keyed_pattern;
 pub mod live_bundle;
 pub mod live_constructor;
 pub mod live_pattern;
@@ -54,6 +55,7 @@ pub use capability::{
 };
 pub use error::TapscriptError;
 pub use instruction::{StackItem, TapscriptInstruction};
+pub use keyed_pattern::born_first_fragment;
 pub use live_bundle::{
     CandidateRelocatableLiveTransferBundle, LiveBundleRefusal, LiveBundleSymbol, LiveLeafProgram,
     LiveRelocation, LiveRelocationSite, LiveSharedLeafProof, LiveSymbolEntry,

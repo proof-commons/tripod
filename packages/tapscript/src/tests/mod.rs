@@ -46,6 +46,7 @@ mod compact_validation_tests;
 mod ctf_reproductions;
 mod guide12_reproductions;
 mod guide13_reproductions;
+mod keyed_pattern_tests;
 mod live_bundle_tests;
 mod live_constructor_tests;
 mod live_pattern_tests;
