@@ -1,0 +1,7 @@
+keyed-continuation-run-schema 1
+wall-seconds 0.873
+eligible-for-review true
+admitted false
+executor-completed true
+replay-refusal None
+classes [MinedControl, ProgramEqualityRefusal, VersionEqualityRefusal, ProgramEqualityRefusal]

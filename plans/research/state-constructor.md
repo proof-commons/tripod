@@ -527,43 +527,15 @@ remains the open third foundational prototype.
 
 ## Keyed-covenant evidence · `sec:state-constructor:keyed-evidence`
 
-This is the distinct Wave-1 keyed-covenant evidence set required by
-(`obl:guide15-exec:measurement-home`). It does not inherit the STATE prototype's
-acceptance or discharge later keyed measurements.
+This is the distinct Wave-1 keyed-covenant evidence set required by (`obl:guide15-exec:measurement-home`). It does not inherit the STATE prototype's acceptance or discharge later keyed measurements.
 
 ### Measurement (a): born-first · `rec:state-constructor:keyed-birth`
 
-The archive is `packages/vectors/fixtures/keyed-birth-run-of-record/`: the capture,
-outer timing, ceremony timing, `RUN-REPORT` and original `MANIFEST.sha256` were
-copied from run `w20c1-birth-20261108T151743Z`, with all five node-side SHA-256
-digests verified before and after transfer into the fixture directory. The
-manifest covers the capture, outer timing and report; the reader independently
-pins all five files, including the ceremony timing omitted by that manifest.
-`packages/vectors/src/keyed_birth_corpus.rs` decodes the capture and the complete
-fourteen-response Debug carrier retained in `RUN-REPORT`, checks their links and
-projections, replays `replay_birth_capture`, and rebuilds `Wave1TargetPacket` and
-`BirthCampaignManifest`. The immutable capture still says `admitted false`:
-admission is the reader's result, not an edit to the observation.
+The archive is `packages/vectors/fixtures/keyed-birth-run-of-record/`: the capture, outer timing, ceremony timing, `RUN-REPORT` and original `MANIFEST.sha256` were copied from run `w20c1-birth-20261108T151743Z`, with all five node-side SHA-256 digests verified before and after transfer into the fixture directory. The manifest covers the capture, outer timing and report; the reader independently pins all five files, including the ceremony timing omitted by that manifest. `packages/vectors/src/keyed_birth_corpus.rs` decodes the capture and the complete fourteen-response Debug carrier retained in `RUN-REPORT`, checks their links and projections, replays `replay_birth_capture`, and rebuilds `Wave1TargetPacket` and `BirthCampaignManifest`. The immutable capture still says `admitted false`: admission is the reader's result, not an edit to the observation.
 
-This capture omitted complete executor responses from its exchange records, so
-admission uses an archive-specific decoder for the run report's Debug transcript.
-Later keyed captures retain each complete response in the capture itself in its
-wire JSON form, so their admission readers read no debug text.
+This capture omitted complete executor responses from its exchange records, so admission uses an archive-specific decoder for the run report's Debug transcript. Later keyed captures retain each complete response in the capture itself in its wire JSON form, so their admission readers read no debug text.
 
-Bindings: reviewed `elements-tapscript-v2`, development `elementsregtest`, leaf
-version 196, protocol 8, adapter `elements-native-executor` 2.1.0, node Elements
-Core daemon v28.99.0. The exact node revision, functional-framework revision,
-intended source tip, executable digest and retained `PROVENANCE.txt` content are
-bound in the capture's handshake and `executable_provenance`; these are source
-provenance, not protocol identities. The capture binds the observed network and
-genesis to the development declaration and retains the active domain/leaf and
-capability census. Execution used `localhost/tripod-native:f44` and
-`/elements/bin/elementsd`. Policy is separate: explicit policy asset,
-`node-defaults` are declared selections; exact startup arguments are retained
-observations, and relay and mempool floors are
-observed at 100 sat/kvB each; block floor 100 sat/kvB is declared by pinned-source
-`DEFAULT_BLOCK_MIN_TX_FEE`, with no override, not a node observation. The reader
-checks that every response reports the same policy and startup arguments.
+Bindings: reviewed `elements-tapscript-v2`, development `elementsregtest`, leaf version 196, protocol 8, adapter `elements-native-executor` 2.1.0, node Elements Core daemon v28.99.0. The exact node revision, functional-framework revision, intended source tip, executable digest and retained `PROVENANCE.txt` content are bound in the capture's handshake and `executable_provenance`; these are source provenance, not protocol identities. The capture binds the observed network and genesis to the development declaration and retains the active domain/leaf and capability census. Execution used `localhost/tripod-native:f44` and `/elements/bin/elementsd`. Policy is separate: explicit policy asset, `node-defaults` are declared selections; exact startup arguments are retained observations, and relay and mempool floors are observed at 100 sat/kvB each; block floor 100 sat/kvB is declared by pinned-source `DEFAULT_BLOCK_MIN_TX_FEE`, with no override, not a node observation. The reader checks that every response reports the same policy and startup arguments.
 
 | Subject | Spent output index | Current input index | Admission result |
 | --- | --- | --- | --- |
@@ -572,51 +544,35 @@ checks that every response reports the same policy and startup arguments.
 | A2 | 0 | 1 | Mined control, height 7 |
 | A3 | 1 | 1 | Born-first `EqualVerify` refusal, paired with A2 |
 
-Both refusals retain exactly `mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)`
-as their relay reason and a script-path rejection
-class. Attribution requires the exact birth leaf's sole equality at byte offset
-8, the accepted pair, and exclusion of the sponsor's own equality/signature
-sites. A different or ambiguous site remains open. The archive retains the
-consensus route and evidence, txid/wtxid, block hashes, heights, and complete raw
-mined bytes; controls use the `relay-and-template` route. Four mined readbacks
-occur at heights 3 and 4 for the first parent/control and 6 and 7 for the second.
-There are fourteen exchanges: two fundings, six signings, two parents, two
-controls accepted (twelve acceptances), and the two refusals. Negatives were
-constructed and signed before their controls. Each pair fixes its parent,
-programs, assets, values, successors and funding outpoint; the reserved funding
-output is index 1 in both placements, with fresh funding for the second pair.
-Only the spent output index changes per negative; transaction identities,
-sponsor authorization and observation results are declared collateral. Sponsor
-outputs are 100,000 sat each, equal parent covenant outputs 10,000 sat each,
-and explicit parent/child fees 1,000 sat: fixture choices, not funding floors.
+Both refusals retain exactly `mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)` as their relay reason and a script-path rejection class. Attribution requires the exact birth leaf's sole equality at byte offset 8, the accepted pair, and exclusion of the sponsor's own equality/signature sites. A different or ambiguous site remains open. The archive retains the consensus route and evidence, txid/wtxid, block hashes, heights, and complete raw mined bytes; controls use the `relay-and-template` route. Four mined readbacks occur at heights 3 and 4 for the first parent/control and 6 and 7 for the second. There are fourteen exchanges: two fundings, six signings, two parents, two controls accepted (twelve acceptances), and the two refusals. Negatives were constructed and signed before their controls. Each pair fixes its parent, programs, assets, values, successors and funding outpoint; the reserved funding output is index 1 in both placements, with fresh funding for the second pair. Only the spent output index changes per negative; transaction identities, sponsor authorization and observation results are declared collateral. Sponsor outputs are 100,000 sat each, equal parent covenant outputs 10,000 sat each, and explicit parent/child fees 1,000 sat: fixture choices, not funding floors.
 
-Retained walls are 0.984 s in `RUN-REPORT` and 0.985 s in the outer timing;
-the ceremony sidecar records passed without a numeric wall. The orchestrator's
-capture report gives 0.99 s for the ignored test and 0.2 s node startup, with
-one transient RPC connection retry before startup. Those infrastructure details
-are not subject verdicts or additional measured covenant dimensions.
+Retained walls are 0.984 s in `RUN-REPORT` and 0.985 s in the outer timing; the ceremony sidecar records passed without a numeric wall. The orchestrator's capture report gives 0.99 s for the ignored test and 0.2 s node startup, with one transient RPC connection retry before startup. Those infrastructure details are not subject verdicts or additional measured covenant dimensions.
 
-**Pinned-source reading (not a native observation):** paths below are relative
-to the Elements source root identified by the retained executable provenance,
-read on the node at `/var/home/tripod/loops/toolchains/elements/b7fc5d08/src`.
-`src/script/interpreter.cpp:1836` pushes the selected input's txid, calls
-`push4_le(stack, inp.prevout.n)` at line 1840, then pushes a separate one-byte
-flag item at line 1843. `src/script/interpreter.cpp:86` defines `push4_le` using
-little-endian conversion and the four-byte `uint32_t` width, not script-number
-encoding. `src/script/interpreter.cpp:137` derives the flag item separately
-from asset issuance and peg-in state. `src/primitives/transaction.h:41` and
-`:45` declare the two high flag bits; `src/primitives/transaction.h:50` gives
-the index mask `0x3fffffff`. For non-coinbase Elements inputs, deserialization
-extracts those flags at lines 217 and 220, and stores the masked index in
-`prevout.n` at line 226. Thus inspection reports the index without issuance or
-peg-in flag bits, followed by the separate flags item. The coinbase exception
-at lines 209–213 is outside these subjects.
+**Pinned-source reading (not a native observation):** paths below are relative to the Elements source root identified by the retained executable provenance, read on the node at `/var/home/tripod/loops/toolchains/elements/b7fc5d08/src`. `src/script/interpreter.cpp:1836` pushes the selected input's txid, calls `push4_le(stack, inp.prevout.n)` at line 1840, then pushes a separate one-byte flag item at line 1843. `src/script/interpreter.cpp:86` defines `push4_le` using little-endian conversion and the four-byte `uint32_t` width, not script-number encoding. `src/script/interpreter.cpp:137` derives the flag item separately from asset issuance and peg-in state. `src/primitives/transaction.h:41` and `:45` declare the two high flag bits; `src/primitives/transaction.h:50` gives the index mask `0x3fffffff`. For non-coinbase Elements inputs, deserialization extracts those flags at lines 217 and 220, and stores the masked index in `prevout.n` at line 226. Thus inspection reports the index without issuance or peg-in flag bits, followed by the separate flags item. The coinbase exception at lines 209–213 is outside these subjects.
 
-Absent dimensions: no issuance subjects, no peg-in subjects, and no native
-stack-depth/altstack/element/budget measurements. Static fragment stack checks
-are separate evidence. No funding floor, authenticated current-program
-equality, sole-leaf census, whole keyed realization, or measurements (b) onward
-are admitted here. Current-input outpoint inspection is accepted as the
-born-first realization mechanism because the four admitted subjects and the
-pinned index/flag reading meet the acceptance condition named by ruling 160
-(`rec:phase7:wave1-birth-admission`). The bite-1.0 gate is not closed.
+Absent dimensions: no issuance subjects, no peg-in subjects, and no native stack-depth/altstack/element/budget measurements. Static fragment stack checks are separate evidence. No funding floor, authenticated current-program equality, sole-leaf census, whole keyed realization, or measurements (b) onward are admitted here. Current-input outpoint inspection is accepted as the born-first realization mechanism because the four admitted subjects and the pinned index/flag reading meet the acceptance condition named by ruling 160 (`rec:phase7:wave1-birth-admission`). The bite-1.0 gate is not closed.
+
+### Measurement (b), key-free continuation · `rec:state-constructor:keyfree-continuation`
+
+The second entry of the distinct keyed-covenant evidence set is the key-free part of measurement (b), retained at `packages/vectors/fixtures/keyed-continuation-run-of-record/` from run `w20c1-cont-20261108T175223Z` on `0.7.80-dev`. All five node-side SHA-256 digests were verified before and after moving the capture, outer timing, ceremony timing, `RUN-REPORT` and `MANIFEST.sha256` into the archive. The manifest covers all four other files; the reader independently pins all five. Original framing bytes and the capture's `admitted false` standing are unchanged. Admission is the result of `packages/vectors/src/keyed_continuation_corpus.rs`: it shares the birth reader's manifest and capture-record parsing, decodes complete responses from the capture's wire JSON journal, checks their links and outer projections, and replays `replay_continuation_capture`. No debug transcript supplies any response.
+
+Bindings: reviewed `elements-tapscript-v2`, development `elementsregtest`, leaf version 196, protocol 8, adapter `elements-native-executor` 2.1.0, and Elements Core daemon v28.99.0. The exact node/framework revisions, intended source tip, executable digest, `PROVENANCE.txt` content, network/genesis identifiers and active domain/leaf/capability census are bound by the retained handshake, environment, executable provenance and outer header. The reader rebuilds `Wave1TargetPacket` and `ContinuationCampaignManifest` from these facts. Execution used `localhost/tripod-native:f44` and `/elements/bin/elementsd`. Policy remains separate: explicit policy asset and `node-defaults` are declared selections; startup arguments are observed. Relay and mempool floors are observed at 100 sat/kvB each; the 100 sat/kvB block floor is declared by pinned-source `DEFAULT_BLOCK_MIN_TX_FEE`, without override. All eleven responses must agree on policy and startup arguments, and all six policy facts retain their origins.
+
+| Subject | Changed coordinate beside control | Admission result |
+| --- | --- | --- |
+| Control | None | Mined control, height 4 |
+| Wrong program | Output 0 program payload | Program equality refusal |
+| Wrong version | Output 0 witness version, payload unchanged | Version equality refusal |
+| Displaced successor | Permutation of the two complete spendable outputs | Program equality refusal |
+
+There are eleven exchanges, terminal `complete`: sponsor funding, parent signing and submission, then signing/submission of wrong program, wrong version, displaced successor and finally the same-coin control. Eight exchanges are accepted; all three negatives are script-path rejections with route `refused` and exact relay reason `mandatory-script-verify-flag-failed (Script failed an OP_EQUALVERIFY operation)`. The version-zero output therefore reached script, not an earlier policy refusal. The parent mined at height 3 and the control at height 4, both by `relay-and-template`, with exact raw readback, txid/wtxid and block identity retained. Refused relay is not a direct-block rejection observation.
+
+Every child spends parent output 0 with the same reserve at sponsor output 1; birth remains valid. The primary leaf is born first, continue first and final true under the reviewed leaf version and fixed unspendable internal key. The alternative leaf is reconstructed by inserting empty push/drop before final true, never supplied as a program. The manifest fixes the parent, predecessor, funding, assets, amounts, fee and leaf recipes within each pair; transaction identities, sponsor authorization and observations are declared collateral, and the displaced row exchanges complete outputs. Sponsor outputs are 100,000 sat; parent programs receive 10,000 sat each with 79,000 sat change and 1,000 sat fee; children have a 10,000 sat successor, 99,000 sat change and 1,000 sat fee. These are fixture choices, not funding floors.
+
+The shared-site limit applies to every row: the exact error does not identify one of equality offsets 8, 15 and 16. Reconstructed recipes, valid birth, checked sponsor hash equality and the mined one-coordinate control independently isolate version versus program comparison. This is neither a native opcode trace nor independent ECDSA verification. Ambiguous, earlier-layer or unmatched outcomes remain open; this archive has none.
+
+**Pinned-source reading (not an observation):** the Elements source root is `/var/home/tripod/loops/toolchains/elements/b7fc5d08/src`, at the exact intended tip bound by the retained provenance. `src/script/interpreter.cpp:1856`–`:1859` calls `pushspk` on the spent output's script, and `src/script/interpreter.cpp:1948`–`:1951` calls it on the selected transaction output's script. The shared helper at `src/script/interpreter.cpp:124`–`:135` tests `IsWitnessProgram`; lines 129–130 push the program bytes first, then the witness version as a script number in a separate top item. For a non-witness script, lines 132–133 instead push the cached script hash and script-number `-1`. Thus the wrong-version subject changes the version item while preserving the payload; wrong-program and displacement change the payload item while preserving version one. This reading supports the coordinate isolation, not a claim that the error text reveals the executing equality site.
+
+The report and outer timing both retain 0.873 s; the ignored test was reported as 0.87 s, node startup as 0.2 s, with one transient RPC connect retry before readiness. The ceremony sidecar records passed without a numeric wall. Startup and retry are infrastructure facts, not subject verdicts.
+
+Absent dimensions: wrong-key, mixed-key and coexistence rows, measurement (c), the full leaf/key-path census and its constructor premises, and native stack metrics. No issuance, peg-in or funding-floor coverage is claimed. Ruling 161's acceptance condition is not yet met: it requires measurement (b)'s key rows and measurement (c), which wait for the constructor (`rec:phase7:wave1-continuation-keyfree-admission`). The bite-1.0 gate remains open.

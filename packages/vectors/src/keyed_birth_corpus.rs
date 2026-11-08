@@ -164,52 +164,18 @@ pub fn admit_birth_archive(archive: BirthArchive<'_>) -> Result<AdmittedBirthCam
 }
 
 fn admit(archive: BirthArchive<'_>) -> Result<AdmittedBirthCampaign> {
-    let expected_manifest = format!(
-        "{}  {CAPTURE_NAME}\n{}  {TIMING_NAME}\n{}  RUN-REPORT\n",
-        hex(&sha256(archive.capture.as_bytes())),
-        hex(&sha256(archive.timing.as_bytes())),
-        hex(&sha256(archive.report.as_bytes()))
-    );
     require(
-        archive.manifest == expected_manifest
+        archive.manifest
+            == manifest_text(&[
+                (CAPTURE_NAME, archive.capture),
+                (TIMING_NAME, archive.timing),
+                ("RUN-REPORT", archive.report),
+            ])
             && archive.capture_timing == CAPTURE_TIMING
             && archive.timing == TIMING,
         BirthAdmissionRefusal::Digest,
     )?;
-    let (content, footer) = archive
-        .capture
-        .split_once("capture-content-sha256 ")
-        .ok_or(BirthAdmissionRefusal::Dimension)?;
-    require(
-        footer
-            == format!(
-                "{}\nnative-capture-end report\n",
-                hex(&sha256(content.as_bytes()))
-            ),
-        BirthAdmissionRefusal::Digest,
-    )?;
-    let (header, operations) = content
-        .split_once("operation 0 begin\n")
-        .ok_or(BirthAdmissionRefusal::Dimension)?;
-    let reference_header = CAPTURE
-        .split_once("operation 0 begin\n")
-        .ok_or(BirthAdmissionRefusal::Dimension)?
-        .0;
-    // This run has a fixed environment, capability census and deployment. The
-    // comparison also rejects unknown, duplicated and omitted header dimensions.
-    require(header == reference_header, BirthAdmissionRefusal::Binding)?;
-    let (operation_text, tail) = operations
-        .split_once("legacy-rendering ")
-        .ok_or(BirthAdmissionRefusal::Dimension)?;
-    let (legacy, ending) = tail
-        .split_once('\n')
-        .ok_or(BirthAdmissionRefusal::Dimension)?;
-    require(
-        ending == "terminal-state complete\nrun-id-input end\n",
-        BirthAdmissionRefusal::Dimension,
-    )?;
-    let payload: Value = serde_json::from_str(&decode_text(legacy)?)
-        .map_err(|_| BirthAdmissionRefusal::Dimension)?;
+    let (header, operation_text, payload) = capture_record(archive.capture, CAPTURE)?;
     require(
         payload["keyed_birth_capture_schema"] == 1
             && payload["eligible_for_review"] == true
@@ -253,7 +219,59 @@ fn admit(archive: BirthArchive<'_>) -> Result<AdmittedBirthCampaign> {
     })
 }
 
-fn policy_facts(policy: &BirthPolicy) -> Vec<BirthPolicyFact> {
+/// Exact manifest rendering shared by retained keyed archives.
+pub(crate) fn manifest_text(files: &[(&str, &str)]) -> String {
+    use std::fmt::Write as _;
+    let mut result = String::new();
+    for (name, bytes) in files {
+        let _ = writeln!(result, "{}  {name}", hex(&sha256(bytes.as_bytes())));
+    }
+    result
+}
+
+pub(crate) fn capture_payload(capture: &str) -> Result<Value> {
+    serde_json::from_str(&decode_text(single_field(capture, "legacy-rendering")?)?)
+        .map_err(|_| BirthAdmissionRefusal::Dimension)
+}
+
+/// Verify framing, content digest and the archive's exact reviewed header.
+pub(crate) fn capture_record<'a>(
+    capture: &'a str,
+    reference: &str,
+) -> Result<(&'a str, &'a str, Value)> {
+    let (content, footer) = capture
+        .split_once("capture-content-sha256 ")
+        .ok_or(BirthAdmissionRefusal::Dimension)?;
+    require(
+        footer
+            == format!(
+                "{}\nnative-capture-end report\n",
+                hex(&sha256(content.as_bytes()))
+            ),
+        BirthAdmissionRefusal::Digest,
+    )?;
+    let (header, operations) = content
+        .split_once("operation 0 begin\n")
+        .ok_or(BirthAdmissionRefusal::Dimension)?;
+    let reference_header = reference
+        .split_once("operation 0 begin\n")
+        .ok_or(BirthAdmissionRefusal::Dimension)?
+        .0;
+    require(header == reference_header, BirthAdmissionRefusal::Binding)?;
+    let (operation_text, tail) = operations
+        .split_once("legacy-rendering ")
+        .ok_or(BirthAdmissionRefusal::Dimension)?;
+    let (_, ending) = tail
+        .split_once('\n')
+        .ok_or(BirthAdmissionRefusal::Dimension)?;
+    require(
+        ending == "terminal-state complete\nrun-id-input end\n",
+        BirthAdmissionRefusal::Dimension,
+    )?;
+    Ok((header, operation_text, capture_payload(content)?))
+}
+
+pub(crate) fn policy_facts(policy: &BirthPolicy) -> Vec<BirthPolicyFact> {
     vec![
         BirthPolicyFact {
             field: "representation",
@@ -271,25 +289,25 @@ fn policy_facts(policy: &BirthPolicy) -> Vec<BirthPolicyFact> {
             field: "startup_arguments",
             value: serde_json::json!(policy.startup_arguments),
             origin: PolicyFactOrigin::Observed,
-            source: "all fourteen response-detail policy.start_arguments",
+            source: "all retained response-detail policy.start_arguments",
         },
         BirthPolicyFact {
             field: "relay",
             value: Value::from(policy.relay.satoshis_per_kvb),
             origin: policy.relay.origin,
-            source: "all fourteen response-detail policy.relay and relay_provenance",
+            source: "all retained response-detail policy.relay and relay_provenance",
         },
         BirthPolicyFact {
             field: "mempool",
             value: Value::from(policy.mempool.satoshis_per_kvb),
             origin: policy.mempool.origin,
-            source: "all fourteen response-detail policy.mempool and relay_provenance",
+            source: "all retained response-detail policy.mempool and relay_provenance",
         },
         BirthPolicyFact {
             field: "block",
             value: Value::from(policy.block.satoshis_per_kvb),
             origin: policy.block.origin,
-            source: "all fourteen response-detail policy.block, block_identifier and block_provenance",
+            source: "all retained response-detail policy.block, block_identifier and block_provenance",
         },
     ]
 }
@@ -308,9 +326,26 @@ fn decode_operations(
     text: &str,
     mut responses: BTreeMap<String, NativeOperationResponse>,
 ) -> Result<Journal> {
+    let exchanges = (0..14)
+        .map(|ordinal| {
+            let name = format!("birth-{}-{}", ordinal / 7, ordinal % 7);
+            let response = responses
+                .remove(&name)
+                .ok_or(BirthAdmissionRefusal::Replay)?;
+            Ok((name, response))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    require(responses.is_empty(), BirthAdmissionRefusal::Dimension)?;
+    Ok(Journal(decode_operation_projections(text, &exchanges)?))
+}
+
+pub(crate) fn decode_operation_projections(
+    text: &str,
+    responses: &[(String, NativeOperationResponse)],
+) -> Result<Vec<(OperationStep, NativeOperationResponse)>> {
     let mut lines = text.lines();
     let mut exchanges = Vec::new();
-    for ordinal in 0..14 {
+    for (ordinal, (step_name, response)) in responses.iter().enumerate() {
         if ordinal != 0 {
             exact(&mut lines, &format!("operation {ordinal} begin"))?;
         }
@@ -328,11 +363,7 @@ fn decode_operations(
         let subject: OperationSubject =
             serde_json::from_str(&decode_text(field_line(&mut lines, "request-subject")?)?)
                 .map_err(|_| BirthAdmissionRefusal::Dimension)?;
-        let step_name = format!("birth-{}-{}", ordinal / 7, ordinal % 7);
-        let response = responses
-            .remove(&step_name)
-            .ok_or(BirthAdmissionRefusal::Replay)?;
-        let step = OperationStep::new(&step_name, subject);
+        let step = OperationStep::new(step_name, subject);
         require(
             step.case() == &response.case && response.schema == 8,
             BirthAdmissionRefusal::Replay,
@@ -381,16 +412,30 @@ fn decode_operations(
             exact(&mut lines, &format!("{field} none"))?;
         }
         exact(&mut lines, &format!("operation {ordinal} end"))?;
-        exchanges.push((step, response));
+        exchanges.push((step, response.clone()));
     }
-    require(
-        lines.next().is_none() && responses.is_empty(),
-        BirthAdmissionRefusal::Dimension,
-    )?;
-    Ok(Journal(exchanges))
+    require(lines.next().is_none(), BirthAdmissionRefusal::Dimension)?;
+    Ok(exchanges)
 }
 
 fn packet(header: &str, payload: &Value, journal: &Journal) -> Result<Wave1TargetPacket> {
+    let reference = capture_payload(CAPTURE)?;
+    bind_packet(
+        header,
+        payload,
+        &journal.0,
+        &reference,
+        &reference["rows"][0]["record"]["policy_and_startup"],
+    )
+}
+
+pub(crate) fn bind_packet(
+    header: &str,
+    payload: &Value,
+    exchanges: &[(OperationStep, NativeOperationResponse)],
+    reference: &Value,
+    reference_policy: &Value,
+) -> Result<Wave1TargetPacket> {
     let text = |key| decode_text(single_field(header, key)?);
     let target = reviewed_elements_tapscript().map_err(|_| BirthAdmissionRefusal::Binding)?;
     let network = text("deployment-network-id")?;
@@ -412,9 +457,6 @@ fn packet(header: &str, payload: &Value, journal: &Journal) -> Result<Wave1Targe
     )
     .map_err(|_| BirthAdmissionRefusal::Binding)?;
     let provenance = &payload["executable_provenance"];
-    let reference_legacy = single_field(CAPTURE, "legacy-rendering")?;
-    let reference: Value = serde_json::from_str(&decode_text(reference_legacy)?)
-        .map_err(|_| BirthAdmissionRefusal::Dimension)?;
     require(
         *provenance == reference["executable_provenance"],
         BirthAdmissionRefusal::Binding,
@@ -428,14 +470,11 @@ fn packet(header: &str, payload: &Value, journal: &Journal) -> Result<Wave1Targe
             && provenance_record.contains(&executable_sha),
         BirthAdmissionRefusal::Binding,
     )?;
-    let first = journal.0.first().ok_or(BirthAdmissionRefusal::Dimension)?;
+    let first = exchanges.first().ok_or(BirthAdmissionRefusal::Dimension)?;
     let detail = response_detail(&first.1)?;
     let policy = &detail["policy"];
-    require(
-        *policy == reference["rows"][0]["record"]["policy_and_startup"],
-        BirthAdmissionRefusal::Binding,
-    )?;
-    for (_, response) in &journal.0 {
+    require(policy == reference_policy, BirthAdmissionRefusal::Binding)?;
+    for (_, response) in exchanges {
         require(
             response_detail(response)?["policy"] == *policy,
             BirthAdmissionRefusal::Binding,
@@ -475,7 +514,7 @@ fn packet(header: &str, payload: &Value, journal: &Journal) -> Result<Wave1Targe
     }).map_err(|_| BirthAdmissionRefusal::Binding)
 }
 
-fn response_detail(response: &NativeOperationResponse) -> Result<Value> {
+pub(crate) fn response_detail(response: &NativeOperationResponse) -> Result<Value> {
     serde_json::from_str(
         response
             .observed_detail
@@ -612,7 +651,7 @@ impl DebugValue<'_> {
     }
 }
 
-const fn require(condition: bool, refusal: BirthAdmissionRefusal) -> Result<()> {
+pub(crate) const fn require(condition: bool, refusal: BirthAdmissionRefusal) -> Result<()> {
     if condition { Ok(()) } else { Err(refusal) }
 }
 fn string(value: &Value, key: &str) -> Result<String> {
@@ -621,7 +660,7 @@ fn string(value: &Value, key: &str) -> Result<String> {
         .map(str::to_owned)
         .ok_or(BirthAdmissionRefusal::Dimension)
 }
-fn single_field<'a>(text: &'a str, key: &str) -> Result<&'a str> {
+pub(crate) fn single_field<'a>(text: &'a str, key: &str) -> Result<&'a str> {
     let prefix = format!("{key} ");
     let mut matches = text.lines().filter_map(|line| line.strip_prefix(&prefix));
     let value = matches.next().ok_or(BirthAdmissionRefusal::Dimension)?;
@@ -651,7 +690,7 @@ fn decode_bytes(value: &str) -> Result<Vec<u8>> {
     )?;
     Ok(decoded)
 }
-fn decode_text(value: &str) -> Result<String> {
+pub(crate) fn decode_text(value: &str) -> Result<String> {
     String::from_utf8(decode_bytes(value)?).map_err(|_| BirthAdmissionRefusal::Dimension)
 }
 fn digest(value: &str) -> Result<[u8; 32]> {
@@ -679,7 +718,7 @@ fn unhex(value: &str) -> Result<Vec<u8>> {
         })
         .collect()
 }
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     bytes
         .iter()
