@@ -472,7 +472,7 @@ COMMAND_NAME = "elements-native-executor"
 
 # This adapter's own version, which is provenance for the transactions it
 # builds and is not the node's version.
-ADAPTER_VERSION = "2.1.0"
+ADAPTER_VERSION = "2.1.1"
 
 # This adapter speaks the revision declared by NATIVE_PROTOCOL_SCHEMA below.
 #
@@ -2275,6 +2275,14 @@ class DisposableNode:
         NAME and never a credential: the node's cookie stays inside the
         disposable datadir and is resolved by `elements-cli` from the same
         `-datadir`, exactly as for every other call here.
+
+        RPC arguments always use the client's -stdin channel, one argument
+        per line. Large transaction hex therefore never meets the operating
+        system's per-argument argv limit. Embedded line feeds cannot be
+        represented by this channel and are refused before a child starts;
+        JSON strings use escaped line feeds, not literal ones. Empty arguments
+        and trailing spaces are preserved. The method and routing options
+        remain on argv; no credential is introduced by this transport.
         """
         command = [
             self.elements_cli,
@@ -2284,16 +2292,20 @@ class DisposableNode:
         ]
         if wallet is not None:
             command.append("-rpcwallet=" + wallet)
+        if any("\n" in argument for argument in arguments):
+            raise AdapterError("node client argument contains a line feed")
+        command.append("-stdin")
         command.append(method)
-        command.extend(arguments)
+        input_text = "".join(argument + "\n" for argument in arguments)
         try:
             budgets = (1,) if method in SINGLE_BUDGET_METHODS else (1, 2)
             for multiplier in budgets:
                 started = time.monotonic()
                 try:
                     completed = subprocess.run(
-                        command, stdin=subprocess.DEVNULL, capture_output=True,
-                        text=True, check=False, timeout=RPC_CALL_BUDGET_SECONDS * multiplier,
+                        command, input=input_text, capture_output=True,
+                        encoding="utf-8", check=False,
+                        timeout=RPC_CALL_BUDGET_SECONDS * multiplier,
                     )
                     break
                 except subprocess.TimeoutExpired:

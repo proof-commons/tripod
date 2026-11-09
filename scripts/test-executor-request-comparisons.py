@@ -15,7 +15,7 @@ import sys
 import types
 
 
-SOURCE_SHA256 = "a0edebf53cdfa4c95e4658711ced62be280b5891ea49140edfce32776a768b00"
+SOURCE_SHA256 = "e60999d8427b129b6caf82e2fefae553ec6ceb321327de726f08fc831bedc596"
 MAXIMUM = 4194304
 
 
@@ -41,7 +41,7 @@ def readings(root):
     adapter.__file__ = str(path)
     exec(compile(source, str(path), "exec"), adapter.__dict__)
     if (adapter.COMMAND_NAME, adapter.ADAPTER_VERSION, adapter.NATIVE_PROTOCOL_SCHEMA,
-            adapter.MAXIMUM_REQUEST_BYTES) != ("elements-native-executor", "2.1.0", 8, MAXIMUM):
+            adapter.MAXIMUM_REQUEST_BYTES) != ("elements-native-executor", "2.1.1", 8, MAXIMUM):
         raise ValueError("adapter identity or request bound differs")
     pairs = (
         ("blank-request", "RequestFraming", "RequestReader.read", b"{}\n", b"  \n",

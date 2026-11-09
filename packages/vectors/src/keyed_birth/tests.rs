@@ -134,6 +134,18 @@ fn subjects() -> Vec<BirthSubject> {
 }
 
 #[test]
+fn packet_binds_reviewed_rpc_transports_but_not_an_unreviewed_adapter() {
+    for version in ["2.1.0", "2.1.1"] {
+        let mut offered = packet();
+        offered.executor.adapter_version = version.into();
+        assert_eq!(rebind(offered.clone()), Ok(offered));
+    }
+    let mut offered = packet();
+    offered.executor.adapter_version = "2.1.2".into();
+    assert_eq!(rebind(offered), Err(BirthPacketRefusal::ExecutorBinding));
+}
+
+#[test]
 fn complete_packet_retains_target_deployment_and_separate_policy() {
     let packet = packet();
     assert!(packet.deployment().welded_to(packet.target()));

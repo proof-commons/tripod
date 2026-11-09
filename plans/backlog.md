@@ -2658,13 +2658,13 @@ The five request-entry comparisons complete (`step:wave0:bite-0-5-first-party-en
 | Identity field | Admitted reading |
 |---|---|
 | Adapter | `elements-native-executor` |
-| Adapter version / protocol revision | `2.1.0` / `8` |
-| Adapter source SHA-256 | `a0edebf53cdfa4c95e4658711ced62be280b5891ea49140edfce32776a768b00` |
+| Adapter version / protocol revision | `2.1.1` / `8` |
+| Adapter source SHA-256 | `e60999d8427b129b6caf82e2fefae553ec6ceb321327de726f08fc831bedc596` |
 | Interpreter version | `3.14.10`; carried as a reading, not a Rust identity pin |
 
 Every adapter source change requires deliberate re-pinning of `ADAPTER_SOURCE_SHA256` and the Python source pin, followed by a fresh `--emit` and both admission checks. An interpreter reading change also requires refreshing the fixture after a successful comparison; no interpreter patch version is an operand-validity premise. The source identity belongs to this admission and does not rewrite historical capture provenance.
 
-The five comparisons are re-admitted on the node of record's gate interpreter under this record's interpreter rule.
+The five comparisons are re-admitted on the node of record's gate interpreter under this record's interpreter rule. Adapter `2.1.1` sends every node-client RPC argument through `-stdin`, one argument per line, instead of placing transaction hex on the process command line; the offline executor boundary suite checks intact delivery of a 512 KiB argument, empty arguments and trailing spaces, and refusal of embedded line feeds before launch. Protocol revision `8` and the request/response schema are unchanged; historical captures retain their original executable provenance.
 
 All reader calls use maximum 4194304 and phase `request`. Bytes below are ASCII with a final line-feed where stated. The field comparison decodes each record with `RequestReader.read_object` and then uses the allowed tuple `schema`, `case`, `subject`. These controls establish acceptance at their named entries, not transaction execution or acceptance by later request semantics.
 

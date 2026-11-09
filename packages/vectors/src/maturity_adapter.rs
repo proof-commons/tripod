@@ -12,7 +12,7 @@ use crate::maturity_observer::decode_hex;
 
 /// Exact source identity of the adapter whose request entries were compared.
 pub const ADAPTER_SOURCE_SHA256: &str =
-    "a0edebf53cdfa4c95e4658711ced62be280b5891ea49140edfce32776a768b00";
+    "e60999d8427b129b6caf82e2fefae553ec6ceb321327de726f08fc831bedc596";
 const MAXIMUM: usize = 4 * 1024 * 1024;
 const FIXTURE: &[u8] = include_bytes!("../fixtures/adapter-request-comparisons/COMPARISONS");
 static ADMITTED: LazyLock<Result<Vec<MaturityAdapterComparison>, MaturityAdapterRefusal>> =
@@ -292,7 +292,7 @@ fn admit_row(
         return Err(Refusal::WrongRefusal);
     }
     if text(name_len, name)? != "elements-native-executor"
-        || text(version_len, version)? != "2.1.0"
+        || text(version_len, version)? != "2.1.1"
         || *protocol != "8"
     {
         return Err(Refusal::AdapterIdentity);

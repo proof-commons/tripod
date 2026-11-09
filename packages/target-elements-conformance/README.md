@@ -482,6 +482,8 @@ and `is_empty`.
 
 ### `provenance` — what the operator meant to run
 
+The native adapter's implementation version is 2.1.1; its wire protocol remains revision 8. `scripts/elements-native-executor.py` sends every RPC argument through `elements-cli -stdin`, one UTF-8 argument per line, instead of placing transaction hex on argv. Method and routing options remain on argv. Empty arguments and trailing spaces are preserved; a literal line feed is refused before launching the client because it would split an argument (JSON-escaped line feeds remain ordinary bytes). There is no size-dependent transport branch. The existing request/response limits, timeout/retry rules, diagnostic quarantine and policy settings are unchanged. `scripts/test-executor-boundaries.py` exercises the production call path with a node-free stand-in client, including a 512 KiB argument. Exact adapter-source pins and the emitted request-comparison fixture are maintained separately in `packages/vectors/src/maturity_adapter.rs`, `scripts/test-executor-request-comparisons.py` and the backlog's adapter-comparison record; historical native archives retain their original adapter identities.
+
 ```text
 MINIMUM_REVISION_PREFIX_WIDTH: usize = 7
 FULL_REVISION_WIDTH: usize = 40

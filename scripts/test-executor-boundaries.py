@@ -1343,7 +1343,51 @@ def test_signing_malformed_framework_results(failures):
     return count
 
 
+def test_rpc_arguments_use_stdin_without_an_argv_size_threshold(failures) -> int:
+    """A real stand-in child receives small, empty and >128 KiB arguments intact."""
+    module = executor_module()
+    with tempfile.TemporaryDirectory(prefix="tripod-cli-stdin-") as root:
+        client = os.path.join(root, "elements-cli")
+        with open(client, "w", encoding="utf-8") as handle:
+            handle.write("#!" + sys.executable + "\n" + '''import json, sys
+data = sys.stdin.buffer.read()
+assert not data or data.endswith(b"\\n")
+arguments = [line.decode("utf-8") for line in data.split(b"\\n")[:-1]]
+print(json.dumps({"argv": sys.argv[1:], "arguments": arguments}))
+''')
+        os.chmod(client, 0o700)
+        # No daemon or RPC connection: only the production DisposableNode.call
+        # transport and an actual child process, without reserving a free port.
+        node = object.__new__(module.DisposableNode)
+        node.elements_cli = client
+        node.datadir = root
+        node.chain = "elementsregtest"
+        node.rpc_port = 12345
+        node.call_observations = []
+        checked = 0
+        for arguments in ((), ("",), ("small", "", "trailing  "),
+                          ("ab" * (256 * 1024), '{"text":"escaped\\nvalue"}', "quote\" slash\\ é", "")):
+            result = node.call("decoderawtransaction", *arguments, wallet="fixture")
+            failures.equal(result["arguments"], list(arguments), "stdin changed an RPC argument")
+            failures.equal(result["argv"], ["-datadir=" + root, "-chain=elementsregtest",
+                           "-rpcport=12345", "-rpcwallet=fixture", "-stdin",
+                           "decoderawtransaction"], "RPC data leaked onto argv")
+            checked += 2
+        # A newline-bearing subject is one coordinate away from the small control.
+        # The client path is deliberately absent: refusal must precede execution.
+        node.elements_cli = os.path.join(root, "must-not-run")
+        try:
+            node.call("decoderawtransaction", "small\nextra")
+        except module.AdapterError as error:
+            failures.equal(str(error), "node client argument contains a line feed",
+                           "line framing refusal differs")
+        else:
+            failures.check(False, "line-bearing argument reached the client")
+        return checked + 1
+
+
 TESTS = (
+    ("RPC arguments use stdin without argv size threshold", test_rpc_arguments_use_stdin_without_an_argv_size_threshold),
     ("signing asset and value encodings", test_signing_asset_and_value_encodings),
     ("signing control block widths", test_signing_control_block_widths),
     ("signing leaf version edges", test_signing_leaf_version_edges),
@@ -1396,6 +1440,7 @@ TESTS = (
 # Module-loading and stream-redirection tests must run on the main thread.
 # Keep source-only checks here too: only subprocess-driven tests use the pool.
 SERIAL_TESTS = frozenset((
+    test_rpc_arguments_use_stdin_without_an_argv_size_threshold,
     test_an_extra_execution_field_cannot_inject_a_typed_line,
     test_the_typed_sink_rejects_line_bearing_content,
     test_an_unknown_diagnostic_outcome_is_fatal,
