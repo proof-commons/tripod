@@ -31,6 +31,7 @@ vectors_source_files = files(
   'src/keyed_funding.rs',
   'src/keyed_funding_corpus.rs',
   'src/keyed_scaling.rs',
+  'src/keyed_scaling_corpus.rs',
   'src/keyed_continuation_corpus.rs',
   'src/keyed_continuation_native.rs',
   'src/keyed_birth/tests.rs',
@@ -125,6 +126,11 @@ vectors_doc_files = files('README.md', 'TRACING.md')
 # `include_bytes!`; timing sidecars and the predecessor setup transcript
 # remain audit-only bytes.
 vectors_fixture_files = files(
+  'fixtures/keyed-scaling-run-of-record/5910802756ef.report.capture.lzma',
+  'fixtures/keyed-scaling-run-of-record/5910802756ef.report.timing',
+  'fixtures/keyed-scaling-run-of-record/5910802756ef.report.capture.timing',
+  'fixtures/keyed-scaling-run-of-record/RUN-REPORT',
+  'fixtures/keyed-scaling-run-of-record/MANIFEST.sha256',
   'fixtures/keyed-cost-run-of-record/da02067f499d.report.capture',
   'fixtures/keyed-cost-run-of-record/da02067f499d.report.timing',
   'fixtures/keyed-cost-run-of-record/da02067f499d.report.capture.timing',

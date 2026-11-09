@@ -161,6 +161,10 @@ Compare three options, perform the profile boundary test and its first-contract 
 | Declare and weld | Exact paper anchors, object/operation/relation census, SOURCE/MERGE declaration cases; independent oracle cases are 1.5 work | Reject any extra clause or attestation ballast |
 | Validate | Owner validation, permutation/identity/regression evidence | Hand validated declarations and explicit evidence obligations to 1.2 |
 
+**Open realization obligation (MERGE input bound)**
+
+Bite 1.1's home disposition must hand the accepted envelope-specific 1,564-keyed-handle MERGE bound to its owning realization constructor, which must implement a typed N+1 construction-policy refusal beside an admitted N control (`rec:state-constructor:keyed-scaling`), (`rule:phase7:wave1-realization-rulings`). The bound is accepted on the measured range and worst-witness evidence; this implementation obligation remains open because the current keyed constructor exposes no input-count bound. It adds no covenant count condition, and a changed witness, funding or output envelope reopens the bound.
+
 **Gate (Declaration packet completion)** · `gate:wave1:bite-1-1-packet`
 
 Both declarations validate under their exact typed spellings without fake roots or receipt classes; changed seams have reasons and unchanged seams concrete reuse arguments. The model remains independent of declaration evaluation (`gate:guide15-exec:bite-1-1-gate`).

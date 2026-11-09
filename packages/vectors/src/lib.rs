@@ -31,6 +31,8 @@ pub mod keyed_funding;
 pub mod keyed_funding_corpus;
 pub mod keyed_native;
 pub mod keyed_scaling;
+#[cfg(test)]
+mod keyed_scaling_corpus;
 pub mod live_capability;
 pub mod live_comparison;
 pub mod live_conservation_negatives;
