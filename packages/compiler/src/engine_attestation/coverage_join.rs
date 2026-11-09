@@ -189,7 +189,13 @@ pub fn validate(
         &layout.iter().cloned().map(placement::LayoutKey).collect(),
         &expected,
     )
-    .map_err(|error| match error {
+    .map_err(|error| refusal(error, &keys))
+}
+pub fn refusal(
+    error: core::Error,
+    keys: &BTreeMap<placement::Key, crate::placement::RelationCaseKey>,
+) -> CompileError {
+    match error {
         core::Error::UnexpectedCarrier(key) => {
             let key = &keys[&key];
             CompileError::UnexpectedRuntimeCarrierCoverage {
@@ -225,5 +231,5 @@ pub fn validate(
                 case: key.case.clone(),
             }
         }
-    })
+    }
 }

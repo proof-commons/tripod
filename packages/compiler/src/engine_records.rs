@@ -16,6 +16,7 @@ use petgraph::{
 /// not an engine identity parameter and provides no per-case policy callbacks.
 pub trait RelationOwner {
     type Lowered: LoweredRelations;
+    fn source_binding(&self) -> crate::engine_program::Source;
     #[allow(dead_code)]
     fn lower_requirements(
         input: &crate::input::BoundCompilerInput<Self>,

@@ -184,79 +184,84 @@ impl Lowered {
             .collect())
     }
     pub fn refusal(&self, error: core::Error) -> CompileError {
-        match error {
-            core::Error::PlacementCensusMismatch {
-                missing,
-                unexpected,
-            } => CompileError::PlacementCensusMismatch {
-                missing: missing.iter().map(|key| self.keys[key].clone()).collect(),
-                unexpected: unexpected
-                    .iter()
-                    .map(|key| self.keys[key].clone())
-                    .collect(),
-            },
-            core::Error::NoEligibleCarrier(key) => {
-                let id = &self.keys[&key];
-                CompileError::NoEligibleCarrier {
-                    relation: id.relation.clone(),
-                    case: id.case.clone(),
-                }
+        refusal(error, &self.keys, &self.carriers)
+    }
+}
+
+pub fn refusal(
+    error: core::Error,
+    keys: &BTreeMap<core::Key, RelationCaseKey>,
+    carriers: &BTreeMap<core::CarrierKey, CarrierRole>,
+) -> CompileError {
+    match error {
+        core::Error::PlacementCensusMismatch {
+            missing,
+            unexpected,
+        } => CompileError::PlacementCensusMismatch {
+            missing: missing.iter().map(|key| keys[key].clone()).collect(),
+            unexpected: unexpected.iter().map(|key| keys[key].clone()).collect(),
+        },
+        core::Error::NoEligibleCarrier(key) => {
+            let id = &keys[&key];
+            CompileError::NoEligibleCarrier {
+                relation: id.relation.clone(),
+                case: id.case.clone(),
             }
-            core::Error::GlobalRelationHasOnlyLocalCarrier(key) => {
-                let id = &self.keys[&key];
-                CompileError::GlobalRelationHasOnlyLocalCarrier {
-                    relation: id.relation.clone(),
-                    case: id.case.clone(),
-                }
+        }
+        core::Error::GlobalRelationHasOnlyLocalCarrier(key) => {
+            let id = &keys[&key];
+            CompileError::GlobalRelationHasOnlyLocalCarrier {
+                relation: id.relation.clone(),
+                case: id.case.clone(),
             }
-            core::Error::UnconditionalRelationOnOptionalCarrier(key) => {
-                let id = &self.keys[&key];
-                CompileError::UnconditionalRelationOnOptionalCarrier {
-                    relation: id.relation.clone(),
-                    case: id.case.clone(),
-                }
+        }
+        core::Error::UnconditionalRelationOnOptionalCarrier(key) => {
+            let id = &keys[&key];
+            CompileError::UnconditionalRelationOnOptionalCarrier {
+                relation: id.relation.clone(),
+                case: id.case.clone(),
             }
-            core::Error::DuplicatePlacedCarrier { key, carrier } => {
-                let id = &self.keys[&key];
-                CompileError::DuplicatePlacedCarrier {
-                    relation: id.relation.clone(),
-                    case: id.case.clone(),
-                    carrier: self.carriers[&carrier].clone(),
-                }
+        }
+        core::Error::DuplicatePlacedCarrier { key, carrier } => {
+            let id = &keys[&key];
+            CompileError::DuplicatePlacedCarrier {
+                relation: id.relation.clone(),
+                case: id.case.clone(),
+                carrier: carriers[&carrier].clone(),
             }
-            core::Error::NonCanonicalCarrierAssignment(key) => {
-                let id = &self.keys[&key];
-                CompileError::NonCanonicalCarrierAssignment {
-                    relation: id.relation.clone(),
-                    case: id.case.clone(),
-                }
+        }
+        core::Error::NonCanonicalCarrierAssignment(key) => {
+            let id = &keys[&key];
+            CompileError::NonCanonicalCarrierAssignment {
+                relation: id.relation.clone(),
+                case: id.case.clone(),
             }
-            core::Error::UnpermittedCarrierPlacement { key, carrier } => {
-                let id = &self.keys[&key];
-                CompileError::UnpermittedCarrierPlacement {
-                    relation: id.relation.clone(),
-                    case: id.case.clone(),
-                    carrier: self.carriers[&carrier].clone(),
-                }
+        }
+        core::Error::UnpermittedCarrierPlacement { key, carrier } => {
+            let id = &keys[&key];
+            CompileError::UnpermittedCarrierPlacement {
+                relation: id.relation.clone(),
+                case: id.case.clone(),
+                carrier: carriers[&carrier].clone(),
             }
-            core::Error::MissingLayoutRequirement(key) => {
-                let id = &self.keys[&key];
-                CompileError::MissingLayoutRequirement {
-                    relation: id.relation.clone(),
-                    case: id.case.clone(),
-                }
+        }
+        core::Error::MissingLayoutRequirement(key) => {
+            let id = &keys[&key];
+            CompileError::MissingLayoutRequirement {
+                relation: id.relation.clone(),
+                case: id.case.clone(),
             }
-            core::Error::UnexpectedLayoutRequirement(keys) => {
-                CompileError::UnexpectedLayoutRequirement {
-                    unexpected: keys.into_iter().map(|key| key.0).collect(),
-                }
+        }
+        core::Error::UnexpectedLayoutRequirement(keys) => {
+            CompileError::UnexpectedLayoutRequirement {
+                unexpected: keys.into_iter().map(|key| key.0).collect(),
             }
-            core::Error::StateLimit(maximum) => {
-                CompileError::PlacementSearchStateLimitExceeded { maximum }
-            }
-            core::Error::CandidateLimit(maximum) => {
-                CompileError::PlacementCandidateLimitExceeded { maximum }
-            }
+        }
+        core::Error::StateLimit(maximum) => {
+            CompileError::PlacementSearchStateLimitExceeded { maximum }
+        }
+        core::Error::CandidateLimit(maximum) => {
+            CompileError::PlacementCandidateLimitExceeded { maximum }
         }
     }
 }

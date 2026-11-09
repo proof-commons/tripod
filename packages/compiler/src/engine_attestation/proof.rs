@@ -335,28 +335,18 @@ impl Lowered {
         }
     }
 
+    #[allow(
+        dead_code,
+        reason = "Compatibility entry retained for direct stage controls"
+    )]
     pub fn enumerate(
         &self,
         view: &crate::capability::CapabilityView,
         limits: crate::input::ProofSearchLimits,
         report: &mut crate::proof::ProofSearchReport,
     ) -> Result<Vec<ProofPlanCandidate>, CompileError> {
-        let result =
-            core::enumerate(&self.records, view, limits, report).map_err(|error| match error {
-                core::Error::NoFeasiblePlan(relations) => CompileError::NoFeasibleProofPlan {
-                    blocked_relations: relations
-                        .iter()
-                        .map(|key| self.relations[key].clone())
-                        .collect(),
-                },
-                core::Error::StateLimit(maximum) => {
-                    CompileError::ProofSearchStateLimitExceeded { maximum }
-                }
-                core::Error::CandidateLimit(maximum) => {
-                    CompileError::ProofCandidateLimitExceeded { maximum }
-                }
-                core::Error::FixedSource(_) => CompileError::InvalidRealization,
-            })?;
+        let result = core::enumerate(&self.records, view, limits, report)
+            .map_err(|error| self.refusal(error))?;
         let mut candidates = result
             .into_iter()
             .map(|candidate| self.candidate(candidate))
@@ -364,6 +354,23 @@ impl Lowered {
         candidates.sort();
         candidates.dedup();
         Ok(candidates)
+    }
+    pub fn refusal(&self, error: core::Error) -> CompileError {
+        match error {
+            core::Error::NoFeasiblePlan(relations) => CompileError::NoFeasibleProofPlan {
+                blocked_relations: relations
+                    .iter()
+                    .map(|key| self.relations[key].clone())
+                    .collect(),
+            },
+            core::Error::StateLimit(maximum) => {
+                CompileError::ProofSearchStateLimitExceeded { maximum }
+            }
+            core::Error::CandidateLimit(maximum) => {
+                CompileError::ProofCandidateLimitExceeded { maximum }
+            }
+            core::Error::FixedSource(_) => CompileError::InvalidRealization,
+        }
     }
 
     pub fn candidate(&self, candidate: core::Candidate) -> ProofPlanCandidate {

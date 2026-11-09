@@ -42,36 +42,29 @@ use crate::{
     CompileError,
     analyzed::{
         AnalysisExecutionReport, AnalyzedProofPlan, AnalyzedSource, ArchitectureScopeStatus,
-        ScopedAnalyzedProgram, accumulate, architecture_scope_status, lifecycle_completeness,
-        revalidate_input, validate_assembly_closure,
+        ScopedAnalyzedProgram, lifecycle_completeness, revalidate_input, validate_assembly_closure,
     },
-    analyzed_operation::{
-        AnalyzedOperation, analyze_candidate_operations_reported, operation_execution_cases,
-        validate_operation_factorization,
-    },
-    capability::CapabilityView,
-    carrier::{CarrierEligibility, relation_case_eligibility},
+    analyzed_operation::{AnalyzedOperation, validate_operation_factorization},
+    carrier::CarrierEligibility,
     case::ExecutionCaseId,
-    constructibility::build_constructibility_analysis,
     coverage::{
         CoverageBoundary, CoverageRequirementId, EvidenceRole, OperationCoverageProjection,
         RelationCoverageProjection,
     },
     coverage_graph::CoverageGraphProjection,
-    foundation::{CompilerAnalysisFoundationProjection, analyze_foundation},
+    foundation::CompilerAnalysisFoundationProjection,
     input::BoundCompilerInput,
     layout::{LayoutRequirement, names_sponsor_amount},
-    lifecycle::{CompilerLifecycleAnalysis, build_lifecycle_analysis},
+    lifecycle::CompilerLifecycleAnalysis,
     placement::{
         PlacementAssignment, PlacementCandidate, PlacementCandidateProjection,
-        PlacementSearchLimits, PlacementSearchReport, RelationCaseKey, RelationCasePlan,
-        classify_relation_cases, validate_placement,
+        PlacementSearchLimits, RelationCaseKey, RelationCasePlan, validate_placement,
     },
-    proof::{ProofPlanCandidate, enumerate_feasible_plans},
+    proof::ProofPlanCandidate,
     relation::CompilerRelationAnalysis,
     requirement::{
-        RelationRequirements, relation_requirements, validate_aggregate_closure,
-        validate_lifecycle_closure, validate_sponsor_erasure,
+        RelationRequirements, validate_aggregate_closure, validate_lifecycle_closure,
+        validate_sponsor_erasure,
     },
     source::{SourceRequirement, is_sponsor_amount_operand},
 };
@@ -323,113 +316,14 @@ pub struct AnalyzedExpectations {
 ///
 /// # Errors
 ///
-/// Any failure of [`revalidate_input`], [`analyze_foundation`],
-/// [`build_constructibility_analysis`], [`build_lifecycle_analysis`],
-/// [`enumerate_feasible_plans`], [`relation_requirements`],
-/// [`crate::analyzed_operation::analyze_candidate_operations`],
-/// [`operation_execution_cases`], [`classify_relation_cases`], or
-/// [`relation_case_eligibility`];
+/// Any failure of [`crate::engine_attestation::program::derive`];
 /// [`CompileError::DuplicateAnalyzedProofPlan`] when the exact search
 /// offers one typed plan twice.
 pub fn derive_expectations(
     input: &BoundCompilerInput,
     limits: PlacementSearchLimits,
 ) -> Result<AnalyzedExpectations, CompileError> {
-    revalidate_input(input)?;
-
-    let foundation = analyze_foundation(input)?;
-    let constructibility = build_constructibility_analysis(input)?;
-    let lifecycle = build_lifecycle_analysis(input, &foundation.relations)?;
-    let feasible = enumerate_feasible_plans(input, &CapabilityView::Unconstrained)?;
-
-    let mut plans = BTreeMap::new();
-    let mut obligations = BTreeMap::new();
-    let mut placement_search: BTreeMap<OperationId, PlacementSearchReport> = BTreeMap::new();
-
-    for candidate in &feasible.candidates {
-        let requirements = relation_requirements(
-            input,
-            &foundation.relations,
-            &constructibility,
-            &lifecycle,
-            candidate,
-        )?;
-        let (operations, reports) = analyze_candidate_operations_reported(
-            &foundation.relations,
-            &requirements,
-            candidate,
-            limits,
-        )?;
-
-        for (operation, report) in reports {
-            let entry = placement_search.entry(operation).or_default();
-            *entry = accumulate(*entry, report);
-        }
-
-        for operation in operations.keys() {
-            obligations.insert(
-                (candidate.clone(), *operation),
-                operation_obligations(&foundation.relations, candidate, *operation)?,
-            );
-        }
-
-        let analyzed = AnalyzedProofPlan {
-            proof_plan: candidate.clone(),
-            lifecycle: lifecycle_completeness(candidate),
-            relation_requirements: requirements,
-            operations,
-        };
-
-        if plans.insert(candidate.clone(), analyzed).is_some() {
-            return Err(CompileError::DuplicateAnalyzedProofPlan);
-        }
-    }
-
-    let relation_census = foundation
-        .relations
-        .graph
-        .node_weights()
-        .map(|node| node.source.id.clone())
-        .collect();
-
-    Ok(AnalyzedExpectations {
-        source: AnalyzedSource {
-            architecture: input.architecture_binding().clone(),
-            realization: input.realization().project(),
-            compilation_scope: input.scope().clone(),
-        },
-        foundation: foundation.project(),
-        architecture_scope: architecture_scope_status(input),
-        scope: input.scope().operations().iter().copied().collect(),
-        relation_census,
-        relations: foundation.relations,
-        lifecycle,
-        plans,
-        obligations,
-        execution_report: AnalysisExecutionReport {
-            proof_search_limits: input.policy().proof_search_limits,
-            placement_search_limits: limits,
-            proof_search: feasible.search,
-            operation_placement_search: placement_search,
-        },
-    })
-}
-
-/// One operation's carrier obligation census, without a placement
-/// search.
-fn operation_obligations(
-    relations: &CompilerRelationAnalysis,
-    candidate: &ProofPlanCandidate,
-    operation: OperationId,
-) -> Result<OperationObligations, CompileError> {
-    let cases = operation_execution_cases(relations, candidate, operation)?;
-    let relation_case_plans = classify_relation_cases(relations, &cases)?;
-    let eligibility = relation_case_eligibility(relations, &relation_case_plans)?;
-
-    Ok(OperationObligations {
-        relation_case_plans,
-        eligibility,
-    })
+    crate::engine_attestation::program::derive(input, limits)
 }
 
 /// Validate one complete assembled analyzed program (§13.1–§13.13).

@@ -271,6 +271,38 @@ fn inactive_relation_cases_are_present_and_carry_nothing() {
 
     assert_ne!(inactive, [] as [&RelationCaseRequirements; 0]);
 
+    let mut offered = (*inactive[0]).clone();
+    let census = analyzed
+        .layout_requirements
+        .iter()
+        .cloned()
+        .collect::<Vec<_>>();
+    assert!(
+        crate::analyzed_operation::validate_relation_case_requirements(
+            operation, &census, &offered
+        )
+        .is_ok()
+    );
+    offered.active_sources.insert(
+        analyzed
+            .relation_cases
+            .values()
+            .flat_map(|bundle| &bundle.active_sources)
+            .next()
+            .expect("active source control")
+            .clone(),
+    );
+    assert_eq!(
+        crate::analyzed_operation::validate_relation_case_requirements(
+            operation, &census, &offered
+        ),
+        Err(CompileError::InvalidRelationCaseRequirements {
+            relation: offered.key.relation.clone(),
+            case: offered.key.case.clone(),
+            defect: RelationCaseDefect::ActiveSourceOnInactiveCase,
+        })
+    );
+
     for bundle in inactive {
         // The sponsor cases are the only vacuity the pilots produce, so
         // an inactive bundle must belong to the sponsorless case.

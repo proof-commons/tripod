@@ -123,6 +123,10 @@ pub enum LocalProofRejection {
 
 /// The complete canonical feasible set.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[allow(
+    dead_code,
+    reason = "Compatibility result retained for direct stage controls"
+)]
 pub struct FeasibleProofPlans {
     pub candidates: Vec<ProofPlanCandidate>,
     pub search: ProofSearchReport,
@@ -131,6 +135,10 @@ pub struct FeasibleProofPlans {
 pub use crate::engine_attestation::proof::classify_obligations;
 
 /// Enumerate the complete feasible plan set for one bound input.
+#[allow(
+    dead_code,
+    reason = "Compatibility entry retained for direct stage controls"
+)]
 pub fn enumerate_feasible_plans(
     input: &BoundCompilerInput,
     view: &CapabilityView,
@@ -154,6 +162,10 @@ pub fn enumerate_feasible_plans(
     result.map(|candidates| FeasibleProofPlans { candidates, search })
 }
 
+#[allow(
+    dead_code,
+    reason = "Compatibility entry retained for direct stage controls"
+)]
 fn enumerate_feasible_plans_core(
     input: &BoundCompilerInput,
     view: &CapabilityView,

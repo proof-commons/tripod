@@ -32,7 +32,9 @@ pub mod coverage;
 pub mod coverage_join;
 pub mod foundation;
 pub mod lifecycle;
+pub mod operation;
 pub mod placement;
+pub mod program;
 pub mod proof;
 pub mod requirement;
 pub mod source;
@@ -73,6 +75,13 @@ impl AttestationOwner {
 
 impl engine_records::RelationOwner for AttestationOwner {
     type Lowered = AttestationRelations;
+    fn source_binding(&self) -> crate::engine_program::Source {
+        crate::engine_program::Source::Attestation(Box::new(crate::analyzed::AnalyzedSource {
+            architecture: self.source.project().architecture,
+            realization: self.source.project(),
+            compilation_scope: self.scope.clone(),
+        }))
+    }
     fn lower_requirements(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<Vec<crate::engine_requirement::Table>, CompileError> {
@@ -320,7 +329,7 @@ pub const fn operation_key(operation: OperationId) -> OperationKey {
 
 // These are identifier encodings, not semantic classifiers. The order of
 // each code follows the existing derived ordering, including subject tags.
-fn relation_key(id: &RelationId) -> RelationKey {
+pub fn relation_key(id: &RelationId) -> RelationKey {
     let kind = match id.kind() {
         RelationKind::Cardinality => 0,
         RelationKind::Recognition => 1,

@@ -903,7 +903,7 @@ const fn layout_operation(requirement: &LayoutRequirement) -> OperationId {
 }
 
 /// The execution case one layout requirement names, where it names one.
-const fn layout_case(requirement: &LayoutRequirement) -> Option<&ExecutionCaseId> {
+pub const fn layout_case(requirement: &LayoutRequirement) -> Option<&ExecutionCaseId> {
     match requirement {
         LayoutRequirement::MakeSourceAvailable { case, .. }
         | LayoutRequirement::IsolateSponsorRegion { case, .. }

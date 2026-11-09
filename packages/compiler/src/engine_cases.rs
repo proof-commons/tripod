@@ -23,6 +23,8 @@ pub struct Row {
     pub coverage: Result<engine_coverage::Plan, crate::CompileError>,
     pub refusal: Option<crate::CompileError>,
     pub facts: Option<crate::engine_case_facts::Facts>,
+    pub projections: BTreeSet<crate::coverage::CoverageBoundary>,
+    pub collateral: BTreeSet<crate::engine_coverage::Requirement>,
 }
 #[derive(Clone, Debug)]
 pub struct Tables {
@@ -30,12 +32,21 @@ pub struct Tables {
     pub relations: BTreeSet<RelationKey>,
     pub cases: Vec<Case>,
     pub rows: Vec<Row>,
+    pub layout_scopes: BTreeMap<engine_placement::LayoutKey, LayoutScope>,
+}
+#[derive(Clone, Debug)]
+pub struct LayoutScope {
+    pub relation: Option<RelationKey>,
+    pub case: Option<CaseKey>,
 }
 #[derive(Clone, Debug)]
 pub struct Selected {
     pub placement: engine_placement::Records,
     pub coverage: Vec<engine_coverage::Plan>,
     pub facts: Vec<crate::engine_case_facts::Facts>,
+    pub projections: BTreeMap<Key, BTreeSet<crate::coverage::CoverageBoundary>>,
+    pub collateral: BTreeSet<crate::engine_coverage::Requirement>,
+    pub layout_scopes: BTreeMap<engine_placement::LayoutKey, LayoutScope>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -53,11 +64,17 @@ pub enum Error {
     CaseFactsMismatch(Key),
 }
 pub fn select(tables: &Tables, candidate: &Candidate) -> Result<Selected, Error> {
+    select_keys(tables, &candidate.proofs, &candidate.representations)
+}
+pub fn select_keys(
+    tables: &Tables,
+    proofs: &BTreeMap<RelationKey, AlternativeKey>,
+    representations: &BTreeMap<ChoiceKey, ModeKey>,
+) -> Result<Selected, Error> {
     let span = tracing::debug_span!(target: "compiler::engine_cases", "select", case_count = crate::instrumentation::count(tables.cases.len()), row_count = crate::instrumentation::count(tables.rows.len()));
     let _entered = span.enter();
     for (choice, allowed) in &tables.choices {
-        let mode = candidate
-            .representations
+        let mode = representations
             .get(choice)
             .ok_or(Error::MissingRepresentationChoice(*choice))?;
         if !allowed.contains(mode) {
@@ -73,7 +90,7 @@ pub fn select(tables: &Tables, candidate: &Candidate) -> Result<Selected, Error>
         .filter(|case| {
             case.representations
                 .iter()
-                .all(|(choice, mode)| candidate.representations.get(choice) == Some(mode))
+                .all(|(choice, mode)| representations.get(choice) == Some(mode))
         })
         .collect::<Vec<_>>();
     let expected = cases
@@ -94,12 +111,14 @@ pub fn select(tables: &Tables, candidate: &Candidate) -> Result<Selected, Error>
     let mut eligibility = Vec::new();
     let mut coverage = Vec::new();
     let mut facts = Vec::new();
+    let mut projections = BTreeMap::new();
+    let mut collateral = BTreeSet::new();
     for row in &tables.rows {
         if !cases.iter().any(|case| case.id == row.key.case)
             || row
                 .proof
                 .as_ref()
-                .is_some_and(|proof| candidate.proofs.get(&row.key.relation) != Some(proof))
+                .is_some_and(|proof| proofs.get(&row.key.relation) != Some(proof))
         {
             continue;
         }
@@ -127,6 +146,8 @@ pub fn select(tables: &Tables, candidate: &Candidate) -> Result<Selected, Error>
             return Err(Error::CaseFactsMismatch(row.key.clone()));
         }
         facts.push(fact.clone());
+        projections.insert(row.key.clone(), row.projections.clone());
+        collateral.extend(row.collateral.clone());
         plans.push((row.key.clone(), row.runtime));
         eligibility.extend(row.eligibility.clone());
         coverage.push(
@@ -142,8 +163,11 @@ pub fn select(tables: &Tables, candidate: &Candidate) -> Result<Selected, Error>
         });
     }
     Ok(Selected {
+        layout_scopes: tables.layout_scopes.clone(),
         placement: engine_placement::Records { plans, eligibility },
         coverage,
         facts,
+        projections,
+        collateral,
     })
 }

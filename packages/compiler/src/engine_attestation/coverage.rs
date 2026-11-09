@@ -122,7 +122,7 @@ pub fn derive_relation_coverage(
     })
 }
 
-fn requirement(id: &CoverageRequirementId) -> core::Requirement {
+pub fn requirement(id: &CoverageRequirementId) -> core::Requirement {
     core::Requirement {
         key: super::placement::key(&id.key()),
         boundary: id.boundary,
@@ -187,7 +187,7 @@ pub fn validate_plan(plan: &RelationCoveragePlan) -> Result<(), CompileError> {
     let keys = BTreeMap::from([(super::placement::key(&key), key)]);
     core::validate_plan(&lowered(plan)).map_err(|error| refusal(error, &keys, &BTreeMap::new()))
 }
-fn refusal(
+pub fn refusal(
     error: core::Error,
     keys: &BTreeMap<crate::engine_placement::Key, RelationCaseKey>,
     ids: &BTreeMap<core::Requirement, CoverageRequirementId>,

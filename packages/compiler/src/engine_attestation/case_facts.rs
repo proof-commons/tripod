@@ -64,7 +64,7 @@ pub fn lower(
             .collect(),
     }
 }
-fn compiler(value: &CompilerStaticRequirement) -> core::CompilerRequirement {
+pub fn compiler(value: &CompilerStaticRequirement) -> core::CompilerRequirement {
     match value {
         CompilerStaticRequirement::RepresentationSelection {
             object: family,
@@ -102,7 +102,7 @@ const fn constructibility(value: realization::ConstructibilityClass) -> core::Co
         }
     }
 }
-const fn structural(value: &BackendStructuralRequirement) -> core::StructuralRequirement {
+pub const fn structural(value: &BackendStructuralRequirement) -> core::StructuralRequirement {
     match value {
         BackendStructuralRequirement::EncodeAndAuthenticateRepresentation {
             object: family,
@@ -174,7 +174,7 @@ pub fn validate(
         runtime_requirements: Vec::new(),
         external_evidence: bundle.external_evidence.clone(),
     };
-    let facts = lower(
+    let mut facts = lower(
         &plan,
         &bundle.active_sources,
         &bundle
@@ -183,6 +183,13 @@ pub fn validate(
             .cloned()
             .collect::<Vec<_>>(),
     );
+    // An offered bundle is evidence to validate, not a declaration to lower:
+    // retain even a forbidden source on an inactive case so it is refused.
+    facts.sources = bundle
+        .active_sources
+        .iter()
+        .map(super::source::row_key)
+        .collect();
     let coverage = crate::coverage::RelationCoveragePlan {
         relation: bundle.key.relation.clone(),
         case: bundle.key.case.clone(),

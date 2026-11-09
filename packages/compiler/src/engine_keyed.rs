@@ -87,6 +87,13 @@ impl LoweredRelations for KeyedRelations {
 
 impl RelationOwner for KeyedOwner {
     type Lowered = KeyedRelations;
+    fn source_binding(&self) -> crate::engine_program::Source {
+        crate::engine_program::Source::Keyed {
+            manifest: Box::new(self.manifest.clone()),
+            realization: self.source.draft(),
+            scope: self.scope.clone(),
+        }
+    }
     fn lower_requirements(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<Vec<crate::engine_requirement::Table>, crate::CompileError> {
@@ -185,10 +192,20 @@ impl RelationOwner for KeyedOwner {
                     coverage: Ok(coverage[key].clone()),
                     refusal: None,
                     facts: Some(case_facts(key, *runtime, &coverage[key], &sources)?),
+                    projections: coverage[key].boundaries.clone(),
+                    collateral: coverage[key]
+                        .negative
+                        .iter()
+                        .filter(|row| {
+                            row.boundary == crate::coverage::CoverageBoundary::RuntimeCarrier
+                        })
+                        .cloned()
+                        .collect(),
                 })
             })
             .collect::<Result<Vec<_>, crate::CompileError>>()?;
         Ok(core::Tables {
+            layout_scopes: std::collections::BTreeMap::new(),
             choices: Vec::new(),
             relations: placement
                 .plans

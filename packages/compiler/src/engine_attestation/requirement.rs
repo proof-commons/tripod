@@ -13,6 +13,101 @@ type Registry = BTreeMap<
     Result<RelationRequirements, CompileError>,
 >;
 
+/// Finite requirement payloads and associations retained before plan selection.
+pub struct Prepared {
+    registry: Registry,
+    objects:
+        BTreeMap<crate::engine_records::RelationKey, BTreeSet<crate::engine_lifecycle::ObjectKey>>,
+    exits: BTreeMap<
+        crate::engine_records::RelationKey,
+        Option<(
+            crate::engine_lifecycle::ObjectKey,
+            crate::engine_records::OperationKey,
+        )>,
+    >,
+}
+pub fn prepare(input: &crate::BoundCompilerInput) -> Result<Prepared, CompileError> {
+    let span = tracing::debug_span!(target: "compiler::engine_attestation", "prepare_requirement_payloads");
+    let _entered = span.enter();
+    let relations = crate::relation::build_relation_analysis(input)?;
+    let construction = crate::constructibility::build_constructibility_analysis(input)?;
+    let declarations = relations
+        .graph
+        .node_weights()
+        .map(|node| (node.source.id.clone(), &node.source))
+        .collect::<BTreeMap<_, _>>();
+    let (_, registry) = lower_tables(&relations, &construction, &declarations)?;
+    Ok(Prepared {
+        registry,
+        objects: declarations
+            .values()
+            .map(|row| {
+                (
+                    super::relation_key(&row.id),
+                    relation_objects(&row.relation)
+                        .into_iter()
+                        .map(object_key)
+                        .collect(),
+                )
+            })
+            .collect(),
+        exits: declarations
+            .values()
+            .map(|row| {
+                (
+                    super::relation_key(&row.id),
+                    lifecycle_association(&row.relation),
+                )
+            })
+            .collect(),
+    })
+}
+impl Prepared {
+    pub fn restore(
+        &self,
+        offered: &BTreeMap<crate::engine_records::RelationKey, core::Bundle>,
+        candidate: &crate::engine_proof::Candidate,
+        legacy: &ProofPlanCandidate,
+    ) -> Result<BTreeMap<realization::RelationId, RelationRequirements>, CompileError> {
+        let span = tracing::debug_span!(target: "compiler::engine_attestation", "restore_requirement_payloads", relation_count = crate::instrumentation::count(offered.len()));
+        let _entered = span.enter();
+        let objects = ObjectId::ALL
+            .iter()
+            .map(|id| (object_key(*id), *id))
+            .collect::<BTreeMap<_, _>>();
+        let lifecycle = legacy
+            .lifecycle
+            .iter()
+            .map(|row| (super::proof::lifecycle_key(row), row))
+            .collect::<BTreeMap<_, _>>();
+        offered
+            .keys()
+            .map(|key| {
+                let mut value =
+                    self.registry[&(key.clone(), candidate.proofs.get(key).cloned())].clone()?;
+                value.representation = core::single_representation(
+                    key.operation,
+                    &self.objects[key],
+                    &candidate.representations,
+                )
+                .map(|(object, _)| {
+                    let object = objects[&object];
+                    let mode = legacy.representations[&crate::lifecycle::RepresentationChoiceId {
+                        operation: value.relation.operation(),
+                        object,
+                    }];
+                    crate::requirement::RepresentationSelection { object, mode }
+                });
+                value.lifecycle = core::owned_lifecycle(self.exits[key], &candidate.lifecycle)
+                    .iter()
+                    .map(|row| lifecycle[row].clone())
+                    .collect();
+                Ok((value.relation.clone(), value))
+            })
+            .collect()
+    }
+}
+
 pub fn tables(input: &crate::input::BoundCompilerInput) -> Result<Vec<core::Table>, CompileError> {
     let relations = crate::relation::build_relation_analysis(input)?;
     let constructibility = crate::constructibility::build_constructibility_analysis(input)?;
@@ -24,6 +119,10 @@ pub fn tables(input: &crate::input::BoundCompilerInput) -> Result<Vec<core::Tabl
     Ok(lower_tables(&relations, &constructibility, &declarations)?.0)
 }
 
+#[allow(
+    dead_code,
+    reason = "Compatibility entry retained for direct stage controls"
+)]
 pub fn derive(
     relations: &crate::relation::CompilerRelationAnalysis,
     constructibility: &crate::constructibility::CompilerConstructibilityAnalysis,
@@ -320,6 +419,10 @@ const fn object_key(object: ObjectId) -> crate::engine_lifecycle::ObjectKey {
         code: object.code(),
     }
 }
+#[allow(
+    dead_code,
+    reason = "Compatibility entry retained for direct stage controls"
+)]
 pub fn owned_representation(
     declaration: &realization::RelationDeclaration,
     candidate: &ProofPlanCandidate,
@@ -350,16 +453,15 @@ pub fn owned_representation(
     }];
     Some(crate::requirement::RepresentationSelection { object, mode })
 }
+#[allow(
+    dead_code,
+    reason = "Compatibility entry retained for direct stage controls"
+)]
 pub fn owned_lifecycle(
     declaration: &realization::RelationDeclaration,
     candidate: &ProofPlanCandidate,
 ) -> BTreeSet<crate::lifecycle::LifecycleRequirement> {
-    let association = match &declaration.relation {
-        Relation::LifecycleExit { object, exit } => {
-            Some((object_key(*object), super::operation_key(*exit)))
-        }
-        _ => None,
-    };
+    let association = lifecycle_association(&declaration.relation);
     let rows = candidate
         .lifecycle
         .iter()
@@ -369,4 +471,17 @@ pub fn owned_lifecycle(
         .iter()
         .map(|key| rows[key].clone())
         .collect()
+}
+const fn lifecycle_association(
+    relation: &Relation,
+) -> Option<(
+    crate::engine_lifecycle::ObjectKey,
+    crate::engine_records::OperationKey,
+)> {
+    match relation {
+        Relation::LifecycleExit { object, exit } => {
+            Some((object_key(*object), super::operation_key(*exit)))
+        }
+        _ => None,
+    }
 }

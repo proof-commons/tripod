@@ -42,16 +42,14 @@ use realization::{
 
 use crate::{
     CompileError,
-    analyzed_operation::{AnalyzedOperation, analyze_candidate_operations_reported},
+    analyzed_operation::AnalyzedOperation,
     analyzed_validate::validate_scoped_analyzed_program,
-    capability::CapabilityView,
-    constructibility::build_constructibility_analysis,
-    foundation::{CompilerAnalysisFoundationProjection, analyze_foundation},
+    foundation::CompilerAnalysisFoundationProjection,
     input::{BoundCompilerInput, CompilationScope, ProofSearchLimits},
-    lifecycle::{LifecycleExitStatus, LifecycleRequirement, build_lifecycle_analysis},
+    lifecycle::{LifecycleExitStatus, LifecycleRequirement},
     placement::{PlacementSearchLimits, PlacementSearchReport},
-    proof::{ProofPlanCandidate, ProofSearchReport, enumerate_feasible_plans},
-    requirement::{RelationRequirements, relation_requirements},
+    proof::{ProofPlanCandidate, ProofSearchReport},
+    requirement::RelationRequirements,
 };
 
 /// The exact typed source one analyzed program was derived from
@@ -224,16 +222,13 @@ impl ScopedAnalyzedProgram {
 /// becomes a partial result: a complexity failure, a closure mismatch,
 /// or an invalid factor returns a typed error and no analyzed program
 /// at all. The canonical analysis uses
-/// [`CapabilityView::Unconstrained`], so the retained plan set is every
+/// [`crate::capability::CapabilityView::Unconstrained`], so the retained plan set is every
 /// realization-approved plan rather than the subset some unnamed target
 /// happens to support.
 ///
 /// # Errors
 ///
-/// Any failure of [`revalidate_input`], [`analyze_foundation`],
-/// [`build_constructibility_analysis`], [`build_lifecycle_analysis`],
-/// [`enumerate_feasible_plans`], [`relation_requirements`],
-/// [`analyze_candidate_operations_reported`], or
+/// Any failure of [`crate::engine_attestation::program::derive`] or
 /// [`validate_scoped_analyzed_program`];
 /// [`CompileError::DuplicateAnalyzedProofPlan`] when the exact search
 /// offers one typed plan twice.
@@ -244,105 +239,35 @@ pub fn analyze_scoped_program(
     input: &BoundCompilerInput,
     placement_limits: PlacementSearchLimits,
 ) -> Result<ScopedAnalyzedProgram, CompileError> {
-    let scope_operation_count = crate::instrumentation::count(input.scope().operations().len());
-    let span = tracing::debug_span!(target: "compiler::analysis", "analyze_scoped_program", scope_operation_count, proof_state_limit = input.policy().proof_search_limits.maximum_states.get(), placement_state_limit = placement_limits.maximum_states.get());
+    let span = tracing::debug_span!(target: "compiler::analysis", "analyze_scoped_program", scope_operation_count = crate::instrumentation::count(input.scope().operations().len()));
     let _entered = span.enter();
-    // 1: the bound input is re-checked rather than trusted.
-    revalidate_input(input)?;
-
-    // 2 to 4: the foundation, and the two analyses the relation-indexed
-    // requirements are derived against.
-    let foundation = analyze_foundation(input)?;
-    let constructibility = build_constructibility_analysis(input)?;
-    let lifecycle = build_lifecycle_analysis(input, &foundation.relations)?;
-
-    // 5: the exact unconstrained feasible plan set.
-    let feasible = enumerate_feasible_plans(input, &CapabilityView::Unconstrained)?;
-
-    let mut proof_plans = BTreeMap::new();
-    let mut placement_search: BTreeMap<OperationId, PlacementSearchReport> = BTreeMap::new();
-
-    for candidate in &feasible.candidates {
-        // 6: relation-indexed requirements, closed against the
-        // candidate's own aggregates.
-        let requirements = relation_requirements(
-            input,
-            &foundation.relations,
-            &constructibility,
-            &lifecycle,
-            candidate,
-        )?;
-
-        // 7: one validated factor per operation — a sum over
-        // operations, never a product.
-        let (operations, reports) = analyze_candidate_operations_reported(
-            &foundation.relations,
-            &requirements,
-            candidate,
-            placement_limits,
-        )?;
-
-        for (operation, report) in reports {
-            let entry = placement_search.entry(operation).or_default();
-            *entry = accumulate(*entry, report);
-        }
-
-        // 9: this plan's lifecycle completeness.
-        let analyzed = AnalyzedProofPlan {
-            proof_plan: candidate.clone(),
-            lifecycle: lifecycle_completeness(candidate),
-            relation_requirements: requirements,
-            operations,
-        };
-
-        if proof_plans.insert(candidate.clone(), analyzed).is_some() {
-            return Err(CompileError::DuplicateAnalyzedProofPlan);
-        }
-    }
-
-    // 8: how much of the architecture this scope covers.
-    let architecture_scope = architecture_scope_status(input);
-
-    // 10: the external evidence every plan and relation requires.
-    let required_external_evidence = evidence_union(&proof_plans);
-
-    // 11: construct.
+    let expected = crate::engine_attestation::program::derive(input, placement_limits)?;
+    let required_external_evidence = evidence_union(&expected.plans);
     let program = ScopedAnalyzedProgram {
-        source: AnalyzedSource {
-            architecture: input.architecture_binding().clone(),
-            realization: input.realization().project(),
-            compilation_scope: input.scope().clone(),
-        },
-        foundation: foundation.project(),
-        architecture_scope,
-        proof_plans,
+        source: expected.source,
+        foundation: expected.foundation,
+        architecture_scope: expected.architecture_scope,
+        proof_plans: expected.plans,
         required_external_evidence,
-        execution_report: AnalysisExecutionReport {
-            proof_search_limits: input.policy().proof_search_limits,
-            placement_search_limits: placement_limits,
-            proof_search: feasible.search,
-            operation_placement_search: placement_search,
-        },
+        execution_report: expected.execution_report,
     };
-
-    // 12: the assembled value is validated, not trusted because this
-    // function produced it.
-    //
-    // The complete validator, not the narrow closure check. The narrow
-    // check tests architecture-scope status and evidence closure; the
-    // complete one independently re-derives source, foundation, proof
-    // plans, relation requirements, operation factors, placements,
-    // coverage, lifecycle, sponsor opacity, and the execution report,
-    // and it delegates to the narrow check itself. Running only the
-    // narrow check here meant the production constructor did not
-    // perform the corruption-resistant assembly validation this package
-    // documents — a defect in the joins between component stages would
-    // be caught by whichever test called the full validator, and not by
-    // the analysis entry point.
     validate_scoped_analyzed_program(input, placement_limits, &program)?;
-
-    // 13.
     Ok(program)
+}
+
+/// Production record entry shared by both statically bound owners. No owner
+/// selection occurs after binding, and the engine consumes concrete records.
+pub fn analyze_bound_records<O: crate::engine_records::RelationOwner>(
+    input: &BoundCompilerInput<O>,
+    placement_limits: PlacementSearchLimits,
+) -> Result<crate::engine_program::Program, crate::engine_program::Error> {
+    let span = tracing::debug_span!(target: "compiler::analysis", "analyze_bound_records");
+    let _entered = span.enter();
+    crate::engine_program::analyze(
+        &crate::engine_program::lower(input)?,
+        input.policy().proof_search_limits,
+        placement_limits,
+    )
 }
 
 /// Re-check the bound input's own invariants (§17 step 1).

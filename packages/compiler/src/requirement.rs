@@ -103,6 +103,10 @@ pub struct RelationRequirements {
 /// Any failure of [`derive_relation_requirements`],
 /// [`validate_aggregate_closure`], [`validate_disclosure_closure`], or
 /// [`validate_lifecycle_closure`].
+#[allow(
+    dead_code,
+    reason = "Compatibility entry retained for direct stage controls"
+)]
 pub fn relation_requirements(
     input: &BoundCompilerInput,
     relations: &CompilerRelationAnalysis,
@@ -135,6 +139,10 @@ pub fn relation_requirements(
 /// no proof carries one; [`CompileError::SponsorValueRead`] on any
 /// sponsor amount operand; any failure of
 /// [`crate::constructibility::validate_source_constructibility`].
+#[allow(
+    dead_code,
+    reason = "Compatibility entry retained for direct stage controls"
+)]
 pub fn derive_relation_requirements(
     relations: &CompilerRelationAnalysis,
     constructibility: &CompilerConstructibilityAnalysis,
@@ -336,6 +344,10 @@ pub fn validate_sponsor_erasure(requirements: &RelationRequirements) -> Result<(
 /// this type exists to prevent; per-object activation still resolves
 /// such a relation's source rows case by case.
 #[must_use]
+#[allow(
+    dead_code,
+    reason = "Compatibility entry retained for direct stage controls"
+)]
 pub fn owned_representation(
     declaration: &RelationDeclaration,
     candidate: &ProofPlanCandidate,
@@ -344,6 +356,10 @@ pub fn owned_representation(
 }
 
 /// The candidate lifecycle rows this relation declares.
+#[allow(
+    dead_code,
+    reason = "Compatibility entry retained for direct stage controls"
+)]
 pub fn owned_lifecycle(
     declaration: &RelationDeclaration,
     candidate: &ProofPlanCandidate,

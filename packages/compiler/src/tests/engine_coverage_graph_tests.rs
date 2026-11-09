@@ -27,6 +27,56 @@ fn node(key: Key) -> core::Node {
     }
 }
 #[test]
+fn prerequisite_assembly_and_collateral_join_respect_complete_operation_identity() {
+    use std::collections::BTreeMap;
+    for namespace in [1, 2] {
+        let first = key(namespace, 0);
+        let second = key(namespace, 1);
+        let foreign = key(3 - namespace, 1);
+        let cases = BTreeMap::from([
+            (first.relation.operation, vec![first.case.clone()]),
+            (foreign.relation.operation, vec![foreign.case.clone()]),
+        ]);
+        let symbols = [first.clone(), second.clone(), foreign.clone()]
+            .into_iter()
+            .map(|key| (key.clone(), core::Key::Relation(key)))
+            .collect::<BTreeMap<_, _>>();
+        let control = vec![(first.relation.clone(), second.relation.clone())];
+        let edges = core::prerequisites(&cases, &symbols, &control).expect("same case");
+        assert_eq!(edges.len(), 1);
+        let graph =
+            core::build(&[node(first.clone()), node(second.clone())], &edges).expect("resolved");
+        let requirement = core::Key::Requirement(crate::engine_coverage::Requirement {
+            key: first.clone(),
+            boundary: crate::coverage::CoverageBoundary::ExternalEvidence,
+            purpose: crate::engine_coverage::Purpose::ClauseRejected,
+            inactive: false,
+        });
+        assert_eq!(
+            graph.collateral_dependencies(&[(first.clone(), requirement.clone())]),
+            vec![core::Dependency {
+                source: requirement,
+                target: symbols[&second].clone(),
+                edge: E::DependencyCollateral,
+            }]
+        );
+        assert_eq!(
+            core::prerequisites(
+                &cases,
+                &symbols,
+                &[(first.relation.clone(), foreign.relation.clone())]
+            ),
+            Err(Box::new((first, foreign)))
+        );
+        let mut absent = symbols;
+        absent.remove(&second);
+        assert_eq!(
+            core::prerequisites(&cases, &absent, &control).expect("outside coverage"),
+            Vec::<core::Dependency>::new()
+        );
+    }
+}
+#[test]
 fn shared_graph_rejects_unknown_duplicate_cyclic_and_cross_namespace_dependencies() {
     for namespace in [1, 2] {
         let first = node(key(namespace, 0));

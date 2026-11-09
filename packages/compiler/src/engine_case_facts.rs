@@ -68,6 +68,7 @@ pub struct Facts {
     pub evidence: BTreeSet<Evidence>,
     pub layout: BTreeSet<LayoutKey>,
 }
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Bundle {
     pub facts: Facts,
     pub carriers: BTreeSet<Alternative>,

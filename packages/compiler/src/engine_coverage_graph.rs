@@ -125,6 +125,61 @@ pub fn derive_dependencies(plans: &[PlanSymbols], prerequisites: &[Dependency]) 
     }
     dependencies.into_iter().collect()
 }
+
+/// Join declared relation prerequisites to the same execution case. A complete
+/// namespace-qualified operation identity is the scope boundary.
+pub fn prerequisites(
+    cases: &BTreeMap<OperationKey, Vec<crate::engine_placement::CaseKey>>,
+    symbols: &BTreeMap<CaseKey, Key>,
+    edges: &[(
+        crate::engine_records::RelationKey,
+        crate::engine_records::RelationKey,
+    )],
+) -> Result<Vec<Dependency>, Box<(CaseKey, CaseKey)>> {
+    let span = tracing::debug_span!(target: "compiler::engine_coverage_graph", "prerequisites", edge_count = crate::instrumentation::count(edges.len()));
+    let _entered = span.enter();
+    let mut result = BTreeSet::new();
+    for (source, target) in edges {
+        if source.operation != target.operation {
+            if let Some(source_case) = cases.get(&source.operation).and_then(|rows| rows.first())
+                && let Some(target_case) =
+                    cases.get(&target.operation).and_then(|rows| rows.first())
+            {
+                return Err(Box::new((
+                    CaseKey {
+                        relation: source.clone(),
+                        case: source_case.clone(),
+                    },
+                    CaseKey {
+                        relation: target.clone(),
+                        case: target_case.clone(),
+                    },
+                )));
+            }
+            continue;
+        }
+        for case in cases.get(&source.operation).into_iter().flatten() {
+            let source = CaseKey {
+                relation: source.clone(),
+                case: case.clone(),
+            };
+            let target = CaseKey {
+                relation: target.clone(),
+                case: case.clone(),
+            };
+            if let Some(source) = symbols.get(&source)
+                && let Some(target) = symbols.get(&target)
+            {
+                result.insert(Dependency {
+                    source: source.clone(),
+                    target: target.clone(),
+                    edge: CoverageEdge::RelationPrerequisite,
+                });
+            }
+        }
+    }
+    Ok(result.into_iter().collect())
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
     UnknownSymbol(Box<Key>),
@@ -147,6 +202,30 @@ pub struct Graph {
     declared: BTreeSet<Dependency>,
 }
 impl Graph {
+    /// Owner records choose which negative requirements claim dependency
+    /// closure; the traversal and edge assembly are shared.
+    pub fn collateral_dependencies(&self, requirements: &[(CaseKey, Key)]) -> Vec<Dependency> {
+        let span = tracing::debug_span!(target: "compiler::engine_coverage_graph", "collateral_dependencies", requirement_count = crate::instrumentation::count(requirements.len()));
+        let _entered = span.enter();
+        let symbols = self
+            .dag
+            .node_weights()
+            .filter_map(|node| node.relation_case.as_ref().map(|case| (case, &node.id)))
+            .collect::<BTreeMap<_, _>>();
+        let mut result = BTreeSet::new();
+        for (case, requirement) in requirements {
+            for dependent in self.dependency_collateral(case) {
+                if let Some(target) = symbols.get(&dependent) {
+                    result.insert(Dependency {
+                        source: requirement.clone(),
+                        target: (*target).clone(),
+                        edge: CoverageEdge::DependencyCollateral,
+                    });
+                }
+            }
+        }
+        result.into_iter().collect()
+    }
     fn resolve(&self, id: &Key) -> Result<NodeIndex<u32>, Error> {
         self.node_by_id
             .get(id)

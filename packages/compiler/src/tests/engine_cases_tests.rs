@@ -36,6 +36,40 @@ fn keyed_case_tables_select_all_evidence_and_runtime_rows() {
     assert_eq!(selected.placement.plans.len(), 9);
     assert_eq!(selected.placement.eligibility.len(), 2);
     assert_eq!(selected.coverage.len(), 9);
+    let limits = crate::placement::PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(100).expect("states"),
+        std::num::NonZeroU64::new(10).expect("candidates"),
+    );
+    let operations =
+        crate::engine_operation::analyze(&selected, &[], limits).expect("operation assembly");
+    assert_eq!(operations.len(), 2);
+    assert_eq!(
+        operations
+            .values()
+            .map(|operation| operation.bundles.len())
+            .sum::<usize>(),
+        9
+    );
+    assert_eq!(
+        operations
+            .values()
+            .map(|operation| operation.coverage.nodes.len())
+            .sum::<usize>(),
+        61
+    );
+    assert_eq!(
+        operations
+            .values()
+            .map(|operation| operation.coverage.edges.len())
+            .sum::<usize>(),
+        18
+    );
+    let mut incomplete = selected.clone();
+    incomplete.facts.pop();
+    assert!(matches!(
+        crate::engine_operation::analyze(&incomplete, &[], limits),
+        Err(crate::engine_operation::Error::CaseCensus { .. })
+    ));
     assert_eq!(selected.facts.len(), 9);
     assert_eq!(
         selected
@@ -90,6 +124,88 @@ fn keyed_case_tables_select_all_evidence_and_runtime_rows() {
         core::select(&duplicate, &proofs[0]).err(),
         Some(core::Error::DuplicateCase(key))
     );
+}
+#[test]
+fn attestation_operation_assembly_preserves_factor_census_and_placements() {
+    use crate::engine_records::LoweredRelations;
+    use std::collections::BTreeSet;
+    let input = super::bound_input(&[OperationId::CompactAsh]);
+    let registered =
+        crate::engine_attestation::cases::lower_registered(&input).expect("case records");
+    let tables = &registered.tables;
+    let (proofs, _) =
+        crate::engine_records::analyze_bound_proofs(&input, &CapabilityView::Unconstrained)
+            .expect("proofs");
+    let proof = proofs.first().expect("candidate");
+    let selected = core::select(tables, proof).expect("selection");
+    let relations = input.owner().lower_relations();
+    let edges = relations
+        .records()
+        .edges
+        .iter()
+        .map(|row| (row.source.clone(), row.target.clone()))
+        .collect::<Vec<_>>();
+    let limits = crate::placement::PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(10_000_000).expect("states"),
+        std::num::NonZeroU64::new(1_000_000).expect("candidates"),
+    );
+    let operations =
+        crate::engine_operation::analyze(&selected, &edges, limits).expect("common assembly");
+    let factor = operations.values().next().expect("factor");
+    let candidate = crate::engine_attestation::proof::lower(&input)
+        .expect("proof registry")
+        .candidate(proof.clone());
+    let relations = crate::relation::build_relation_analysis(&input).expect("relation analysis");
+    let constructibility =
+        crate::constructibility::build_constructibility_analysis(&input).expect("constructibility");
+    let lifecycle =
+        crate::lifecycle::build_lifecycle_analysis(&input, &relations).expect("lifecycle");
+    let requirements = crate::requirement::relation_requirements(
+        &input,
+        &relations,
+        &constructibility,
+        &lifecycle,
+        &candidate,
+    )
+    .expect("requirements");
+    let legacy = crate::analyzed_operation::analyze_operation(
+        &relations,
+        &requirements,
+        &candidate,
+        OperationId::CompactAsh,
+        limits,
+    )
+    .expect("compatibility");
+    let restored =
+        crate::engine_attestation::operation::restore(&registered.payloads, proof, factor)
+            .expect("lossless factor view");
+    assert_eq!(restored, legacy);
+    assert_eq!(factor.bundles.len(), legacy.relation_cases.len());
+    assert_eq!(factor.cases.len(), legacy.execution_cases.len());
+    assert_eq!(
+        factor.coverage.nodes.len(),
+        legacy.coverage_dependencies.nodes.len()
+    );
+    assert_eq!(
+        factor.coverage.edges.len(),
+        legacy.coverage_dependencies.edges.len()
+    );
+    let placements = crate::analyzed_operation::analyze_operation_placements(
+        &relations,
+        &candidate,
+        OperationId::CompactAsh,
+        limits,
+    )
+    .expect("placement compatibility");
+    assert_eq!(
+        factor.placements.iter().cloned().collect::<BTreeSet<_>>(),
+        placements
+            .placements
+            .iter()
+            .map(crate::engine_attestation::placement::candidate)
+            .collect()
+    );
+    assert_eq!(factor.search, placements.search);
 }
 #[test]
 fn attestation_tables_match_dynamic_case_discharge_for_each_representation() {

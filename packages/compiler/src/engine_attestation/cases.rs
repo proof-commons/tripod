@@ -3,11 +3,20 @@ use crate::{CompileError, engine_cases as core, proof::RelationObligationClass};
 use std::collections::BTreeMap;
 
 pub fn lower(input: &crate::BoundCompilerInput) -> Result<core::Tables, CompileError> {
+    Ok(lower_registered(input)?.tables)
+}
+pub struct Registered {
+    pub tables: core::Tables,
+    #[allow(dead_code)]
+    pub payloads: super::operation::Rows,
+}
+pub fn lower_registered(input: &crate::BoundCompilerInput) -> Result<Registered, CompileError> {
     let span = tracing::debug_span!(target: "compiler::engine_attestation", "lower_cases", scope_count = crate::instrumentation::count(input.scope().operations().len()));
     let _entered = span.enter();
     let relations = crate::relation::build_relation_analysis(input)?;
     let lifecycle = crate::lifecycle::build_lifecycle_analysis(input, &relations)?;
     let obligations = super::proof::classify_obligations(&relations)?;
+    let mut payloads = super::operation::Rows::new();
     let mut tables = core::Tables {
         choices: lifecycle
             .choices
@@ -31,6 +40,7 @@ pub fn lower(input: &crate::BoundCompilerInput) -> Result<core::Tables, CompileE
             .collect(),
         cases: Vec::new(),
         rows: Vec::new(),
+        layout_scopes: BTreeMap::new(),
     };
     for operation in input.scope().operations() {
         let mut modes = vec![BTreeMap::new()];
@@ -86,15 +96,39 @@ pub fn lower(input: &crate::BoundCompilerInput) -> Result<core::Tables, CompileE
                         .ok_or(CompileError::InvalidRealization)?;
                     let alternatives = alternatives(obligation);
                     for (proof, selector) in alternatives {
-                        tables
-                            .rows
-                            .push(row(&relations, &node.source, &case, proof, selector));
+                        let (row, payload) = row(&relations, &node.source, &case, proof, selector);
+                        if let Some(payload) = payload {
+                            payloads.insert((row.key.clone(), row.proof.clone()), payload);
+                        }
+                        tables.rows.push(row);
                     }
                 }
             }
         }
     }
-    Ok(tables)
+    tables.layout_scopes = layout_scopes(&tables.rows);
+    Ok(Registered { tables, payloads })
+}
+fn layout_scopes(
+    rows: &[core::Row],
+) -> BTreeMap<crate::engine_placement::LayoutKey, core::LayoutScope> {
+    let span = tracing::debug_span!(target: "compiler::engine_attestation", "lower_layout_scopes", row_count = crate::instrumentation::count(rows.len()));
+    let _entered = span.enter();
+    rows.iter()
+        .filter_map(|row| row.facts.as_ref())
+        .flat_map(|facts| &facts.layout)
+        .map(|key| {
+            (
+                key.clone(),
+                core::LayoutScope {
+                    relation: key.0.relation().map(super::relation_key),
+                    case: crate::analyzed_operation::layout_case(&key.0)
+                        .cloned()
+                        .map(crate::engine_placement::CaseKey::Attestation),
+                },
+            )
+        })
+        .collect()
 }
 fn row(
     relations: &crate::relation::CompilerRelationAnalysis,
@@ -102,47 +136,58 @@ fn row(
     case: &crate::case::ExecutionCaseId,
     proof: Option<&realization::ProofAlternativeId>,
     selector: Option<crate::engine_proof::AlternativeKey>,
-) -> core::Row {
+) -> (core::Row, Option<super::operation::Payload>) {
     let key = super::placement::key(&crate::placement::RelationCaseKey {
         relation: declaration.id.clone(),
         case: case.clone(),
     });
     let result = derive(relations, declaration, case, proof);
     match result {
-        Ok((runtime, eligibility, coverage, facts)) => core::Row {
-            key,
-            proof: selector,
-            runtime,
-            eligibility,
-            coverage: Ok(coverage),
-            refusal: None,
-            facts: Some(facts),
-        },
-        Err(error) => core::Row {
-            key,
-            proof: selector,
-            runtime: false,
-            eligibility: Vec::new(),
-            coverage: Err(error.clone()),
-            refusal: Some(error),
-            facts: None,
-        },
+        Ok(derived) => (
+            core::Row {
+                key,
+                proof: selector,
+                runtime: derived.runtime,
+                eligibility: derived.eligibility,
+                coverage: Ok(derived.coverage),
+                refusal: None,
+                facts: Some(derived.facts),
+                projections: derived.projections,
+                collateral: derived.collateral,
+            },
+            Some(derived.payload),
+        ),
+        Err(error) => (
+            core::Row {
+                key,
+                proof: selector,
+                runtime: false,
+                eligibility: Vec::new(),
+                coverage: Err(error.clone()),
+                refusal: Some(error),
+                facts: None,
+                projections: std::collections::BTreeSet::new(),
+                collateral: std::collections::BTreeSet::new(),
+            },
+            None,
+        ),
     }
+}
+struct Derived {
+    payload: super::operation::Payload,
+    runtime: bool,
+    eligibility: Vec<crate::engine_placement::Eligibility>,
+    coverage: crate::engine_coverage::Plan,
+    facts: crate::engine_case_facts::Facts,
+    projections: std::collections::BTreeSet<crate::coverage::CoverageBoundary>,
+    collateral: std::collections::BTreeSet<crate::engine_coverage::Requirement>,
 }
 fn derive(
     relations: &crate::relation::CompilerRelationAnalysis,
     declaration: &realization::RelationDeclaration,
     case: &crate::case::ExecutionCaseId,
     proof: Option<&realization::ProofAlternativeId>,
-) -> Result<
-    (
-        bool,
-        Vec<crate::engine_placement::Eligibility>,
-        crate::engine_coverage::Plan,
-        crate::engine_case_facts::Facts,
-    ),
-    CompileError,
-> {
+) -> Result<Derived, CompileError> {
     let sources = proof.map_or_else(
         || Ok(Vec::new()),
         |proof| crate::source::derive_source_requirements(declaration, proof.proof()),
@@ -167,12 +212,38 @@ fn derive(
         &execution.active_sources.iter().cloned().collect(),
         &layout,
     );
-    Ok((
-        !plan.runtime_requirements.is_empty(),
-        lowered.records.eligibility,
-        super::coverage::lowered(&coverage),
+    let projections = coverage
+        .boundaries
+        .iter()
+        .filter(|boundary| {
+            crate::coverage::projection_requirement(&coverage.key(), &coverage, &plan, **boundary)
+                .is_some()
+        })
+        .copied()
+        .collect();
+    let collateral = coverage
+        .negative
+        .iter()
+        .filter(|row| {
+            row.collateral.policy
+                == crate::coverage::CollateralPolicy::RequireIntendedAndDependencyClosure
+        })
+        .map(|row| super::coverage::requirement(&row.id))
+        .collect();
+    Ok(Derived {
+        payload: super::operation::Payload::new(
+            &plan,
+            &coverage,
+            &execution.active_sources,
+            &eligible,
+        ),
+        runtime: !plan.runtime_requirements.is_empty(),
+        eligibility: lowered.records.eligibility,
+        coverage: super::coverage::lowered(&coverage),
         facts,
-    ))
+        projections,
+        collateral,
+    })
 }
 
 fn alternatives(

@@ -1036,7 +1036,7 @@ pub fn bind_projection_coverage(analysis: &mut PlanCoverageAnalysis, plans: &[Re
 }
 
 /// One boundary's accepted projection requirement, if it has one.
-fn projection_requirement(
+pub fn projection_requirement(
     key: &RelationCaseKey,
     plan: &RelationCoveragePlan,
     source: &RelationCasePlan,

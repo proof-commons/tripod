@@ -137,3 +137,11 @@ The coverage graph's common `definition_census` and `derive_dependencies` spans 
 Finite requirement lowering records the relation census under `compiler::engine_attestation`; common `derive` records table and selected-proof counts before joining the owner-approved rows.
 
 Case-fact lowering records source and layout counts; `compiler::engine_case_facts` validates relation-case joins with source and carrier counts, without selecting an owner or interpreting identifier codes.
+
+`compiler::engine_operation` records the relation-case census for factorized assembly. Attestation payload lowering and restoration have separate spans; the latter records case count and performs finite identity lookups only.
+
+`compiler::engine_program` traces fixed-owner lowering, concrete whole-record analysis and static re-derivation. Its analysis span records scope size; stage spans retain their own input/output and search counters.
+
+`compiler::engine_attestation::analyze_registered_operations` records the finite row census when production assembly and independent expectation derivation enter shared operation analysis.
+
+Production `analyze_bound_records` traces entry to the common orchestration. `publish_bound_program`, `prepare_requirement_payloads` and `restore_requirement_payloads` distinguish fixed-owner publication preparation from finite compatibility restoration; the latter records relation count.

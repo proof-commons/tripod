@@ -26,6 +26,7 @@ mod engine_foundation_tests;
 mod engine_keyed_tests;
 mod engine_lifecycle_tests;
 mod engine_placement_tests;
+mod engine_program_tests;
 mod engine_proof_tests;
 mod engine_records_tests;
 mod engine_requirement_tests;

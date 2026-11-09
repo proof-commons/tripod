@@ -21,6 +21,12 @@ use crate::relation::RelationCycleComponent;
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CompileError {
+    /// A common program record violates an owner-produced internal contract.
+    #[error("invalid owner program records: {defect:?}")]
+    InvalidOwnerProgramRecords {
+        /// The full typed record refusal, including its namespaced subjects.
+        defect: Box<crate::engine_program::Error>,
+    },
     /// The realization was built against a realization schema this
     /// compiler does not support.
     ///
@@ -1498,6 +1504,7 @@ impl CompileError {
     #[allow(clippy::too_many_lines)] // Exhaustive names must stay beside the enum.
     pub(crate) const fn tracing_kind(&self) -> &'static str {
         match self {
+            Self::InvalidOwnerProgramRecords { .. } => "invalid_owner_program_records",
             Self::UnsupportedRealizationSchema { .. } => "unsupported_realization_schema",
             Self::InvalidRealization => "invalid_realization",
             Self::ArchitectureBindingMismatch => "architecture_binding_mismatch",
