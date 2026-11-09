@@ -9,6 +9,7 @@ tapscript_source_files = files(
   'src/error.rs',
   'src/instruction.rs',
   'src/keyed_pattern.rs',
+  'src/keyed_constructor.rs',
   'src/lib.rs',
   'src/live_bundle.rs',
   'src/live_constructor.rs',

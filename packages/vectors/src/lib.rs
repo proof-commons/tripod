@@ -19,6 +19,7 @@ pub mod historical_candidate;
 pub mod keyed_birth;
 pub mod keyed_birth_corpus;
 pub mod keyed_birth_native;
+pub mod keyed_constructor;
 pub mod keyed_continuation;
 pub mod keyed_continuation_corpus;
 pub mod keyed_continuation_native;

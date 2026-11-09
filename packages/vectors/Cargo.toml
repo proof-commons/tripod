@@ -119,12 +119,13 @@ architecture = { workspace = true }
 compiler = { workspace = true }
 linker = { workspace = true }
 realization = { workspace = true }
-tapscript = { workspace = true }
+tapscript = { workspace = true, features = ["keyed-constructor"] }
 target-elements = { workspace = true }
 target-elements-conformance = { workspace = true }
 transaction = { workspace = true }
 # The archive admission root decodes the retained subjects and responses.
 serde_json = { workspace = true }
+serde = { workspace = true }
 
 [dev-dependencies]
 nix = { workspace = true }
