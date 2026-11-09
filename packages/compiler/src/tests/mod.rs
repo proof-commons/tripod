@@ -16,6 +16,7 @@ mod coverage_graph_tests;
 mod coverage_oracle_tests;
 mod coverage_tests;
 mod disclosure_tests;
+mod engine_base_capture;
 mod expression_tests;
 mod fold_tests;
 mod guide13_reproductions;

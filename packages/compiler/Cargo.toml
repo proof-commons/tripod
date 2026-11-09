@@ -27,6 +27,7 @@ realization = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+sha2 = { workspace = true }
 proptest = { workspace = true }
 tracing-subscriber = { workspace = true }
 

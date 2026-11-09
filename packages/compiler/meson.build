@@ -46,6 +46,7 @@ compiler_source_files = files(
   'src/tests/coverage_oracle_tests.rs',
   'src/tests/coverage_tests.rs',
   'src/tests/disclosure_tests.rs',
+  'src/tests/engine_base_capture.rs',
   'src/tests/expression_tests.rs',
   'src/tests/fold_tests.rs',
   'src/tests/guide13_reproductions.rs',
@@ -79,4 +80,4 @@ compiler_doc_files = files('README.md', 'TRACING.md')
 # Integration-test sources are cargo test inputs rather than label
 # graph subjects. The explicit exclusion keeps the tracked-file census
 # welded to that classification.
-compiler_excluded_files = files('tests/public_api.rs')
+compiler_excluded_files = files('tests/public_api.rs', 'tests/fixtures/engine_base/MANIFEST')
