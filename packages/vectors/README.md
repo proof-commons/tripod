@@ -260,3 +260,63 @@ policy refusal), missing readbacks, malformed links, incomplete responses or ope
 rows make the run ineligible. Repair such a subject or stop its obligation;
 capture eligibility never constitutes admission. No issuance, peg-in, funding
 floor, native stack metrics or key-dependent measurement is claimed.
+
+
+## Keyed constructor and continuation capture (Guide-15 Wave 1)
+
+`keyed_native` stages measurement (c)'s native path subjects and measurement (b)'s keyed rows in one history. All keyed programs come from `construct_keyed` and descriptor reconstruction. The two fixed deployment handles are defined only in the ignored test. No constructor home decision or measurement admission is made here.
+
+The 25-exchange census is one seven-output `fund_sponsor`, four parent sign/submit pairs, and eight subject sign/submit pairs. Sponsor outputs 0–3 create four distinct mined parents in this order: single k, mixed first k, mixed second k, l. Each parent reuses the birth layout: equal 10,000-satoshi keyed outputs at positions 0 and 1, 79,000 sponsor change and a 1,000 fee. Only position zero is spent. Output 4 funds the single-k subjects, output 5 the mixed pair, and output 6 the separate l control. Each reserve is 100,000 satoshis. These are fixture amounts, not floors. Every child returns 99,000 sponsor change and pays a 1,000 fee; output zero carries 10,000 for a single handle or 20,000 for two handles. Assets, fees and unrelated outputs stay fixed within each pair.
+
+Submission order is wrong control parity, uncommitted leaf, key-path attempt, wrong key, canonical k control, mixed keys, same-key two-input control, separate l control. Every negative is constructed, signed and submitted before its consuming control. The canonical k control is shared by the constructor negatives and wrong key, and is also the k half of independent coexistence.
+
+| Row | Coordinate and boundary |
+|---|---|
+| Canonical k | Exact mined script-path control on the first parent |
+| Wrong control parity | Flip only bit zero of the original control; commitment refusal before clauses |
+| Uncommitted leaf | Flip one byte of the offered key literal, retaining the original control; commitment refusal before clauses |
+| Key-path attempt | Replace only the keyed witness by a single 64-byte zero signature; exact Schnorr refusal, no absent-discrete-log proof |
+| Wrong key | Replace only output zero's program by the reconstructed l recipe; payload equality refusal |
+| Mixed keys | Spend mixed first k plus l, output zero under k; compare with mixed first k plus mixed second k |
+| Same-key control | Two distinct birth-zero k handles, output zero under k; exact mined control |
+| Independent coexistence | Separate canonical k and l transactions accepted on this one history; no mixed-key acceptance claim |
+
+The mixed row changes the second handle's semantic key. Since a funded coin's program is immutable, this necessarily uses an equivalent different second predecessor, with its outpoint, leaf/control, transaction identities and sponsor signature as declared collateral. The first k coin, sponsor reserve, values/assets, fee and output programs are fixed. This is a same-first-coin pair, not a claim that one outpoint can change keys. Both second predecessors are mined and their controls authenticated; both birth indexes are zero. All rows are expressible with the existing executor; none is approximated or omitted.
+
+Witness-only constructor mutations keep the complete non-witness transaction fixed; their collateral is witness bytes, wtxid, weight and observation. Wrong-key collateral is the successor commitment, sponsor signature and transaction identities/weight. Signing echoes and sponsor hash preimages are checked, not independently ECDSA-verified. The keyed equality offsets are 42 (birth), 49 (version), 50 (payload). Equality attribution uses reconstructed one-coordinate pairs and a mined control, never an undifferentiated error alone. Mixed attribution additionally uses the authenticated l predecessor and same-key control.
+
+The executor's `key_path_rejection` detector requires every input to use the key path. A P2WPKH sponsor therefore leaves this row's raw layer as `script_path_rejection`. That raw response is retained unchanged. The campaign separately classifies `KeyPathSignatureRefusal` only for exact `Invalid Schnorr signature` text, the reconstructed one-item keyed witness and the mined same-coin script control; the sponsor uses ECDSA and neither keyed leaf contains a signature opcode. A signature-size error is not accepted as that boundary. Commitment rows require exact `Witness program hash mismatch`; equality rows require exact `Script failed an OP_EQUALVERIFY operation`. Both recognized script wrappers are accepted; ambiguous, wrong-site or earlier-layer responses remain open. A relay refusal is not a direct-block rejection.
+
+Run this exact command from the clean repository root **inside `localhost/tripod-native:f44`**, with the read-only `/elements` toolchain and `/src` repository plus isolated writable toolchain/cache mounts described for birth. Supply a fresh `$KEYED_REPORT_DIR`, deployment identifiers `$KEYED_NETWORK_ID` and `$KEYED_GENESIS_ID`, and `$ELEMENTS_INTENDED_TIP` from `PROVENANCE.txt`. Never run in the document image or on the `CoreOS` host.
+
+```sh
+env \
+  TRIPOD_LIVE_EXECUTOR="$PWD/scripts/elements-native-executor.sh" \
+  TRIPOD_LIVE_REPORT_DIR="$KEYED_REPORT_DIR" \
+  TRIPOD_LIVE_SUITE_SHORT_SHA="$(git rev-parse --short=12 HEAD)" \
+  TRIPOD_LIVE_SUITE_COMMIT="$(git rev-parse HEAD)" \
+  TRIPOD_LIVE_SUITE_TREE="$(git rev-parse HEAD^{tree})" \
+  TRIPOD_LIVE_NETWORK_ID="$KEYED_NETWORK_ID" \
+  TRIPOD_LIVE_GENESIS_ID="$KEYED_GENESIS_ID" \
+  ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD=/elements/bin/elementsd \
+  ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI=/elements/bin/elements-cli \
+  ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK=/elements/src/test/functional \
+  ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP="$ELEMENTS_INTENDED_TIP" \
+  ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID="$KEYED_NETWORK_ID" \
+  ELEMENTS_NATIVE_EXECUTOR_ENABLE_WALLET=1 \
+  ELEMENTS_NATIVE_EXECUTOR_ZK_LIBRARY=/elements/lib/libsecp256k1.so \
+  ELEMENTS_NATIVE_EXECUTOR_FEE_POLICY=node-defaults \
+  ELEMENTS_NATIVE_EXECUTOR_MATURITY_OBSERVATION=1 \
+  ELEMENTS_NATIVE_EXECUTOR_PYTHON=python3 \
+  ELEMENTS_NATIVE_EXECUTOR_LAUNCH_PREFIX= \
+  ELEMENTS_NATIVE_EXECUTOR_UPSTREAM_BASE= \
+  ELEMENTS_NATIVE_EXECUTOR_LOCAL_TOPICS= \
+  cargo test -p tripod-vectors --profile gate --test maturity_native \
+    keyed_native::keyed_campaign_runs_against_a_real_target -- --ignored --exact --nocapture
+```
+
+These are all application-specific environment inputs. The wrapper supplies `PATH`, `HOME`, `TMPDIR`, `CARGO_HOME`, `CARGO_TARGET_DIR` and `RUSTUP_HOME`; executor deadline is 900 seconds. The test remains a submodule of `maturity_native`, not a new Cargo target. No adapter or protocol change is needed.
+
+Expected files: `<short>.report.capture`, `<short>.report.timing`, `<short>.report.capture.timing`, `RUN-REPORT`, `MANIFEST.sha256` (covering the other four), plus separate `diagnostics/`. The capture includes public descriptors and every complete executor request/response in `wire_journal`, with links, handshake, environment, funding facts, signing echoes, frozen bytes, policy/startup arguments, relay result/reason, consensus route/evidence, accepted txid/wtxid and block hash/height/raw readback. Replay uses wire JSON alone, never debug text. Partial runs are retained before ineligibility is asserted; preflight/write failures can leave incomplete files and are ineligible.
+
+A run of record reports file digests, suite commit/tree, image, deployment, executable/source provenance, protocol/adapter/node versions, policy origins/startup arguments, 25 exchanges, all eight classes, exact errors and mined readbacks/heights, wall and infrastructure failures. Every parent and control requires exact mined readback. Coexistence additionally requires the l control at a later height than the k control. Missing/malformed responses or links, recipe drift, incomplete execution, ambiguous or earlier-layer refusals, or any open row makes the run ineligible. `admitted` stays false; measurement records follow a separate admission step. No native stack metrics, issuance/peg-in coverage or universal key-path impossibility is claimed.

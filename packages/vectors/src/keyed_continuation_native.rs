@@ -572,6 +572,14 @@ pub fn replay_continuation_capture(
     if journal["continuation_wire_schema"] != 1 || journal["terminal"] != "complete" {
         return Err(BirthNativeRefusal::Replay);
     }
+    replay_continuation_campaign(target, &decode_wire_operations(journal)?)
+}
+
+// Shared lossless journal reader. Campaign wrappers validate their own schema
+// and terminal marker; this checks every link and complete response carrier.
+pub(crate) fn decode_wire_operations(
+    journal: &Value,
+) -> Result<Vec<(OperationStep, NativeOperationResponse)>, BirthNativeRefusal> {
     let operations = journal["operations"]
         .as_array()
         .ok_or(BirthNativeRefusal::Replay)?;
@@ -603,7 +611,7 @@ pub fn replay_continuation_capture(
             Ok((step, response))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    replay_continuation_campaign(target, &exchanges)
+    Ok(exchanges)
 }
 
 /// Classify only a replayed, exact one-coordinate pair beside its mined control.

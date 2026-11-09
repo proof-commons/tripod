@@ -8,6 +8,7 @@ pub mod common;
 mod keyed_birth;
 mod keyed_constructor;
 mod keyed_continuation;
+mod keyed_native;
 
 use std::fmt::Write as _;
 use std::path::Path;
