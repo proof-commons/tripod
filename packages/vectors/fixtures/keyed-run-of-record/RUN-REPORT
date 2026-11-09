@@ -1,0 +1,7 @@
+keyed-run-schema 1
+wall-seconds 2.436
+eligible-for-review true
+admitted false
+executor-completed true
+replay-refusal None
+classes [MinedControl, CommitmentRefusal, CommitmentRefusal, KeyPathSignatureRefusal, ProgramEqualityRefusal, MixedKeyEqualityRefusal, MinedControl, MinedControl]

@@ -23,6 +23,7 @@ pub mod keyed_constructor;
 pub mod keyed_continuation;
 pub mod keyed_continuation_corpus;
 pub mod keyed_continuation_native;
+pub mod keyed_corpus;
 pub mod keyed_native;
 pub mod live_capability;
 pub mod live_comparison;
