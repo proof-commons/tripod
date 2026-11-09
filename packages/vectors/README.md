@@ -320,3 +320,44 @@ These are all application-specific environment inputs. The wrapper supplies `PAT
 Expected files: `<short>.report.capture`, `<short>.report.timing`, `<short>.report.capture.timing`, `RUN-REPORT`, `MANIFEST.sha256` (covering the other four), plus separate `diagnostics/`. The capture includes public descriptors and every complete executor request/response in `wire_journal`, with links, handshake, environment, funding facts, signing echoes, frozen bytes, policy/startup arguments, relay result/reason, consensus route/evidence, accepted txid/wtxid and block hash/height/raw readback. Replay uses wire JSON alone, never debug text. Partial runs are retained before ineligibility is asserted; preflight/write failures can leave incomplete files and are ineligible.
 
 A run of record reports file digests, suite commit/tree, image, deployment, executable/source provenance, protocol/adapter/node versions, policy origins/startup arguments, 25 exchanges, all eight classes, exact errors and mined readbacks/heights, wall and infrastructure failures. Every parent and control requires exact mined readback. Coexistence additionally requires the l control at a later height than the k control. Missing/malformed responses or links, recipe drift, incomplete execution, ambiguous or earlier-layer refusals, or any open row makes the run ineligible. `admitted` stays false; measurement records follow a separate admission step. No native stack metrics, issuance/peg-in coverage or universal key-path impossibility is claimed.
+
+
+## Keyed cost comparison and focused capture
+
+`keyed_cost::cost_packet` reads the three admitted archives and projects exact isolated birth (with final truth), isolated continuation (with final truth), key-free composed and complete keyed programs through the typed stack engine. Instruction count, operation charges and validation charge are static predictions. Exact leaf/output/control bytes, `CompactSize` witness framing, control depth and complete transaction serialization are separate quantities. Standard transaction weight is four times stripped bytes plus witness bytes, not discounted virtual size. Every archived subject retains its node-read weight beside that serialization; differences are findings, never silently normalized. The key-free continuation archive contains birth as well as continuation, so its weight is not an isolated-continuation observation. Sponsor signatures and output shapes differ between archives; subtracting their transaction weights would not measure a clause.
+
+The descriptor's public semantic key, internal-key derivation, root and output commitment are fixed construction data, not an amortized transaction-weight deduction. Every script-path input repeats the complete leaf (including the 34-byte key push/drop) and its control. The packet keeps positional sponsor witnesses and output proof framing separate. Native stack peaks, maximum element, validation budget and opcode timing remain explicitly absent. Submission resource reports do not independently measure script length or initial stack count; those fields are null in these archives. The birth archive uses its already-admitted journal bridge because its original capture predates complete wire JSON; no new debug decoder is introduced here.
+
+The focused campaign has twelve exchanges: funding, parent signing/submission, isolated-continuation signing/submission; fresh funding, resource-parent signing/submission, oversized signing/submission, same-coin resource-control signing/submission. Both fundings have two sponsor outputs; output zero funds two equal parent outputs and output one reserves the child sponsor coin. Each negative is submitted before its control. The standalone continuation supplies missing exact native weight for its eight-byte leaf. The resource leaf is `Drop; true`, with no covenant clauses: only the initial argument length changes from one to 521 bytes, with witness bytes, wtxid, weight and response as collateral. This observes target relay/resource admission; it does not claim a minimal policy floor. The expected size error is `mandatory-script-verify-flag-failed (Push value size limit exceeded)` beside exact mined control. The exact `bad-witness-nonstandard` relay reason beside the mined control is instead classified only as a witness-policy refusal; it makes no consensus size-site claim. Other refusals stay open, and relay and consensus outcomes are never conflated. An altered report changes only a reported resource dimension beside the unchanged admitted source and is refused offline by `validate_resource_report`; it requires no fabricated executor result or native submission.
+
+Run the following only inside `localhost/tripod-native:f44`, with read-only `/elements` toolchain and `/src` repository and the isolated writable mounts described for birth. Supply fresh `$KEYED_COST_REPORT_DIR`, deployment `$KEYED_COST_NETWORK_ID` and `$KEYED_COST_GENESIS_ID`, and `$ELEMENTS_INTENDED_TIP` from `PROVENANCE.txt`. This staging step does not run it.
+
+```sh
+env \
+  TRIPOD_LIVE_EXECUTOR="$PWD/scripts/elements-native-executor.sh" \
+  TRIPOD_LIVE_REPORT_DIR="$KEYED_COST_REPORT_DIR" \
+  TRIPOD_LIVE_SUITE_SHORT_SHA="$(git rev-parse --short=12 HEAD)" \
+  TRIPOD_LIVE_SUITE_COMMIT="$(git rev-parse HEAD)" \
+  TRIPOD_LIVE_SUITE_TREE="$(git rev-parse HEAD^{tree})" \
+  TRIPOD_LIVE_NETWORK_ID="$KEYED_COST_NETWORK_ID" \
+  TRIPOD_LIVE_GENESIS_ID="$KEYED_COST_GENESIS_ID" \
+  ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD=/elements/bin/elementsd \
+  ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI=/elements/bin/elements-cli \
+  ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK=/elements/src/test/functional \
+  ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP="$ELEMENTS_INTENDED_TIP" \
+  ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID="$KEYED_COST_NETWORK_ID" \
+  ELEMENTS_NATIVE_EXECUTOR_ENABLE_WALLET=1 \
+  ELEMENTS_NATIVE_EXECUTOR_ZK_LIBRARY=/elements/lib/libsecp256k1.so \
+  ELEMENTS_NATIVE_EXECUTOR_FEE_POLICY=node-defaults \
+  ELEMENTS_NATIVE_EXECUTOR_MATURITY_OBSERVATION=1 \
+  ELEMENTS_NATIVE_EXECUTOR_PYTHON=python3 \
+  ELEMENTS_NATIVE_EXECUTOR_LAUNCH_PREFIX= \
+  ELEMENTS_NATIVE_EXECUTOR_UPSTREAM_BASE= \
+  ELEMENTS_NATIVE_EXECUTOR_LOCAL_TOPICS= \
+  cargo test -p tripod-vectors --profile gate --test maturity_native \
+    keyed_cost::keyed_cost_campaign_runs_against_a_real_target -- --ignored --exact --nocapture
+```
+
+These are all application-specific environment inputs. The wrapper supplies `PATH`, `HOME`, `TMPDIR`, `CARGO_HOME`, `CARGO_TARGET_DIR` and `RUSTUP_HOME`. Executor deadline is 900 seconds. The ignored test lives under the existing `maturity_native` target; no executor or protocol change is needed.
+
+Expected file set: `<short>.report.capture`, `<short>.report.timing`, `<short>.report.capture.timing`, `RUN-REPORT`, `MANIFEST.sha256`, plus separate `diagnostics/`. The capture retains complete wire-JSON responses, request/response links, handshake, environment, executable provenance, funding, policy/startup arguments, exact transactions and raw observations. A run of record must report all five digests, suite commit/tree, image and deployment, protocol/adapter/node versions, twelve exchanges, control mined readbacks/heights, serialized versus node-read weights, any mismatch, oversized relay reason and consensus route separately, wall and infrastructure failures. Missing weight on either control, incomplete replay, wrong signing echo, missing exact mined control, or an ambiguous size refusal makes the capture ineligible; mismatches remain findings for review rather than being erased. Files are written before asserting eligibility, while preflight/write failures can leave incomplete files. `admitted` remains false. No measurement record, native stack metric, funding floor or scaling claim follows from staging.
