@@ -9,6 +9,7 @@ mod keyed_birth;
 mod keyed_constructor;
 mod keyed_continuation;
 mod keyed_cost;
+mod keyed_funding;
 mod keyed_native;
 
 use std::fmt::Write as _;
