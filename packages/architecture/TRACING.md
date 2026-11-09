@@ -100,3 +100,7 @@ Assert identical returned defects, hashes, canonical bytes, and JSON/TOML artifa
 - Resolved diagnostic ownership: one library completion event reports a typed outcome, and `cli-common` alone emits the command's terminal ERROR; a nested same-crate core does not emit another completion event.
 - Resolved timing: the subscriber emits enabled span close records with inclusive `busy_ns` and `idle_ns`; a collector derives exclusive time from parentage and never sums nested spans as separate work.
 - Resolved startup: under amended ADR-010, `cli-common` installs the subscriber and panic hook before parsing and routes required control records through an unfiltered layer; architecture installs neither.
+
+## Keyed boundary probe · `sec:tracing-architecture:keyed-probe`
+
+The experimental keyed entry spans are DEBUG and carry operation or byte counts. Owner validation emits a completed/refused outcome and a payload-free refusal kind; span-close records supply timing. The keyed validation test compares traced and untraced control/refusal results. No key contents, history contents or native evidence is emitted. Existing attestation entry instrumentation remains unchanged.

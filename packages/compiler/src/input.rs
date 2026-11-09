@@ -12,6 +12,8 @@ use architecture::{Architecture, OperationId};
 use realization::{ArchitectureBinding, RealizationError, ScopedRealizationSpec};
 
 use crate::CompileError;
+pub use crate::engine_attestation::AttestationOwner;
+pub use crate::engine_keyed::{KeyedBindingError, KeyedOwner};
 
 /// Explicit, canonical compiler operation scope.
 ///
@@ -112,36 +114,47 @@ impl AnalysisPolicy {
 /// Fields are private; there is no mutable accessor, no public
 /// constructor besides [`bind_input`], no serializer, and no digest.
 #[derive(Clone, Debug)]
-pub struct BoundCompilerInput {
-    realization: ScopedRealizationSpec,
-    scope: CompilationScope,
+pub struct BoundCompilerInput<O = AttestationOwner> {
+    owner: O,
     policy: AnalysisPolicy,
-    architecture_operations: std::collections::BTreeSet<OperationId>,
+}
+
+impl<O> BoundCompilerInput<O> {
+    pub(crate) const fn owner(&self) -> &O {
+        &self.owner
+    }
+
+    /// The explicit analysis policy retained at binding.
+    #[must_use]
+    pub const fn policy(&self) -> AnalysisPolicy {
+        self.policy
+    }
 }
 
 impl BoundCompilerInput {
     /// The validated realization this compilation analyzes.
     #[must_use]
     pub const fn realization(&self) -> &ScopedRealizationSpec {
-        &self.realization
+        self.owner.source()
+    }
+
+    pub(crate) fn analyze_relation_records(
+        &self,
+    ) -> Result<crate::relation::CompilerRelationAnalysis, CompileError> {
+        let analyzed = crate::engine_records::analyze_bound_relations(self);
+        analyzed.lowering.compatibility_view(analyzed.result)
     }
 
     /// The explicit compiler operation scope.
     #[must_use]
     pub const fn scope(&self) -> &CompilationScope {
-        &self.scope
-    }
-
-    /// The analysis policy in force.
-    #[must_use]
-    pub const fn policy(&self) -> AnalysisPolicy {
-        self.policy
+        self.owner.scope()
     }
 
     /// The architecture identity both sides of this binding share.
     #[must_use]
     pub fn architecture_binding(&self) -> &ArchitectureBinding {
-        self.realization.architecture()
+        self.realization().architecture()
     }
 
     /// The complete operation census of the validated architecture.
@@ -154,7 +167,7 @@ impl BoundCompilerInput {
     /// would be a guess about the model rather than a reading of it.
     #[must_use]
     pub const fn architecture_operations(&self) -> &std::collections::BTreeSet<OperationId> {
-        &self.architecture_operations
+        self.owner.architecture_operations()
     }
 }
 
@@ -168,7 +181,7 @@ impl BoundCompilerInput {
 /// owner's re-run validation; [`CompileError::IncompleteRealizationScope`]
 /// when the compiler scope names an operation the realization does not
 /// declare.
-pub fn bind_input(
+fn bind_attestation_input(
     architecture: &Architecture,
     realization: ScopedRealizationSpec,
     scope: CompilationScope,
@@ -199,14 +212,16 @@ pub fn bind_input(
         }
 
         Ok(BoundCompilerInput {
-            realization,
-            scope,
+            owner: AttestationOwner::new(
+                realization,
+                scope,
+                architecture
+                    .operations
+                    .iter()
+                    .map(|operation| operation.id)
+                    .collect(),
+            ),
             policy,
-            architecture_operations: architecture
-                .operations
-                .iter()
-                .map(|operation| operation.id)
-                .collect(),
         })
     })();
     match &result {
@@ -232,4 +247,125 @@ pub fn bind_input(
         ),
     }
     result
+}
+
+mod owner_sealed {
+    pub trait Sealed {}
+    impl Sealed for architecture::Architecture {}
+    impl Sealed for architecture::keyed::KeyedManifest {}
+}
+
+/// Closed manifest vocabulary of the binding seam. The associated owner is
+/// fixed here and retained in the bound type; no later owner selection occurs.
+pub trait InputBinding: owner_sealed::Sealed {
+    type Realization;
+    type Scope;
+    type Owner;
+    type Error;
+    /// Revalidate the original owner before creating a bound input.
+    ///
+    /// # Errors
+    /// Returns the selected owner's realization, binding or scope refusal.
+    fn bind_owned(
+        &self,
+        realization: Self::Realization,
+        scope: Self::Scope,
+        policy: AnalysisPolicy,
+    ) -> Result<BoundCompilerInput<Self::Owner>, Self::Error>;
+}
+
+impl InputBinding for Architecture {
+    type Realization = ScopedRealizationSpec;
+    type Scope = CompilationScope;
+    type Owner = AttestationOwner;
+    type Error = CompileError;
+    fn bind_owned(
+        &self,
+        realization: Self::Realization,
+        scope: Self::Scope,
+        policy: AnalysisPolicy,
+    ) -> Result<BoundCompilerInput<Self::Owner>, Self::Error> {
+        bind_attestation_input(self, realization, scope, policy)
+    }
+}
+
+impl InputBinding for architecture::keyed::KeyedManifest {
+    type Realization = realization::keyed::KeyedScopedRealization;
+    type Scope = Vec<architecture::semantic::SemanticOperationId>;
+    type Owner = KeyedOwner;
+    type Error = KeyedBindingError;
+    fn bind_owned(
+        &self,
+        realization: Self::Realization,
+        mut scope: Self::Scope,
+        policy: AnalysisPolicy,
+    ) -> Result<BoundCompilerInput<Self::Owner>, Self::Error> {
+        let span = tracing::debug_span!(target: "compiler::input", "bind_keyed_input", scope_operation_count = crate::instrumentation::count(scope.len()));
+        let _entered = span.enter();
+        let result = (|| {
+            realization
+                .validate_against(self)
+                .map_err(KeyedBindingError::InvalidRealization)?;
+            scope.sort();
+            if scope.is_empty() {
+                return Err(KeyedBindingError::EmptyScope);
+            }
+            if let Some(operation) = scope
+                .windows(2)
+                .find_map(|pair| (pair[0] == pair[1]).then_some(pair[0]))
+            {
+                return Err(KeyedBindingError::DuplicateOperation(operation));
+            }
+            for operation in &scope {
+                if !self.operations.contains(operation) {
+                    return Err(KeyedBindingError::ForeignOperation(*operation));
+                }
+            }
+            Ok(BoundCompilerInput {
+                owner: KeyedOwner::new(self.clone(), realization, scope),
+                policy,
+            })
+        })();
+        tracing::debug!(target: "compiler::input", outcome = if result.is_ok() { "completed" } else { "refused" }, refusal_kind = result.as_ref().err().map(KeyedBindingError::kind), "keyed input binding completed");
+        result
+    }
+}
+
+/// Bind an explicitly typed manifest and fix its owner for all re-derivation.
+///
+/// The two source vocabularies cannot be exchanged at binding. These are
+/// source-type refusals, before a graph or an owner can be selected:
+///
+/// ```compile_fail
+/// use architecture::{ARCHITECTURE, keyed::KeyedManifest};
+/// use compiler::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
+/// use realization::keyed::KeyedRealizationDraft;
+/// let manifest = KeyedManifest::probe().unwrap();
+/// let keyed = KeyedRealizationDraft::derive(&manifest).unwrap().validate(&manifest).unwrap();
+/// let scope = CompilationScope::from_operations([architecture::OperationId::CompactAsh]).unwrap();
+/// let limit = std::num::NonZeroU64::new(100).unwrap();
+/// let policy = AnalysisPolicy::strict(ProofSearchLimits::new(limit, limit));
+/// bind_input(&ARCHITECTURE, keyed, scope, policy);
+/// ```
+///
+/// ```compile_fail
+/// use architecture::{ARCHITECTURE, keyed::KeyedManifest, semantic::{KeyedOperationId, SemanticOperationId}};
+/// use compiler::{AnalysisPolicy, ProofSearchLimits, bind_input};
+/// let attestation = realization::derive(&ARCHITECTURE, realization::RealizationScope::phase1_pilots()).unwrap();
+/// let manifest = KeyedManifest::probe().unwrap();
+/// let scope = vec![SemanticOperationId::Keyed(KeyedOperationId::Source)];
+/// let limit = std::num::NonZeroU64::new(100).unwrap();
+/// let policy = AnalysisPolicy::strict(ProofSearchLimits::new(limit, limit));
+/// bind_input(&manifest, attestation, scope, policy);
+/// ```
+///
+/// # Errors
+/// Returns the selected owner's realization, binding or scope refusal.
+pub fn bind_input<A: InputBinding>(
+    architecture: &A,
+    realization: A::Realization,
+    scope: A::Scope,
+    policy: AnalysisPolicy,
+) -> Result<BoundCompilerInput<A::Owner>, A::Error> {
+    architecture.bind_owned(realization, scope, policy)
 }

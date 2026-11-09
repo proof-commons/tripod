@@ -17,6 +17,84 @@ use crate::{
     RepresentationMode,
 };
 
+/// Experimental keyed vocabulary. Kept distinct from attestation recognition,
+/// which requires an asset and its protocol object-shape laws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum KeyedRelation {
+    /// Cardinality of authenticated same-key handles only. Other inputs and
+    /// outputs are unconstrained; a later covenant-shaped output is no handle.
+    HandleFamily {
+        side: crate::TransactionSide,
+        cardinality: KeyedCardinality,
+    },
+    BornFirst,
+    ContinueFirst,
+    /// Complete input classification proves absence of same-key handles.
+    /// This is history evidence, never a covenant-input predicate.
+    SourceClassification,
+    MembershipReading {
+        recurrence: RecordRecurrence,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum KeyedCardinality {
+    Zero,
+    One,
+    OneOrMore,
+}
+
+/// Derived record sets: neither variant is a stored set or an accumulator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RecordRecurrence {
+    /// The singleton record identity is (the manifest's fixed key, SOURCE handle).
+    SourceSingleton,
+    /// Union of consumed handles' reconstructed sets; introduces no record.
+    ConsumedUnion,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum KeyedRelationKind {
+    InputFamily,
+    OutputFamily,
+    BornFirst,
+    ContinueFirst,
+    SourceClassification,
+    MembershipReading,
+}
+
+impl KeyedRelation {
+    pub const fn kind(self) -> KeyedRelationKind {
+        match self {
+            Self::HandleFamily {
+                side: crate::TransactionSide::Input,
+                ..
+            } => KeyedRelationKind::InputFamily,
+            Self::HandleFamily {
+                side: crate::TransactionSide::Output,
+                ..
+            } => KeyedRelationKind::OutputFamily,
+            Self::BornFirst => KeyedRelationKind::BornFirst,
+            Self::ContinueFirst => KeyedRelationKind::ContinueFirst,
+            Self::SourceClassification => KeyedRelationKind::SourceClassification,
+            Self::MembershipReading { .. } => KeyedRelationKind::MembershipReading,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct KeyedRelationId {
+    pub operation: architecture::semantic::SemanticOperationId,
+    pub object: architecture::semantic::SemanticObjectId,
+    pub kind: KeyedRelationKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct KeyedRelationDeclaration {
+    pub id: KeyedRelationId,
+    pub relation: KeyedRelation,
+}
+
 /// Semantic constructibility class for one operation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ConstructibilityClass {

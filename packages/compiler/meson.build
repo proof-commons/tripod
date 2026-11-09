@@ -13,6 +13,9 @@ compiler_source_files = files(
   'src/coverage.rs',
   'src/coverage_graph.rs',
   'src/disclosure.rs',
+  'src/engine_attestation.rs',
+  'src/engine_keyed.rs',
+  'src/engine_records.rs',
   'src/error.rs',
   'src/expression.rs',
   'src/fold.rs',
@@ -47,6 +50,8 @@ compiler_source_files = files(
   'src/tests/coverage_tests.rs',
   'src/tests/disclosure_tests.rs',
   'src/tests/engine_base_capture.rs',
+  'src/tests/engine_keyed_tests.rs',
+  'src/tests/engine_records_tests.rs',
   'src/tests/expression_tests.rs',
   'src/tests/fold_tests.rs',
   'src/tests/guide13_reproductions.rs',
@@ -80,4 +85,4 @@ compiler_doc_files = files('README.md', 'TRACING.md')
 # Integration-test sources are cargo test inputs rather than label
 # graph subjects. The explicit exclusion keeps the tracked-file census
 # welded to that classification.
-compiler_excluded_files = files('tests/public_api.rs', 'tests/fixtures/engine_base/MANIFEST')
+compiler_excluded_files = files('tests/public_api.rs', 'tests/fixtures/engine_base/MANIFEST', 'tests/fixtures/keyed_base_architecture.json')

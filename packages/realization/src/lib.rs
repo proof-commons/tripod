@@ -16,6 +16,7 @@ pub mod error;
 pub mod evaluate;
 pub mod expression;
 pub mod identity;
+pub mod keyed;
 pub mod lifecycle;
 pub mod observation;
 pub mod operation;

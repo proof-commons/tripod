@@ -191,7 +191,7 @@ impl<'a> ValidatedReleaseArchitecture<'a> {
 /// This is the sole entry to architecture identity: the returned
 /// wrapper is the only value the canonical projection and hash
 /// functions accept.
-pub fn validate_draft(
+fn validate_attestation_draft(
     architecture: &Architecture,
 ) -> Result<ValidatedDraftArchitecture<'_>, Vec<ManifestError>> {
     let span = tracing::debug_span!(
@@ -218,6 +218,84 @@ pub fn validate_draft(
         ),
     }
     result
+}
+
+mod semantic_sealed {
+    pub trait Sealed {}
+    impl Sealed for &crate::Architecture {}
+    impl Sealed for &crate::keyed::KeyedManifest {}
+}
+
+/// Closed input vocabulary of the architecture validation entry.
+pub trait DraftManifest: semantic_sealed::Sealed {
+    type Validated;
+    type Error;
+    fn validate_owned(self) -> Result<Self::Validated, Self::Error>;
+}
+
+impl<'a> DraftManifest for &'a Architecture {
+    type Validated = ValidatedDraftArchitecture<'a>;
+    type Error = Vec<ManifestError>;
+
+    fn validate_owned(self) -> Result<Self::Validated, Self::Error> {
+        validate_attestation_draft(self)
+    }
+}
+
+impl<'a> DraftManifest for &'a crate::keyed::KeyedManifest {
+    type Validated = crate::keyed::ValidatedKeyedManifest<'a>;
+    type Error = crate::keyed::KeyedManifestError;
+
+    fn validate_owned(self) -> Result<Self::Validated, Self::Error> {
+        use crate::keyed::{
+            KEYED_SCHEMA_VERSION, KeyedClause, KeyedDocumentBinding, KeyedManifestError as Error,
+            ValidatedKeyedManifest,
+        };
+        use crate::semantic::{
+            KeyedObjectId, KeyedOperationId, SemanticObjectId, SemanticOperationId,
+            SemanticProfileId,
+        };
+        let span = tracing::debug_span!(target: "architecture::validate", "validate_keyed_draft", operation_count = crate::trace_count(self.operations.len()));
+        let _entered = span.enter();
+        let result = (|| {
+            if self.profile != SemanticProfileId::KeyedProvenance {
+                return Err(Error::ProfileBinding);
+            }
+            if self.schema_version != KEYED_SCHEMA_VERSION {
+                return Err(Error::SchemaVersion);
+            }
+            if self.document != KeyedDocumentBinding::paper().map_err(|_| Error::PaperBinding)? {
+                return Err(Error::PaperBinding);
+            }
+            if self.objects != [SemanticObjectId::Keyed(KeyedObjectId::Handle)] {
+                return Err(Error::ObjectCensus);
+            }
+            let mut operations = self.operations.clone();
+            operations.sort();
+            if operations
+                != [
+                    SemanticOperationId::Keyed(KeyedOperationId::Source),
+                    SemanticOperationId::Keyed(KeyedOperationId::Merge),
+                ]
+            {
+                return Err(Error::OperationCensus);
+            }
+            let mut clauses = self.clauses.clone();
+            clauses.sort();
+            if clauses != [KeyedClause::BornFirst, KeyedClause::ContinueFirst] {
+                return Err(Error::ClauseCensus);
+            }
+            Ok(ValidatedKeyedManifest(self))
+        })();
+        tracing::debug!(target: "architecture::validate", outcome = if result.is_ok() { "completed" } else { "refused" }, refusal_kind = result.as_ref().err().map(|error| error.kind()), "keyed manifest validation completed");
+        result
+    }
+}
+
+/// Validate an explicitly selected semantic manifest at its owner entry.
+/// Existing attestation callers retain their wrapper, errors and identity.
+pub fn validate_draft<M: DraftManifest>(manifest: M) -> Result<M::Validated, M::Error> {
+    manifest.validate_owned()
 }
 
 fn validate_draft_core(

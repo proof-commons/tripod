@@ -10,10 +10,10 @@ use crate::{
 
 /// One target-independent operation realization.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OperationRealization {
-    pub operation: OperationId,
+pub struct OperationRealization<O = OperationId, R = RelationDeclaration> {
+    pub operation: O,
     pub expressions: Vec<ExpressionDeclaration>,
-    pub relations: Vec<RelationDeclaration>,
+    pub relations: Vec<R>,
     pub relation_dependencies: Vec<RelationDependencyDeclaration>,
     pub constructibility_nodes: Vec<ConstructibilityNode>,
     pub constructibility_edges: Vec<ConstructibilityDependencyDeclaration>,

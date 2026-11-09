@@ -25,6 +25,8 @@ pub mod canonical;
 pub mod deployment;
 pub mod export;
 pub mod ids;
+pub mod keyed;
+pub mod semantic;
 pub mod spec;
 pub mod validate;
 
