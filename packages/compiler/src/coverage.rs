@@ -48,16 +48,16 @@ use crate::{
     CompileError,
     capability::RequiredCapability,
     carrier::{CarrierEligibility, relation_case_eligibility},
-    case::{ConservedAmountVisibility, ExecutionCaseId, conserved_amount_visibility},
+    case::{ConservedAmountVisibility, ExecutionCaseId},
     coverage_graph::{CoverageGraphProjection, resolve_coverage_dependencies},
-    layout::{LayoutRequirement, names_sponsor_amount, selected_carrier_requirements},
+    layout::{LayoutRequirement, names_sponsor_amount},
     placement::{
         PlacedCarrier, PlacedProofPlanCandidate, PlacedProofPlans, PlacementCandidate,
         RelationActivity, RelationCaseKey, RelationCasePlan,
     },
     proof::ProofPlanCandidate,
     relation::CompilerRelationAnalysis,
-    source::{OperandId, SourceRequirement, is_sponsor_amount_operand, relation_operands},
+    source::{OperandId, SourceRequirement, is_sponsor_amount_operand},
 };
 
 /// Where one coverage requirement is answered.
@@ -370,7 +370,7 @@ impl RelationCoveragePlan {
     }
 
     /// Every requirement identity this plan states.
-    fn requirement_ids(&self) -> impl Iterator<Item = &CoverageRequirementId> {
+    pub fn requirement_ids(&self) -> impl Iterator<Item = &CoverageRequirementId> {
         self.positive
             .iter()
             .map(|requirement| &requirement.id)
@@ -413,6 +413,7 @@ impl PlanCoverageAnalysis {
 
     /// The coverage plan of one relation-case, if it is covered.
     #[must_use]
+    #[cfg(test)]
     pub fn plan(&self, key: &RelationCaseKey) -> Option<&RelationCoveragePlan> {
         self.operations
             .get(&key.relation.operation())
@@ -456,88 +457,7 @@ pub fn derive_relation_coverage(
     declaration: &RelationDeclaration,
     plan: &RelationCasePlan,
 ) -> Result<RelationCoveragePlan, CompileError> {
-    let operands = relation_operands(declaration)?;
-    let representation = relation_representation(&declaration.relation, &plan.case);
-    let mut mutations = relation_mutations(
-        &declaration.relation,
-        conserved_amount_visibility(declaration, &plan.case)?,
-    );
-    if plan.boundaries.contains(&CoverageBoundary::ModelScope) {
-        for (boundary, _) in &mut mutations {
-            *boundary = CoverageBoundary::ModelScope;
-        }
-    }
-
-    let mut positive = Vec::new();
-    let mut negative = Vec::new();
-
-    let id = |boundary: CoverageBoundary, purpose: CoveragePurpose| CoverageRequirementId {
-        relation: plan.relation.clone(),
-        case: plan.case.clone(),
-        boundary,
-        purpose,
-    };
-
-    match plan.activity {
-        // An inactive relation-case is stated explicitly and carries
-        // exactly one obligation: the case is accepted and the relation
-        // never activates. No mutation is required of an inactive
-        // branch, because a target rejecting it would prove nothing
-        // about the relation this case does not exercise.
-        RelationActivity::Vacuous => {
-            for boundary in &plan.boundaries {
-                positive.push(PositiveCoverageRequirement {
-                    id: id(*boundary, CoveragePurpose::InactiveAccept),
-                    role: EvidenceRole::InactiveCaseAcceptance,
-                    representation,
-                    operands: Vec::new(),
-                });
-            }
-        }
-
-        RelationActivity::Active => {
-            for boundary in &plan.boundaries {
-                for (role, subject) in boundary_subjects(*boundary, plan) {
-                    positive.push(PositiveCoverageRequirement {
-                        id: id(*boundary, positive_purpose(*boundary, subject.as_ref())),
-                        role: role.clone(),
-                        representation,
-                        operands: operands.clone(),
-                    });
-
-                    for mutation in boundary_mutations(&mutations, *boundary) {
-                        negative.push(NegativeCoverageRequirement {
-                            id: id(
-                                *boundary,
-                                negative_purpose(*boundary, subject.as_ref(), mutation),
-                            ),
-                            role: role.clone(),
-                            mutation,
-                            collateral: collateral(*boundary),
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    positive.sort();
-    negative.sort();
-
-    Ok(RelationCoveragePlan {
-        relation: plan.relation.clone(),
-        case: plan.case.clone(),
-        activity: plan.activity,
-        boundaries: plan.boundaries.clone(),
-        positive,
-        negative,
-        // The carrier obligation and the accepted projections are bound
-        // from the plan's feasible placements, which this per-relation
-        // derivation does not see.
-        carrier: None,
-        projections: BTreeMap::new(),
-        external_evidence: plan.external_evidence.clone(),
-    })
+    crate::engine_attestation::coverage::derive_relation_coverage(declaration, plan)
 }
 
 /// Derive and validate the coverage of one candidate's relation-case
@@ -620,39 +540,7 @@ pub fn validate_coverage_census(
     plans: &[RelationCasePlan],
     analysis: &PlanCoverageAnalysis,
 ) -> Result<(), CompileError> {
-    let mut seen = BTreeSet::new();
-
-    for plan in analysis.plans() {
-        for id in plan.requirement_ids() {
-            if !seen.insert(id.clone()) {
-                return Err(CompileError::DuplicateCoverageRequirement {
-                    requirement: id.clone(),
-                });
-            }
-        }
-    }
-
-    let covered = analysis.keys();
-    let planned = plans
-        .iter()
-        .map(|plan| RelationCaseKey {
-            relation: plan.relation.clone(),
-            case: plan.case.clone(),
-        })
-        .collect::<BTreeSet<_>>();
-
-    if covered != planned {
-        return Err(CompileError::CoverageCensusMismatch {
-            missing: planned.difference(&covered).cloned().collect(),
-            unexpected: covered.difference(&planned).cloned().collect(),
-        });
-    }
-
-    for plan in analysis.plans() {
-        validate_relation_coverage(plan)?;
-    }
-
-    Ok(())
+    crate::engine_attestation::coverage::validate_census(plans, analysis)
 }
 
 /// Validate one relation-case coverage plan against §11.4.
@@ -661,50 +549,9 @@ pub fn validate_coverage_census(
 ///
 /// Any of the per-relation failures documented on
 /// [`validate_coverage_census`].
+#[allow(dead_code)]
 pub fn validate_relation_coverage(plan: &RelationCoveragePlan) -> Result<(), CompileError> {
-    let relation = plan.relation.clone();
-    let case = plan.case.clone();
-
-    match plan.activity {
-        RelationActivity::Vacuous => {
-            let inactive = plan
-                .positive
-                .iter()
-                .any(|requirement| requirement.id.purpose == CoveragePurpose::InactiveAccept);
-
-            if !inactive {
-                return Err(CompileError::MissingInactiveCoverage { relation, case });
-            }
-
-            if !plan.negative.is_empty() {
-                return Err(CompileError::UnexpectedCoverageRejection { relation, case });
-            }
-        }
-
-        RelationActivity::Active => {
-            for boundary in &plan.boundaries {
-                let at = |requirement: &CoverageRequirementId| requirement.boundary == *boundary;
-
-                if !plan.positive.iter().any(|entry| at(&entry.id)) {
-                    return Err(CompileError::MissingPositiveCoverage {
-                        relation,
-                        case,
-                        boundary: *boundary,
-                    });
-                }
-
-                if !plan.negative.iter().any(|entry| at(&entry.id)) {
-                    return Err(CompileError::MissingNegativeCoverage {
-                        relation,
-                        case,
-                        boundary: *boundary,
-                    });
-                }
-            }
-        }
-    }
-
-    Ok(())
+    crate::engine_attestation::coverage::validate_plan(plan)
 }
 
 /// The negative classes one relation requires, by boundary.
@@ -926,7 +773,7 @@ fn static_mutations(
 }
 
 /// The required mutations of one boundary, canonically ordered.
-fn boundary_mutations(
+pub fn boundary_mutations(
     mutations: &[(CoverageBoundary, RelationMutation)],
     boundary: CoverageBoundary,
 ) -> Vec<RelationMutation> {
@@ -949,7 +796,7 @@ fn boundary_mutations(
 /// rather than collapsing into one; a relation whose external boundary
 /// names no requirement states none, and the census validator reports
 /// the gap instead of the derivation inventing a subject.
-fn boundary_subjects(
+pub fn boundary_subjects(
     boundary: CoverageBoundary,
     plan: &RelationCasePlan,
 ) -> Vec<(EvidenceRole, Option<ExternalEvidenceRequirement>)> {
@@ -983,7 +830,7 @@ fn boundary_subjects(
 }
 
 /// The positive purpose of one boundary and subject.
-fn positive_purpose(
+pub fn positive_purpose(
     boundary: CoverageBoundary,
     subject: Option<&ExternalEvidenceRequirement>,
 ) -> CoveragePurpose {
@@ -999,7 +846,7 @@ fn positive_purpose(
 }
 
 /// The negative purpose of one boundary, subject, and mutation.
-fn negative_purpose(
+pub fn negative_purpose(
     boundary: CoverageBoundary,
     subject: Option<&ExternalEvidenceRequirement>,
     mutation: RelationMutation,
@@ -1033,7 +880,7 @@ const fn collateral_policy(boundary: CoverageBoundary) -> CollateralPolicy {
     }
 }
 
-const fn collateral(boundary: CoverageBoundary) -> CollateralRequirement {
+pub const fn collateral(boundary: CoverageBoundary) -> CollateralRequirement {
     CollateralRequirement {
         policy: collateral_policy(boundary),
         dependency_closure: BTreeSet::new(),
@@ -1041,7 +888,7 @@ const fn collateral(boundary: CoverageBoundary) -> CollateralRequirement {
 }
 
 /// The representation the case fixed for one relation's object.
-fn relation_representation(
+pub fn relation_representation(
     relation: &Relation,
     case: &ExecutionCaseId,
 ) -> Option<RepresentationMode> {
@@ -1113,7 +960,8 @@ pub fn bind_carrier_coverage(
     eligibility: &[CarrierEligibility],
     placements: &[PlacementCandidate],
 ) {
-    let alternatives = carrier_alternatives(eligibility, placements);
+    let alternatives =
+        crate::engine_attestation::coverage_join::carrier_alternatives(eligibility, placements);
 
     for operation in analysis.operations.values_mut() {
         for (key, plan) in &mut operation.requirements {
@@ -1121,123 +969,12 @@ pub fn bind_carrier_coverage(
                 continue;
             };
 
-            for carrier in assignments
-                .iter()
-                .flat_map(|alternative| alternative.carriers.iter())
-            {
-                plan.positive.push(PositiveCoverageRequirement {
-                    id: CoverageRequirementId {
-                        relation: key.relation.clone(),
-                        case: key.case.clone(),
-                        boundary: CoverageBoundary::RuntimeCarrier,
-                        purpose: CoveragePurpose::CarrierExecution(carrier.clone()),
-                    },
-                    role: EvidenceRole::TargetExecution,
-                    representation: None,
-                    operands: Vec::new(),
-                });
-            }
-
-            plan.positive.sort();
-            plan.positive.dedup();
             plan.carrier = Some(CarrierCoverageRequirement {
                 relation_case: key.clone(),
                 allowed_assignments: assignments.clone(),
             });
+            crate::engine_attestation::coverage_join::attach_requirements(plan);
         }
-    }
-}
-
-/// The eligible carriers of each relation-case, indexed by key.
-///
-/// The placement product is scanned once per assignment, so a linear
-/// search here would be quadratic in a scope whose placements number in
-/// the tens of thousands.
-fn eligibility_index(
-    eligibility: &[CarrierEligibility],
-) -> BTreeMap<RelationCaseKey, &CarrierEligibility> {
-    eligibility
-        .iter()
-        .map(|entry| {
-            (
-                RelationCaseKey {
-                    relation: entry.relation.clone(),
-                    case: entry.case.clone(),
-                },
-                entry,
-            )
-        })
-        .collect()
-}
-
-/// One assignment as it appears in the placement product.
-///
-/// Borrowed rather than owned so the repeat filter allocates nothing:
-/// the same per-relation assignment recurs in every whole-transaction
-/// placement that chose it, which is exactly what the compression
-/// exists to collapse.
-type AssignmentRef<'a> = (&'a RelationId, &'a ExecutionCaseId, &'a [PlacedCarrier]);
-
-/// The deduplicated assignment alternatives of every relation-case.
-///
-/// One relation-case assignment recurs once per combined placement that
-/// selected it — 216 placements of one pilot plan repeat a handful of
-/// distinct assignments — so each distinct assignment is expanded once
-/// and every repeat is skipped before any layout dependency is derived.
-fn carrier_alternatives(
-    eligibility: &[CarrierEligibility],
-    placements: &[PlacementCandidate],
-) -> BTreeMap<RelationCaseKey, BTreeSet<CarrierAssignmentAlternative>> {
-    let index = eligibility_index(eligibility);
-    let mut alternatives: BTreeMap<RelationCaseKey, BTreeSet<CarrierAssignmentAlternative>> =
-        BTreeMap::new();
-    let mut seen: BTreeSet<AssignmentRef<'_>> = BTreeSet::new();
-
-    for placement in placements {
-        for assignment in &placement.assignments {
-            if !seen.insert((
-                &assignment.relation,
-                &assignment.case,
-                assignment.carriers.as_slice(),
-            )) {
-                continue;
-            }
-
-            let key = assignment.key();
-            let Some(carriers) = index.get(&key) else {
-                continue;
-            };
-
-            alternatives
-                .entry(key)
-                .or_default()
-                .insert(assignment_alternative(carriers, &assignment.carriers));
-        }
-    }
-
-    alternatives
-}
-
-/// One placed assignment with the layout requirements it depends on.
-fn assignment_alternative(
-    carriers: &CarrierEligibility,
-    placed: &[PlacedCarrier],
-) -> CarrierAssignmentAlternative {
-    let mut layout = BTreeSet::new();
-
-    for carrier in placed {
-        let entry = carriers.eligible.iter().find(|entry| {
-            entry.carrier == carrier.carrier && entry.quantification == carrier.quantification
-        });
-
-        if let Some(entry) = entry {
-            layout.extend(selected_carrier_requirements(carriers, entry));
-        }
-    }
-
-    CarrierAssignmentAlternative {
-        carriers: placed.iter().cloned().collect(),
-        layout,
     }
 }
 
@@ -1273,32 +1010,27 @@ pub fn bind_projection_coverage(analysis: &mut PlanCoverageAnalysis, plans: &[Re
             let Some(source) = sources.get(key) else {
                 continue;
             };
-            let derived = plan
+            let available = plan
                 .boundaries
                 .iter()
                 .filter_map(|boundary| {
                     projection_requirement(key, plan, source, *boundary)
-                        .map(|requirement| (boundary_role(plan, *boundary), requirement))
+                        .map(|requirement| (*boundary, requirement))
                 })
+                .collect::<BTreeMap<_, _>>();
+            let selected = crate::engine_coverage_join::projection_boundaries(
+                &crate::engine_attestation::coverage::lowered(plan),
+                &available.keys().copied().collect(),
+            );
+            let derived = selected
+                .into_iter()
+                .map(|boundary| (boundary_role(plan, boundary), available[&boundary].clone()))
                 .collect::<Vec<_>>();
 
-            for (role, requirement) in derived {
-                plan.positive.push(PositiveCoverageRequirement {
-                    id: CoverageRequirementId {
-                        relation: key.relation.clone(),
-                        case: key.case.clone(),
-                        boundary: requirement.boundary,
-                        purpose: CoveragePurpose::AcceptedProjection,
-                    },
-                    role,
-                    representation: None,
-                    operands: requirement.operands.clone(),
-                });
+            for (_, requirement) in derived {
                 plan.projections.insert(requirement.boundary, requirement);
             }
-
-            plan.positive.sort();
-            plan.positive.dedup();
+            crate::engine_attestation::coverage_join::attach_requirements(plan);
         }
     }
 }
@@ -1372,7 +1104,7 @@ fn boundary_operands(plan: &RelationCoveragePlan, boundary: CoverageBoundary) ->
 /// reports the comparison covers all of them and the role names the
 /// first; the role of a boundary with no positive requirement at all is
 /// unreachable, because such a boundary states no projection either.
-fn boundary_role(plan: &RelationCoveragePlan, boundary: CoverageBoundary) -> EvidenceRole {
+pub fn boundary_role(plan: &RelationCoveragePlan, boundary: CoverageBoundary) -> EvidenceRole {
     boundary_answer(plan, boundary).map_or(EvidenceRole::TargetExecution, |requirement| {
         requirement.role.clone()
     })
@@ -1472,105 +1204,7 @@ pub fn validate_placement_coverage(
     layout: &[LayoutRequirement],
     analysis: &PlanCoverageAnalysis,
 ) -> Result<(), CompileError> {
-    let carried = eligibility
-        .iter()
-        .map(|entry| RelationCaseKey {
-            relation: entry.relation.clone(),
-            case: entry.case.clone(),
-        })
-        .collect::<BTreeSet<_>>();
-    let stated = layout.iter().collect::<BTreeSet<_>>();
-
-    for plan in analysis.plans() {
-        let key = plan.key();
-        let runtime = plan.activity == RelationActivity::Active
-            && plan.boundaries.contains(&CoverageBoundary::RuntimeCarrier)
-            && carried.contains(&key);
-
-        match (&plan.carrier, runtime) {
-            (Some(_), false) => {
-                return Err(CompileError::UnexpectedRuntimeCarrierCoverage {
-                    relation: key.relation,
-                    case: key.case,
-                });
-            }
-            (None, true) => {
-                return Err(CompileError::MissingCarrierCoverage {
-                    relation: key.relation,
-                    case: key.case,
-                });
-            }
-            _ => {}
-        }
-
-        if runtime
-            && !plan
-                .projections
-                .contains_key(&CoverageBoundary::RuntimeCarrier)
-        {
-            return Err(CompileError::MissingProjectionCoverage {
-                relation: key.relation,
-                case: key.case,
-            });
-        }
-
-        for alternative in plan
-            .carrier
-            .iter()
-            .flat_map(|carrier| carrier.allowed_assignments.iter())
-        {
-            for requirement in &alternative.layout {
-                if !stated.contains(requirement) {
-                    return Err(CompileError::UnexpectedCoverageLayoutRequirement {
-                        relation: key.relation.clone(),
-                        case: key.case,
-                    });
-                }
-            }
-        }
-    }
-
-    // Every selectable assignment is covered, with exactly the layout
-    // requirements that assignment depends on: recomputed from the
-    // placement rather than trusted because the compression produced
-    // it. A repeat of an assignment already checked is skipped rather
-    // than recomputed — the same inputs cannot reach a different
-    // verdict, and the product repeats each distinct assignment once
-    // per placement that chose it.
-    let index = eligibility_index(eligibility);
-    let mut checked: BTreeSet<AssignmentRef<'_>> = BTreeSet::new();
-
-    for placement in placements {
-        for assignment in &placement.assignments {
-            if !checked.insert((
-                &assignment.relation,
-                &assignment.case,
-                assignment.carriers.as_slice(),
-            )) {
-                continue;
-            }
-
-            let key = assignment.key();
-            let Some(carriers) = index.get(&key) else {
-                continue;
-            };
-            let required = assignment_alternative(carriers, &assignment.carriers);
-            let covered = analysis
-                .plan(&key)
-                .and_then(|plan| plan.carrier.as_ref())
-                .ok_or_else(|| CompileError::MissingCarrierCoverage {
-                    relation: key.relation.clone(),
-                    case: key.case.clone(),
-                })?;
-
-            if !covered.allowed_assignments.contains(&required) {
-                return Err(CompileError::MissingCoverageLayoutRequirement {
-                    relation: key.relation,
-                    case: key.case,
-                });
-            }
-        }
-    }
+    crate::engine_attestation::coverage_join::validate(eligibility, placements, layout, analysis)?;
 
     validate_sponsor_erasure(analysis)
 }

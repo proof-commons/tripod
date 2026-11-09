@@ -15,15 +15,10 @@
 // and a deployment-completeness query the analysis does not ask: the
 // analyzed program states lifecycle completeness per plan (§5.4).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
-use petgraph::{
-    algo::has_path_connecting,
-    graph::{DiGraph, NodeIndex},
-};
-use realization::{
-    LifecycleEdge, LifecycleNode, LifecycleNodeId, ProofKind, Relation, RepresentationMode,
-};
+use petgraph::graph::{DiGraph, NodeIndex};
+use realization::{LifecycleEdge, LifecycleNode, LifecycleNodeId, ProofKind, RepresentationMode};
 
 use crate::{CompileError, input::BoundCompilerInput, relation::CompilerRelationAnalysis};
 
@@ -86,7 +81,6 @@ pub fn build_lifecycle_analysis(
     relations: &CompilerRelationAnalysis,
 ) -> Result<CompilerLifecycleAnalysis, CompileError> {
     let projection = input.realization().project().lifecycle;
-
     build_lifecycle_analysis_from_projection(input, relations, &projection)
 }
 
@@ -116,124 +110,12 @@ pub fn build_lifecycle_analysis_from_projection(
     relations: &CompilerRelationAnalysis,
     projection: &realization::LifecycleGraphProjection,
 ) -> Result<CompilerLifecycleAnalysis, CompileError> {
-    // Representation variables from the exact representation relations.
-    let mut choices = Vec::new();
-    let mut choice_objects = BTreeSet::new();
-
-    for node in relations.graph.node_weights() {
-        if let Relation::Representation { object, allowed } = &node.source.relation {
-            let mut candidates = allowed.iter().copied().collect::<Vec<_>>();
-            candidates.sort();
-
-            choice_objects.insert(*object);
-            choices.push(RepresentationChoice {
-                id: RepresentationChoiceId {
-                    operation: node.source.id.operation(),
-                    object: *object,
-                },
-                candidates,
-            });
-        }
-    }
-
-    choices.sort_by(|left, right| left.id.cmp(&right.id));
-
-    // Every in-scope lifecycle-exit relation needs a representation
-    // variable for its object.
-    for node in relations.graph.node_weights() {
-        if let Relation::LifecycleExit { object, .. } = &node.source.relation
-            && !choice_objects.contains(object)
-        {
-            return Err(CompileError::MissingRepresentationChoice {
-                operation: node.source.id.operation(),
-                object: *object,
-            });
-        }
-    }
-
-    // Rebuild the lifecycle graph, restricted to the chosen objects.
-    let nodes = projection
-        .nodes
-        .iter()
-        .filter(|node| choice_objects.contains(&lifecycle_object(&node.id)))
-        .cloned()
-        .collect::<Vec<_>>();
-    let mut graph = DiGraph::<LifecycleNode, LifecycleEdge, u32>::with_capacity(
-        nodes.len(),
-        projection.edges.len(),
-    );
-    let mut node_by_id = BTreeMap::new();
-
-    for node_weight in nodes {
-        let id = node_weight.id.clone();
-        let node = graph.add_node(node_weight);
-        node_by_id.insert(id, node);
-    }
-
-    for edge in &projection.edges {
-        let (Some(source), Some(target)) = (
-            node_by_id.get(&edge.source).copied(),
-            node_by_id.get(&edge.target).copied(),
-        ) else {
-            continue;
-        };
-
-        graph.add_edge(source, target, edge.edge);
-    }
-
-    // Every supported representation must reach every required exit of
-    // its object; the exit's scope membership decides the status.
-    let mut requirements = Vec::new();
-
-    for (id, node) in &node_by_id {
-        let LifecycleNodeId::Representation { object, mode } = id else {
-            continue;
-        };
-
-        for (exit_id, exit_node) in &node_by_id {
-            let LifecycleNodeId::RequiredExit {
-                object: exit_object,
-                operation,
-            } = exit_id
-            else {
-                continue;
-            };
-
-            if exit_object != object {
-                continue;
-            }
-
-            if !has_path_connecting(&graph, *node, *exit_node, None) {
-                return Err(CompileError::MissingLifecyclePath {
-                    object: *object,
-                    representation: *mode,
-                    exit: *operation,
-                });
-            }
-
-            let status = if input.scope().operations().contains(operation) {
-                LifecycleExitStatus::AvailableInCompilerScope
-            } else {
-                LifecycleExitStatus::DeclaredOutsideCompilerScope
-            };
-
-            requirements.push(LifecycleRequirement {
-                object: *object,
-                representation: *mode,
-                exit: *operation,
-                status,
-            });
-        }
-    }
-
-    requirements.sort();
-
-    Ok(CompilerLifecycleAnalysis {
-        graph,
-        node_by_id,
-        choices,
-        requirements,
-    })
+    crate::engine_attestation::lifecycle::lower(
+        input.scope().operations(),
+        relations.graph.node_weights().map(|node| &node.source),
+        projection,
+    )
+    .analyze()
 }
 
 /// Proof/representation compatibility (§9.6).
@@ -258,12 +140,5 @@ pub const fn proof_supports_representation(proof: ProofKind, mode: Representatio
         | ProofKind::SignerMembership
         | ProofKind::PublicConstructibility
         | ProofKind::SubstrateConservation => true,
-    }
-}
-
-const fn lifecycle_object(node: &LifecycleNodeId) -> architecture::ObjectId {
-    match node {
-        LifecycleNodeId::Representation { object, .. }
-        | LifecycleNodeId::RequiredExit { object, .. } => *object,
     }
 }

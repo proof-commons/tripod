@@ -157,5 +157,14 @@ pub fn build_relation_graph(
     source_nodes: &[realization::RelationDeclaration],
     source_edges: &[realization::RelationDependencyProjection],
 ) -> Result<CompilerRelationAnalysis, CompileError> {
-    crate::engine_attestation::lower_relations(scope, source_nodes, source_edges).analyze()
+    crate::engine_attestation::lower_relations(
+        scope,
+        source_nodes,
+        source_edges,
+        &realization::LifecycleGraphProjection {
+            nodes: Vec::new(),
+            edges: Vec::new(),
+        },
+    )
+    .analyze()
 }

@@ -77,3 +77,21 @@ fn keyed_projection_is_permutation_stable_and_has_no_attestation_graphs() {
     subject.operations.reverse();
     assert_eq!(subject.validate(&manifest).unwrap().project(), baseline);
 }
+
+#[test]
+fn a_keyed_declaration_cannot_smuggle_a_lifecycle_constraint() {
+    let (manifest, mut subject) = control();
+    let operation = subject.operations[0].operation;
+    subject.operations[0]
+        .lifecycle_nodes
+        .push(crate::LifecycleNode {
+            id: crate::LifecycleNodeId::Representation {
+                object: architecture::ObjectId::State,
+                mode: crate::RepresentationMode::Explicit,
+            },
+        });
+    assert_eq!(
+        subject.validate(&manifest).unwrap_err(),
+        KeyedRealizationError::DeclarationCensus(operation)
+    );
+}

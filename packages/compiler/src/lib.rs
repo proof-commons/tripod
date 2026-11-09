@@ -12,8 +12,22 @@ mod coverage;
 mod coverage_graph;
 mod disclosure;
 mod engine_attestation;
+mod engine_case_facts;
+// The staged probe exercises case selection before the whole-program migration.
+#[allow(dead_code)]
+mod engine_cases;
+mod engine_constructibility;
+mod engine_coverage;
+mod engine_coverage_graph;
+mod engine_coverage_join;
+mod engine_foundation;
 mod engine_keyed;
+mod engine_lifecycle;
+mod engine_placement;
+mod engine_proof;
 mod engine_records;
+mod engine_requirement;
+mod engine_source;
 pub mod error;
 mod expression;
 mod fold;

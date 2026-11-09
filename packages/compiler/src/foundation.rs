@@ -10,7 +10,6 @@ use crate::{
     CompileError,
     expression::{
         CompilerExpressionAnalysis, CompilerExpressionGraphProjection, build_expression_analysis,
-        expression_operation,
     },
     input::BoundCompilerInput,
     relation::{
@@ -69,39 +68,5 @@ pub fn validate_predicate_bindings(
     relations: &CompilerRelationAnalysis,
     expressions: &CompilerExpressionAnalysis,
 ) -> Result<(), CompileError> {
-    for node in relations.graph.node_weights() {
-        let realization::Relation::ExpressionPredicate { expression } = &node.source.relation
-        else {
-            continue;
-        };
-
-        let Some(expression_node) = expressions.node_by_id.get(expression).copied() else {
-            return Err(CompileError::UnknownPredicateExpression {
-                relation: node.source.id.clone(),
-                expression: expression.clone(),
-            });
-        };
-        let declaration = &expressions.graph[expression_node].source;
-
-        if declaration.ty != realization::SemanticType::Bool {
-            return Err(CompileError::NonBooleanPredicateExpression {
-                relation: node.source.id.clone(),
-                expression: expression.clone(),
-                actual: declaration.ty,
-            });
-        }
-
-        match expression_operation(expression) {
-            None => {}
-            Some(operation) if operation == node.source.id.operation() => {}
-            Some(_) => {
-                return Err(CompileError::PredicateExpressionOutsideScope {
-                    relation: node.source.id.clone(),
-                    expression: expression.clone(),
-                });
-            }
-        }
-    }
-
-    Ok(())
+    crate::engine_attestation::foundation::lower(relations, expressions).validate()
 }

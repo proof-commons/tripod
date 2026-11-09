@@ -25,6 +25,18 @@ use crate::{
 
 const ATTESTATION: u16 = 1;
 
+pub mod case_facts;
+pub mod cases;
+pub mod constructibility;
+pub mod coverage;
+pub mod coverage_join;
+pub mod foundation;
+pub mod lifecycle;
+pub mod placement;
+pub mod proof;
+pub mod requirement;
+pub mod source;
+
 #[derive(Clone, Debug)]
 pub struct AttestationOwner {
     source: ScopedRealizationSpec,
@@ -61,18 +73,50 @@ impl AttestationOwner {
 
 impl engine_records::RelationOwner for AttestationOwner {
     type Lowered = AttestationRelations;
+    fn lower_requirements(
+        input: &crate::input::BoundCompilerInput<Self>,
+    ) -> Result<Vec<crate::engine_requirement::Table>, CompileError> {
+        requirement::tables(input)
+    }
+    fn lower_predicates(
+        input: &crate::input::BoundCompilerInput<Self>,
+    ) -> Result<crate::engine_foundation::Records, CompileError> {
+        let relations = crate::relation::build_relation_analysis(input)?;
+        let expressions = crate::expression::build_expression_analysis(input)?;
+        Ok(foundation::lower(&relations, &expressions).records)
+    }
+    fn lower_proofs(
+        input: &crate::input::BoundCompilerInput<Self>,
+    ) -> Result<crate::engine_proof::Records, CompileError> {
+        Ok(proof::lower(input)?.records)
+    }
+    fn lower_cases(
+        input: &crate::input::BoundCompilerInput<Self>,
+    ) -> Result<crate::engine_cases::Tables, CompileError> {
+        cases::lower(input)
+    }
+    fn lower_sources(&self) -> Result<crate::engine_source::SourceRecords, CompileError> {
+        source::lower(self)
+    }
+    fn lower_constructibility(
+        &self,
+    ) -> Result<crate::engine_constructibility::Records, CompileError> {
+        Ok(constructibility::lower(self)?.records)
+    }
     fn lower_relations(&self) -> Self::Lowered {
         let source = self.source.project();
         lower_relations(
             self.scope.operations(),
             &source.relations.nodes,
             &source.relations.edges,
+            &source.lifecycle,
         )
     }
 }
 
 pub struct AttestationRelations {
     records: RelationRecords,
+    lifecycle: lifecycle::LoweredLifecycle,
     identities: BTreeMap<RelationKey, RelationId>,
     declarations: BTreeMap<RelationKey, RelationDeclaration>,
     dependency_kinds: BTreeMap<DependencyKind, RelationEdge>,
@@ -82,6 +126,10 @@ impl engine_records::LoweredRelations for AttestationRelations {
     fn records(&self) -> &RelationRecords {
         &self.records
     }
+
+    fn lifecycle(&self) -> &crate::engine_lifecycle::LifecycleRecords {
+        &self.lifecycle.records
+    }
 }
 
 /// Retain the entire source declaration beside its graph-facing records.
@@ -90,9 +138,17 @@ pub fn lower_relations(
     scope: &[OperationId],
     nodes: &[RelationDeclaration],
     edges: &[RelationDependencyProjection],
+    lifecycle_projection: &realization::LifecycleGraphProjection,
 ) -> AttestationRelations {
     let span = tracing::debug_span!(target: "compiler::engine_attestation", "lower_relations", source_node_count = crate::instrumentation::count(nodes.len()), source_edge_count = crate::instrumentation::count(edges.len()));
     let _entered = span.enter();
+    let lifecycle = lifecycle::lower(
+        scope,
+        nodes
+            .iter()
+            .filter(|node| scope.contains(&node.id.operation())),
+        lifecycle_projection,
+    );
     let mut identities = BTreeMap::new();
     let mut register = |id: &RelationId| {
         let key = relation_key(id);
@@ -130,6 +186,7 @@ pub fn lower_relations(
         .collect();
     tracing::debug!(target: "compiler::engine_attestation", outcome = "completed", identity_count = crate::instrumentation::count(identities.len()), "relation records lowered");
     AttestationRelations {
+        lifecycle,
         records: RelationRecords {
             scope: scope.iter().copied().map(operation_key).collect(),
             nodes,
@@ -142,6 +199,16 @@ pub fn lower_relations(
 }
 
 impl AttestationRelations {
+    #[cfg(test)]
+    pub fn lifecycle_compatibility_view(
+        &self,
+        result: Result<
+            crate::engine_lifecycle::LifecycleAnalysis,
+            crate::engine_lifecycle::LifecycleRecordError,
+        >,
+    ) -> Result<crate::lifecycle::CompilerLifecycleAnalysis, CompileError> {
+        self.lifecycle.compatibility_view(result)
+    }
     #[cfg(test)]
     pub fn analyze(&self) -> Result<CompilerRelationAnalysis, CompileError> {
         self.compatibility_view(engine_records::analyze_relations(&self.records))
@@ -244,7 +311,7 @@ impl AttestationRelations {
     }
 }
 
-const fn operation_key(operation: OperationId) -> OperationKey {
+pub const fn operation_key(operation: OperationId) -> OperationKey {
     OperationKey {
         namespace: ATTESTATION,
         code: operation.code(),

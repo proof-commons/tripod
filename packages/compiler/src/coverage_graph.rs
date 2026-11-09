@@ -10,10 +10,9 @@
 //! dependency keyed on one would change meaning when the same analysis
 //! is built in a different order.
 //!
-//! The graph is a direct Petgraph `DiGraph` inside a domain struct with
-//! typed lookup maps, not a generic graph wrapper: the node and edge
-//! vocabularies are the semantics, and a reusable container would let a
-//! future caller insert an edge this vocabulary cannot express.
+//! The owner supplies typed symbols to the shared dependency resolver.
+//! Endpoint classes and edge roles remain checked before traversal; the
+//! compatibility registry preserves the attestation projection identities.
 //!
 //! # Orientation
 //!
@@ -58,13 +57,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::engine_coverage_graph as core;
 use architecture::OperationId;
-use petgraph::{
-    Direction,
-    algo::kosaraju_scc,
-    graph::{DiGraph, NodeIndex},
-    visit::EdgeRef,
-};
 use realization::{ExternalEvidenceRequirement, RelationDependencyProjection};
 
 use crate::{
@@ -343,14 +337,11 @@ impl CoverageDefinitionCensus {
     /// [`CompileError::DuplicateCoverageRequirement`] when the same
     /// symbol is defined with a different weight.
     pub fn define(&mut self, node: CoverageNode) -> Result<(), CompileError> {
-        match self.nodes.get(&node.id) {
-            Some(existing) if existing != &node => Err(duplicate_symbol(&node.id)),
-            Some(_) => Ok(()),
-            None => {
-                self.nodes.insert(node.id.clone(), node);
-                Ok(())
-            }
-        }
+        let existing = self.nodes.get(&node.id).map(lower_node);
+        core::check_definition(existing.as_ref(), &lower_node(&node), false)
+            .map_err(|_| duplicate_symbol(&node.id))?;
+        self.nodes.insert(node.id.clone(), node);
+        Ok(())
     }
 
     /// Define one symbol that must occur exactly once.
@@ -358,11 +349,11 @@ impl CoverageDefinitionCensus {
     /// # Errors
     ///
     /// [`CompileError::DuplicateCoverageRequirement`] on any repeat.
+    #[cfg(test)]
     pub fn define_once(&mut self, node: CoverageNode) -> Result<(), CompileError> {
-        if self.nodes.contains_key(&node.id) {
-            return Err(duplicate_symbol(&node.id));
-        }
-
+        let existing = self.nodes.get(&node.id).map(lower_node);
+        core::check_definition(existing.as_ref(), &lower_node(&node), true)
+            .map_err(|_| duplicate_symbol(&node.id))?;
         self.nodes.insert(node.id.clone(), node);
         Ok(())
     }
@@ -417,59 +408,13 @@ fn duplicate_symbol(id: &CoverageNodeId) -> CompileError {
 pub fn coverage_definition_census(
     analysis: &PlanCoverageAnalysis,
 ) -> Result<CoverageDefinitionCensus, CompileError> {
+    let (plans, identities) = lower_assembly(analysis);
+    let nodes =
+        core::definition_census(&plans).map_err(|key| duplicate_symbol(&identities[&*key].id))?;
     let mut census = CoverageDefinitionCensus::new();
-
-    for plan in analysis.plans() {
-        let key = plan.key();
-
-        census.define_once(CoverageNode {
-            id: CoverageNodeId::RelationCase(key.clone()),
-            activity: Some(plan.activity),
-        })?;
-
-        for id in plan
-            .positive
-            .iter()
-            .map(|requirement| &requirement.id)
-            .chain(plan.negative.iter().map(|requirement| &requirement.id))
-        {
-            census.define_once(CoverageNode {
-                id: CoverageNodeId::Requirement(id.clone()),
-                activity: None,
-            })?;
-        }
-
-        for alternative in plan
-            .carrier
-            .iter()
-            .flat_map(|carrier| carrier.allowed_assignments.iter())
-        {
-            for carrier in &alternative.carriers {
-                census.define(CoverageNode {
-                    id: CoverageNodeId::Carrier {
-                        relation_case: key.clone(),
-                        carrier: carrier.clone(),
-                    },
-                    activity: None,
-                })?;
-            }
-
-            for requirement in &alternative.layout {
-                census.define(CoverageNode {
-                    id: CoverageNodeId::Layout(requirement.clone()),
-                    activity: None,
-                })?;
-            }
-        }
-
-        for requirement in &plan.external_evidence {
-            census.define(CoverageNode {
-                id: CoverageNodeId::ExternalEvidence(requirement.clone()),
-                activity: None,
-            })?;
-        }
+    for node in nodes {
+        census.define(identities[&node.id].clone())?;
     }
-
     Ok(census)
 }
 
@@ -534,63 +479,113 @@ pub fn derive_coverage_dependencies(
         }
     }
 
+    let (plans, mut identities) = lower_assembly(analysis);
+    for dependency in &dependencies {
+        for id in [&dependency.source, &dependency.target] {
+            identities
+                .entry(core::Key::Attestation(id.clone()))
+                .or_insert_with(|| CoverageNode {
+                    id: id.clone(),
+                    activity: None,
+                });
+        }
+    }
+    let lowered = dependencies
+        .iter()
+        .map(lower_dependency)
+        .collect::<Vec<_>>();
+    Ok(core::derive_dependencies(&plans, &lowered)
+        .into_iter()
+        .map(|row| CoverageDependency {
+            source: identities[&row.source].id.clone(),
+            target: identities[&row.target].id.clone(),
+            edge: row.edge,
+        })
+        .collect())
+}
+
+/// Owner identity lowering for the common two-pass assembly.
+fn lower_assembly(
+    analysis: &PlanCoverageAnalysis,
+) -> (Vec<core::PlanSymbols>, BTreeMap<core::Key, CoverageNode>) {
+    let mut identities = BTreeMap::new();
+    let mut register = |id: CoverageNodeId, activity| {
+        let node = CoverageNode { id, activity };
+        let lowered = lower_node(&node);
+        identities.insert(lowered.id.clone(), node);
+        lowered
+    };
+    let mut plans = Vec::new();
     for plan in analysis.plans() {
         let key = plan.key();
-        let relation_case = CoverageNodeId::RelationCase(key.clone());
-
+        let relation = register(
+            CoverageNodeId::RelationCase(key.clone()),
+            Some(plan.activity),
+        );
+        let requirements = plan
+            .positive
+            .iter()
+            .map(|row| &row.id)
+            .chain(plan.negative.iter().map(|row| &row.id))
+            .map(|id| register(CoverageNodeId::Requirement(id.clone()), None))
+            .collect();
+        let mut carriers = Vec::new();
+        let mut layouts = Vec::new();
         for alternative in plan
             .carrier
             .iter()
-            .flat_map(|carrier| carrier.allowed_assignments.iter())
+            .flat_map(|carrier| &carrier.allowed_assignments)
         {
+            let layout = alternative
+                .layout
+                .iter()
+                .map(|row| register(CoverageNodeId::Layout(row.clone()), None))
+                .collect::<Vec<_>>();
+            layouts.extend(layout.iter().cloned());
             for carrier in &alternative.carriers {
-                let node = CoverageNodeId::Carrier {
-                    relation_case: key.clone(),
-                    carrier: carrier.clone(),
-                };
-
-                dependencies.insert(CoverageDependency {
-                    source: node.clone(),
-                    target: relation_case.clone(),
-                    edge: CoverageEdge::CarrierEnablesRelation,
-                });
-
-                // The layout obligations travel with the alternative
-                // that selected this carrier, never with the union over
-                // every eligible one.
-                for requirement in &alternative.layout {
-                    dependencies.insert(CoverageDependency {
-                        source: CoverageNodeId::Layout(requirement.clone()),
-                        target: node.clone(),
-                        edge: CoverageEdge::LayoutEnablesCarrier,
-                    });
-                }
+                let node = register(
+                    CoverageNodeId::Carrier {
+                        relation_case: key.clone(),
+                        carrier: carrier.clone(),
+                    },
+                    None,
+                );
+                carriers.push((node, layout.clone()));
             }
+            // Preserve definitions even for an offered empty carrier alternative.
+            // These detached layout definitions remain subject to coverage validation.
         }
-
-        for boundary in plan.projections.keys() {
-            dependencies.insert(CoverageDependency {
-                source: CoverageNodeId::Requirement(CoverageRequirementId {
-                    relation: key.relation.clone(),
-                    case: key.case.clone(),
-                    boundary: *boundary,
-                    purpose: CoveragePurpose::AcceptedProjection,
-                }),
-                target: relation_case.clone(),
-                edge: CoverageEdge::ProjectionEnablesRelation,
-            });
-        }
-
-        for requirement in &plan.external_evidence {
-            dependencies.insert(CoverageDependency {
-                source: CoverageNodeId::ExternalEvidence(requirement.clone()),
-                target: relation_case.clone(),
-                edge: CoverageEdge::EvidenceEnablesRelation,
-            });
-        }
+        let projections = plan
+            .projections
+            .keys()
+            .map(|boundary| {
+                register(
+                    CoverageNodeId::Requirement(CoverageRequirementId {
+                        relation: key.relation.clone(),
+                        case: key.case.clone(),
+                        boundary: *boundary,
+                        purpose: CoveragePurpose::AcceptedProjection,
+                    }),
+                    None,
+                )
+                .id
+            })
+            .collect();
+        let evidence = plan
+            .external_evidence
+            .iter()
+            .map(|value| register(CoverageNodeId::ExternalEvidence(value.clone()), None))
+            .collect();
+        plans.push(core::PlanSymbols {
+            relation,
+            requirements,
+            carriers,
+            layouts,
+            projections,
+            evidence,
+        });
     }
-
-    Ok(dependencies.into_iter().collect())
+    (plans, identities)
 }
 
 /// The cross-operation failure of one relation edge, if both of its
@@ -636,133 +631,65 @@ pub struct CoverageGraphProjection {
 /// declared-edge set never leave this structure.
 #[derive(Debug)]
 pub struct CoverageDependencyGraph {
-    graph: DiGraph<CoverageNode, CoverageEdge, u32>,
-    node_by_id: BTreeMap<CoverageNodeId, NodeIndex<u32>>,
-    declared: BTreeSet<CoverageDependency>,
+    core: core::Graph,
+    nodes: BTreeMap<core::Key, CoverageNode>,
+    identities: BTreeMap<core::Key, CoverageNodeId>,
+    cases: BTreeMap<crate::engine_placement::Key, RelationCaseKey>,
 }
-
-impl CoverageDependencyGraph {
-    /// Resolve one reference against the definition census.
-    fn resolve(&self, id: &CoverageNodeId) -> Result<NodeIndex<u32>, CompileError> {
-        self.node_by_id
-            .get(id)
-            .copied()
-            .ok_or_else(|| CompileError::UnknownCoverageSymbol { symbol: id.clone() })
+fn lower_node(node: &CoverageNode) -> core::Node {
+    core::Node {
+        id: core::Key::Attestation(node.id.clone()),
+        operation: crate::engine_attestation::operation_key(node.id.operation()),
+        class: node.id.class(),
+        relation_case: match &node.id {
+            CoverageNodeId::RelationCase(key) => {
+                Some(crate::engine_attestation::placement::key(key))
+            }
+            _ => None,
+        },
+        active: node
+            .activity
+            .map(|activity| activity == RelationActivity::Active),
     }
-
-    /// Resolve and insert typed dependencies.
-    ///
-    /// # Errors
-    ///
-    /// [`CompileError::UnknownCoverageSymbol`] when an endpoint is
-    /// absent from the census;
-    /// [`CompileError::CrossOperationCoverageDependency`] when the
-    /// endpoints belong to two operations;
-    /// [`CompileError::DuplicateCoverageDependency`] when the same
-    /// typed dependency is declared twice;
-    /// [`CompileError::CoverageDependencyEndpointClass`] when an edge
-    /// joins node classes its variant is not defined over — which is
-    /// what a reversed dependency looks like.
+}
+fn lower_dependency(row: &CoverageDependency) -> core::Dependency {
+    core::Dependency {
+        source: core::Key::Attestation(row.source.clone()),
+        target: core::Key::Attestation(row.target.clone()),
+        edge: row.edge,
+    }
+}
+impl CoverageDependencyGraph {
     fn add_dependencies(
         &mut self,
         dependencies: &[CoverageDependency],
     ) -> Result<(), CompileError> {
-        for dependency in dependencies {
-            let source = self.resolve(&dependency.source)?;
-            let target = self.resolve(&dependency.target)?;
-
-            let (expected_source, expected_target) = dependency.edge.endpoint_classes();
-
-            if dependency.source.class() != expected_source
-                || dependency.target.class() != expected_target
-            {
-                return Err(CompileError::CoverageDependencyEndpointClass {
-                    prerequisite: Box::new(dependency.source.clone()),
-                    dependent: Box::new(dependency.target.clone()),
-                    edge: dependency.edge,
-                });
-            }
-
-            if dependency.source.operation() != dependency.target.operation() {
-                return Err(CompileError::CrossOperationCoverageDependency {
-                    prerequisite: Box::new(dependency.source.clone()),
-                    dependent: Box::new(dependency.target.clone()),
-                });
-            }
-
-            if !self.declared.insert(dependency.clone()) {
-                return Err(CompileError::DuplicateCoverageDependency {
-                    prerequisite: Box::new(dependency.source.clone()),
-                    dependent: Box::new(dependency.target.clone()),
-                    edge: dependency.edge,
-                });
-            }
-
-            self.graph.add_edge(source, target, dependency.edge);
+        for row in dependencies {
+            self.identities.insert(
+                core::Key::Attestation(row.source.clone()),
+                row.source.clone(),
+            );
+            self.identities.insert(
+                core::Key::Attestation(row.target.clone()),
+                row.target.clone(),
+            );
         }
-
-        Ok(())
+        self.core
+            .add_dependencies(
+                &dependencies
+                    .iter()
+                    .map(lower_dependency)
+                    .collect::<Vec<_>>(),
+            )
+            .map_err(|error| self.refusal(error))
     }
-
-    /// The strict active-descendant closure of one relation-case.
-    ///
-    /// Traversal follows relation prerequisites only: a carrier, layout,
-    /// projection, or evidence edge is a requirement of the relation-
-    /// case, not a relation that becomes blocked when it fails.
-    /// Traversal passes *through* an inactive dependent but never claims
-    /// it, because a relation that never activates in the case cannot be
-    /// observed to block.
-    #[must_use]
     pub fn dependency_collateral(&self, key: &RelationCaseKey) -> BTreeSet<RelationCaseKey> {
-        let Some(start) = self
-            .node_by_id
-            .get(&CoverageNodeId::RelationCase(key.clone()))
-        else {
-            return BTreeSet::new();
-        };
-
-        let mut visited = BTreeSet::new();
-        let mut stack = vec![*start];
-        let mut collateral = BTreeSet::new();
-
-        while let Some(node) = stack.pop() {
-            for edge in self.graph.edges_directed(node, Direction::Outgoing) {
-                if *edge.weight() != CoverageEdge::RelationPrerequisite {
-                    continue;
-                }
-
-                let next = edge.target();
-
-                if !visited.insert(next) {
-                    continue;
-                }
-
-                stack.push(next);
-
-                let weight = &self.graph[next];
-
-                if weight.activity != Some(RelationActivity::Active) {
-                    continue;
-                }
-
-                if let CoverageNodeId::RelationCase(dependent) = &weight.id
-                    && dependent != key
-                {
-                    collateral.insert(dependent.clone());
-                }
-            }
-        }
-
-        collateral
+        self.core
+            .dependency_collateral(&crate::engine_attestation::placement::key(key))
+            .iter()
+            .map(|key| self.cases[key].clone())
+            .collect()
     }
-
-    /// Declare the dependency-collateral edges of every negative
-    /// requirement that must claim a closure.
-    ///
-    /// # Errors
-    ///
-    /// Any failure of the shared resolution documented on
-    /// [`build_coverage_graph`].
     pub fn attach_dependency_collateral(
         &mut self,
         analysis: &PlanCoverageAnalysis,
@@ -793,90 +720,79 @@ impl CoverageDependencyGraph {
         self.add_dependencies(&dependencies)
     }
 
-    /// Reject every coverage dependency cycle.
-    ///
-    /// Self-loops and multi-node components alike: the current coverage
-    /// cycle strategy is forbidden, and no component is exempted for
-    /// being small, expected, or benign.
-    ///
-    /// # Errors
-    ///
-    /// [`CompileError::CoverageDependencyCycle`] on any cyclic
-    /// component, with canonically normalized members and internal
-    /// edges.
     pub fn validate_acyclic(&self) -> Result<(), CompileError> {
-        let components = self.cyclic_components();
-
-        if components.is_empty() {
-            return Ok(());
-        }
-
-        Err(CompileError::CoverageDependencyCycle { components })
+        self.core
+            .validate_acyclic()
+            .map_err(|error| self.refusal(error))
     }
-
-    /// Every cyclic strongly connected component, canonically ordered.
-    #[must_use]
+    #[allow(dead_code)]
     pub fn cyclic_components(&self) -> Vec<CoverageCycleComponent> {
-        let mut components = kosaraju_scc(&self.graph)
-            .into_iter()
-            .filter(|component| {
-                component.len() > 1
-                    || component
-                        .first()
-                        .is_some_and(|node| self.graph.find_edge(*node, *node).is_some())
-            })
-            .map(|component| {
-                let members_by_index = component.iter().copied().collect::<BTreeSet<_>>();
-                let mut members = component
-                    .iter()
-                    .map(|node| self.graph[*node].id.clone())
-                    .collect::<Vec<_>>();
-                members.sort();
-
-                let mut internal_edges = self
-                    .graph
-                    .edge_references()
-                    .filter(|edge| {
-                        members_by_index.contains(&edge.source())
-                            && members_by_index.contains(&edge.target())
-                    })
-                    .map(|edge| CoverageDependency {
-                        source: self.graph[edge.source()].id.clone(),
-                        target: self.graph[edge.target()].id.clone(),
-                        edge: *edge.weight(),
-                    })
-                    .collect::<Vec<_>>();
-                internal_edges.sort();
-
-                CoverageCycleComponent {
-                    members,
-                    internal_edges,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        components.sort();
-        components
+        self.core
+            .cyclic_components()
+            .iter()
+            .map(|row| self.cycle(row))
+            .collect()
     }
-
-    /// This graph's stable projection.
-    #[must_use]
+    fn cycle(&self, row: &core::Cycle) -> CoverageCycleComponent {
+        CoverageCycleComponent {
+            members: row
+                .members
+                .iter()
+                .map(|key| self.identities[key].clone())
+                .collect(),
+            internal_edges: row
+                .internal_edges
+                .iter()
+                .map(|row| self.dependency(row))
+                .collect(),
+        }
+    }
+    fn dependency(&self, row: &core::Dependency) -> CoverageDependency {
+        CoverageDependency {
+            source: self.identities[&row.source].clone(),
+            target: self.identities[&row.target].clone(),
+            edge: row.edge,
+        }
+    }
     pub fn project(&self) -> CoverageGraphProjection {
-        let mut nodes = self.graph.node_weights().cloned().collect::<Vec<_>>();
-        nodes.sort();
-
-        let mut edges = self
-            .graph
-            .edge_references()
-            .map(|edge| CoverageDependency {
-                source: self.graph[edge.source()].id.clone(),
-                target: self.graph[edge.target()].id.clone(),
-                edge: *edge.weight(),
-            })
-            .collect::<Vec<_>>();
-        edges.sort();
-
-        CoverageGraphProjection { nodes, edges }
+        let result = self.core.project();
+        CoverageGraphProjection {
+            nodes: result
+                .nodes
+                .iter()
+                .map(|node| self.nodes[&node.id].clone())
+                .collect(),
+            edges: result
+                .edges
+                .iter()
+                .map(|row| self.dependency(row))
+                .collect(),
+        }
+    }
+    fn refusal(&self, error: core::Error) -> CompileError {
+        match error {
+            core::Error::UnknownSymbol(key) => CompileError::UnknownCoverageSymbol {
+                symbol: self.identities[key.as_ref()].clone(),
+            },
+            core::Error::DuplicateSymbol(key) => duplicate_symbol(&self.identities[key.as_ref()]),
+            core::Error::EndpointClass(row) => CompileError::CoverageDependencyEndpointClass {
+                prerequisite: Box::new(self.identities[&row.source].clone()),
+                dependent: Box::new(self.identities[&row.target].clone()),
+                edge: row.edge,
+            },
+            core::Error::CrossOperation(row) => CompileError::CrossOperationCoverageDependency {
+                prerequisite: Box::new(self.identities[&row.source].clone()),
+                dependent: Box::new(self.identities[&row.target].clone()),
+            },
+            core::Error::DuplicateDependency(row) => CompileError::DuplicateCoverageDependency {
+                prerequisite: Box::new(self.identities[&row.source].clone()),
+                dependent: Box::new(self.identities[&row.target].clone()),
+                edge: row.edge,
+            },
+            core::Error::Cycle(rows) => CompileError::CoverageDependencyCycle {
+                components: rows.iter().map(|row| self.cycle(row)).collect(),
+            },
+        }
     }
 }
 
@@ -897,22 +813,33 @@ pub fn build_coverage_graph(
     census: &CoverageDefinitionCensus,
     dependencies: &[CoverageDependency],
 ) -> Result<CoverageDependencyGraph, CompileError> {
-    let mut graph =
-        DiGraph::<CoverageNode, CoverageEdge, u32>::with_capacity(census.len(), dependencies.len());
-    let mut node_by_id = BTreeMap::new();
-
-    // Canonical insertion: symbols in stable census order.
-    for node in census.nodes() {
-        let index = graph.add_node(node.clone());
-        node_by_id.insert(node.id.clone(), index);
-    }
-
+    let span = tracing::debug_span!(target: "compiler::engine_coverage_graph", "lower_attestation_graph", definition_count = crate::instrumentation::count(census.len()));
+    let _entered = span.enter();
+    let nodes = census
+        .nodes()
+        .map(|node| (core::Key::Attestation(node.id.clone()), node.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let identities = nodes
+        .iter()
+        .map(|(key, node)| (key.clone(), node.id.clone()))
+        .collect();
+    let cases = census
+        .nodes()
+        .filter_map(|node| match &node.id {
+            CoverageNodeId::RelationCase(key) => {
+                Some((crate::engine_attestation::placement::key(key), key.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    let core = core::build(&census.nodes().map(lower_node).collect::<Vec<_>>(), &[])
+        .map_err(|_| CompileError::InvalidRealization)?;
     let mut resolved = CoverageDependencyGraph {
-        graph,
-        node_by_id,
-        declared: BTreeSet::new(),
+        core,
+        nodes,
+        identities,
+        cases,
     };
-
     resolved.add_dependencies(dependencies)?;
     Ok(resolved)
 }

@@ -25,7 +25,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::ObjectId;
 use realization::{
-    ExternalEvidenceRequirement, ProofAlternativeId, Relation, RelationDeclaration, RelationId,
+    ExternalEvidenceRequirement, ProofAlternativeId, RelationDeclaration, RelationId,
     RepresentationMode,
 };
 
@@ -33,16 +33,13 @@ use crate::{
     CompileError,
     capability::RequiredCapability,
     case::{ExecutionCaseId, is_active},
-    constructibility::{CompilerConstructibilityAnalysis, validate_source_constructibility},
+    constructibility::CompilerConstructibilityAnalysis,
     disclosure::{CompilerDisclosureReason, derive_disclosure, validate_disclosure},
     input::BoundCompilerInput,
     lifecycle::{CompilerLifecycleAnalysis, LifecycleRequirement, RepresentationChoiceId},
-    proof::{ProofPlanCandidate, RelationObligationClass, classify_obligations},
+    proof::ProofPlanCandidate,
     relation::CompilerRelationAnalysis,
-    source::{
-        OperandRole, RequiredSourceKind, SourceRequirement, derive_source_requirements,
-        is_sponsor_amount_operand, proof_capabilities, proof_external_evidence,
-    },
+    source::{OperandRole, RequiredSourceKind, SourceRequirement, is_sponsor_amount_operand},
 };
 
 /// How one relation is discharged under one plan candidate.
@@ -124,7 +121,7 @@ pub fn relation_requirements(
 
 /// Derive one requirement bundle per in-scope relation.
 ///
-/// Classification is not repeated here: [`classify_obligations`] owns
+/// Classification is not repeated here: [`crate::proof::classify_obligations`] owns
 /// which relations are proof-required, statically validated, or
 /// externally evidenced, and this stage only joins the candidate's
 /// decisions onto that classification.
@@ -137,104 +134,13 @@ pub fn relation_requirements(
 /// [`CompileError::UnexpectedSelectedProof`] when a relation that needs
 /// no proof carries one; [`CompileError::SponsorValueRead`] on any
 /// sponsor amount operand; any failure of
-/// [`validate_source_constructibility`].
+/// [`crate::constructibility::validate_source_constructibility`].
 pub fn derive_relation_requirements(
     relations: &CompilerRelationAnalysis,
     constructibility: &CompilerConstructibilityAnalysis,
     candidate: &ProofPlanCandidate,
 ) -> Result<BTreeMap<RelationId, RelationRequirements>, CompileError> {
-    let obligations = classify_obligations(relations)?;
-    let declarations = relations
-        .graph
-        .node_weights()
-        .map(|node| (node.source.id.clone(), node.source.clone()))
-        .collect::<BTreeMap<_, _>>();
-
-    let mut derived = BTreeMap::new();
-
-    for obligation in &obligations {
-        let relation = &obligation.relation;
-        let declaration = &declarations[relation];
-        let selected = candidate.proofs.get(relation);
-
-        let (proof, capabilities, sources, evidence) = match &obligation.class {
-            RelationObligationClass::ProofRequired { alternatives } => {
-                let selected = selected.ok_or_else(|| CompileError::MissingSelectedProof {
-                    relation: relation.clone(),
-                })?;
-
-                if !alternatives.contains(selected) {
-                    return Err(CompileError::UnapprovedSelectedProof {
-                        relation: relation.clone(),
-                    });
-                }
-
-                (
-                    ProofDisposition::Selected {
-                        proof: selected.clone(),
-                    },
-                    proof_capabilities(declaration, selected.proof()),
-                    derive_source_requirements(declaration, selected.proof())?,
-                    proof_external_evidence(declaration, selected.proof()),
-                )
-            }
-
-            RelationObligationClass::StaticallyValidated => {
-                if selected.is_some() {
-                    return Err(CompileError::UnexpectedSelectedProof {
-                        relation: relation.clone(),
-                    });
-                }
-
-                (
-                    ProofDisposition::StaticallyValidated,
-                    BTreeSet::new(),
-                    Vec::new(),
-                    BTreeSet::new(),
-                )
-            }
-
-            RelationObligationClass::ExternalEvidence {
-                requirement,
-                proof,
-                required_capabilities,
-                source_requirements,
-            } => {
-                if selected.is_some() {
-                    return Err(CompileError::UnexpectedSelectedProof {
-                        relation: relation.clone(),
-                    });
-                }
-
-                (
-                    ProofDisposition::ExternalEvidence {
-                        approved_proof: proof.clone(),
-                        requirement: requirement.clone(),
-                    },
-                    required_capabilities.clone(),
-                    source_requirements.clone(),
-                    BTreeSet::from([requirement.clone()]),
-                )
-            }
-        };
-
-        validate_source_constructibility(constructibility, relation, &sources)?;
-
-        let bundle = RelationRequirements {
-            relation: relation.clone(),
-            proof,
-            required_capabilities: capabilities,
-            source_requirements: sources.into_iter().collect(),
-            external_evidence: evidence,
-            representation: owned_representation(declaration, candidate),
-            lifecycle: owned_lifecycle(declaration, candidate),
-        };
-
-        validate_sponsor_erasure(&bundle)?;
-        derived.insert(relation.clone(), bundle);
-    }
-
-    Ok(derived)
+    crate::engine_attestation::requirement::derive(relations, constructibility, candidate)
 }
 
 /// Validate the candidate aggregate closure (§7.6).
@@ -254,72 +160,7 @@ pub fn validate_aggregate_closure(
     candidate: &ProofPlanCandidate,
     requirements: &BTreeMap<RelationId, RelationRequirements>,
 ) -> Result<(), CompileError> {
-    let mut capabilities = BTreeSet::new();
-    let mut sources = BTreeSet::new();
-    let mut evidence = BTreeSet::new();
-
-    for bundle in requirements.values() {
-        capabilities.extend(bundle.required_capabilities.iter().copied());
-        sources.extend(bundle.source_requirements.iter().cloned());
-        evidence.extend(bundle.external_evidence.iter().cloned());
-    }
-
-    let aggregate_sources = candidate
-        .source_requirements
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<_>>();
-
-    if let Some(capability) = capabilities
-        .difference(&candidate.required_capabilities)
-        .next()
-    {
-        return Err(CompileError::AnalyzedCapabilityClosureMismatch {
-            relation: capability_owner(requirements, *capability),
-            capability: *capability,
-        });
-    }
-
-    if let Some(capability) = candidate
-        .required_capabilities
-        .difference(&capabilities)
-        .next()
-    {
-        return Err(CompileError::AnalyzedCapabilityClosureMismatch {
-            relation: None,
-            capability: *capability,
-        });
-    }
-
-    if let Some(row) = sources.difference(&aggregate_sources).next() {
-        return Err(CompileError::AnalyzedSourceClosureMismatch {
-            relation: Some(row.operand.relation().clone()),
-            operand: row.operand.clone(),
-        });
-    }
-
-    if let Some(row) = aggregate_sources.difference(&sources).next() {
-        return Err(CompileError::AnalyzedSourceClosureMismatch {
-            relation: None,
-            operand: row.operand.clone(),
-        });
-    }
-
-    if let Some(requirement) = evidence.difference(&candidate.external_evidence).next() {
-        return Err(CompileError::AnalyzedEvidenceClosureMismatch {
-            relation: evidence_owner(requirements, requirement),
-            requirement: requirement.clone(),
-        });
-    }
-
-    if let Some(requirement) = candidate.external_evidence.difference(&evidence).next() {
-        return Err(CompileError::AnalyzedEvidenceClosureMismatch {
-            relation: None,
-            requirement: requirement.clone(),
-        });
-    }
-
-    Ok(())
+    crate::engine_attestation::requirement::validate_aggregate(candidate, requirements)
 }
 
 /// Validate the candidate disclosure closure (§7.7).
@@ -499,79 +340,22 @@ pub fn owned_representation(
     declaration: &RelationDeclaration,
     candidate: &ProofPlanCandidate,
 ) -> Option<RepresentationSelection> {
-    let operation = declaration.id.operation();
-    let objects = relation_objects(&declaration.relation);
-
-    let mut selections = objects.into_iter().filter_map(|object| {
-        candidate
-            .representations
-            .get(&RepresentationChoiceId { operation, object })
-            .map(|mode| RepresentationSelection {
-                object,
-                mode: *mode,
-            })
-    });
-
-    let selection = selections.next()?;
-
-    if selections.next().is_some() {
-        return None;
-    }
-
-    Some(selection)
+    crate::engine_attestation::requirement::owned_representation(declaration, candidate)
 }
 
 /// The candidate lifecycle rows this relation declares.
-fn owned_lifecycle(
+pub fn owned_lifecycle(
     declaration: &RelationDeclaration,
     candidate: &ProofPlanCandidate,
 ) -> BTreeSet<LifecycleRequirement> {
-    let Relation::LifecycleExit { object, exit } = &declaration.relation else {
-        return BTreeSet::new();
-    };
-
-    candidate
-        .lifecycle
-        .iter()
-        .filter(|requirement| requirement.object == *object && requirement.exit == *exit)
-        .cloned()
-        .collect()
+    crate::engine_attestation::requirement::owned_lifecycle(declaration, candidate)
 }
 
 /// The object families one relation names.
 ///
 /// Exhaustive by construction: a new realization relation variant makes
 /// this match fail to compile until its object census is stated.
-#[must_use]
-pub fn relation_objects(relation: &Relation) -> BTreeSet<ObjectId> {
-    match relation {
-        Relation::Cardinality { object, .. }
-        | Relation::Recognition { object, .. }
-        | Relation::OwnerAuthorization { object }
-        | Relation::Representation { object, .. }
-        | Relation::LifecycleExit { object, .. } => BTreeSet::from([*object]),
-
-        Relation::AllowedObjectFamilies { allowed, .. } => allowed.clone(),
-
-        Relation::AmountConservation {
-            input_objects,
-            output_objects,
-            ..
-        } => input_objects.union(output_objects).copied().collect(),
-
-        Relation::PermissionlessAuthorization
-        | Relation::SponsorIsolation
-        | Relation::SponsorEnvelopeMultiplicity { .. }
-        | Relation::RootPolicy { .. }
-        | Relation::ProjectionPolicy { .. }
-        | Relation::CanonicalDeltaPolicy { .. }
-        | Relation::OpenFlowPolicy { .. }
-        | Relation::Constructibility { .. }
-        | Relation::ExpressionPredicate { .. }
-        | Relation::OperatorAuthorization
-        | Relation::SubstrateConservation { .. } => BTreeSet::new(),
-    }
-}
+pub use crate::engine_attestation::requirement::relation_objects;
 
 /// The fact one source row needs published as an exact public value.
 ///
@@ -593,27 +377,4 @@ fn exact_public_fact(row: &SourceRequirement) -> Option<realization::FactId> {
         side: *side,
         object: *object,
     })
-}
-
-/// The first relation owning one capability, in canonical order.
-fn capability_owner(
-    requirements: &BTreeMap<RelationId, RelationRequirements>,
-    capability: RequiredCapability,
-) -> Option<RelationId> {
-    requirements
-        .iter()
-        .find(|(_, bundle)| bundle.required_capabilities.contains(&capability))
-        .map(|(relation, _)| relation.clone())
-}
-
-/// The first relation owning one evidence requirement, in canonical
-/// order.
-fn evidence_owner(
-    requirements: &BTreeMap<RelationId, RelationRequirements>,
-    requirement: &ExternalEvidenceRequirement,
-) -> Option<RelationId> {
-    requirements
-        .iter()
-        .find(|(_, bundle)| bundle.external_evidence.contains(requirement))
-        .map(|(relation, _)| relation.clone())
 }

@@ -70,24 +70,17 @@ use realization::{
 
 use crate::{
     CompileError,
-    carrier::{
-        CarrierEligibility, CarrierQuantification, CarrierRole, EligibleCarrier,
-        is_sponsor_region_carrier, relation_case_eligibility,
-    },
+    carrier::{CarrierEligibility, CarrierQuantification, CarrierRole, relation_case_eligibility},
     case::{
         ConservedAmountVisibility, ExecutionCase, ExecutionCaseId, SponsorCase, case_census,
         conserved_amount_visibility, execution_cases, is_sponsor_region_family,
         validate_case_census,
     },
-    layout::{
-        LayoutRequirement, layout_requirements, selected_carrier_requirements,
-        validate_layout_census,
-    },
+    layout::{LayoutRequirement, layout_requirements, validate_layout_census},
     proof::ProofPlanCandidate,
     relation::CompilerRelationAnalysis,
-    search_counter::{admit_search_state, record_search_event},
     source::SourceRequirement,
-    sponsor_region::{GATED_ORDINARY_LBTC_ROLE, OrdinaryLbtcRole, ordinary_lbtc_role},
+    sponsor_region::{OrdinaryLbtcRole, ordinary_lbtc_role},
 };
 
 /// Where one requirement of a relation is discharged.
@@ -905,42 +898,9 @@ pub fn validate_placement_census(
     plans: &[RelationCasePlan],
     eligibility: &[CarrierEligibility],
 ) -> Result<(), CompileError> {
-    let mut carried = BTreeSet::new();
-    let mut duplicated = BTreeSet::new();
-
-    for analysis in eligibility {
-        let key = RelationCaseKey {
-            relation: analysis.relation.clone(),
-            case: analysis.case.clone(),
-        };
-
-        if !carried.insert(key.clone()) {
-            duplicated.insert(key);
-        }
-    }
-
-    let required = plans
-        .iter()
-        .filter(|plan| !plan.runtime_requirements.is_empty())
-        .map(|plan| RelationCaseKey {
-            relation: plan.relation.clone(),
-            case: plan.case.clone(),
-        })
-        .collect::<BTreeSet<_>>();
-
-    if carried != required || !duplicated.is_empty() {
-        let mut unexpected = carried.difference(&required).cloned().collect::<Vec<_>>();
-        unexpected.extend(duplicated);
-        unexpected.sort();
-        unexpected.dedup();
-
-        return Err(CompileError::PlacementCensusMismatch {
-            missing: required.difference(&carried).cloned().collect(),
-            unexpected,
-        });
-    }
-
-    Ok(())
+    let lowered = crate::engine_attestation::placement::lower(plans, eligibility, None);
+    crate::engine_placement::validate_census(&lowered.records)
+        .map_err(|error| lowered.refusal(error))
 }
 
 /// Enumerate the complete feasible placement set of one proof plan.
@@ -986,73 +946,7 @@ fn enumerate_feasible_placements_core(
     search: &mut PlacementSearchReport,
 ) -> Result<Vec<PlacementCandidate>, CompileError> {
     validate_placement_census(plans, eligibility)?;
-
-    // The input order of the eligibility and plan slices is never
-    // observed: both are indexed by their typed census key, so a
-    // permuted input produces an equal result rather than a permuted
-    // one.
-    let planned = plans
-        .iter()
-        .map(|plan| {
-            (
-                RelationCaseKey {
-                    relation: plan.relation.clone(),
-                    case: plan.case.clone(),
-                },
-                plan,
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    let carried = eligibility
-        .iter()
-        .map(|analysis| {
-            (
-                RelationCaseKey {
-                    relation: analysis.relation.clone(),
-                    case: analysis.case.clone(),
-                },
-                analysis,
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-
-    let mut keys = Vec::with_capacity(carried.len());
-    let mut options = Vec::with_capacity(carried.len());
-
-    for (key, analysis) in &carried {
-        let plan = planned
-            .get(key)
-            .ok_or_else(|| CompileError::PlacementCensusMismatch {
-                missing: vec![key.clone()],
-                unexpected: Vec::new(),
-            })?;
-
-        keys.push(key.clone());
-        options.push(retained_options(plan, analysis)?);
-    }
-
-    search.retained_options = options
-        .iter()
-        .map(|list| u64::try_from(list.len()).unwrap_or(u64::MAX))
-        .sum();
-    let mut candidates = Vec::new();
-    let mut state = PlacementSearchState {
-        keys: &keys,
-        options: &options,
-        plans,
-        eligibility,
-        limits,
-        search: &mut *search,
-        candidates: &mut candidates,
-    };
-
-    visit_placement(&mut state, &mut Vec::new(), 0)?;
-
-    candidates.sort();
-    candidates.dedup();
-    search.feasible_placements = u64::try_from(candidates.len()).unwrap_or(u64::MAX);
-
-    Ok(candidates)
+    crate::engine_attestation::placement::lower(plans, eligibility, None).enumerate(limits, search)
 }
 
 /// Validate one complete placement against every hard constraint.
@@ -1061,7 +955,7 @@ fn enumerate_feasible_placements_core(
 /// generator that satisfied them option by option and still produced an
 /// inconsistent whole, and lets a placement built elsewhere be checked
 /// without trusting how it was built. The minimality policy of §10.3 is
-/// restated here rather than delegated to [`retained_options`]: a
+/// restated here rather than delegated to the retained-option helper: a
 /// validator that called the enumerator's own helper could only agree
 /// with it, and the property being checked is precisely that the
 /// enumerator's output is inside the candidate language.
@@ -1086,184 +980,12 @@ pub fn validate_placement(
     eligibility: &[CarrierEligibility],
     placement: &PlacementCandidate,
 ) -> Result<(), CompileError> {
-    validate_placement_census(plans, eligibility)?;
-
-    let assigned = placement
-        .assignments
-        .iter()
-        .map(PlacementAssignment::key)
-        .collect::<BTreeSet<_>>();
-    let carried = eligibility
-        .iter()
-        .map(|analysis| RelationCaseKey {
-            relation: analysis.relation.clone(),
-            case: analysis.case.clone(),
-        })
-        .collect::<BTreeSet<_>>();
-
-    if assigned != carried || assigned.len() != placement.assignments.len() {
-        return Err(CompileError::PlacementCensusMismatch {
-            missing: carried.difference(&assigned).cloned().collect(),
-            unexpected: assigned.difference(&carried).cloned().collect(),
-        });
-    }
-
-    // A repeated layout requirement is surplus for the same reason an
-    // unrelated one is: the placement states an obligation twice and
-    // justifies it once.
-    let mut stated = BTreeSet::new();
-    let mut surplus = BTreeSet::new();
-
-    for requirement in &placement.layout_requirements {
-        if !stated.insert(requirement.clone()) {
-            surplus.insert(requirement.clone());
-        }
-    }
-
-    let mut depended = BTreeSet::new();
-
-    for assignment in &placement.assignments {
-        depended.extend(validate_assignment(
-            plans,
-            eligibility,
-            assignment,
-            &stated,
-        )?);
-    }
-
-    // Exact placement-local layout: every requirement the selected
-    // carriers depend on is stated, and nothing else is. A requirement
-    // of an unselected carrier or of another relation-case belongs to
-    // the operation-wide census, not to this placement.
-    surplus.extend(
-        stated
-            .into_iter()
-            .filter(|requirement| !depended.contains(requirement)),
-    );
-
-    if !surplus.is_empty() {
-        return Err(CompileError::UnexpectedLayoutRequirement {
-            unexpected: surplus.into_iter().collect(),
-        });
-    }
-
-    Ok(())
-}
-
-/// Validate one assignment and return the layout it depends on.
-///
-/// The obligation's own plan and eligible carrier set are looked up
-/// again here rather than passed in pre-paired, so a caller cannot hand
-/// this check a mismatched pair.
-///
-/// # Errors
-///
-/// The typed reason this assignment is not one exact retained option of
-/// its obligation, or lacks a layout requirement one of its selected
-/// carriers depends on.
-fn validate_assignment(
-    plans: &[RelationCasePlan],
-    eligibility: &[CarrierEligibility],
-    assignment: &PlacementAssignment,
-    stated: &BTreeSet<LayoutRequirement>,
-) -> Result<BTreeSet<LayoutRequirement>, CompileError> {
-    let key = assignment.key();
-    let census = || CompileError::PlacementCensusMismatch {
-        missing: vec![key.clone()],
-        unexpected: Vec::new(),
-    };
-    let analysis = eligibility
-        .iter()
-        .find(|analysis| analysis.relation == key.relation && analysis.case == key.case)
-        .ok_or_else(census)?;
-    let plan = plans
-        .iter()
-        .find(|plan| plan.relation == key.relation && plan.case == key.case)
-        .ok_or_else(census)?;
-
-    let admissible = admissible_carriers(plan, analysis);
-    let unpermitted = |carrier: &CarrierRole| CompileError::UnpermittedCarrierPlacement {
-        relation: key.relation.clone(),
-        case: key.case.clone(),
-        carrier: carrier.clone(),
-    };
-
-    if assignment.carriers.is_empty() {
-        return Err(CompileError::NoEligibleCarrier {
-            relation: key.relation.clone(),
-            case: key.case.clone(),
-        });
-    }
-
-    // A repeated carrier role would vanish into the stable set
-    // projection, so a raw invalid assignment and a valid one would
-    // become indistinguishable downstream.
-    let mut selected = BTreeSet::new();
-
-    for placed in &assignment.carriers {
-        if !selected.insert(&placed.carrier) {
-            return Err(CompileError::DuplicatePlacedCarrier {
-                relation: key.relation.clone(),
-                case: key.case.clone(),
-                carrier: placed.carrier.clone(),
-            });
-        }
-    }
-
-    // Minimality is a property of the whole assignment, not of any one
-    // carrier, and it is the same policy §10.3 enumerates: an
-    // exactly-one obligation carries one carrier; an every-member
-    // obligation carries exactly one quantified alternative, since a
-    // per-member role and a complete-family proof each discharge it
-    // alone; an at-least-one obligation carries the accepted
-    // inclusion-minimal singleton; and only deliberate duplication
-    // carries more than one carrier — exactly the complete admitted set
-    // the policy names, never a smaller or a larger one.
-    let canonical = match analysis.multiplicity {
-        CarrierMultiplicity::ExactlyOne
-        | CarrierMultiplicity::EveryMember
-        | CarrierMultiplicity::AtLeastOne => assignment.carriers.len() == 1,
-        CarrierMultiplicity::DeliberateDuplication => {
-            selected
-                == admissible
-                    .iter()
-                    .map(|entry| &entry.carrier)
-                    .collect::<BTreeSet<_>>()
-        }
-    };
-
-    if !canonical {
-        return Err(CompileError::NonCanonicalCarrierAssignment {
-            relation: key.relation.clone(),
-            case: key.case.clone(),
-        });
-    }
-
-    let mut depended = BTreeSet::new();
-
-    for placed in &assignment.carriers {
-        let entry = admissible
-            .iter()
-            .find(|entry| entry.carrier == placed.carrier)
-            .ok_or_else(|| unpermitted(&placed.carrier))?;
-
-        if entry.quantification != placed.quantification {
-            return Err(unpermitted(&placed.carrier));
-        }
-
-        for requirement in selected_carrier_requirements(analysis, entry) {
-            if !stated.contains(&requirement) {
-                return Err(CompileError::MissingLayoutRequirement {
-                    relation: key.relation.clone(),
-                    case: key.case.clone(),
-                });
-            }
-
-            depended.insert(requirement);
-        }
-    }
-
-    Ok(depended)
+    let lowered = crate::engine_attestation::placement::lower(plans, eligibility, Some(placement));
+    crate::engine_placement::validate_placement(
+        &lowered.records,
+        &crate::engine_attestation::placement::candidate(placement),
+    )
+    .map_err(|error| lowered.refusal(error))
 }
 
 /// Place one complete proof-plan candidate.
@@ -1519,268 +1241,4 @@ pub fn validate_placed_proof_plans(
     }
 
     Ok(())
-}
-
-/// One retained carrier set of one obligation, with what it depends on.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct PlacementOption {
-    carriers: Vec<PlacedCarrier>,
-    layout: BTreeSet<LayoutRequirement>,
-}
-
-struct PlacementSearchState<'a> {
-    keys: &'a [RelationCaseKey],
-    options: &'a [Vec<PlacementOption>],
-    plans: &'a [RelationCasePlan],
-    eligibility: &'a [CarrierEligibility],
-    limits: PlacementSearchLimits,
-    search: &'a mut PlacementSearchReport,
-    candidates: &'a mut Vec<PlacementCandidate>,
-}
-
-/// Depth-first product enumeration over the retained option lists.
-fn visit_placement(
-    state: &mut PlacementSearchState<'_>,
-    chosen: &mut Vec<usize>,
-    depth: usize,
-) -> Result<(), CompileError> {
-    admit_search_state(
-        &mut state.search.states_visited,
-        state.limits.maximum_states,
-    )
-    .map_err(|maximum| CompileError::PlacementSearchStateLimitExceeded { maximum })?;
-
-    if depth == state.options.len() {
-        record_search_event(&mut state.search.complete_assignments);
-
-        let candidate = assemble_placement(state.keys, state.options, chosen);
-
-        validate_placement(state.plans, state.eligibility, &candidate)?;
-
-        if u64::try_from(state.candidates.len()).unwrap_or(u64::MAX)
-            >= state.limits.maximum_candidates.get()
-        {
-            return Err(CompileError::PlacementCandidateLimitExceeded {
-                maximum: state.limits.maximum_candidates.get(),
-            });
-        }
-
-        state.candidates.push(candidate);
-        return Ok(());
-    }
-
-    let width = state.options[depth].len();
-
-    for index in 0..width {
-        chosen.push(index);
-
-        let result = visit_placement(state, chosen, depth + 1);
-
-        chosen.pop();
-        result?;
-    }
-
-    Ok(())
-}
-
-/// Materialize one complete choice as a placement candidate.
-fn assemble_placement(
-    keys: &[RelationCaseKey],
-    options: &[Vec<PlacementOption>],
-    chosen: &[usize],
-) -> PlacementCandidate {
-    let mut assignments = Vec::with_capacity(keys.len());
-    let mut layout = BTreeSet::new();
-
-    for (position, key) in keys.iter().enumerate() {
-        let option = &options[position][chosen[position]];
-
-        assignments.push(PlacementAssignment {
-            relation: key.relation.clone(),
-            case: key.case.clone(),
-            carriers: option.carriers.clone(),
-        });
-        layout.extend(option.layout.iter().cloned());
-    }
-
-    assignments.sort();
-
-    PlacementCandidate {
-        assignments,
-        layout_requirements: layout.into_iter().collect(),
-    }
-}
-
-/// The retained carrier sets of one obligation (Guide-5 §10.3).
-///
-/// # Errors
-///
-/// The typed reason no admissible carrier remains.
-fn retained_options(
-    plan: &RelationCasePlan,
-    analysis: &CarrierEligibility,
-) -> Result<Vec<PlacementOption>, CompileError> {
-    let admissible = admissible_carriers(plan, analysis);
-
-    if admissible.is_empty() {
-        return Err(no_admissible_carrier(plan, analysis));
-    }
-
-    let option = |entries: Vec<&EligibleCarrier>| PlacementOption {
-        carriers: {
-            let mut carriers = entries
-                .iter()
-                .map(|entry| PlacedCarrier {
-                    carrier: entry.carrier.clone(),
-                    quantification: entry.quantification,
-                })
-                .collect::<Vec<_>>();
-
-            carriers.sort();
-            carriers.dedup();
-            carriers
-        },
-        layout: entries
-            .iter()
-            .flat_map(|entry| selected_carrier_requirements(analysis, entry))
-            .collect(),
-    };
-
-    Ok(match analysis.multiplicity {
-        // One carrier per assignment. An every-member obligation is not
-        // an exception: one quantified per-member role discharges it,
-        // and so does one typed complete-family proof, so both are
-        // inclusion-minimal singletons rather than a set to accumulate.
-        CarrierMultiplicity::ExactlyOne
-        | CarrierMultiplicity::AtLeastOne
-        | CarrierMultiplicity::EveryMember => admissible
-            .into_iter()
-            .map(|entry| option(vec![entry]))
-            .collect(),
-
-        // Duplication is deliberate, so the retained set is the one the
-        // policy names — every admissible carrier — rather than an
-        // arbitrary pair chosen because it happened to be smaller.
-        CarrierMultiplicity::DeliberateDuplication => vec![option(admissible)],
-    })
-}
-
-/// The eligible carriers one obligation actually permits.
-///
-/// Eligibility answers whether a carrier could receive the relation's
-/// sources; admissibility answers whether the obligation's own scope,
-/// multiplicity, and activation let that carrier discharge it.
-fn admissible_carriers<'a>(
-    plan: &RelationCasePlan,
-    analysis: &'a CarrierEligibility,
-) -> Vec<&'a EligibleCarrier> {
-    let unconditional = plan.activation == ActivationCondition::Always;
-
-    analysis
-        .eligible
-        .iter()
-        .filter(|entry| scope_admits_carrier(analysis.scope, &entry.carrier))
-        .filter(|entry| multiplicity_admits(analysis.multiplicity, entry.quantification))
-        // An optional sponsor carrier may carry its own conditional
-        // relations; it may never be the carrier of a relation that
-        // holds whether or not the sponsor region exists.
-        .filter(|entry| {
-            !(unconditional && is_sponsor_region_carrier(&entry.carrier, GATED_ORDINARY_LBTC_ROLE))
-        })
-        .collect()
-}
-
-/// Whether one carrier role can discharge one semantic scope.
-///
-/// A family-global or transaction-global obligation needs a complete
-/// carrier: a per-member role sees one member, so it can never establish
-/// a property of the whole family or the whole transaction. The
-/// backend-structural and external-evidence roles are not runtime
-/// carriers at all.
-fn scope_admits_carrier(scope: SemanticScope, carrier: &CarrierRole) -> bool {
-    match carrier {
-        CarrierRole::OperationGlobal { .. } => true,
-
-        CarrierRole::InputFamilyCoordinator { object: family } => match scope {
-            SemanticScope::MemberLocal { side, object }
-            | SemanticScope::FamilyGlobal { side, object } => {
-                side == TransactionSide::Input && *family == object
-            }
-            SemanticScope::TransactionSideGlobal { .. }
-            | SemanticScope::ObjectFamilyGlobal { .. }
-            | SemanticScope::TransactionGlobal => false,
-        },
-
-        CarrierRole::EveryInputFamilyMember { object: family } => match scope {
-            SemanticScope::MemberLocal { side, object } => {
-                side == TransactionSide::Input && *family == object
-            }
-            SemanticScope::FamilyGlobal { .. }
-            | SemanticScope::TransactionSideGlobal { .. }
-            | SemanticScope::ObjectFamilyGlobal { .. }
-            | SemanticScope::TransactionGlobal => false,
-        },
-
-        CarrierRole::BackendStructural { .. } | CarrierRole::ExternalEvidence { .. } => false,
-    }
-}
-
-/// Whether one quantification can discharge one multiplicity.
-///
-/// The every-member hard constraint reads the typed quantification, not
-/// the carrier variant: a coordinator is admissible for an every-member
-/// obligation only as the complete-family proof wave-2 types it as,
-/// never as one carrier standing in for every member.
-const fn multiplicity_admits(
-    multiplicity: CarrierMultiplicity,
-    quantification: CarrierQuantification,
-) -> bool {
-    match multiplicity {
-        CarrierMultiplicity::EveryMember => matches!(
-            quantification,
-            CarrierQuantification::PerMember | CarrierQuantification::CompleteFamilyProof
-        ),
-        CarrierMultiplicity::ExactlyOne
-        | CarrierMultiplicity::AtLeastOne
-        | CarrierMultiplicity::DeliberateDuplication => {
-            matches!(quantification, CarrierQuantification::Single)
-        }
-    }
-}
-
-/// The typed reason one obligation retained no admissible carrier.
-///
-/// The scope defect is reported first where both apply: a global
-/// relation offered only local carriers is a stronger statement about
-/// the analysis than the activation mismatch it also implies.
-fn no_admissible_carrier(plan: &RelationCasePlan, analysis: &CarrierEligibility) -> CompileError {
-    let relation = analysis.relation.clone();
-    let case = analysis.case.clone();
-    let local = |carrier: &CarrierRole| {
-        matches!(
-            carrier,
-            CarrierRole::EveryInputFamilyMember { .. } | CarrierRole::InputFamilyCoordinator { .. }
-        )
-    };
-
-    if analysis.eligible.is_empty() {
-        return CompileError::NoEligibleCarrier { relation, case };
-    }
-
-    if !matches!(analysis.scope, SemanticScope::MemberLocal { .. })
-        && analysis.eligible.iter().all(|entry| local(&entry.carrier))
-    {
-        return CompileError::GlobalRelationHasOnlyLocalCarrier { relation, case };
-    }
-
-    if plan.activation == ActivationCondition::Always
-        && analysis
-            .eligible
-            .iter()
-            .all(|entry| is_sponsor_region_carrier(&entry.carrier, GATED_ORDINARY_LBTC_ROLE))
-    {
-        return CompileError::UnconditionalRelationOnOptionalCarrier { relation, case };
-    }
-
-    CompileError::NoEligibleCarrier { relation, case }
 }

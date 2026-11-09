@@ -16,11 +16,105 @@ use petgraph::{
 /// not an engine identity parameter and provides no per-case policy callbacks.
 pub trait RelationOwner {
     type Lowered: LoweredRelations;
+    #[allow(dead_code)]
+    fn lower_requirements(
+        input: &crate::input::BoundCompilerInput<Self>,
+    ) -> Result<Vec<crate::engine_requirement::Table>, crate::CompileError>
+    where
+        Self: Sized;
+    #[allow(dead_code)]
+    fn lower_predicates(
+        input: &crate::input::BoundCompilerInput<Self>,
+    ) -> Result<crate::engine_foundation::Records, crate::CompileError>
+    where
+        Self: Sized;
     fn lower_relations(&self) -> Self::Lowered;
+    fn lower_proofs(
+        input: &crate::input::BoundCompilerInput<Self>,
+    ) -> Result<crate::engine_proof::Records, crate::CompileError>
+    where
+        Self: Sized;
+    #[allow(dead_code)]
+    fn lower_cases(
+        input: &crate::input::BoundCompilerInput<Self>,
+    ) -> Result<crate::engine_cases::Tables, crate::CompileError>
+    where
+        Self: Sized;
+    fn lower_sources(&self) -> Result<crate::engine_source::SourceRecords, crate::CompileError>;
+    fn lower_constructibility(
+        &self,
+    ) -> Result<crate::engine_constructibility::Records, crate::CompileError>;
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum ProofFailure {
+    Lowering(crate::CompileError),
+    Analysis(crate::engine_proof::Error),
+}
+#[allow(dead_code)]
+pub fn analyze_bound_proofs<O: RelationOwner>(
+    input: &crate::input::BoundCompilerInput<O>,
+    view: &crate::capability::CapabilityView,
+) -> Result<
+    (
+        Vec<crate::engine_proof::Candidate>,
+        crate::proof::ProofSearchReport,
+    ),
+    ProofFailure,
+> {
+    let records = O::lower_proofs(input).map_err(ProofFailure::Lowering)?;
+    let mut report = crate::proof::ProofSearchReport::default();
+    let candidates = crate::engine_proof::enumerate(
+        &records,
+        view,
+        input.policy().proof_search_limits,
+        &mut report,
+    )
+    .map_err(ProofFailure::Analysis)?;
+    Ok((candidates, report))
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum SourceFailure {
+    Lowering(crate::CompileError),
+    Analysis(Box<crate::engine_source::SourceError>),
+}
+#[allow(dead_code)]
+pub fn analyze_bound_sources<O: RelationOwner>(
+    input: &crate::input::BoundCompilerInput<O>,
+) -> Result<Vec<Vec<crate::engine_source::SourceRow>>, SourceFailure> {
+    let records = input
+        .owner()
+        .lower_sources()
+        .map_err(SourceFailure::Lowering)?;
+    crate::engine_source::analyze_sources(&records)
+        .map_err(|error| SourceFailure::Analysis(Box::new(error)))
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum ConstructibilityFailure {
+    Lowering(crate::CompileError),
+    Analysis(Box<crate::engine_constructibility::RecordError>),
+}
+
+#[allow(dead_code)]
+pub fn analyze_bound_constructibility<O: RelationOwner>(
+    input: &crate::input::BoundCompilerInput<O>,
+) -> Result<crate::engine_constructibility::Analysis, ConstructibilityFailure> {
+    let records = input
+        .owner()
+        .lower_constructibility()
+        .map_err(ConstructibilityFailure::Lowering)?;
+    crate::engine_constructibility::analyze_constructibility(&records)
+        .map_err(|error| ConstructibilityFailure::Analysis(Box::new(error)))
 }
 
 pub trait LoweredRelations {
     fn records(&self) -> &RelationRecords;
+    fn lifecycle(&self) -> &crate::engine_lifecycle::LifecycleRecords;
 }
 
 /// The lowering remains beside the outcome solely for lossless owner-specific
@@ -36,6 +130,26 @@ pub fn analyze_bound_relations<O: RelationOwner>(
     let lowering = input.owner().lower_relations();
     let result = analyze_relations(lowering.records());
     BoundRelationAnalysis { lowering, result }
+}
+
+// The probe exercises this bound entry for both owners. The existing
+// attestation offered-projection API also uses the same concrete traversal.
+#[allow(dead_code)]
+pub struct BoundLifecycleAnalysis<L> {
+    pub lowering: L,
+    pub result: Result<
+        crate::engine_lifecycle::LifecycleAnalysis,
+        crate::engine_lifecycle::LifecycleRecordError,
+    >,
+}
+
+#[allow(dead_code)]
+pub fn analyze_bound_lifecycle<O: RelationOwner>(
+    input: &crate::input::BoundCompilerInput<O>,
+) -> BoundLifecycleAnalysis<O::Lowered> {
+    let lowering = input.owner().lower_relations();
+    let result = crate::engine_lifecycle::analyze_lifecycle(lowering.lifecycle());
+    BoundLifecycleAnalysis { lowering, result }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

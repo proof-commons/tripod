@@ -74,6 +74,8 @@ The experimental relation-record extraction adds DEBUG targets `compiler::engine
 
 The keyed owner uses `compiler::input` / `bind_keyed_input` for scope counts and a payload-free binding outcome/refusal kind. Its static lowering uses `compiler::engine_keyed` / `lower_relations` for scope and node counts. Graph analysis still emits the same `compiler::engine_records` events; there is no keyed graph analyzer or runtime reader.
 
+The lifecycle extraction uses `compiler::engine_attestation` / `lower_lifecycle` for source and choice counts and `compiler::engine_lifecycle` / `analyze_lifecycle` for choice/node/edge counts, outcome and enabled-only elapsed microseconds. Empty keyed lifecycle inputs emit the same stage observations as nonempty attestation inputs; no extra traversal or timer is created for disabled tracing.
+
 Targets are static literals `compiler::input`, `compiler::analysis`, `compiler::proof`, `compiler::placement`, `compiler::target`, and `compiler::plan`; span names use lower_snake_case without a package prefix, and event messages are short fixed lowercase English past-tense phrases. Field keys are static snake_case. `family: &'static str` is `compact`, `live`, or `state`; `operation_code: u16` is the architecture `OperationId` code. `outcome`, `refusal_kind`, and `error_kind` have the meanings in Events, with categorical variant names converted to snake_case by inserting an underscore before every capital and lowercasing; `phase: &'static str` is used only if a phase is needed and is never a duplicate span name. No `command`, `output_mode`, `exit_class`, or `result_published` field is copied from `cli-common` into library events.
 
 Every emitted count is a `<noun>_count: u64`, every byte quantity is `<subject>_bytes: u64`, and configured search bounds are `state_limit: u64` and `candidate_limit: u64`; no bare plural, `_len`, `maximum`, or count-of-one field is introduced. Existing API and internal `usize` values remain unchanged; at emission, `u64::try_from(n).unwrap_or(u64::MAX)` saturates a collection length. Events carry only already-held, safe values and do not format errors or inputs with `Debug` or `Display`.
@@ -106,3 +108,32 @@ The shared `cli-common` implementation supplies ADR-010's subscriber, control ro
 - Outer public analysis and planning spans are INFO, nested analysis and repeated searches are DEBUG, and search counts are emitted once per exit with `_count: u64` fields.
 - `cli-common` owns pre-parse subscriber installation, control events, filter reload, and one terminal command record under ADR-010; the compiler library owns no subscriber or stream.
 - The ignored oracle uses assertions and test-harness wall time, with no shared scoped collector crate and no measured-duration event; the subscriber's span close record supplies enabled span timings.
+# Shared constructibility probe
+
+`compiler::engine_attestation::lower_constructibility` records the source-node census; `compiler::engine_constructibility::analyze_constructibility` records node and authorization-operation counts in its traversal span. Owner selection is fixed at input binding.
+# Shared source probe
+
+The `compiler::engine_source::analyze_sources` span records table and region counts. Fixed-owner `lower_sources` spans record scope counts under `compiler::engine_attestation` and `compiler::engine_keyed`; the shared census never selects an owner.
+# Shared proof probe
+
+`compiler::engine_attestation::lower_proofs` records scope counts. The `compiler::engine_proof::enumerate` span records relation and choice counts and emits visited-state and candidate counters; fixed-owner tables supply compatibility, evidence and disclosure effects without callbacks during search.
+
+The `compiler::engine_placement` spans record obligation and assignment counts for shared finite placement search and independent validation. Keyed lowering records its proof census; owner identity is never a search decision.
+
+The `compiler::engine_coverage` matrix and census spans record subject, boundary and covered-plan counts; keyed lowering retains evidence identity and records its relation census.
+
+The `compiler::engine_cases` selection span records the finite case and relation-row census. Attestation case lowering records scope size before proof selection; no per-case owner callback is exposed.
+
+The `compiler::engine_coverage_graph` build span records definition and dependency counts for the shared typed resolver, SCC rejection and active-descendant closure.
+
+The `compiler::engine_foundation` predicate join records predicate and expression counts. Fixed-owner lowering records relation/expression counts for attestation and scope counts for keyed declarations; an empty predicate stage retains its explicit census.
+
+The `compiler::engine_requirement` aggregate join records owned-relation, source and evidence counts. It compares complete keys without inspecting namespace codes or calling an owner.
+
+The `compiler::engine_coverage_join` spans record eligibility, plan and layout counts for assignment compression and independent placement-coverage validation.
+
+The coverage graph's common `definition_census` and `derive_dependencies` spans record plan and prerequisite counts before typed endpoint resolution. Requirement attachment records its accepted-projection census.
+
+Finite requirement lowering records the relation census under `compiler::engine_attestation`; common `derive` records table and selected-proof counts before joining the owner-approved rows.
+
+Case-fact lowering records source and layout counts; `compiler::engine_case_facts` validates relation-case joins with source and carrier counts, without selecting an owner or interpreting identifier codes.
