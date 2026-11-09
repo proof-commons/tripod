@@ -28,6 +28,7 @@ pub mod keyed_cost;
 pub mod keyed_cost_corpus;
 pub mod keyed_cost_native;
 pub mod keyed_funding;
+pub mod keyed_funding_corpus;
 pub mod keyed_native;
 pub mod keyed_scaling;
 pub mod live_capability;
