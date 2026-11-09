@@ -7,17 +7,22 @@ use std::collections::BTreeSet;
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Purpose {
     Attestation(crate::coverage::CoveragePurpose),
+    #[cfg(test)]
     Verified(Evidence),
+    #[cfg(test)]
     Rejected {
         evidence: Evidence,
         defect: EvidenceDefect,
     },
+    #[cfg(test)]
     ClauseAccepted,
+    #[cfg(test)]
     ClauseRejected,
     AcceptedProjection,
     CarrierExecution(crate::engine_placement::Placed),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg(test)]
 pub enum EvidenceDefect {
     Missing,
     Failed,

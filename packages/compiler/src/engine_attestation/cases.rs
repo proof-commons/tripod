@@ -2,20 +2,29 @@
 use crate::{CompileError, engine_cases as core, proof::RelationObligationClass};
 use std::collections::BTreeMap;
 
+#[cfg(test)]
 pub fn lower(input: &crate::BoundCompilerInput) -> Result<core::Tables, CompileError> {
     Ok(lower_registered(input)?.tables)
 }
 pub struct Registered {
     pub tables: core::Tables,
-    #[allow(dead_code)]
     pub payloads: super::operation::Rows,
 }
+#[cfg(test)]
 pub fn lower_registered(input: &crate::BoundCompilerInput) -> Result<Registered, CompileError> {
-    let span = tracing::debug_span!(target: "compiler::engine_attestation", "lower_cases", scope_count = crate::instrumentation::count(input.scope().operations().len()));
-    let _entered = span.enter();
     let relations = crate::relation::build_relation_analysis(input)?;
     let lifecycle = crate::lifecycle::build_lifecycle_analysis(input, &relations)?;
-    let obligations = super::proof::classify_obligations(&relations)?;
+    lower_prepared(input, &relations, &lifecycle)
+}
+
+pub fn lower_prepared(
+    input: &crate::BoundCompilerInput,
+    relations: &crate::relation::CompilerRelationAnalysis,
+    lifecycle: &crate::lifecycle::CompilerLifecycleAnalysis,
+) -> Result<Registered, CompileError> {
+    let span = tracing::debug_span!(target: "compiler::engine_attestation", "lower_cases", scope_count = crate::instrumentation::count(input.scope().operations().len()));
+    let _entered = span.enter();
+    let obligations = super::proof::classify_obligations(relations)?;
     let mut payloads = super::operation::Rows::new();
     let mut tables = core::Tables {
         choices: lifecycle
@@ -61,7 +70,7 @@ pub fn lower_registered(input: &crate::BoundCompilerInput) -> Result<Registered,
                 .collect();
         }
         for representations in modes {
-            for sponsor in crate::case::sponsor_cases(&relations, *operation) {
+            for sponsor in crate::case::sponsor_cases(relations, *operation) {
                 let case = crate::case::ExecutionCaseId {
                     operation: *operation,
                     sponsor,
@@ -96,7 +105,7 @@ pub fn lower_registered(input: &crate::BoundCompilerInput) -> Result<Registered,
                         .ok_or(CompileError::InvalidRealization)?;
                     let alternatives = alternatives(obligation);
                     for (proof, selector) in alternatives {
-                        let (row, payload) = row(&relations, &node.source, &case, proof, selector);
+                        let (row, payload) = row(relations, &node.source, &case, proof, selector);
                         if let Some(payload) = payload {
                             payloads.insert((row.key.clone(), row.proof.clone()), payload);
                         }

@@ -20,6 +20,9 @@ pub struct KeyedOwner {
 }
 
 impl KeyedOwner {
+    fn shells(&self) -> Result<EmptyShells, KeyedLoweringError> {
+        read_shells(&self.source.draft(), &self.scope)
+    }
     pub(crate) const fn new(
         manifest: KeyedManifest,
         source: KeyedScopedRealization,
@@ -49,6 +52,112 @@ impl KeyedOwner {
     pub fn scope(&self) -> &[SemanticOperationId] {
         &self.scope
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShellField {
+    Expressions,
+    RelationDependencies,
+    ConstructibilityNodes,
+    ConstructibilityEdges,
+    LifecycleNodes,
+    LifecycleEdges,
+    DisclosureNodes,
+    DisclosureEdges,
+    DisclosureSeeds,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum KeyedLoweringError {
+    #[error("unsupported keyed shell {field:?} for {operation:?}: {count} entries")]
+    UnsupportedShell {
+        operation: SemanticOperationId,
+        field: ShellField,
+        count: usize,
+    },
+    #[cfg(test)]
+    #[error("missing keyed source table for {0:?}")]
+    MissingSourceTable(RelationKey),
+    #[cfg(test)]
+    #[error("invalid keyed runtime source payload for {0:?}")]
+    RuntimeSourcePayload(RelationKey),
+    #[cfg(test)]
+    #[error("keyed proof bundle refused: {0:?}")]
+    ProofBundle(crate::engine_requirement::ProofBundleError),
+}
+
+/// Evidence that every in-scope declaration field has been read and is empty.
+/// Reading and validating these shells precedes every empty stage construction,
+/// including proof and case records that do not retain this checked value.
+#[derive(Debug)]
+pub struct EmptyShells {
+    scope: Vec<OperationKey>,
+    #[cfg(test)]
+    predicates: crate::engine_foundation::Records,
+}
+impl EmptyShells {
+    fn lifecycle(&self) -> crate::engine_lifecycle::LifecycleRecords {
+        crate::engine_lifecycle::LifecycleRecords::empty(self.scope.clone())
+    }
+    #[cfg(test)]
+    fn construction(self) -> crate::engine_constructibility::Records {
+        crate::engine_constructibility::Records {
+            scope: self.scope,
+            nodes: Vec::new(),
+            edges: Vec::new(),
+            operations: Vec::new(),
+        }
+    }
+}
+
+pub fn read_shells(
+    draft: &realization::keyed::KeyedRealizationDraft,
+    scope: &[SemanticOperationId],
+) -> Result<EmptyShells, KeyedLoweringError> {
+    use ShellField as F;
+    let span = tracing::debug_span!(target: "compiler::engine_keyed", "read_declaration_shells", scope_count = crate::instrumentation::count(scope.len()));
+    let _entered = span.enter();
+    for declaration in draft
+        .operations
+        .iter()
+        .filter(|declaration| scope.contains(&declaration.operation))
+    {
+        for (field, count) in [
+            (F::Expressions, declaration.expressions.len()),
+            (
+                F::RelationDependencies,
+                declaration.relation_dependencies.len(),
+            ),
+            (
+                F::ConstructibilityNodes,
+                declaration.constructibility_nodes.len(),
+            ),
+            (
+                F::ConstructibilityEdges,
+                declaration.constructibility_edges.len(),
+            ),
+            (F::LifecycleNodes, declaration.lifecycle_nodes.len()),
+            (F::LifecycleEdges, declaration.lifecycle_edges.len()),
+            (F::DisclosureNodes, declaration.disclosure_nodes.len()),
+            (F::DisclosureEdges, declaration.disclosure_edges.len()),
+            (F::DisclosureSeeds, declaration.disclosure_seeds.len()),
+        ] {
+            if count != 0 {
+                tracing::debug!(target: "compiler::engine_keyed", outcome = "refused", ?field, field_count = crate::instrumentation::count(count), "declaration shell read");
+                return Err(KeyedLoweringError::UnsupportedShell {
+                    operation: declaration.operation,
+                    field,
+                    count,
+                });
+            }
+        }
+    }
+    tracing::debug!(target: "compiler::engine_keyed", outcome = "completed", field_count = 0_u64, "declaration shell read");
+    Ok(EmptyShells {
+        scope: scope.iter().copied().map(operation_key).collect(),
+        #[cfg(test)]
+        predicates: crate::engine_foundation::Records::default(),
+    })
 }
 
 /// Refusals of the keyed input binding entry, before any analysis.
@@ -87,6 +196,7 @@ impl LoweredRelations for KeyedRelations {
 
 impl RelationOwner for KeyedOwner {
     type Lowered = KeyedRelations;
+    type Error = KeyedLoweringError;
     fn source_binding(&self) -> crate::engine_program::Source {
         crate::engine_program::Source::Keyed {
             manifest: Box::new(self.manifest.clone()),
@@ -94,29 +204,30 @@ impl RelationOwner for KeyedOwner {
             scope: self.scope.clone(),
         }
     }
+    #[cfg(test)]
     fn lower_requirements(
         input: &crate::input::BoundCompilerInput<Self>,
-    ) -> Result<Vec<crate::engine_requirement::Table>, crate::CompileError> {
-        Ok(crate::engine_requirement::proof_tables(
-            &Self::lower_proofs(input)?,
-        ))
+    ) -> Result<Vec<crate::engine_requirement::Table>, KeyedLoweringError> {
+        crate::engine_requirement::proof_tables(&Self::lower_proofs(input)?)
+            .map_err(KeyedLoweringError::ProofBundle)
     }
+    #[cfg(test)]
     fn lower_predicates(
         input: &crate::input::BoundCompilerInput<Self>,
-    ) -> Result<crate::engine_foundation::Records, crate::CompileError> {
+    ) -> Result<crate::engine_foundation::Records, KeyedLoweringError> {
         let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_predicates", scope_count = crate::instrumentation::count(input.owner().scope.len()));
         let _entered = span.enter();
-        // The validated keyed declarations contain no expression predicates.
-        // Evidence readings remain obligations, never Boolean runtime expressions.
-        Ok(crate::engine_foundation::Records::default())
+        Ok(input.owner().shells()?.predicates)
     }
+    #[cfg(test)]
     fn lower_proofs(
         input: &crate::input::BoundCompilerInput<Self>,
-    ) -> Result<crate::engine_proof::Records, crate::CompileError> {
+    ) -> Result<crate::engine_proof::Records, KeyedLoweringError> {
         use crate::{engine_proof as core, engine_source::Payload};
         let source = input.owner().lower_sources()?;
-        crate::engine_source::analyze_sources(&source)
-            .map_err(|_| crate::CompileError::InvalidRealization)?;
+        // Row validity belongs to the shared source stage. Lowering only
+        // records the owner's source declaration and checked empty shells.
+        input.owner().shells()?;
         let obligations = source
             .tables
             .into_iter()
@@ -140,6 +251,7 @@ impl RelationOwner for KeyedOwner {
                     capabilities: std::collections::BTreeSet::new(),
                     sources: Ok(table.rows),
                     constructible: true,
+                    construction: Vec::new(),
                     evidence,
                     incompatible: std::collections::BTreeSet::new(),
                 };
@@ -164,11 +276,13 @@ impl RelationOwner for KeyedOwner {
             },
         })
     }
+    #[cfg(test)]
     fn lower_cases(
         input: &crate::input::BoundCompilerInput<Self>,
-    ) -> Result<crate::engine_cases::Tables, crate::CompileError> {
+    ) -> Result<crate::engine_cases::Tables, KeyedLoweringError> {
         use crate::{engine_cases as core, engine_placement::CaseKey};
         let owner = input.owner();
+        owner.shells()?;
         let placement = lower_placements(owner);
         let sources = lower_sources(owner);
         let coverage = lower_coverage(owner)
@@ -203,7 +317,7 @@ impl RelationOwner for KeyedOwner {
                         .collect(),
                 })
             })
-            .collect::<Result<Vec<_>, crate::CompileError>>()?;
+            .collect::<Result<Vec<_>, KeyedLoweringError>>()?;
         Ok(core::Tables {
             layout_scopes: std::collections::BTreeMap::new(),
             choices: Vec::new(),
@@ -227,23 +341,19 @@ impl RelationOwner for KeyedOwner {
             rows,
         })
     }
-    fn lower_sources(&self) -> Result<crate::engine_source::SourceRecords, crate::CompileError> {
+    fn lower_sources(&self) -> Result<crate::engine_source::SourceRecords, KeyedLoweringError> {
+        self.shells()?;
         Ok(lower_sources(self))
     }
+    #[cfg(test)]
     fn lower_constructibility(
         &self,
-    ) -> Result<crate::engine_constructibility::Records, crate::CompileError> {
-        // The validated declarations contain no authorization or construction
-        // graph. Evidence obligations are not synthetic execution sources.
-        Ok(crate::engine_constructibility::Records {
-            scope: self.scope.iter().copied().map(operation_key).collect(),
-            nodes: Vec::new(),
-            edges: Vec::new(),
-            operations: Vec::new(),
-        })
+    ) -> Result<crate::engine_constructibility::Records, KeyedLoweringError> {
+        Ok(self.shells()?.construction())
     }
 
-    fn lower_relations(&self) -> Self::Lowered {
+    fn lower_relations(&self) -> Result<Self::Lowered, KeyedLoweringError> {
+        let shells = self.shells()?;
         let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_relations", scope_operation_count = crate::instrumentation::count(self.scope.len()));
         let _entered = span.enter();
         let nodes = self
@@ -256,22 +366,14 @@ impl RelationOwner for KeyedOwner {
             })
             .collect::<Vec<_>>();
         tracing::debug!(target: "compiler::engine_keyed", outcome = "completed", source_node_count = crate::instrumentation::count(nodes.len()), "relation records lowered");
-        // The exact declaration owner validates the absence of relation
-        // dependencies. No graph, proof strategy or execution carrier is invented.
-        KeyedRelations {
-            // The closed keyed relation vocabulary has no representation or
-            // lifecycle constraint. Exact declaration re-derivation at binding
-            // also refuses any nonempty legacy lifecycle graph in its shell.
-            // Retain this as a typed stage input, not an omitted stage.
-            lifecycle: crate::engine_lifecycle::LifecycleRecords::empty(
-                self.scope.iter().copied().map(operation_key).collect(),
-            ),
+        Ok(KeyedRelations {
+            lifecycle: shells.lifecycle(),
             records: RelationRecords {
-                scope: self.scope.iter().copied().map(operation_key).collect(),
+                scope: shells.scope,
                 nodes,
                 edges: Vec::new(),
             },
-        }
+        })
     }
 }
 
@@ -318,12 +420,13 @@ pub const fn operation_key(operation: SemanticOperationId) -> OperationKey {
     OperationKey { namespace, code }
 }
 
-fn case_facts(
+#[cfg(test)]
+pub fn case_facts(
     key: &crate::engine_placement::Key,
     runtime: bool,
     coverage: &crate::engine_coverage::Plan,
     sources: &crate::engine_source::SourceRecords,
-) -> Result<crate::engine_case_facts::Facts, crate::CompileError> {
+) -> Result<crate::engine_case_facts::Facts, KeyedLoweringError> {
     use crate::{
         engine_case_facts as core,
         engine_source::{Activation, Payload},
@@ -332,11 +435,13 @@ fn case_facts(
         .tables
         .iter()
         .find(|table| table.relation == key.relation)
-        .ok_or(crate::CompileError::InvalidRealization)?
+        .ok_or_else(|| KeyedLoweringError::MissingSourceTable(key.relation.clone()))?
         .rows;
     let runtime = if runtime {
         let Some(Payload::Object(object)) = rows.first().map(|row| &row.operand.payload) else {
-            return Err(crate::CompileError::InvalidRealization);
+            return Err(KeyedLoweringError::RuntimeSourcePayload(
+                key.relation.clone(),
+            ));
         };
         vec![core::Runtime {
             scope: core::Scope::Member {
@@ -459,7 +564,7 @@ fn source_table(
     }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn lower_placements(owner: &KeyedOwner) -> crate::engine_placement::Records {
     use crate::{engine_lifecycle::ObjectKey, engine_placement as core};
     use realization::relation::{KeyedCardinality, KeyedRelation};
@@ -525,7 +630,7 @@ pub fn lower_placements(owner: &KeyedOwner) -> crate::engine_placement::Records 
     core::Records { plans, eligibility }
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn lower_coverage(owner: &KeyedOwner) -> Vec<crate::engine_coverage::Plan> {
     use crate::{coverage::CoverageBoundary as B, engine_coverage as core, engine_source::Payload};
     let source = lower_sources(owner);

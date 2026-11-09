@@ -135,13 +135,23 @@ pub struct Lowered {
     inherited: BTreeMap<realization::FactId, BTreeSet<realization::DisclosureReason>>,
 }
 
+#[cfg(test)]
 pub fn lower(input: &crate::input::BoundCompilerInput) -> Result<Lowered, CompileError> {
-    let span = tracing::debug_span!(target: "compiler::engine_attestation", "lower_proofs", scope_count = crate::instrumentation::count(input.scope().operations().len()));
-    let _entered = span.enter();
     let relations = crate::relation::build_relation_analysis(input)?;
     let constructibility = crate::constructibility::build_constructibility_analysis(input)?;
     let lifecycle = crate::lifecycle::build_lifecycle_analysis(input, &relations)?;
-    let obligations = classify_obligations(&relations)?;
+    lower_prepared(input, &relations, &constructibility, &lifecycle)
+}
+
+pub fn lower_prepared(
+    input: &crate::BoundCompilerInput,
+    relations: &CompilerRelationAnalysis,
+    constructibility: &crate::constructibility::CompilerConstructibilityAnalysis,
+    lifecycle: &crate::lifecycle::CompilerLifecycleAnalysis,
+) -> Result<Lowered, CompileError> {
+    let span = tracing::debug_span!(target: "compiler::engine_attestation", "lower_proofs", scope_count = crate::instrumentation::count(input.scope().operations().len()));
+    let _entered = span.enter();
+    let obligations = classify_obligations(relations)?;
     let declarations = relations
         .graph
         .node_weights()
@@ -207,7 +217,7 @@ pub fn lower(input: &crate::input::BoundCompilerInput) -> Result<Lowered, Compil
     lowered.lower_obligations(
         obligations,
         &declarations,
-        &constructibility,
+        constructibility,
         &lifecycle.choices,
     )?;
     Ok(lowered)
@@ -279,6 +289,10 @@ impl Lowered {
         };
         self.proofs.insert(id.clone(), proof.clone());
         let rows = derive_source_requirements(declaration, proof.proof());
+        let construction = rows
+            .as_ref()
+            .map(|rows| construction_requirements(declaration, rows))
+            .unwrap_or_default();
         let constructible = crate::proof::locally_feasible(
             declaration,
             proof,
@@ -330,15 +344,13 @@ impl Lowered {
             capabilities: proof_capabilities(declaration, proof.proof()),
             sources,
             constructible,
+            construction,
             evidence,
             incompatible,
         }
     }
 
-    #[allow(
-        dead_code,
-        reason = "Compatibility entry retained for direct stage controls"
-    )]
+    #[cfg(test)]
     pub fn enumerate(
         &self,
         view: &crate::capability::CapabilityView,
@@ -369,7 +381,9 @@ impl Lowered {
             core::Error::CandidateLimit(maximum) => {
                 CompileError::ProofCandidateLimitExceeded { maximum }
             }
-            core::Error::FixedSource(_) => CompileError::InvalidRealization,
+            core::Error::FixedSource(relation) => CompileError::FixedProofSource {
+                relation: self.relations[&relation].clone(),
+            },
         }
     }
 
@@ -394,6 +408,32 @@ impl Lowered {
             },
         }
     }
+}
+
+fn construction_requirements(
+    declaration: &RelationDeclaration,
+    rows: &[crate::source::SourceRequirement],
+) -> Vec<core::ConstructionRequirement> {
+    use crate::source::RequiredSourceKind as S;
+    use realization::{ConstructibilityNodeId, WitnessRole};
+    rows.iter()
+        .filter_map(|row| {
+            let role = match row.source {
+                S::InputOwnerWitness => WitnessRole::ProtocolOwnerAuthorization,
+                S::OperatorWitness => WitnessRole::OperatorAuthorization,
+                S::SponsorLocalWitness => WitnessRole::SponsorAuthorization,
+                _ => return None,
+            };
+            Some(core::ConstructionRequirement {
+                node: super::constructibility::node_key(&ConstructibilityNodeId::Witness {
+                    operation: declaration.id.operation(),
+                    role,
+                    availability: row.availability,
+                }),
+                optional: row.availability == realization::AvailabilityClass::SponsorLocal,
+            })
+        })
+        .collect()
 }
 
 fn disclosure_records(

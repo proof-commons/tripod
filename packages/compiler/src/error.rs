@@ -17,15 +17,56 @@ use thiserror::Error;
 
 use crate::relation::RelationCycleComponent;
 
+/// Compiler-owned boundary at which owner-produced records were refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum OwnerProgramStage {
+    Lowering,
+    Relations,
+    Predicates,
+    Sources,
+    Constructibility,
+    Lifecycle,
+    Requirements,
+    Aggregate,
+    Cases,
+    SourceCensus,
+    ProofCensus,
+    RequirementCensus,
+    CaseCensus,
+    Program,
+    ProofSource,
+    ProofRepresentationJoin,
+    ProofLifecycleJoin,
+    ProofConstructibilityJoin,
+    ProofSourceRowsJoin,
+    DuplicateSourceTableJoin,
+    UnnamedSourceTableJoin,
+}
+
+/// Public diagnostic restored by the owner adapter, without engine record types.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct OwnerProgramDefect {
+    pub stage: OwnerProgramStage,
+    /// Known owner relations implicated by the refusal, sorted and deduplicated.
+    pub relations: Vec<realization::RelationId>,
+    /// Refused relation keys absent from the owner's identity map.
+    pub unknown_relation_count: usize,
+}
+
 /// A typed compilation failure.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CompileError {
+    /// Fixed evidence cannot obtain its declared source.
+    #[error("fixed proof source unavailable for {relation:?}")]
+    FixedProofSource { relation: realization::RelationId },
     /// A common program record violates an owner-produced internal contract.
     #[error("invalid owner program records: {defect:?}")]
     InvalidOwnerProgramRecords {
-        /// The full typed record refusal, including its namespaced subjects.
-        defect: Box<crate::engine_program::Error>,
+        /// The stage and owner-restored relation identities.
+        defect: Box<OwnerProgramDefect>,
     },
     /// The realization was built against a realization schema this
     /// compiler does not support.
@@ -1505,6 +1546,7 @@ impl CompileError {
     pub(crate) const fn tracing_kind(&self) -> &'static str {
         match self {
             Self::InvalidOwnerProgramRecords { .. } => "invalid_owner_program_records",
+            Self::FixedProofSource { .. } => "fixed_proof_source",
             Self::UnsupportedRealizationSchema { .. } => "unsupported_realization_schema",
             Self::InvalidRealization => "invalid_realization",
             Self::ArchitectureBindingMismatch => "architecture_binding_mismatch",

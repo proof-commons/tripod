@@ -110,7 +110,6 @@ pub struct LifecycleAnalysis {
 /// Typed stage projection, including a genuine empty result. Like the existing
 /// whole-program projection this is exercised by the probe before publication.
 #[derive(Clone, Debug, PartialEq, Eq)]
-#[allow(dead_code)]
 pub struct LifecycleProjection {
     pub nodes: Vec<LifecycleNodeKey>,
     pub edges: Vec<LifecycleDependency>,
@@ -119,7 +118,6 @@ pub struct LifecycleProjection {
 }
 
 impl LifecycleAnalysis {
-    #[allow(dead_code)]
     pub fn project(&self) -> LifecycleProjection {
         let mut nodes = self.graph.node_weights().cloned().collect::<Vec<_>>();
         nodes.sort();
@@ -145,16 +143,10 @@ impl LifecycleAnalysis {
 pub fn analyze_lifecycle(
     records: &LifecycleRecords,
 ) -> Result<LifecycleAnalysis, LifecycleRecordError> {
-    let started = tracing::enabled!(target: "compiler::engine_lifecycle", tracing::Level::DEBUG)
-        .then(std::time::Instant::now);
     let span = tracing::debug_span!(target: "compiler::engine_lifecycle", "analyze_lifecycle",
         choice_count = crate::instrumentation::count(records.choices.len()), node_count = crate::instrumentation::count(records.nodes.len()), edge_count = crate::instrumentation::count(records.edges.len()));
     let _entered = span.enter();
-    let result = analyze_core(records);
-    if let Some(started) = started {
-        tracing::debug!(target: "compiler::engine_lifecycle", outcome = if result.is_ok() { "completed" } else { "refused" }, elapsed_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX), "lifecycle records analyzed");
-    }
-    result
+    analyze_core(records)
 }
 
 fn analyze_core(records: &LifecycleRecords) -> Result<LifecycleAnalysis, LifecycleRecordError> {

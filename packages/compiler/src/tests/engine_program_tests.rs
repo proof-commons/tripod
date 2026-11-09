@@ -2,11 +2,197 @@
 use crate::{engine_program as core, engine_records::RelationOwner};
 use architecture::{OperationId, semantic::KeyedOperationId};
 
+#[test]
+fn each_independent_derivation_builds_the_shared_inputs_once() {
+    use super::tracing_capture::{capture, isolate_capture_test};
+    if isolate_capture_test(
+        "tests::engine_program_tests::each_independent_derivation_builds_the_shared_inputs_once",
+    ) {
+        return;
+    }
+    let input = super::bound_input(&[OperationId::CompactAsh]);
+    // Each call starts from retained source; no cache crosses the independent
+    // producer/validator derivations. Count work within each call separately.
+    for _ in 0..2 {
+        let (result, events) =
+            capture(|| crate::engine_attestation::program::derive(&input, limits()));
+        assert!(result.is_ok());
+        for (target, name) in [
+            ("compiler::engine_records", "analyze_relations"),
+            (
+                "compiler::engine_constructibility",
+                "analyze_constructibility",
+            ),
+            ("compiler::engine_attestation", "lower_proofs"),
+            ("compiler::engine_attestation", "lower_cases"),
+            ("compiler::engine_attestation", "lower_requirement_tables"),
+        ] {
+            assert_eq!(
+                events
+                    .iter()
+                    .filter(|event| event.is_span && event.target == target && event.name == name)
+                    .count(),
+                1,
+                "{target}::{name}"
+            );
+        }
+    }
+}
+
 fn limits() -> crate::placement::PlacementSearchLimits {
     crate::placement::PlacementSearchLimits::new(
         std::num::NonZeroU64::new(10_000_000).expect("states"),
         std::num::NonZeroU64::new(1_000_000).expect("candidates"),
     )
+}
+
+#[test]
+fn both_owners_refuse_proof_inputs_that_disagree_with_analyzed_stages() {
+    let attestation = super::bound_input(&[OperationId::CompactAsh]);
+    let keyed = super::engine_coverage_tests::bound(vec![
+        KeyedOperationId::Source,
+        KeyedOperationId::Merge,
+    ]);
+    for (control, policy) in [
+        (
+            core::lower(&attestation).expect("attestation"),
+            attestation.policy(),
+        ),
+        (core::lower(&keyed).expect("keyed"), keyed.policy()),
+    ] {
+        assert!(core::analyze(&control, policy.proof_search_limits, limits()).is_ok());
+        assert_stage_join_negatives(&control, policy);
+    }
+}
+
+fn first_alternative(records: &mut core::Records) -> &mut crate::engine_proof::Alternative {
+    records
+        .proofs
+        .obligations
+        .values_mut()
+        .find_map(|obligation| match obligation {
+            crate::engine_proof::Obligation::Static => None,
+            crate::engine_proof::Obligation::Evidence(value) => Some(value),
+            crate::engine_proof::Obligation::Required(values) => values.first_mut(),
+        })
+        .expect("accepted owner has a proof obligation")
+}
+
+#[test]
+fn both_owners_refuse_duplicate_and_unnamed_source_tables() {
+    let attestation = super::bound_input(&[OperationId::CompactAsh]);
+    let keyed = super::engine_coverage_tests::bound(vec![
+        KeyedOperationId::Source,
+        KeyedOperationId::Merge,
+    ]);
+    for (control, policy) in [
+        (
+            core::lower(&attestation).expect("attestation"),
+            attestation.policy(),
+        ),
+        (core::lower(&keyed).expect("keyed"), keyed.policy()),
+    ] {
+        assert!(core::analyze(&control, policy.proof_search_limits, limits()).is_ok());
+        let table = control.sources.tables[0].clone();
+        let key = crate::engine_proof::AlternativeKey {
+            relation: table.relation.clone(),
+            namespace: table.proof_namespace,
+            kind: table.proof_kind,
+        };
+        let mut duplicate = control.clone();
+        duplicate.sources.tables.push(table.clone());
+        assert_eq!(
+            core::analyze(&duplicate, policy.proof_search_limits, limits()).err(),
+            Some(core::Error::StageJoin(
+                core::StageJoinError::DuplicateSourceTable(key)
+            ))
+        );
+        let mut unnamed = control;
+        let mut extra = table;
+        extra.proof_kind = u16::MAX;
+        let key = crate::engine_proof::AlternativeKey {
+            relation: extra.relation.clone(),
+            namespace: extra.proof_namespace,
+            kind: extra.proof_kind,
+        };
+        unnamed.sources.tables.push(extra);
+        assert_eq!(
+            core::analyze(&unnamed, policy.proof_search_limits, limits()).err(),
+            Some(core::Error::StageJoin(
+                core::StageJoinError::UnnamedSourceTable(key)
+            ))
+        );
+    }
+}
+
+#[test]
+fn keyed_malformed_source_rows_reach_the_shared_source_refusal() {
+    let input = super::engine_coverage_tests::bound(vec![KeyedOperationId::Source]);
+    let mut records = core::lower(&input).expect("lowering records");
+    assert!(core::analyze(&records, input.policy().proof_search_limits, limits()).is_ok());
+    let missing = records.sources.tables[0]
+        .rows
+        .pop()
+        .expect("source row")
+        .operand;
+    assert_eq!(
+        core::analyze(&records, input.policy().proof_search_limits, limits()).err(),
+        Some(core::Error::Sources(Box::new(
+            crate::engine_source::SourceError::MissingOperand(missing)
+        )))
+    );
+}
+
+fn assert_stage_join_negatives(control: &core::Records, policy: crate::AnalysisPolicy) {
+    use crate::engine_lifecycle::{LifecycleRequirementRecord, ModeKey, ObjectKey};
+    use core::StageJoinError as J;
+    let operation = control.relations.scope[0];
+    let object = ObjectKey {
+        namespace: u16::MAX,
+        code: 1,
+    };
+    let mut subject = control.clone();
+    subject.proofs.choices.push((
+        crate::engine_proof::ChoiceKey { operation, object },
+        Vec::new(),
+    ));
+    assert_eq!(
+        core::analyze(&subject, policy.proof_search_limits, limits()).err(),
+        Some(core::Error::StageJoin(J::RepresentationChoices))
+    );
+    let mut subject = control.clone();
+    subject.proofs.lifecycle.push(LifecycleRequirementRecord {
+        object,
+        representation: ModeKey {
+            namespace: u16::MAX,
+            code: 1,
+        },
+        exit: operation,
+        status: crate::lifecycle::LifecycleExitStatus::AvailableInCompilerScope,
+    });
+    assert_eq!(
+        core::analyze(&subject, policy.proof_search_limits, limits()).err(),
+        Some(core::Error::StageJoin(J::LifecycleRequirements))
+    );
+    let mut subject = control.clone();
+    let alternative = first_alternative(&mut subject);
+    alternative.constructible = !alternative.constructible;
+    let id = alternative.id.clone();
+    assert_eq!(
+        core::analyze(&subject, policy.proof_search_limits, limits()).err(),
+        Some(core::Error::StageJoin(J::Constructibility(id)))
+    );
+    let mut subject = control.clone();
+    let alternative = first_alternative(&mut subject);
+    let id = alternative.id.clone();
+    // Keep the relation/table identities unchanged; alter one row's value.
+    alternative.sources.as_mut().expect("accepted rows")[0]
+        .availability
+        .kind ^= 1;
+    assert_eq!(
+        core::analyze(&subject, policy.proof_search_limits, limits()).err(),
+        Some(core::Error::StageJoin(J::SourceRows(id)))
+    );
 }
 
 #[test]
@@ -233,5 +419,100 @@ fn whole_pipeline_refuses_unavailable_required_source() {
     records.constructibility.operations[0].1[0].allowed.clear();
     assert!(
         matches!(core::analyze(&records, input.policy().proof_search_limits, limits()), Err(core::Error::Constructibility(error)) if matches!(*error, construction::RecordError::PermissionlessPrivateDependency { .. }))
+    );
+}
+
+#[test]
+fn source_rejected_alternative_is_local_to_orchestrated_search() {
+    use crate::{engine_proof as proof, proof::LocalProofRejection};
+    let input = super::engine_coverage_tests::bound(vec![KeyedOperationId::Merge]);
+    let control = core::lower(&input).expect("lowering");
+    let accepted = core::analyze(&control, input.policy().proof_search_limits, limits())
+        .expect("accepted control");
+    assert_eq!(accepted.proof_search.rejected_by_source, 0);
+    for table_present in [false, true] {
+        let mut subject = control.clone();
+        let alternatives = subject
+            .proofs
+            .obligations
+            .values_mut()
+            .find_map(|row| {
+                if let proof::Obligation::Required(alternatives) = row {
+                    Some(alternatives)
+                } else {
+                    None
+                }
+            })
+            .expect("runtime obligation");
+        assert_eq!(alternatives.len(), 1);
+        let mut rejected = alternatives[0].clone();
+        let original = rejected.id.clone();
+        rejected.id.kind = u16::MAX;
+        rejected.sources = Err(LocalProofRejection::SourceDerivation);
+        rejected.construction.clear();
+        // The attestation lowerer derives false when source derivation fails.
+        rejected.constructible = false;
+        if table_present {
+            let mut table = subject
+                .sources
+                .tables
+                .iter()
+                .find(|table| {
+                    (
+                        table.relation.clone(),
+                        table.proof_namespace,
+                        table.proof_kind,
+                    ) == (original.relation.clone(), original.namespace, original.kind)
+                })
+                .expect("control table")
+                .clone();
+            table.proof_kind = rejected.id.kind;
+            subject.sources.tables.push(table);
+        }
+        alternatives.push(rejected);
+        let program = core::analyze(&subject, input.policy().proof_search_limits, limits())
+            .expect("one feasible alternative remains");
+        assert_eq!(program.plans, accepted.plans);
+        assert_eq!(program.proof_search.rejected_by_source, 1);
+    }
+}
+
+#[test]
+fn all_source_rejected_alternatives_reach_the_search_refusal() {
+    use crate::{engine_proof as proof, proof::LocalProofRejection};
+    let input = super::engine_coverage_tests::bound(vec![KeyedOperationId::Merge]);
+    let mut subject = core::lower(&input).expect("lowering");
+    assert!(core::analyze(&subject, input.policy().proof_search_limits, limits()).is_ok());
+    let (relation, alternatives) = subject
+        .proofs
+        .obligations
+        .iter_mut()
+        .find_map(|(key, row)| {
+            if let proof::Obligation::Required(alternatives) = row {
+                Some((key.clone(), alternatives))
+            } else {
+                None
+            }
+        })
+        .expect("runtime obligation");
+    for alternative in alternatives {
+        alternative.sources = Err(LocalProofRejection::SourceDerivation);
+        alternative.construction.clear();
+        alternative.constructible = false;
+    }
+    let expected = proof::Error::NoFeasiblePlan(vec![relation]);
+    assert_eq!(
+        proof::enumerate(
+            &subject.proofs,
+            &crate::capability::CapabilityView::Unconstrained,
+            input.policy().proof_search_limits,
+            &mut crate::proof::ProofSearchReport::default(),
+        )
+        .err(),
+        Some(expected.clone())
+    );
+    assert_eq!(
+        core::analyze(&subject, input.policy().proof_search_limits, limits()).err(),
+        Some(core::Error::Proof(expected))
     );
 }

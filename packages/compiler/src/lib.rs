@@ -13,14 +13,14 @@ mod coverage_graph;
 mod disclosure;
 mod engine_attestation;
 mod engine_case_facts;
-// The staged probe exercises case selection before the whole-program migration.
-#[allow(dead_code)]
+// Finite owner tables feed the production whole-program analysis.
 mod engine_cases;
 mod engine_constructibility;
 mod engine_coverage;
 mod engine_coverage_graph;
 mod engine_coverage_join;
 mod engine_foundation;
+#[cfg(any(test, feature = "keyed-experimental"))]
 mod engine_keyed;
 mod engine_lifecycle;
 mod engine_operation;
@@ -52,7 +52,7 @@ mod sponsor_region;
 pub mod target;
 
 pub use constructibility::validate_required_dependency;
-pub use error::CompileError;
+pub use error::{CompileError, OwnerProgramDefect, OwnerProgramStage};
 pub use expression::ExpressionCycleComponent;
 pub use input::{
     AnalysisPolicy, BoundCompilerInput, CompilationScope, ProofSearchLimits, bind_input,

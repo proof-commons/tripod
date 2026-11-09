@@ -107,9 +107,16 @@ pub fn lower(input: &super::AttestationOwner) -> Result<Lowered, CompileError> {
 }
 
 impl Lowered {
+    #[cfg(test)]
     pub fn analyze(&self) -> Result<CompilerConstructibilityAnalysis, CompileError> {
-        let value =
-            core::analyze_constructibility(&self.records).map_err(|error| self.refusal(error))?;
+        self.compatibility_view(core::analyze_constructibility(&self.records))
+    }
+
+    pub fn compatibility_view(
+        &self,
+        result: Result<core::Analysis, core::RecordError>,
+    ) -> Result<CompilerConstructibilityAnalysis, CompileError> {
+        let value = result.map_err(|error| self.refusal(error))?;
         Ok(CompilerConstructibilityAnalysis {
             graph: value.graph.map(
                 |_, node| ConstructibilityNode {
@@ -154,7 +161,7 @@ impl Lowered {
         })
     }
 
-    fn refusal(&self, error: core::RecordError) -> CompileError {
+    pub(super) fn refusal(&self, error: core::RecordError) -> CompileError {
         let node = |key: &core::NodeKey| self.nodes[key].clone();
         let path = |keys: Vec<core::NodeKey>| keys.iter().map(node).collect();
         match error {
@@ -273,7 +280,7 @@ const fn node_availability(node: &ConstructibilityNodeId) -> Option<Availability
         | ConstructibilityNodeId::Witness { availability, .. } => Some(*availability),
     }
 }
-fn node_key(node: &ConstructibilityNodeId) -> core::NodeKey {
+pub(super) fn node_key(node: &ConstructibilityNodeId) -> core::NodeKey {
     match node {
         ConstructibilityNodeId::Operation(operation) => {
             core::NodeKey::operation(super::operation_key(*operation))

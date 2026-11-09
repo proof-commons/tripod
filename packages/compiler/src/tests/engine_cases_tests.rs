@@ -138,7 +138,7 @@ fn attestation_operation_assembly_preserves_factor_census_and_placements() {
             .expect("proofs");
     let proof = proofs.first().expect("candidate");
     let selected = core::select(tables, proof).expect("selection");
-    let relations = input.owner().lower_relations();
+    let relations = input.owner().lower_relations().expect("owner lowering");
     let edges = relations
         .records()
         .edges

@@ -36,6 +36,7 @@ pub enum Evidence {
         operation: OperationKey,
         asset: u16,
     },
+    #[cfg(any(test, feature = "keyed-experimental"))]
     HandleClassification {
         operation: OperationKey,
         object: ObjectKey,
@@ -43,10 +44,12 @@ pub enum Evidence {
         minimum: u16,
         maximum: Option<u16>,
     },
+    #[cfg(any(test, feature = "keyed-experimental"))]
     SourceClassification {
         operation: OperationKey,
         object: ObjectKey,
     },
+    #[cfg(any(test, feature = "keyed-experimental"))]
     MembershipReading {
         operation: OperationKey,
         object: ObjectKey,
@@ -57,6 +60,7 @@ pub enum Evidence {
     },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg(any(test, feature = "keyed-experimental"))]
 pub enum Recurrence {
     Singleton,
     ConsumedUnion,
@@ -93,12 +97,12 @@ pub struct RegionRecord {
     pub decidable: bool,
 }
 impl RegionRecord {
-    // The staged probe exercises these queries before placement consumes them.
-    #[allow(dead_code)]
+    // Direct-stage oracle queries; production consumes the record fields.
+    #[cfg(test)]
     pub fn erases_amount(&self, family: ObjectKey) -> bool {
         self.erased_amount_family == Some(family)
     }
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn activation(&self, family: ObjectKey) -> Activation {
         if self.sponsor_conditional_family == Some(family) {
             Activation::SponsorPresent

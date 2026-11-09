@@ -2,10 +2,15 @@
 use crate::{
     engine_cases, engine_constructibility, engine_foundation, engine_lifecycle, engine_operation,
     engine_proof,
-    engine_records::{self, LoweredRelations, OperationKey, RelationKey, RelationOwner},
+    engine_records::{self, OperationKey, RelationKey},
     engine_requirement, engine_source,
-    input::{BoundCompilerInput, ProofSearchLimits},
+    input::ProofSearchLimits,
     placement::PlacementSearchLimits,
+};
+#[cfg(test)]
+use crate::{
+    engine_records::{LoweredRelations, RelationOwner},
+    input::BoundCompilerInput,
 };
 use petgraph::visit::EdgeRef as _;
 use std::collections::{BTreeMap, BTreeSet};
@@ -15,12 +20,14 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Source {
     Attestation(Box<crate::analyzed::AnalyzedSource>),
+    #[cfg(any(test, feature = "keyed-experimental"))]
     Keyed {
         manifest: Box<architecture::keyed::KeyedManifest>,
         realization: realization::keyed::KeyedRealizationDraft,
         scope: Vec<architecture::semantic::SemanticOperationId>,
     },
 }
+#[derive(Clone)]
 pub struct Records {
     pub source: Source,
     pub relations: engine_records::RelationRecords,
@@ -55,7 +62,8 @@ pub struct Program {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
-    Lowering(Box<crate::CompileError>),
+    #[cfg(test)]
+    Lowering(Box<crate::engine_records::LoweringError>),
     Relations(engine_records::RelationRecordError),
     Predicates(engine_foundation::Error),
     Sources(Box<engine_source::SourceError>),
@@ -71,9 +79,21 @@ pub enum Error {
         missing: Vec<RelationKey>,
         unexpected: Vec<RelationKey>,
     },
+    #[cfg(test)]
     SourceMismatch,
+    #[cfg(test)]
     ProgramMismatch,
     ProofSourceMismatch(engine_proof::AlternativeKey),
+    StageJoin(StageJoinError),
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StageJoinError {
+    RepresentationChoices,
+    LifecycleRequirements,
+    Constructibility(engine_proof::AlternativeKey),
+    SourceRows(engine_proof::AlternativeKey),
+    DuplicateSourceTable(engine_proof::AlternativeKey),
+    UnnamedSourceTable(engine_proof::AlternativeKey),
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Stage {
@@ -83,12 +103,12 @@ pub enum Stage {
     Case,
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn lower<O: RelationOwner>(input: &BoundCompilerInput<O>) -> Result<Records, Error> {
     let span = tracing::debug_span!(target: "compiler::engine_program", "lower_bound_owner");
     let _entered = span.enter();
-    let relation = input.owner().lower_relations();
-    let refusal = |error| Error::Lowering(Box::new(error));
+    let refusal = |error: O::Error| Error::Lowering(Box::new(error.into()));
+    let relation = input.owner().lower_relations().map_err(refusal)?;
     Ok(Records {
         source: input.owner().source_binding(),
         relations: relation.records().clone(),
@@ -104,26 +124,58 @@ pub fn lower<O: RelationOwner>(input: &BoundCompilerInput<O>) -> Result<Records,
 
 /// One orchestration for both record producers, with no owner parameter after
 /// lowering. Search, factorization and all seven stages use concrete records.
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn analyze(
     records: &Records,
     proof_limits: ProofSearchLimits,
     placement_limits: PlacementSearchLimits,
 ) -> Result<Program, Error> {
+    analyze_prepared(records, proof_limits, placement_limits, None)
+}
+
+/// Results built from this derivation's records, before owner compatibility
+/// views. These are never retained across producer/validator derivations.
+pub struct PreparedStages {
+    pub relations: engine_records::RelationGraph,
+    pub construction: engine_constructibility::Analysis,
+}
+
+/// Supplied stages must have been analyzed from these same `records` within
+/// this derivation. They are an internal reuse path, never a cache or a way to
+/// pass producer results into independent validation. A census alone cannot
+/// establish that their row contents agree, so callers retain this invariant.
+pub fn analyze_prepared(
+    records: &Records,
+    proof_limits: ProofSearchLimits,
+    placement_limits: PlacementSearchLimits,
+    stages: Option<PreparedStages>,
+) -> Result<Program, Error> {
+    let (relations, construction) = match stages {
+        Some(stages) => (Some(stages.relations), Some(stages.construction)),
+        None => (None, None),
+    };
     let span = tracing::debug_span!(target: "compiler::engine_program", "analyze", scope_count = crate::instrumentation::count(records.relations.scope.len()));
     let _entered = span.enter();
-    let relation_graph =
-        engine_records::analyze_relations(&records.relations).map_err(Error::Relations)?;
+    let relation_graph = relations.map_or_else(
+        || engine_records::analyze_relations(&records.relations).map_err(Error::Relations),
+        Ok,
+    )?;
     engine_foundation::validate_predicates(&records.predicates).map_err(Error::Predicates)?;
     let relations = project_relations(&records.relations.scope, &relation_graph);
     stage_census(records, &relations)?;
     let sources = engine_source::analyze_sources(&records.sources)
         .map_err(|error| Error::Sources(Box::new(error)))?;
-    proof_source_join(records)?;
-    let construction = engine_constructibility::analyze_constructibility(&records.constructibility)
-        .map_err(|error| Error::Constructibility(Box::new(error)))?;
+    proof_source_join(records, &sources)?;
+    let construction = construction.map_or_else(
+        || {
+            engine_constructibility::analyze_constructibility(&records.constructibility)
+                .map_err(|error| Error::Constructibility(Box::new(error)))
+        },
+        Ok,
+    )?;
     let lifecycle =
         engine_lifecycle::analyze_lifecycle(&records.lifecycle).map_err(Error::Lifecycle)?;
+    proof_stage_join(&records.proofs, &construction, &lifecycle).map_err(Error::StageJoin)?;
     let mut proof_search = crate::proof::ProofSearchReport::default();
     let candidates = engine_proof::enumerate(
         &records.proofs,
@@ -256,7 +308,22 @@ fn stage_census(
     Ok(())
 }
 
-fn proof_source_join(records: &Records) -> Result<(), Error> {
+fn proof_source_join(
+    records: &Records,
+    sources: &[Vec<engine_source::SourceRow>],
+) -> Result<(), Error> {
+    let mut tables = BTreeSet::new();
+    for table in &records.sources.tables {
+        let key = engine_proof::AlternativeKey {
+            relation: table.relation.clone(),
+            namespace: table.proof_namespace,
+            kind: table.proof_kind,
+        };
+        if !tables.insert(key.clone()) {
+            return Err(Error::StageJoin(StageJoinError::DuplicateSourceTable(key)));
+        }
+    }
+    let mut named = BTreeSet::new();
     for (relation, obligation) in &records.proofs.obligations {
         let alternatives: &[engine_proof::Alternative] = match obligation {
             engine_proof::Obligation::Static => &[],
@@ -264,14 +331,105 @@ fn proof_source_join(records: &Records) -> Result<(), Error> {
             engine_proof::Obligation::Required(alternatives) => alternatives,
         };
         for alternative in alternatives {
-            if &alternative.id.relation != relation
-                || !records.sources.tables.iter().any(|table| {
-                    table.relation == *relation
-                        && table.proof_namespace == alternative.id.namespace
-                        && table.proof_kind == alternative.id.kind
-                })
-            {
+            named.insert(alternative.id.clone());
+            let table = records.sources.tables.iter().position(|table| {
+                table.relation == *relation
+                    && table.proof_namespace == alternative.id.namespace
+                    && table.proof_kind == alternative.id.kind
+            });
+            if &alternative.id.relation != relation {
                 return Err(Error::ProofSourceMismatch(alternative.id.clone()));
+            }
+            // A failed local derivation has no offered rows to compare. Source
+            // tables, when present, have already been validated by the source
+            // stage; the search owns rejection of this alternative. Absence of
+            // a table is also valid when the owner could not derive its rows.
+            let Ok(offered) = &alternative.sources else {
+                continue;
+            };
+            let Some(index) = table else {
+                return Err(Error::ProofSourceMismatch(alternative.id.clone()));
+            };
+            let mut expected = sources[index].clone();
+            expected.sort();
+            let mut offered = offered.clone();
+            offered.sort();
+            if offered != expected {
+                return Err(Error::StageJoin(StageJoinError::SourceRows(
+                    alternative.id.clone(),
+                )));
+            }
+        }
+    }
+    if let Some(key) = tables.difference(&named).next() {
+        return Err(Error::StageJoin(StageJoinError::UnnamedSourceTable(
+            key.clone(),
+        )));
+    }
+    Ok(())
+}
+
+fn proof_stage_join(
+    proofs: &engine_proof::Records,
+    construction: &engine_constructibility::Analysis,
+    lifecycle: &engine_lifecycle::LifecycleAnalysis,
+) -> Result<(), StageJoinError> {
+    let span = tracing::debug_span!(target: "compiler::engine_program", "join_proof_stages", obligation_count = crate::instrumentation::count(proofs.obligations.len()));
+    let _entered = span.enter();
+    let mut expected = lifecycle
+        .choices
+        .iter()
+        .map(|choice| {
+            (
+                engine_proof::ChoiceKey {
+                    operation: choice.operation,
+                    object: choice.object,
+                },
+                choice.candidates.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut offered = proofs.choices.clone();
+    for (_, modes) in expected.iter_mut().chain(offered.iter_mut()) {
+        modes.sort();
+    }
+    expected.sort();
+    offered.sort();
+    if offered != expected {
+        return Err(StageJoinError::RepresentationChoices);
+    }
+    let mut expected = lifecycle.requirements.clone();
+    let mut offered = proofs.lifecycle.clone();
+    expected.sort();
+    offered.sort();
+    if offered != expected {
+        return Err(StageJoinError::LifecycleRequirements);
+    }
+    for obligation in proofs.obligations.values() {
+        let alternatives: &[engine_proof::Alternative] = match obligation {
+            engine_proof::Obligation::Static => &[],
+            engine_proof::Obligation::Evidence(value) => std::slice::from_ref(value),
+            engine_proof::Obligation::Required(values) => values,
+        };
+        for alternative in alternatives {
+            // A construction flag states local feasibility in these records:
+            // source derivation must succeed before witness construction can.
+            // A false flag is local infeasibility, not a stage disagreement.
+            let expected = alternative.sources.is_ok()
+                && alternative.construction.iter().all(|requirement| {
+                    construction.node_by_id.contains_key(&requirement.node)
+                        && (!requirement.optional
+                            || construction
+                                .operations
+                                .iter()
+                                .filter(|operation| {
+                                    operation.operation == requirement.node.operation
+                                })
+                                .flat_map(|operation| &operation.cases)
+                                .any(|case| case.optional_nodes.contains(&requirement.node)))
+                });
+            if alternative.constructible != expected {
+                return Err(StageJoinError::Constructibility(alternative.id.clone()));
             }
         }
     }
@@ -280,7 +438,7 @@ fn proof_source_join(records: &Records) -> Result<(), Error> {
 
 /// The type fixed at binding lowers again. No source variant is inspected to
 /// recover an owner; the complete offered value is compared with that result.
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn validate<O: RelationOwner>(
     input: &BoundCompilerInput<O>,
     limits: PlacementSearchLimits,

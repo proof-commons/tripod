@@ -55,20 +55,27 @@
 // One item-level allowance remains, on an emptiness query the
 // dependency resolution does not need to ask.
 
-use std::collections::{BTreeMap, BTreeSet};
+#[cfg(test)]
+use crate::coverage::{CollateralPolicy, CoveragePurpose, PlanCoverageAnalysis};
+#[cfg(test)]
+use realization::RelationDependencyProjection;
+use std::collections::BTreeMap;
+#[cfg(test)]
+use std::collections::BTreeSet;
 
 use crate::engine_coverage_graph as core;
 use architecture::OperationId;
-use realization::{ExternalEvidenceRequirement, RelationDependencyProjection};
+use realization::ExternalEvidenceRequirement;
 
 use crate::{
     CompileError,
-    coverage::{
-        CollateralPolicy, CoveragePurpose, CoverageRequirementId, PlanCoverageAnalysis,
-        bind_dependency_collateral,
-    },
+    coverage::CoverageRequirementId,
     layout::LayoutRequirement,
     placement::{PlacedCarrier, RelationActivity, RelationCaseKey},
+};
+#[cfg(test)]
+use crate::{
+    coverage::bind_dependency_collateral,
     relation::{AnalysisNodeId, CompilerRelationAnalysis, CompilerRelationEdge},
 };
 
@@ -315,10 +322,12 @@ pub struct CoverageCycleComponent {
 /// one order and reject it in another, which is exactly the
 /// order-dependence the two passes exist to remove.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[cfg(test)]
 pub struct CoverageDefinitionCensus {
     nodes: BTreeMap<CoverageNodeId, CoverageNode>,
 }
 
+#[cfg(test)]
 impl CoverageDefinitionCensus {
     #[must_use]
     pub fn new() -> Self {
@@ -400,6 +409,7 @@ fn duplicate_symbol(id: &CoverageNodeId) -> CompileError {
 /// [`CompileError::DuplicateCoverageRequirement`] when one requirement
 /// identity is defined twice; [`CompileError::CoverageCensusMismatch`]
 /// when any other stable symbol is.
+#[cfg(test)]
 pub fn coverage_definition_census(
     analysis: &PlanCoverageAnalysis,
 ) -> Result<CoverageDefinitionCensus, CompileError> {
@@ -429,6 +439,7 @@ pub fn coverage_definition_census(
 ///
 /// [`CompileError::CrossOperationCoverageDependency`] when a relation
 /// edge crosses two operations that are both covered.
+#[cfg(test)]
 pub fn derive_coverage_dependencies(
     analysis: &PlanCoverageAnalysis,
     census: &CoverageDefinitionCensus,
@@ -508,6 +519,7 @@ pub fn derive_coverage_dependencies(
 }
 
 /// Owner identity lowering for the common two-pass assembly.
+#[cfg(test)]
 fn lower_assembly(
     analysis: &PlanCoverageAnalysis,
 ) -> (Vec<core::PlanSymbols>, BTreeMap<core::Key, CoverageNode>) {
@@ -608,12 +620,14 @@ pub struct CoverageGraphProjection {
 /// A direct Petgraph graph with typed lookup maps. The indices and the
 /// declared-edge set never leave this structure.
 #[derive(Debug)]
+#[cfg(test)]
 pub struct CoverageDependencyGraph {
     core: core::Graph,
     nodes: BTreeMap<core::Key, CoverageNode>,
     identities: BTreeMap<core::Key, CoverageNodeId>,
     cases: BTreeMap<crate::engine_placement::Key, RelationCaseKey>,
 }
+#[cfg(test)]
 fn lower_node(node: &CoverageNode) -> core::Node {
     core::Node {
         id: core::Key::Attestation(node.id.clone()),
@@ -630,6 +644,7 @@ fn lower_node(node: &CoverageNode) -> core::Node {
             .map(|activity| activity == RelationActivity::Active),
     }
 }
+#[cfg(test)]
 fn lower_dependency(row: &CoverageDependency) -> core::Dependency {
     core::Dependency {
         source: core::Key::Attestation(row.source.clone()),
@@ -637,6 +652,7 @@ fn lower_dependency(row: &CoverageDependency) -> core::Dependency {
         edge: row.edge,
     }
 }
+#[cfg(test)]
 impl CoverageDependencyGraph {
     fn add_dependencies(
         &mut self,
@@ -705,7 +721,7 @@ impl CoverageDependencyGraph {
             .validate_acyclic()
             .map_err(|error| self.refusal(error))
     }
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn cyclic_components(&self) -> Vec<CoverageCycleComponent> {
         self.core
             .cyclic_components()
@@ -814,6 +830,7 @@ pub fn refusal_from_identities(
 /// [`CompileError::CrossOperationCoverageDependency`] when a dependency
 /// crosses two operations; [`CompileError::DuplicateCoverageDependency`]
 /// when the same typed dependency is declared twice.
+#[cfg(test)]
 pub fn build_coverage_graph(
     census: &CoverageDefinitionCensus,
     dependencies: &[CoverageDependency],
@@ -851,6 +868,7 @@ pub fn build_coverage_graph(
 
 /// The realization relation dependency edges of one compiler relation
 /// analysis.
+#[cfg(test)]
 fn source_relation_edges(
     relations: &CompilerRelationAnalysis,
 ) -> Vec<RelationDependencyProjection> {
@@ -885,6 +903,7 @@ fn source_relation_edges(
 /// Any failure of [`coverage_definition_census`],
 /// [`derive_coverage_dependencies`], [`build_coverage_graph`], or
 /// [`CoverageDependencyGraph::validate_acyclic`].
+#[cfg(test)]
 pub fn analyze_coverage_dependencies(
     analysis: &PlanCoverageAnalysis,
     relations: &CompilerRelationAnalysis,
@@ -912,6 +931,7 @@ pub fn analyze_coverage_dependencies(
 /// # Errors
 ///
 /// Any failure of [`analyze_coverage_dependencies`].
+#[cfg(test)]
 pub fn resolve_coverage_dependencies(
     analysis: &mut PlanCoverageAnalysis,
     relations: &CompilerRelationAnalysis,

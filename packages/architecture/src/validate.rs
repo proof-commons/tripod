@@ -223,6 +223,7 @@ fn validate_attestation_draft(
 mod semantic_sealed {
     pub trait Sealed {}
     impl Sealed for &crate::Architecture {}
+    #[cfg(any(test, feature = "keyed-experimental"))]
     impl Sealed for &crate::keyed::KeyedManifest {}
 }
 
@@ -242,6 +243,7 @@ impl<'a> DraftManifest for &'a Architecture {
     }
 }
 
+#[cfg(any(test, feature = "keyed-experimental"))]
 impl<'a> DraftManifest for &'a crate::keyed::KeyedManifest {
     type Validated = crate::keyed::ValidatedKeyedManifest<'a>;
     type Error = crate::keyed::KeyedManifestError;

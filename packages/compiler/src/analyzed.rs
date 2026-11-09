@@ -239,7 +239,7 @@ pub fn analyze_scoped_program(
     input: &BoundCompilerInput,
     placement_limits: PlacementSearchLimits,
 ) -> Result<ScopedAnalyzedProgram, CompileError> {
-    let span = tracing::debug_span!(target: "compiler::analysis", "analyze_scoped_program", scope_operation_count = crate::instrumentation::count(input.scope().operations().len()));
+    let span = tracing::debug_span!(target: "compiler::analysis", "analyze_scoped_program", scope_operation_count = crate::instrumentation::count(input.scope().operations().len()), proof_state_limit = input.policy().proof_search_limits.maximum_states.get(), placement_state_limit = placement_limits.maximum_states.get());
     let _entered = span.enter();
     let expected = crate::engine_attestation::program::derive(input, placement_limits)?;
     let required_external_evidence = evidence_union(&expected.plans);
@@ -255,18 +255,36 @@ pub fn analyze_scoped_program(
     Ok(program)
 }
 
-/// Production record entry shared by both statically bound owners. No owner
-/// selection occurs after binding, and the engine consumes concrete records.
+/// Direct record entry for stage controls with no prepared compatibility view.
+#[cfg(test)]
 pub fn analyze_bound_records<O: crate::engine_records::RelationOwner>(
     input: &BoundCompilerInput<O>,
     placement_limits: PlacementSearchLimits,
 ) -> Result<crate::engine_program::Program, crate::engine_program::Error> {
-    let span = tracing::debug_span!(target: "compiler::analysis", "analyze_bound_records");
-    let _entered = span.enter();
     crate::engine_program::analyze(
         &crate::engine_program::lower(input)?,
         input.policy().proof_search_limits,
         placement_limits,
+    )
+}
+
+/// Production record entry. Preparation belongs only to this derivation;
+/// independent validation calls the owner afresh rather than retaining it.
+pub fn analyze_bound_prepared<O: crate::engine_records::RelationOwner>(
+    input: &BoundCompilerInput<O>,
+    placement_limits: PlacementSearchLimits,
+    prepared: (
+        crate::engine_program::Records,
+        crate::engine_program::PreparedStages,
+    ),
+) -> Result<crate::engine_program::Program, crate::engine_program::Error> {
+    let span = tracing::debug_span!(target: "compiler::analysis", "analyze_bound_records");
+    let _entered = span.enter();
+    crate::engine_program::analyze_prepared(
+        &prepared.0,
+        input.policy().proof_search_limits,
+        placement_limits,
+        Some(prepared.1),
     )
 }
 

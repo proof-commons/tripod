@@ -14,9 +14,9 @@ use petgraph::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-// Neutral symbols are exercised by the staged keyed probe before orchestration.
-#[allow(dead_code)]
+// Neutral symbols are consumed by shared coverage assembly.
 pub enum Key {
+    #[cfg(test)]
     Attestation(crate::coverage_graph::CoverageNodeId),
     Relation(CaseKey),
     Requirement(Requirement),

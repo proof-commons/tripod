@@ -76,6 +76,7 @@ impl CompilerLifecycleAnalysis {
 }
 
 /// Build the scoped representation and lifecycle analysis.
+#[cfg(test)]
 pub fn build_lifecycle_analysis(
     input: &BoundCompilerInput,
     relations: &CompilerRelationAnalysis,

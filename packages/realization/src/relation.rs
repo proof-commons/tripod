@@ -20,6 +20,7 @@ use crate::{
 /// Experimental keyed vocabulary. Kept distinct from attestation recognition,
 /// which requires an asset and its protocol object-shape laws.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg(any(test, feature = "keyed-experimental"))]
 pub enum KeyedRelation {
     /// Cardinality of authenticated same-key handles only. Other inputs and
     /// outputs are unconstrained; a later covenant-shaped output is no handle.
@@ -38,6 +39,7 @@ pub enum KeyedRelation {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg(any(test, feature = "keyed-experimental"))]
 pub enum KeyedCardinality {
     Zero,
     One,
@@ -46,6 +48,7 @@ pub enum KeyedCardinality {
 
 /// Derived record sets: neither variant is a stored set or an accumulator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg(any(test, feature = "keyed-experimental"))]
 pub enum RecordRecurrence {
     /// The singleton record identity is (the manifest's fixed key, SOURCE handle).
     SourceSingleton,
@@ -54,6 +57,7 @@ pub enum RecordRecurrence {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg(any(test, feature = "keyed-experimental"))]
 pub enum KeyedRelationKind {
     InputFamily,
     OutputFamily,
@@ -63,6 +67,7 @@ pub enum KeyedRelationKind {
     MembershipReading,
 }
 
+#[cfg(any(test, feature = "keyed-experimental"))]
 impl KeyedRelation {
     pub const fn kind(self) -> KeyedRelationKind {
         match self {
@@ -83,6 +88,7 @@ impl KeyedRelation {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg(any(test, feature = "keyed-experimental"))]
 pub struct KeyedRelationId {
     pub operation: architecture::semantic::SemanticOperationId,
     pub object: architecture::semantic::SemanticObjectId,
@@ -90,6 +96,7 @@ pub struct KeyedRelationId {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[cfg(any(test, feature = "keyed-experimental"))]
 pub struct KeyedRelationDeclaration {
     pub id: KeyedRelationId,
     pub relation: KeyedRelation,

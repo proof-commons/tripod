@@ -75,6 +75,7 @@ impl AttestationOwner {
 
 impl engine_records::RelationOwner for AttestationOwner {
     type Lowered = AttestationRelations;
+    type Error = CompileError;
     fn source_binding(&self) -> crate::engine_program::Source {
         crate::engine_program::Source::Attestation(Box::new(crate::analyzed::AnalyzedSource {
             architecture: self.source.project().architecture,
@@ -82,11 +83,13 @@ impl engine_records::RelationOwner for AttestationOwner {
             compilation_scope: self.scope.clone(),
         }))
     }
+    #[cfg(test)]
     fn lower_requirements(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<Vec<crate::engine_requirement::Table>, CompileError> {
         requirement::tables(input)
     }
+    #[cfg(test)]
     fn lower_predicates(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<crate::engine_foundation::Records, CompileError> {
@@ -94,11 +97,13 @@ impl engine_records::RelationOwner for AttestationOwner {
         let expressions = crate::expression::build_expression_analysis(input)?;
         Ok(foundation::lower(&relations, &expressions).records)
     }
+    #[cfg(test)]
     fn lower_proofs(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<crate::engine_proof::Records, CompileError> {
         Ok(proof::lower(input)?.records)
     }
+    #[cfg(test)]
     fn lower_cases(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<crate::engine_cases::Tables, CompileError> {
@@ -107,19 +112,20 @@ impl engine_records::RelationOwner for AttestationOwner {
     fn lower_sources(&self) -> Result<crate::engine_source::SourceRecords, CompileError> {
         source::lower(self)
     }
+    #[cfg(test)]
     fn lower_constructibility(
         &self,
     ) -> Result<crate::engine_constructibility::Records, CompileError> {
         Ok(constructibility::lower(self)?.records)
     }
-    fn lower_relations(&self) -> Self::Lowered {
+    fn lower_relations(&self) -> Result<Self::Lowered, CompileError> {
         let source = self.source.project();
-        lower_relations(
+        Ok(lower_relations(
             self.scope.operations(),
             &source.relations.nodes,
             &source.relations.edges,
             &source.lifecycle,
-        )
+        ))
     }
 }
 
@@ -256,7 +262,7 @@ impl AttestationRelations {
         })
     }
 
-    fn refusal(&self, error: RelationRecordError) -> CompileError {
+    pub(super) fn refusal(&self, error: RelationRecordError) -> CompileError {
         let id = |key: &RelationKey| self.identities[key].clone();
         match error {
             RelationRecordError::ForeignProofOwner {

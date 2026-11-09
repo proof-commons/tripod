@@ -13,6 +13,7 @@ use realization::{ArchitectureBinding, RealizationError, ScopedRealizationSpec};
 
 use crate::CompileError;
 pub use crate::engine_attestation::AttestationOwner;
+#[cfg(any(test, feature = "keyed-experimental"))]
 pub use crate::engine_keyed::{KeyedBindingError, KeyedOwner};
 
 /// Explicit, canonical compiler operation scope.
@@ -141,7 +142,7 @@ impl BoundCompilerInput {
     pub(crate) fn analyze_relation_records(
         &self,
     ) -> Result<crate::relation::CompilerRelationAnalysis, CompileError> {
-        let analyzed = crate::engine_records::analyze_bound_relations(self);
+        let analyzed = crate::engine_records::analyze_bound_relations(self)?;
         analyzed.lowering.compatibility_view(analyzed.result)
     }
 
@@ -249,6 +250,7 @@ fn bind_attestation_input(
     result
 }
 
+#[cfg(any(test, feature = "keyed-experimental"))]
 mod owner_sealed {
     pub trait Sealed {}
     impl Sealed for architecture::Architecture {}
@@ -257,6 +259,7 @@ mod owner_sealed {
 
 /// Closed manifest vocabulary of the binding seam. The associated owner is
 /// fixed here and retained in the bound type; no later owner selection occurs.
+#[cfg(any(test, feature = "keyed-experimental"))]
 pub trait InputBinding: owner_sealed::Sealed {
     type Realization;
     type Scope;
@@ -274,6 +277,7 @@ pub trait InputBinding: owner_sealed::Sealed {
     ) -> Result<BoundCompilerInput<Self::Owner>, Self::Error>;
 }
 
+#[cfg(any(test, feature = "keyed-experimental"))]
 impl InputBinding for Architecture {
     type Realization = ScopedRealizationSpec;
     type Scope = CompilationScope;
@@ -289,6 +293,7 @@ impl InputBinding for Architecture {
     }
 }
 
+#[cfg(any(test, feature = "keyed-experimental"))]
 impl InputBinding for architecture::keyed::KeyedManifest {
     type Realization = realization::keyed::KeyedScopedRealization;
     type Scope = Vec<architecture::semantic::SemanticOperationId>;
@@ -331,36 +336,25 @@ impl InputBinding for architecture::keyed::KeyedManifest {
     }
 }
 
-/// Bind an explicitly typed manifest and fix its owner for all re-derivation.
+/// Bind the attestation realization and retain its owner for re-derivation.
 ///
-/// The two source vocabularies cannot be exchanged at binding. These are
-/// source-type refusals, before a graph or an owner can be selected:
-///
-/// ```compile_fail
-/// use architecture::{ARCHITECTURE, keyed::KeyedManifest};
-/// use compiler::{AnalysisPolicy, CompilationScope, ProofSearchLimits, bind_input};
-/// use realization::keyed::KeyedRealizationDraft;
-/// let manifest = KeyedManifest::probe().unwrap();
-/// let keyed = KeyedRealizationDraft::derive(&manifest).unwrap().validate(&manifest).unwrap();
-/// let scope = CompilationScope::from_operations([architecture::OperationId::CompactAsh]).unwrap();
-/// let limit = std::num::NonZeroU64::new(100).unwrap();
-/// let policy = AnalysisPolicy::strict(ProofSearchLimits::new(limit, limit));
-/// bind_input(&ARCHITECTURE, keyed, scope, policy);
-/// ```
-///
-/// ```compile_fail
-/// use architecture::{ARCHITECTURE, keyed::KeyedManifest, semantic::{KeyedOperationId, SemanticOperationId}};
-/// use compiler::{AnalysisPolicy, ProofSearchLimits, bind_input};
-/// let attestation = realization::derive(&ARCHITECTURE, realization::RealizationScope::phase1_pilots()).unwrap();
-/// let manifest = KeyedManifest::probe().unwrap();
-/// let scope = vec![SemanticOperationId::Keyed(KeyedOperationId::Source)];
-/// let limit = std::num::NonZeroU64::new(100).unwrap();
-/// let policy = AnalysisPolicy::strict(ProofSearchLimits::new(limit, limit));
-/// bind_input(&manifest, attestation, scope, policy);
-/// ```
+/// # Errors
+/// Returns the attestation owner's realization, binding or scope refusal.
+#[cfg(not(any(test, feature = "keyed-experimental")))]
+pub fn bind_input(
+    architecture: &Architecture,
+    realization: ScopedRealizationSpec,
+    scope: CompilationScope,
+    policy: AnalysisPolicy,
+) -> Result<BoundCompilerInput, CompileError> {
+    bind_attestation_input(architecture, realization, scope, policy)
+}
+
+/// Experimental typed binding; fixes the owner for all later re-derivation.
 ///
 /// # Errors
 /// Returns the selected owner's realization, binding or scope refusal.
+#[cfg(any(test, feature = "keyed-experimental"))]
 pub fn bind_input<A: InputBinding>(
     architecture: &A,
     realization: A::Realization,

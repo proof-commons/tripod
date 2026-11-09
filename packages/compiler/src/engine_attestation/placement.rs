@@ -1,4 +1,8 @@
 //! Attestation placement policy lowering and compatibility projections.
+#[cfg(test)]
+use crate::placement::{
+    PlacedCarrier, PlacementAssignment, PlacementSearchLimits, PlacementSearchReport,
+};
 use crate::{
     CompileError,
     carrier::{
@@ -8,8 +12,7 @@ use crate::{
     engine_placement as core,
     layout::selected_carrier_requirements,
     placement::{
-        ActivationCondition, CarrierMultiplicity, PlacedCarrier, PlacementAssignment,
-        PlacementCandidate, PlacementSearchLimits, PlacementSearchReport, RelationCaseKey,
+        ActivationCondition, CarrierMultiplicity, PlacementCandidate, RelationCaseKey,
         RelationCasePlan, SemanticScope,
     },
     sponsor_region::GATED_ORDINARY_LBTC_ROLE,
@@ -150,6 +153,7 @@ pub fn candidate(value: &PlacementCandidate) -> core::Candidate {
     }
 }
 impl Lowered {
+    #[cfg(test)]
     pub fn enumerate(
         &self,
         limits: PlacementSearchLimits,

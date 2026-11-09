@@ -25,7 +25,7 @@ fn compile_error_tracing_kinds_are_canonical_snake_case() {
         .expect("end of tracing kind table")
         .0;
     let entries = table.split("Self::").skip(1).collect::<Vec<_>>();
-    assert_eq!(entries.len(), 140);
+    assert_eq!(entries.len(), 141);
 
     for entry in entries {
         let variant = entry

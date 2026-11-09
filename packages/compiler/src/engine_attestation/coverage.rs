@@ -1,19 +1,23 @@
 //! Attestation coverage templates and lossless refusal projection.
+#[cfg(test)]
+use crate::coverage::PlanCoverageAnalysis;
 use crate::{
     CompileError,
     case::conserved_amount_visibility,
     coverage::{
         CoverageBoundary, CoveragePurpose, CoverageRequirementId, EvidenceRole,
-        NegativeCoverageRequirement, PlanCoverageAnalysis, PositiveCoverageRequirement,
-        RelationCoveragePlan, boundary_mutations, boundary_subjects, collateral, negative_purpose,
-        positive_purpose, relation_mutations, relation_representation,
+        NegativeCoverageRequirement, PositiveCoverageRequirement, RelationCoveragePlan,
+        boundary_mutations, boundary_subjects, collateral, negative_purpose, positive_purpose,
+        relation_mutations, relation_representation,
     },
     engine_coverage as core,
     placement::{RelationActivity, RelationCaseKey, RelationCasePlan},
     source::relation_operands,
 };
 use realization::RelationDeclaration;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
+#[cfg(test)]
+use std::collections::BTreeSet;
 pub fn derive_relation_coverage(
     declaration: &RelationDeclaration,
     plan: &RelationCasePlan,
@@ -152,6 +156,7 @@ pub fn lowered(plan: &RelationCoveragePlan) -> core::Plan {
             .collect(),
     }
 }
+#[cfg(test)]
 pub fn validate_census(
     plans: &[RelationCasePlan],
     analysis: &PlanCoverageAnalysis,
@@ -181,11 +186,6 @@ pub fn validate_census(
         .map(|id| (requirement(id), id.clone()))
         .collect();
     core::validate_census(&required, &offered).map_err(|error| refusal(error, &keys, &ids))
-}
-pub fn validate_plan(plan: &RelationCoveragePlan) -> Result<(), CompileError> {
-    let key = plan.key();
-    let keys = BTreeMap::from([(super::placement::key(&key), key)]);
-    core::validate_plan(&lowered(plan)).map_err(|error| refusal(error, &keys, &BTreeMap::new()))
 }
 pub fn refusal(
     error: core::Error,

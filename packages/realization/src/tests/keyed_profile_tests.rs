@@ -11,6 +11,54 @@ fn control() -> (KeyedManifest, KeyedRealizationDraft) {
 }
 
 #[test]
+fn keyed_declaration_census_refuses_nonempty_shell_fields() {
+    let (manifest, accepted) = control();
+    let operation = accepted.operations[0].operation;
+    let reference = crate::declarations::derive_operation(
+        &architecture::ARCHITECTURE,
+        architecture::OperationId::CompactAsh,
+    )
+    .expect("attestation fixture");
+    macro_rules! refused_field {
+        ($field:ident) => {{
+            let mut subject = accepted.clone();
+            subject.operations[0]
+                .$field
+                .push(reference.$field[0].clone());
+            assert_eq!(
+                subject.validate(&manifest).unwrap_err(),
+                KeyedRealizationError::DeclarationCensus(operation)
+            );
+        }};
+    }
+    refused_field!(relation_dependencies);
+    refused_field!(constructibility_nodes);
+    refused_field!(constructibility_edges);
+    refused_field!(lifecycle_nodes);
+    refused_field!(lifecycle_edges);
+    refused_field!(disclosure_nodes);
+    refused_field!(disclosure_edges);
+    refused_field!(disclosure_seeds);
+    let mut subject = accepted;
+    let fact = crate::FactId::FamilyCount {
+        operation: architecture::OperationId::CompactAsh,
+        side: crate::TransactionSide::Input,
+        object: architecture::ObjectId::Ash,
+    };
+    subject.operations[0]
+        .expressions
+        .push(crate::ExpressionDeclaration {
+            id: crate::ExprId::fact(fact.clone()),
+            ty: crate::SemanticType::Count,
+            node: crate::ExpressionNode::Fact(fact),
+        });
+    assert_eq!(
+        subject.validate(&manifest).unwrap_err(),
+        KeyedRealizationError::DeclarationCensus(operation)
+    );
+}
+
+#[test]
 fn a_changed_profile_binding_is_refused_by_the_realization_owner() {
     let (manifest, mut subject) = control();
     subject.binding.profile = SemanticProfileId::Attestation;

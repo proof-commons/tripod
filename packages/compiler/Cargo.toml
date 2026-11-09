@@ -12,6 +12,9 @@ version.workspace = true
 [lib]
 name = "compiler"
 
+[features]
+keyed-experimental = ["architecture/keyed-experimental", "realization/keyed-experimental"]
+
 # `realization` is the intended first-party dependency. The package
 # contract admits a direct `architecture` dependency only when the
 # compiler's public types name architecture-owned IDs and ownership
@@ -27,6 +30,8 @@ realization = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+architecture = { workspace = true, features = ["keyed-experimental"] }
+realization = { workspace = true, features = ["keyed-experimental"] }
 sha2 = { workspace = true }
 proptest = { workspace = true }
 tracing-subscriber = { workspace = true }

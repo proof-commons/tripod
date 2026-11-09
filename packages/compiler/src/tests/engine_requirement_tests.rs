@@ -7,6 +7,37 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
+fn proof_bundles_keep_source_and_constructibility_refusals() {
+    use crate::engine_records::RelationOwner;
+    let input =
+        super::engine_coverage_tests::bound(vec![architecture::semantic::KeyedOperationId::Source]);
+    let control = crate::input::KeyedOwner::lower_proofs(&input).expect("proof records");
+    assert!(core::proof_tables(&control).is_ok());
+    for constructibility in [true, false] {
+        let mut subject = control.clone();
+        let alternative = subject
+            .obligations
+            .values_mut()
+            .find_map(|obligation| match obligation {
+                crate::engine_proof::Obligation::Evidence(value) => Some(value),
+                _ => None,
+            })
+            .expect("fixed evidence");
+        let expected = if constructibility {
+            alternative.constructible = false;
+            core::ProofBundleError::Constructibility(alternative.id.clone())
+        } else {
+            alternative.sources = Err(crate::proof::LocalProofRejection::SourceDerivation);
+            core::ProofBundleError::Source {
+                alternative: alternative.id.clone(),
+                reason: crate::proof::LocalProofRejection::SourceDerivation,
+            }
+        };
+        assert_eq!(core::proof_tables(&subject).err(), Some(expected));
+    }
+}
+
+#[test]
 fn keyed_requirement_tables_join_selected_proofs_and_retain_every_source() {
     use crate::engine_records::RelationOwner;
     use architecture::semantic::KeyedOperationId;

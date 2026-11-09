@@ -39,6 +39,103 @@ fn candidates(records: &core::Records) -> Result<Vec<core::Candidate>, core::Err
 }
 
 #[test]
+fn shared_placement_tracing_reports_every_return_without_changing_results() {
+    use super::tracing_capture::{FieldValue, capture, isolate_capture_test};
+    if isolate_capture_test(
+        "tests::engine_placement_tests::shared_placement_tracing_reports_every_return_without_changing_results",
+    ) {
+        return;
+    }
+    let control = records(vec![KeyedOperationId::Merge]);
+    let mut census = control.clone();
+    census.eligibility.pop();
+    let mut unavailable = control.clone();
+    unavailable.eligibility[0].options.clear();
+    unavailable.eligibility[0].empty_cause = core::EmptyCause::NoEligible;
+    let mut unpermitted = control.clone();
+    unpermitted.eligibility[0].entries.clear();
+    let mut multiple = control.clone();
+    let extra = multiple.eligibility[0].options[0].clone();
+    multiple.eligibility[0].options.push(extra);
+    let one = std::num::NonZeroU64::new(1).unwrap();
+    for (records, limits, refusal) in [
+        (&control, limits(), None),
+        (&census, limits(), Some("placement_census_mismatch")),
+        (&unavailable, limits(), Some("no_eligible_carrier")),
+        (
+            &unpermitted,
+            limits(),
+            Some("unpermitted_carrier_placement"),
+        ),
+        (
+            &control,
+            crate::placement::PlacementSearchLimits::new(one, limits().maximum_candidates),
+            Some("placement_search_state_limit_exceeded"),
+        ),
+        (
+            &multiple,
+            crate::placement::PlacementSearchLimits::new(limits().maximum_states, one),
+            Some("placement_candidate_limit_exceeded"),
+        ),
+    ] {
+        let mut plain_report = crate::placement::PlacementSearchReport::default();
+        let plain = core::enumerate(records, limits, &mut plain_report);
+        assert_eq!(plain.is_err(), refusal.is_some());
+        let mut report = crate::placement::PlacementSearchReport::default();
+        let (observed, events) = capture(|| core::enumerate(records, limits, &mut report));
+        assert_eq!(observed, plain);
+        assert_eq!(report, plain_report);
+        let events = events
+            .iter()
+            .filter(|event| event.target == "compiler::engine_placement")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            events.len(),
+            2,
+            "one span and one completion, no candidate spans"
+        );
+        assert!(events[0].is_span);
+        assert_eq!(
+            events[0].fields.get("state_limit"),
+            Some(&FieldValue::U64(limits.maximum_states.get()))
+        );
+        assert_eq!(
+            events[0].fields.get("candidate_limit"),
+            Some(&FieldValue::U64(limits.maximum_candidates.get()))
+        );
+        let event = events[1];
+        assert!(!event.is_span);
+        assert_eq!(
+            event.fields.get("message"),
+            Some(&FieldValue::Str("placement search completed".into()))
+        );
+        assert_eq!(
+            event.fields.get("outcome"),
+            Some(&FieldValue::Str(
+                if refusal.is_some() {
+                    "refused"
+                } else {
+                    "completed"
+                }
+                .into()
+            ))
+        );
+        assert_eq!(
+            event.fields.get("refusal_kind"),
+            refusal.map(|kind| FieldValue::Str(kind.into())).as_ref()
+        );
+        for (field, value) in [
+            ("visited_state_count", report.states_visited),
+            ("complete_assignment_count", report.complete_assignments),
+            ("feasible_placement_count", report.feasible_placements),
+            ("retained_option_count", report.retained_options),
+        ] {
+            assert_eq!(event.fields.get(field), Some(&FieldValue::U64(value)));
+        }
+    }
+}
+
+#[test]
 fn evidence_only_source_has_no_runtime_carrier_and_merge_has_two_assignments() {
     for (scope, plans, runtime) in [
         (vec![KeyedOperationId::Source], 4, 0),

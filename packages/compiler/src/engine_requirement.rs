@@ -53,7 +53,19 @@ pub struct Table {
     pub choices:
         BTreeMap<Option<crate::engine_proof::AlternativeKey>, Result<Bundle, crate::CompileError>>,
 }
-pub fn proof_tables(records: &crate::engine_proof::Records) -> Vec<Table> {
+#[cfg(test)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProofBundleError {
+    Constructibility(crate::engine_proof::AlternativeKey),
+    Source {
+        alternative: crate::engine_proof::AlternativeKey,
+        reason: crate::proof::LocalProofRejection,
+    },
+}
+#[cfg(test)]
+pub fn proof_tables(
+    records: &crate::engine_proof::Records,
+) -> Result<Vec<Table>, ProofBundleError> {
     use crate::engine_proof::Obligation;
     records
         .obligations
@@ -62,38 +74,42 @@ pub fn proof_tables(records: &crate::engine_proof::Records) -> Vec<Table> {
             let (required, rows) = match obligation {
                 Obligation::Static => (false, vec![(None, Ok(Bundle::default()))]),
                 Obligation::Evidence(alternative) => {
-                    (false, vec![(None, proof_bundle(alternative))])
+                    (false, vec![(None, Ok(proof_bundle(alternative)?))])
                 }
                 Obligation::Required(alternatives) => (
                     true,
                     alternatives
                         .iter()
                         .map(|alternative| {
-                            (Some(alternative.id.clone()), proof_bundle(alternative))
+                            Ok((Some(alternative.id.clone()), Ok(proof_bundle(alternative)?)))
                         })
-                        .collect(),
+                        .collect::<Result<Vec<_>, ProofBundleError>>()?,
                 ),
             };
-            Table {
+            Ok(Table {
                 relation: relation.clone(),
                 required,
                 choices: rows.into_iter().collect(),
-            }
+            })
         })
         .collect()
 }
+#[cfg(test)]
 fn proof_bundle(
     alternative: &crate::engine_proof::Alternative,
-) -> Result<Bundle, crate::CompileError> {
+) -> Result<Bundle, ProofBundleError> {
     if !alternative.constructible {
-        return Err(crate::CompileError::InvalidRealization);
+        return Err(ProofBundleError::Constructibility(alternative.id.clone()));
     }
     Ok(Bundle {
         capabilities: alternative.capabilities.clone(),
         sources: alternative
             .sources
             .as_ref()
-            .map_err(|_| crate::CompileError::InvalidRealization)?
+            .map_err(|reason| ProofBundleError::Source {
+                alternative: alternative.id.clone(),
+                reason: *reason,
+            })?
             .iter()
             .cloned()
             .collect(),

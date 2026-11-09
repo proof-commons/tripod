@@ -13,6 +13,8 @@
 // beside the derived analysis rather than read by it. The analysis
 // answers its questions from the resolved maps.
 
+#[cfg(test)]
+use crate::input::BoundCompilerInput;
 use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -23,7 +25,6 @@ use realization::{
 
 use crate::{
     CompileError,
-    input::BoundCompilerInput,
     source::{RequiredSourceKind, SourceRequirement},
 };
 
@@ -53,6 +54,7 @@ pub struct CompilerConstructibilityAnalysis {
 }
 
 /// Build and validate the scoped constructibility analysis.
+#[cfg(test)]
 pub fn build_constructibility_analysis(
     input: &BoundCompilerInput,
 ) -> Result<CompilerConstructibilityAnalysis, CompileError> {

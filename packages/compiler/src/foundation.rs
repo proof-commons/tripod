@@ -6,15 +6,14 @@
 //! partial compiler analysis, and no partial analyzed program is
 //! exposed before the complete pilot result exists under P2-012.
 
+#[cfg(test)]
 use crate::{
-    CompileError,
-    expression::{
-        CompilerExpressionAnalysis, CompilerExpressionGraphProjection, build_expression_analysis,
-    },
-    input::BoundCompilerInput,
-    relation::{
-        CompilerRelationAnalysis, CompilerRelationGraphProjection, build_relation_analysis,
-    },
+    CompileError, expression::build_expression_analysis, input::BoundCompilerInput,
+    relation::build_relation_analysis,
+};
+use crate::{
+    expression::{CompilerExpressionAnalysis, CompilerExpressionGraphProjection},
+    relation::{CompilerRelationAnalysis, CompilerRelationGraphProjection},
 };
 
 /// Internal aggregate of the Guide-2 analyses.
@@ -43,6 +42,7 @@ impl CompilerAnalysisFoundation {
 }
 
 /// Build and cross-validate the complete analysis foundation.
+#[cfg(test)]
 pub fn analyze_foundation(
     input: &BoundCompilerInput,
 ) -> Result<CompilerAnalysisFoundation, CompileError> {
@@ -64,6 +64,7 @@ pub fn analyze_foundation(
 /// identity: the relation retains the exact source `ExprId`, because a
 /// later target or evidence consumer must know which source relation
 /// was discharged.
+#[cfg(test)]
 pub fn validate_predicate_bindings(
     relations: &CompilerRelationAnalysis,
     expressions: &CompilerExpressionAnalysis,

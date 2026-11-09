@@ -57,6 +57,8 @@
 // have no production caller and is retained for the manual phase-exit
 // comparison against the factors.
 
+#[cfg(test)]
+use crate::{relation::CompilerRelationAnalysis, sponsor_region::ordinary_lbtc_role};
 use std::{
     collections::{BTreeMap, BTreeSet},
     num::NonZeroU64,
@@ -70,17 +72,21 @@ use realization::{
 
 use crate::{
     CompileError,
-    carrier::{CarrierEligibility, CarrierQuantification, CarrierRole, relation_case_eligibility},
+    carrier::{CarrierEligibility, CarrierQuantification, CarrierRole},
     case::{
-        ConservedAmountVisibility, ExecutionCase, ExecutionCaseId, SponsorCase, case_census,
-        conserved_amount_visibility, execution_cases, is_sponsor_region_family,
-        validate_case_census,
+        ConservedAmountVisibility, ExecutionCase, ExecutionCaseId, SponsorCase,
+        conserved_amount_visibility, is_sponsor_region_family,
     },
-    layout::{LayoutRequirement, layout_requirements, validate_layout_census},
+    layout::LayoutRequirement,
     proof::ProofPlanCandidate,
-    relation::CompilerRelationAnalysis,
     source::SourceRequirement,
-    sponsor_region::{OrdinaryLbtcRole, ordinary_lbtc_role},
+    sponsor_region::OrdinaryLbtcRole,
+};
+#[cfg(test)]
+use crate::{
+    carrier::relation_case_eligibility,
+    case::{case_census, execution_cases, validate_case_census},
+    layout::{layout_requirements, validate_layout_census},
 };
 
 /// Where one requirement of a relation is discharged.
@@ -411,6 +417,7 @@ pub fn classify_relation_case(
 ///
 /// Any failure of [`classify_relation_case`], or of
 /// [`validate_relation_case_census`] on the result.
+#[cfg(test)]
 pub fn classify_relation_cases(
     relations: &CompilerRelationAnalysis,
     cases: &[ExecutionCase],
@@ -450,6 +457,7 @@ pub fn classify_relation_cases(
 /// [`CompileError::DuplicateRelationCasePlan`] when one pair is planned
 /// twice; [`CompileError::RelationCaseCensusMismatch`] when the planned
 /// pairs differ from the required ones.
+#[cfg(test)]
 pub fn validate_relation_case_census(
     relations: &CompilerRelationAnalysis,
     cases: &[ExecutionCase],
@@ -894,6 +902,7 @@ impl FeasiblePlacements {
 /// [`CompileError::PlacementCensusMismatch`] when the carried census
 /// differs from the required one, including when one relation-case is
 /// carried twice.
+#[cfg(test)]
 pub fn validate_placement_census(
     plans: &[RelationCasePlan],
     eligibility: &[CarrierEligibility],
@@ -915,6 +924,7 @@ pub fn validate_placement_census(
 /// [`CompileError::PlacementSearchStateLimitExceeded`] or
 /// [`CompileError::PlacementCandidateLimitExceeded`] on exhaustion, in
 /// which case no partial result is returned.
+#[cfg(test)]
 pub fn enumerate_feasible_placements(
     plans: &[RelationCasePlan],
     eligibility: &[CarrierEligibility],
@@ -939,6 +949,7 @@ pub fn enumerate_feasible_placements(
     result.map(|candidates| FeasiblePlacements { candidates, search })
 }
 
+#[cfg(test)]
 fn enumerate_feasible_placements_core(
     plans: &[RelationCasePlan],
     eligibility: &[CarrierEligibility],
@@ -1002,7 +1013,7 @@ pub fn validate_placement(
 /// [`crate::carrier::relation_case_eligibility`],
 /// [`crate::layout::layout_requirements`], or
 /// [`enumerate_feasible_placements`].
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn place_proof_plan(
     relations: &CompilerRelationAnalysis,
     candidate: &ProofPlanCandidate,
@@ -1134,7 +1145,7 @@ impl PlacedProofPlans {
 ///
 /// Any failure of [`place_proof_plan`] for any candidate, or of
 /// [`validate_placed_proof_plans`] on the assembled collection.
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn place_feasible_proof_plans(
     relations: &CompilerRelationAnalysis,
     candidates: &[ProofPlanCandidate],
@@ -1186,7 +1197,7 @@ pub fn place_feasible_proof_plans(
 /// [`validate_relation_case_census`],
 /// [`crate::carrier::relation_case_eligibility`], [`validate_placement`],
 /// or [`crate::layout::validate_layout_census`].
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn validate_placed_proof_plans(
     relations: &CompilerRelationAnalysis,
     candidates: &[ProofPlanCandidate],

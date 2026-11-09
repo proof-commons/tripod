@@ -75,7 +75,7 @@ pub struct OperationAnalysis {
     pub operation: OperationKey,
     pub cases: Vec<CaseAnalysis>,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Analysis {
     pub graph: DiGraph<Node, Edge, u32>,
     pub node_by_id: BTreeMap<NodeKey, NodeIndex<u32>>,

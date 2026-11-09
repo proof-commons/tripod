@@ -15,6 +15,9 @@ version.workspace = true
 [lib]
 name = "architecture"
 
+[features]
+keyed-experimental = []
+
 [dependencies]
 tracing = { workspace = true }
 serde = { workspace = true }

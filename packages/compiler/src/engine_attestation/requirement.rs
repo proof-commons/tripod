@@ -15,6 +15,7 @@ type Registry = BTreeMap<
 
 /// Finite requirement payloads and associations retained before plan selection.
 pub struct Prepared {
+    pub tables: Vec<core::Table>,
     registry: Registry,
     objects:
         BTreeMap<crate::engine_records::RelationKey, BTreeSet<crate::engine_lifecycle::ObjectKey>>,
@@ -26,18 +27,27 @@ pub struct Prepared {
         )>,
     >,
 }
+#[cfg(test)]
 pub fn prepare(input: &crate::BoundCompilerInput) -> Result<Prepared, CompileError> {
-    let span = tracing::debug_span!(target: "compiler::engine_attestation", "prepare_requirement_payloads");
-    let _entered = span.enter();
     let relations = crate::relation::build_relation_analysis(input)?;
     let construction = crate::constructibility::build_constructibility_analysis(input)?;
+    prepare_from_analyses(&relations, &construction)
+}
+
+pub fn prepare_from_analyses(
+    relations: &crate::relation::CompilerRelationAnalysis,
+    construction: &crate::constructibility::CompilerConstructibilityAnalysis,
+) -> Result<Prepared, CompileError> {
+    let span = tracing::debug_span!(target: "compiler::engine_attestation", "prepare_requirement_payloads");
+    let _entered = span.enter();
     let declarations = relations
         .graph
         .node_weights()
         .map(|node| (node.source.id.clone(), &node.source))
         .collect::<BTreeMap<_, _>>();
-    let (_, registry) = lower_tables(&relations, &construction, &declarations)?;
+    let (tables, registry) = lower_tables(relations, construction, &declarations)?;
     Ok(Prepared {
+        tables,
         registry,
         objects: declarations
             .values()
@@ -108,21 +118,12 @@ impl Prepared {
     }
 }
 
+#[cfg(test)]
 pub fn tables(input: &crate::input::BoundCompilerInput) -> Result<Vec<core::Table>, CompileError> {
-    let relations = crate::relation::build_relation_analysis(input)?;
-    let constructibility = crate::constructibility::build_constructibility_analysis(input)?;
-    let declarations = relations
-        .graph
-        .node_weights()
-        .map(|node| (node.source.id.clone(), &node.source))
-        .collect();
-    Ok(lower_tables(&relations, &constructibility, &declarations)?.0)
+    Ok(prepare(input)?.tables)
 }
 
-#[allow(
-    dead_code,
-    reason = "Compatibility entry retained for direct stage controls"
-)]
+#[cfg(test)]
 pub fn derive(
     relations: &crate::relation::CompilerRelationAnalysis,
     constructibility: &crate::constructibility::CompilerConstructibilityAnalysis,
@@ -419,10 +420,7 @@ const fn object_key(object: ObjectId) -> crate::engine_lifecycle::ObjectKey {
         code: object.code(),
     }
 }
-#[allow(
-    dead_code,
-    reason = "Compatibility entry retained for direct stage controls"
-)]
+#[cfg(test)]
 pub fn owned_representation(
     declaration: &realization::RelationDeclaration,
     candidate: &ProofPlanCandidate,
@@ -453,10 +451,7 @@ pub fn owned_representation(
     }];
     Some(crate::requirement::RepresentationSelection { object, mode })
 }
-#[allow(
-    dead_code,
-    reason = "Compatibility entry retained for direct stage controls"
-)]
+#[cfg(test)]
 pub fn owned_lifecycle(
     declaration: &realization::RelationDeclaration,
     candidate: &ProofPlanCandidate,

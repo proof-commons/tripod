@@ -201,7 +201,6 @@ pub fn refusal(
 
 /// Select stored payloads by complete identifiers, then translate the concrete
 /// result. No obligation, carrier or proof is selected by this compatibility view.
-#[allow(dead_code)]
 pub fn restore(
     rows: &Rows,
     candidate: &crate::engine_proof::Candidate,

@@ -26,7 +26,7 @@ pub struct Row {
     pub projections: BTreeSet<crate::coverage::CoverageBoundary>,
     pub collateral: BTreeSet<crate::engine_coverage::Requirement>,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Tables {
     pub choices: Vec<(ChoiceKey, BTreeSet<ModeKey>)>,
     pub relations: BTreeSet<RelationKey>,

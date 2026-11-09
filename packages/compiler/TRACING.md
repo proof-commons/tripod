@@ -4,7 +4,7 @@
 
 `tripod-compiler` is a library that binds a validated realization and explicit operation scope, analyzes target-independent proof and placement alternatives, and returns typed target requirements or validated operation plans; it emits no target program and has no binary or stream-owning API. Tracing is a core dependency (`[ADR026-dec:tracing:core]`).
 
-`input.rs` owns `CompilationScope`, `AnalysisPolicy`, `ProofSearchLimits`, `BoundCompilerInput`, and `bind_input`; `analyzed.rs` orchestrates the complete analysis and validation; `proof.rs`, `placement.rs`, and `search_counter.rs` implement bounded exact searches; `target.rs`, `operation_plan.rs`, `live_transfer_plan.rs`, and `maturity_announcement_plan.rs` project and validate public results; `error.rs` defines typed `CompileError` failures. The other modules derive foundation, graph, source, disclosure, lifecycle, coverage, carrier, and layout facts, while `src/tests` and `tests/public_api.rs` exercise these boundaries.
+`input.rs` owns `CompilationScope`, `AnalysisPolicy`, `ProofSearchLimits`, `BoundCompilerInput`, and `bind_input`; `analyzed.rs` orchestrates the complete analysis and validation; `engine_proof.rs`, `engine_placement.rs`, and `search_counter.rs` implement bounded exact searches; `target.rs`, `operation_plan.rs`, `live_transfer_plan.rs`, and `maturity_announcement_plan.rs` project and validate public results; `error.rs` defines typed `CompileError` failures. The other modules derive foundation, graph, source, disclosure, lifecycle, coverage, carrier, and layout facts, while `src/tests` and `tests/public_api.rs` exercise these boundaries.
 
 Public entry points include `bind_input`, `target::analyze_target_requirements`, and the compact-ash, live-transfer, and maturity-announcement planners; public validation functions return `Result` and never print errors. Workspace callers in `vectors`, `tapscript`, `transaction` tests, and `linker` tests consume the typed API; `tapscript::upstream` also re-exports compiler plan types. Search exhaustion, infeasible plans, invalid scope, graph cycles, and validation mismatches are typed `CompileError` results; the caller owns any terminal command diagnostic.
 
@@ -46,11 +46,61 @@ ADR-010 requires structured result stdout and subscriber-produced JSON stderr (`
 | `analyze_target_requirements` | `compiler::target` | INFO | `scope_operation_count: u64` | Measures public requirement projection and its scoped analysis. |
 | `plan_target_operation` | `compiler::plan` | INFO | `operation_code: u16`, `family: &'static str`, `scope_operation_count: u64` | Measures a complete public compact, live, or state plan, including derivation and validation. |
 | `analyze_scoped_program` | `compiler::analysis` | DEBUG | `scope_operation_count: u64`, `proof_state_limit: u64`, `placement_state_limit: u64` | Separates target-independent analysis from its public INFO parent. |
-| `enumerate_feasible_plans` | `compiler::proof` | DEBUG | `state_limit: u64`, `candidate_limit: u64` | Isolates bounded proof search from preparation and assembly. |
-| `enumerate_feasible_placements` | `compiler::placement` | DEBUG | `state_limit: u64`, `candidate_limit: u64`, `relation_case_count: u64` | Isolates each exact placement search under its parent operation. |
-| `place_feasible_proof_plans` | `compiler::placement` | DEBUG | `proof_plan_count: u64` | Measures placement and full-set validation across candidate plans. |
-| `analyze_candidate_operations_reported` | `compiler::analysis` | DEBUG | `operation_count: u64` | Measures per-operation factor construction without materializing a cross-operation product. |
+| `enumerate_feasible_plans` | `compiler::proof` | DEBUG | `state_limit: u64`, `candidate_limit: u64` | Test oracle: Isolates bounded proof search from preparation and assembly.|
+| `enumerate_feasible_placements` | `compiler::placement` | DEBUG | `state_limit: u64`, `candidate_limit: u64`, `relation_case_count: u64` | Test oracle: Isolates each exact placement search under its parent operation.|
+| `place_feasible_proof_plans` | `compiler::placement` | DEBUG | `proof_plan_count: u64` | Test oracle: Measures placement and full-set validation across candidate plans.|
+| `analyze_candidate_operations_reported` | `compiler::analysis` | DEBUG | `operation_count: u64` | Test oracle: Measures per-operation factor construction without materializing a cross-operation product.|
 | `validate_scoped_analyzed_program` | `compiler::analysis` | DEBUG | `proof_plan_count: u64` | Separates final independent validation from initial derivation. |
+| `lower_relations` | `compiler::engine_attestation` | DEBUG | `source_node_count: u64`, `source_edge_count: u64` | Converts attestation relation declarations and dependencies into shared records. |
+| `validate` | `compiler::engine_case_facts` | DEBUG | `source_count: u64`, `carrier_count: u64` | Checks source, carrier and layout facts for one selected relation case. |
+| `select` | `compiler::engine_cases` | DEBUG | `case_count: u64`, `row_count: u64` | Selects case rows for the candidate proofs and representations. |
+| `analyze_constructibility` | `compiler::engine_constructibility` | DEBUG | `node_count: u64`, `case_count: u64` | Builds and validates construction dependencies and operation cases. |
+| `derive` | `compiler::engine_coverage` | DEBUG | `boundary_count: u64`, `subject_count: u64` | Derives coverage obligations from boundaries and their subjects. |
+| `validate_census` | `compiler::engine_coverage` | DEBUG | `planned_count: u64`, `covered_count: u64` | Checks that covered subjects equal the planned subject census. |
+| `definition_census` | `compiler::engine_coverage_graph` | DEBUG | `plan_count: u64` | Collects coverage definitions from operation plans. |
+| `derive_dependencies` | `compiler::engine_coverage_graph` | DEBUG | `plan_count: u64`, `prerequisite_count: u64` | Derives coverage dependencies from plans and prerequisite relations. |
+| `prerequisites` | `compiler::engine_coverage_graph` | DEBUG | `edge_count: u64` | Collects relation prerequisites from dependency edges. |
+| `collateral_dependencies` | `compiler::engine_coverage_graph` | DEBUG | `requirement_count: u64` | Derives collateral dependencies for requirement bundles. |
+| `build` | `compiler::engine_coverage_graph` | DEBUG | `node_count: u64`, `edge_count: u64` | Assembles and validates the complete coverage graph. |
+| `attach_requirements` | `compiler::engine_coverage_join` | DEBUG | `projection_count: u64` | Joins requirement bundles to carrier projections. |
+| `alternatives` | `compiler::engine_coverage_join` | DEBUG | `eligibility_count: u64` | Expands coverage alternatives from placement eligibility. |
+| `validate` | `compiler::engine_coverage_join` | DEBUG | `plan_count: u64`, `layout_count: u64` | Checks coverage plans against carrier layouts. |
+| `validate_predicates` | `compiler::engine_foundation` | DEBUG | `predicate_count: u64`, `expression_count: u64` | Checks predicate expression identities, Boolean types and scope. |
+| `lower_predicates` | `compiler::engine_keyed` | DEBUG | `scope_count: u64` | Reads keyed declaration shells and lowers predicate records. |
+| `read_declaration_shells` | `compiler::engine_keyed` | DEBUG | `scope_count: u64` | Reads all in-scope shell fields before constructing empty stage records. |
+| `lower_relations` | `compiler::engine_keyed` | DEBUG | `scope_operation_count: u64` | Lowers scoped keyed relations and lifecycle records. |
+| `lower_sources` | `compiler::engine_keyed` | DEBUG | `scope_count: u64` | Lowers keyed reader obligations and declaration-derived funding regions. |
+| `lower_placements` | `compiler::engine_keyed` | DEBUG | `scope_count: u64` | Lowers keyed runtime placement eligibility. |
+| `lower_coverage` | `compiler::engine_keyed` | DEBUG | `relation_count: u64` | Lowers keyed relation coverage subjects and dependencies. |
+| `analyze_lifecycle` | `compiler::engine_lifecycle` | DEBUG | `choice_count: u64`, `node_count: u64`, `edge_count: u64` | Analyzes lifecycle dependencies, choices and exit requirements. |
+| `analyze` | `compiler::engine_operation` | DEBUG | `plan_count: u64` | Assembles operation factors with placement and coverage analyses. |
+| `enumerate` | `compiler::engine_placement` | DEBUG | `obligation_count: u64`, `state_limit: u64`, `candidate_limit: u64` | Enumerates bounded placements for runtime obligations. |
+| `lower_bound_owner` | `compiler::engine_program` | DEBUG | None | Test oracle: Lowers all stages through the statically bound owner.|
+| `analyze` | `compiler::engine_program` | DEBUG | `scope_count: u64` | Runs stage analyses, joins, proof search and operation assembly. |
+| `join_proof_stages` | `compiler::engine_program` | DEBUG | `obligation_count: u64` | Compares proof inputs with analyzed lifecycle and constructibility outputs before search. |
+| `rederive_bound_owner` | `compiler::engine_program` | DEBUG | None | Test oracle: Rederives from the retained owner and compares the offered program.|
+| `enumerate` | `compiler::engine_proof` | DEBUG | `relation_count: u64`, `choice_count: u64`, `state_limit: u64`, `candidate_limit: u64` | Enumerates feasible proof and representation assignments under search limits. |
+| `analyze_relations` | `compiler::engine_records` | DEBUG | `source_node_count: u64`, `source_edge_count: u64`, `scope_operation_count: u64` | Builds and validates the scoped relation dependency graph. |
+| `derive` | `compiler::engine_requirement` | DEBUG | `table_count: u64`, `selected_count: u64` | Selects requirement bundles for candidate proofs. |
+| `validate_aggregate` | `compiler::engine_requirement` | DEBUG | `relation_count: u64`, `source_count: u64`, `evidence_count: u64` | Checks aggregate capabilities, sources and evidence against relation bundles. |
+| `analyze_sources` | `compiler::engine_source` | DEBUG | `table_count: u64`, `region_count: u64` | Validates source-table rows and funding-region restrictions. |
+| `lower_case_facts` | `compiler::engine_attestation` | DEBUG | `source_count: u64`, `layout_count: u64` | Lowers attestation sources and layouts into case facts. |
+| `lower_cases` | `compiler::engine_attestation` | DEBUG | `scope_count: u64` | Lowers attestation relation cases and their compatibility payloads. |
+| `lower_layout_scopes` | `compiler::engine_attestation` | DEBUG | `row_count: u64` | Lowers carrier layout scopes for case rows. |
+| `lower_constructibility` | `compiler::engine_attestation` | DEBUG | `node_count: u64` | Lowers attestation construction nodes, dependencies and cases. |
+| `lower_predicates` | `compiler::engine_attestation` | DEBUG | `relation_count: u64`, `expression_count: u64` | Lowers attestation predicate and expression identities. |
+| `lower_lifecycle` | `compiler::engine_attestation` | DEBUG | `source_node_count: u64`, `source_edge_count: u64` | Lowers attestation lifecycle nodes, dependencies and representation choices. |
+| `lower_operation_payload` | `compiler::engine_attestation` | DEBUG | None | Prepares owner payloads used to restore operation projections. |
+| `restore_operation` | `compiler::engine_attestation` | DEBUG | `case_count: u64` | Restores attestation operation projections from shared case results. |
+| `lower_placement` | `compiler::engine_attestation` | DEBUG | `plan_count: u64`, `eligibility_count: u64` | Lowers attestation placement plans and eligibility rows. |
+| `publish_bound_program` | `compiler::engine_attestation` | DEBUG | None | Publishes the legacy program projection from common orchestration. |
+| `lower_proofs` | `compiler::engine_attestation` | DEBUG | `scope_count: u64` | Lowers attestation proof alternatives, requirements and disclosure records. |
+| `prepare_requirement_payloads` | `compiler::engine_attestation` | DEBUG | None | Prepares owner payloads for requirement projection restoration. |
+| `restore_requirement_payloads` | `compiler::engine_attestation` | DEBUG | `relation_count: u64` | Restores selected attestation requirement bundles. |
+| `lower_requirement_tables` | `compiler::engine_attestation` | DEBUG | `relation_count: u64` | Lowers per-relation requirement alternatives into shared tables. |
+| `lower_sources` | `compiler::engine_attestation` | DEBUG | `scope_count: u64` | Lowers attestation source tables and funding regions. |
+| `analyze_bound_records` | `compiler::analysis` | DEBUG | None | Analyzes records lowered by the bound owner. |
+| `bind_keyed_input` | `compiler::input` | DEBUG | `scope_operation_count: u64` | Validates and binds the keyed manifest, realization and scope. |
 
 All spans use static literal targets and lower-snake-case names, with no per-state or per-candidate span. The three planner entry points share `plan_target_operation`; `family` is exactly `compact`, `live`, or `state`. A subscriber emits one close record for every enabled span with entry fields and `busy_ns: u64` and `idle_ns: u64`, on by default; nested durations are inclusive and must not be summed as a wall total. Compiler never computes a measured duration field or an `Instant` solely for telemetry.
 
@@ -61,8 +111,18 @@ All spans use static literal targets and lower-snake-case names, with no per-sta
 | `compiler::input` | DEBUG | `input binding completed` | `outcome: &'static str`; `scope_operation_count: u64` when known; `refusal_kind: &'static str` on refusal or `error_kind: &'static str` on failure | Once on every `bind_input` return, inside its span. |
 | `compiler::target` | INFO on completion or failure; DEBUG on refusal | `target requirements analyzed` | `outcome: &'static str`; `operation_count: u64`, `proof_plan_count: u64` when known; `refusal_kind` or `error_kind` as applicable | Once on every public requirements return, inside its span. |
 | `compiler::plan` | INFO on completion or failure; DEBUG on refusal | `target operation planned` | `outcome: &'static str`; `operation_code: u16`, `family: &'static str`, `proof_plan_count: u64` when known; `refusal_kind` or `error_kind` as applicable | Once on each compact, live, or state planner return, inside its span. |
-| `compiler::proof` | DEBUG | `proof search completed` | `outcome: &'static str`; `visited_state_count: u64`, `complete_assignment_count: u64`, `feasible_assignment_count: u64`, `capability_rejection_count: u64`, `source_rejection_count: u64`, `constructibility_rejection_count: u64`, `representation_rejection_count: u64`, `disclosure_rejection_count: u64` when observed; `refusal_kind` or `error_kind` as applicable | Once on every proof search exit, including state or candidate exhaustion. |
-| `compiler::placement` | DEBUG | `placement search completed` | `outcome: &'static str`; `visited_state_count: u64`, `complete_assignment_count: u64`, `feasible_placement_count: u64`, `retained_option_count: u64` when observed; `refusal_kind` or `error_kind` as applicable | Once on every placement search exit, including state or candidate exhaustion. |
+| `compiler::proof` | DEBUG | `proof search completed` | `outcome: &'static str`; `visited_state_count: u64`, `complete_assignment_count: u64`, `feasible_assignment_count: u64`, `capability_rejection_count: u64`, `source_rejection_count: u64`, `constructibility_rejection_count: u64`, `representation_rejection_count: u64`, `disclosure_rejection_count: u64` when observed; `refusal_kind` or `error_kind` as applicable | Test oracle: Once on every proof search exit, including state or candidate exhaustion.|
+| `compiler::placement` | DEBUG | `placement search completed` | `outcome: &'static str`; `visited_state_count: u64`, `complete_assignment_count: u64`, `feasible_placement_count: u64`, `retained_option_count: u64` when observed; `refusal_kind` or `error_kind` as applicable | Test oracle: Once on every placement search exit, including state or candidate exhaustion.|
+| `compiler::engine_placement` | DEBUG | `placement search completed` | `outcome: &'static str`; `refusal_kind: &'static str` on refusal; `visited_state_count`, `complete_assignment_count`, `feasible_placement_count`, `retained_option_count`: `u64` | Once on every production placement-search return, including census, eligibility, assignment and budget refusals. |
+| `compiler::engine_proof` | DEBUG | `proof search completed` | `outcome: &'static str`; `refusal_kind: &'static str` on refusal; `visited_state_count`, `complete_assignment_count`, `feasible_assignment_count`, `capability_rejection_count`, `source_rejection_count`, `constructibility_rejection_count`, `representation_rejection_count`, `disclosure_rejection_count`: `u64` | Once on every production proof-search exit, including fixed-source refusal, no feasible plan, and state/candidate exhaustion. |
+| `compiler::input` | DEBUG | `keyed input binding completed` | `outcome`, optional `refusal_kind`: static strings | Once per experimental keyed binding return. |
+| `compiler::engine_attestation` | DEBUG | `relation records lowered` | `outcome: &'static str`, `identity_count: u64` | Successful relation lowering. |
+| `compiler::engine_attestation` | DEBUG | `owner record refusal restored` | `stage: Debug`, `relation_count: u64`, `unknown_relation_count: u64`, `outcome: &'static str` | Owner adapter restores public refusal subjects without exposing private records. |
+| `compiler::engine_keyed` | DEBUG | `relation records lowered` | `outcome: &'static str`, `source_node_count: u64` | Successful keyed relation lowering. |
+| `compiler::engine_keyed` | DEBUG | `declaration shell read` | `outcome: &'static str`, `field: Debug` on refusal, `field_count: u64` | Unsupported nonempty fields are refused before lowering; completed means every observed shell field is empty. |
+| `compiler::engine_attestation` | DEBUG | `lifecycle records lowered` | `outcome: &'static str`, `choice_count: u64` | Successful lifecycle lowering. |
+
+The production placement search uses `compiler::engine_placement`; the legacy `compiler::placement` wrappers are test oracles. The production proof search uses `compiler::engine_proof`; the legacy `compiler::proof` wrapper is a direct-stage test oracle. Shared refusal names are `no_feasible_proof_plan`, `proof_search_state_limit_exceeded`, `proof_candidate_limit_exceeded` and `fixed_source`; they contain no owner payload.
 
 `outcome` is exactly `completed` for a typed result, `refused` for an expected typed refusal, or `failed` for an operational or internal failure. A negative report returned as a value is still `completed`; compiler makes no domain-verdict or evidence-standing claim. Refusals use the snake_case form of the payload-free `CompileError` variant name, including `proof_search_state_limit_exceeded`, `proof_candidate_limit_exceeded`, `placement_search_state_limit_exceeded`, or `placement_candidate_limit_exceeded`; a failure uses `error_kind` instead. Search summaries report counts already observed at exit and never publish a partial result; an unavailable count is omitted, not fabricated. Budget limits are span entry fields, while limit type is the refusal kind rather than a new outcome value.
 
@@ -70,15 +130,9 @@ An instrumented public boundary emits exactly one completion event on return, ev
 
 ## Naming · `sec:tracing-compiler:naming`
 
-The experimental relation-record extraction adds DEBUG targets `compiler::engine_attestation` and `compiler::engine_records`. `lower_relations` records `source_node_count`, `source_edge_count`, and `identity_count`; `analyze_relations` records source and scope counts, then `outcome` and `elapsed_us`. Counts and elapsed microseconds saturate to `u64`; the timer exists only when that DEBUG target is enabled. These events expose no keys, declarations, graph contents or refusal payloads.
+Targets are static literals `compiler::input`, `compiler::analysis`, `compiler::proof`, `compiler::placement`, `compiler::target`, and `compiler::plan`, plus the static `compiler::engine_*` targets enumerated in the tables; span names use lower_snake_case without a package prefix, and event messages are short fixed lowercase English past-tense phrases. Field keys are static snake_case. `family: &'static str` is `compact`, `live`, or `state`; `operation_code: u16` is the architecture `OperationId` code. `outcome`, `refusal_kind`, and `error_kind` have the meanings in Events, with categorical variant names converted to snake_case by inserting an underscore before every capital and lowercasing; `phase: &'static str` is used only if a phase is needed and is never a duplicate span name. No `command`, `output_mode`, `exit_class`, or `result_published` field is copied from `cli-common` into library events.
 
-The keyed owner uses `compiler::input` / `bind_keyed_input` for scope counts and a payload-free binding outcome/refusal kind. Its static lowering uses `compiler::engine_keyed` / `lower_relations` for scope and node counts. Graph analysis still emits the same `compiler::engine_records` events; there is no keyed graph analyzer or runtime reader.
-
-The lifecycle extraction uses `compiler::engine_attestation` / `lower_lifecycle` for source and choice counts and `compiler::engine_lifecycle` / `analyze_lifecycle` for choice/node/edge counts, outcome and enabled-only elapsed microseconds. Empty keyed lifecycle inputs emit the same stage observations as nonempty attestation inputs; no extra traversal or timer is created for disabled tracing.
-
-Targets are static literals `compiler::input`, `compiler::analysis`, `compiler::proof`, `compiler::placement`, `compiler::target`, and `compiler::plan`; span names use lower_snake_case without a package prefix, and event messages are short fixed lowercase English past-tense phrases. Field keys are static snake_case. `family: &'static str` is `compact`, `live`, or `state`; `operation_code: u16` is the architecture `OperationId` code. `outcome`, `refusal_kind`, and `error_kind` have the meanings in Events, with categorical variant names converted to snake_case by inserting an underscore before every capital and lowercasing; `phase: &'static str` is used only if a phase is needed and is never a duplicate span name. No `command`, `output_mode`, `exit_class`, or `result_published` field is copied from `cli-common` into library events.
-
-Every emitted count is a `<noun>_count: u64`, every byte quantity is `<subject>_bytes: u64`, and configured search bounds are `state_limit: u64` and `candidate_limit: u64`; no bare plural, `_len`, `maximum`, or count-of-one field is introduced. Existing API and internal `usize` values remain unchanged; at emission, `u64::try_from(n).unwrap_or(u64::MAX)` saturates a collection length. Events carry only already-held, safe values and do not format errors or inputs with `Debug` or `Display`.
+Every emitted count is a `<noun>_count: u64`, every byte quantity is `<subject>_bytes: u64`, and configured search bounds are `state_limit: u64` and `candidate_limit: u64`; no bare plural, `_len`, `maximum`, or count-of-one field is introduced. Existing API and internal `usize` values remain unchanged; at emission, `u64::try_from(n).unwrap_or(u64::MAX)` saturates a collection length. Events carry only already-held, safe values and do not format errors or inputs with `Debug` or `Display`. The payload-free `stage` and `field` enums are exceptions: their `Debug` spelling is the declared enum variant name, without payload, rather than snake_case.
 
 ## Cost · `sec:tracing-compiler:cost`
 
@@ -108,40 +162,3 @@ The shared `cli-common` implementation supplies ADR-010's subscriber, control ro
 - Outer public analysis and planning spans are INFO, nested analysis and repeated searches are DEBUG, and search counts are emitted once per exit with `_count: u64` fields.
 - `cli-common` owns pre-parse subscriber installation, control events, filter reload, and one terminal command record under ADR-010; the compiler library owns no subscriber or stream.
 - The ignored oracle uses assertions and test-harness wall time, with no shared scoped collector crate and no measured-duration event; the subscriber's span close record supplies enabled span timings.
-# Shared constructibility probe
-
-`compiler::engine_attestation::lower_constructibility` records the source-node census; `compiler::engine_constructibility::analyze_constructibility` records node and authorization-operation counts in its traversal span. Owner selection is fixed at input binding.
-# Shared source probe
-
-The `compiler::engine_source::analyze_sources` span records table and region counts. Fixed-owner `lower_sources` spans record scope counts under `compiler::engine_attestation` and `compiler::engine_keyed`; the shared census never selects an owner.
-# Shared proof probe
-
-`compiler::engine_attestation::lower_proofs` records scope counts. The `compiler::engine_proof::enumerate` span records relation and choice counts and emits visited-state and candidate counters; fixed-owner tables supply compatibility, evidence and disclosure effects without callbacks during search.
-
-The `compiler::engine_placement` spans record obligation and assignment counts for shared finite placement search and independent validation. Keyed lowering records its proof census; owner identity is never a search decision.
-
-The `compiler::engine_coverage` matrix and census spans record subject, boundary and covered-plan counts; keyed lowering retains evidence identity and records its relation census.
-
-The `compiler::engine_cases` selection span records the finite case and relation-row census. Attestation case lowering records scope size before proof selection; no per-case owner callback is exposed.
-
-The `compiler::engine_coverage_graph` build span records definition and dependency counts for the shared typed resolver, SCC rejection and active-descendant closure.
-
-The `compiler::engine_foundation` predicate join records predicate and expression counts. Fixed-owner lowering records relation/expression counts for attestation and scope counts for keyed declarations; an empty predicate stage retains its explicit census.
-
-The `compiler::engine_requirement` aggregate join records owned-relation, source and evidence counts. It compares complete keys without inspecting namespace codes or calling an owner.
-
-The `compiler::engine_coverage_join` spans record eligibility, plan and layout counts for assignment compression and independent placement-coverage validation.
-
-The coverage graph's common `definition_census` and `derive_dependencies` spans record plan and prerequisite counts before typed endpoint resolution. Requirement attachment records its accepted-projection census.
-
-Finite requirement lowering records the relation census under `compiler::engine_attestation`; common `derive` records table and selected-proof counts before joining the owner-approved rows.
-
-Case-fact lowering records source and layout counts; `compiler::engine_case_facts` validates relation-case joins with source and carrier counts, without selecting an owner or interpreting identifier codes.
-
-`compiler::engine_operation` records the relation-case census for factorized assembly. Attestation payload lowering and restoration have separate spans; the latter records case count and performs finite identity lookups only.
-
-`compiler::engine_program` traces fixed-owner lowering, concrete whole-record analysis and static re-derivation. Its analysis span records scope size; stage spans retain their own input/output and search counters.
-
-`compiler::engine_attestation::analyze_registered_operations` records the finite row census when production assembly and independent expectation derivation enter shared operation analysis.
-
-Production `analyze_bound_records` traces entry to the common orchestration. `publish_bound_program`, `prepare_requirement_payloads` and `restore_requirement_payloads` distinguish fixed-owner publication preparation from finite compatibility restoration; the latter records relation count.

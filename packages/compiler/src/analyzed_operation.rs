@@ -31,37 +31,45 @@
 //! target program, and an inactive relation-case is present in the
 //! census with its vacuity stated rather than omitted.
 
-// Two item-level allowances remain, and they are the same allowance
-// twice: `analyze_operation` and `analyze_candidate_operations` are the
-// variants that discard the placement search report. Both production
-// callers — the assembler and the complete validator's re-derivation —
-// keep the report, so only a caller that does not want it uses these.
+// The direct-stage assembly entries are test-only regression oracles.
+// Production assembly and re-derivation use the shared record orchestration.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::OperationId;
-use realization::{ExternalEvidenceRequirement, RelationId};
+use realization::ExternalEvidenceRequirement;
+#[cfg(test)]
+use realization::RelationId;
+
+#[cfg(test)]
+use crate::{
+    carrier::{CarrierEligibility, relation_case_eligibility},
+    coverage::analyze_placed_coverage,
+    coverage_graph::resolve_coverage_dependencies,
+    layout::layout_requirements,
+    placement::{
+        PlacedProofPlanCandidate, PlacementCandidate, PlacementSearchLimits, PlacementSearchReport,
+        RelationCasePlan, classify_relation_cases, enumerate_feasible_placements,
+        validate_placement,
+    },
+    requirement::{RelationRequirements, active_source_requirements},
+};
 
 use crate::{
     CompileError,
-    carrier::{CarrierEligibility, CarrierRole, relation_case_eligibility},
+    carrier::CarrierRole,
     case::{ExecutionCase, ExecutionCaseId, case_operations, execution_cases},
     coverage::{
         CarrierAssignmentAlternative, OperationCoverageProjection, RelationCoverageProjection,
-        analyze_placed_coverage,
     },
-    coverage_graph::{CoverageGraphProjection, resolve_coverage_dependencies},
-    layout::{LayoutRequirement, layout_requirements},
+    coverage_graph::CoverageGraphProjection,
+    layout::LayoutRequirement,
     placement::{
         ActivationCondition, BackendStructuralRequirement, CompilerStaticRequirement,
-        DischargeBoundary, PlacedProofPlanCandidate, PlacementCandidate,
-        PlacementCandidateProjection, PlacementSearchLimits, PlacementSearchReport,
-        RelationActivity, RelationCaseKey, RelationCasePlan, classify_relation_cases,
-        enumerate_feasible_placements, validate_placement,
+        DischargeBoundary, PlacementCandidateProjection, RelationActivity, RelationCaseKey,
     },
     proof::ProofPlanCandidate,
     relation::CompilerRelationAnalysis,
-    requirement::{RelationRequirements, active_source_requirements},
     source::SourceRequirement,
 };
 
@@ -144,6 +152,7 @@ pub struct RelationCaseRequirements {
 /// eligible carrier sets the placements were built from; a validator
 /// handed only the placements could check their shape and nothing else.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(test)]
 pub struct OperationPlacementAnalysis {
     pub operation: OperationId,
     pub execution_cases: Vec<ExecutionCase>,
@@ -214,6 +223,7 @@ pub fn operation_execution_cases(
 /// [`crate::layout::layout_requirements`],
 /// [`enumerate_feasible_placements`], or
 /// [`validate_operation_placements`].
+#[cfg(test)]
 pub fn analyze_operation_placements(
     relations: &CompilerRelationAnalysis,
     candidate: &ProofPlanCandidate,
@@ -251,6 +261,7 @@ pub fn analyze_operation_placements(
 /// [`CompileError::ForeignOperationFactor`] when a case, relation-case,
 /// eligible carrier set, or layout requirement belongs to another
 /// operation; any failure of [`validate_placement`].
+#[cfg(test)]
 pub fn validate_operation_placements(
     analysis: &OperationPlacementAnalysis,
 ) -> Result<(), CompileError> {
@@ -301,7 +312,7 @@ pub fn validate_operation_placements(
 /// [`crate::coverage::analyze_placed_coverage`],
 /// [`crate::coverage_graph::resolve_coverage_dependencies`],
 /// [`relation_case_requirements`], or [`validate_analyzed_operation`].
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn analyze_operation(
     relations: &CompilerRelationAnalysis,
     requirements: &BTreeMap<RelationId, RelationRequirements>,
@@ -322,6 +333,7 @@ pub fn analyze_operation(
 /// # Errors
 ///
 /// Any failure of [`analyze_operation`].
+#[cfg(test)]
 pub fn analyze_operation_reported(
     relations: &CompilerRelationAnalysis,
     requirements: &BTreeMap<RelationId, RelationRequirements>,
@@ -400,12 +412,9 @@ pub fn analyze_operation_reported(
 ///
 /// Any failure of [`analyze_operation`] for any operation, or of
 /// [`validate_operation_factorization`] on the assembled factors.
-// Both production callers — the assembler and the complete validator's
-// re-derivation — want the placement search reports, so both take the
-// reported form and this projection of it has test callers only. It is
-// kept because a test that only asserts about factors should not have
-// to name and discard a report it does not read.
-#[allow(dead_code)]
+// The test oracle retains both reported and factor-only forms so controls
+// can compare the shared orchestration with direct-stage assembly.
+#[cfg(test)]
 pub fn analyze_candidate_operations(
     relations: &CompilerRelationAnalysis,
     requirements: &BTreeMap<RelationId, RelationRequirements>,
@@ -422,6 +431,7 @@ pub fn analyze_candidate_operations(
 /// the analysis, the reports are provenance about how it was found, and
 /// a type joining them permanently would put search counts inside the
 /// value the analyzed program compares.
+#[cfg(test)]
 pub type ReportedOperationAnalyses = (
     BTreeMap<OperationId, AnalyzedOperation>,
     BTreeMap<OperationId, PlacementSearchReport>,
@@ -433,6 +443,7 @@ pub type ReportedOperationAnalyses = (
 /// # Errors
 ///
 /// Any failure of [`analyze_candidate_operations`].
+#[cfg(test)]
 pub fn analyze_candidate_operations_reported(
     relations: &CompilerRelationAnalysis,
     requirements: &BTreeMap<RelationId, RelationRequirements>,
@@ -464,6 +475,7 @@ pub fn analyze_candidate_operations_reported(
 ///
 /// [`CompileError::InvalidRelationCaseRequirements`] for the first
 /// bundle breaking one of the §8.2–§8.6 retention rules.
+#[cfg(test)]
 pub fn relation_case_requirements(
     placement: &OperationPlacementAnalysis,
     requirements: &BTreeMap<RelationId, RelationRequirements>,
@@ -849,6 +861,7 @@ fn expected_relation_cases(
 /// obligation with no obligation behind it — and the runtime
 /// requirement the same relation-case would otherwise carry is already
 /// absent for exactly that reason.
+#[cfg(test)]
 fn relation_case_sources(
     plan: &RelationCasePlan,
     owned: &RelationRequirements,
@@ -866,6 +879,7 @@ fn relation_case_sources(
 /// own accepted carrier alternatives depend on, and the census entries
 /// its own relation owns in its own case. A requirement of another
 /// relation-case belongs to the operation census, never to this bundle.
+#[cfg(test)]
 fn relation_case_layout(
     key: &RelationCaseKey,
     assignments: &BTreeSet<CarrierAssignmentAlternative>,

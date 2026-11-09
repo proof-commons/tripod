@@ -36,29 +36,37 @@
 // scope-wide analysis is retained for the independent oracles and the
 // phase-exit product comparison rather than called in production.
 
+#[cfg(test)]
+use crate::{
+    carrier::CarrierEligibility, layout::names_sponsor_amount, placement::PlacementCandidate,
+    source::is_sponsor_amount_operand,
+};
+#[cfg(test)]
+use realization::RelationDeclaration;
 use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{BoundId, OperationId};
 use realization::{
     CardinalityMaximum, ConstructibilityClass, Count, ExternalEvidenceRequirement, Relation,
-    RelationDeclaration, RelationId, RepresentationMode,
+    RelationId, RepresentationMode,
 };
 
 use crate::{
     CompileError,
     capability::RequiredCapability,
-    carrier::{CarrierEligibility, relation_case_eligibility},
     case::{ConservedAmountVisibility, ExecutionCaseId},
-    coverage_graph::{CoverageGraphProjection, resolve_coverage_dependencies},
-    layout::{LayoutRequirement, names_sponsor_amount},
+    coverage_graph::CoverageGraphProjection,
+    layout::LayoutRequirement,
     placement::{
-        PlacedCarrier, PlacedProofPlanCandidate, PlacedProofPlans, PlacementCandidate,
-        RelationActivity, RelationCaseKey, RelationCasePlan,
+        PlacedCarrier, PlacedProofPlanCandidate, PlacedProofPlans, RelationActivity,
+        RelationCaseKey, RelationCasePlan,
     },
     proof::ProofPlanCandidate,
     relation::CompilerRelationAnalysis,
-    source::{OperandId, SourceRequirement, is_sponsor_amount_operand},
+    source::{OperandId, SourceRequirement},
 };
+#[cfg(test)]
+use crate::{carrier::relation_case_eligibility, coverage_graph::resolve_coverage_dependencies};
 
 /// Where one coverage requirement is answered.
 ///
@@ -370,6 +378,7 @@ impl RelationCoveragePlan {
     }
 
     /// Every requirement identity this plan states.
+    #[cfg(test)]
     pub fn requirement_ids(&self) -> impl Iterator<Item = &CoverageRequirementId> {
         self.positive
             .iter()
@@ -428,6 +437,7 @@ impl PlanCoverageAnalysis {
 /// alone would duplicate it. The supplied function receives one
 /// negative requirement's own relation-case key and returns the strict
 /// active-descendant closure that must become blocked.
+#[cfg(test)]
 pub fn bind_dependency_collateral(
     analysis: &mut PlanCoverageAnalysis,
     closure: &impl Fn(&RelationCaseKey) -> BTreeSet<RelationCaseKey>,
@@ -453,6 +463,7 @@ pub fn bind_dependency_collateral(
 ///
 /// [`CompileError::SponsorValueRead`] when the relation's operand
 /// census names an erased sponsor amount.
+#[cfg(test)]
 pub fn derive_relation_coverage(
     declaration: &RelationDeclaration,
     plan: &RelationCasePlan,
@@ -468,6 +479,7 @@ pub fn derive_relation_coverage(
 /// [`CompileError::CoverageCensusMismatch`] when a planned relation is
 /// absent from the relation analysis; any failure of
 /// [`derive_relation_coverage`] or [`validate_coverage_census`].
+#[cfg(test)]
 pub fn analyze_plan_coverage(
     relations: &CompilerRelationAnalysis,
     plans: &[RelationCasePlan],
@@ -536,22 +548,12 @@ pub fn analyze_plan_coverage(
 /// relation-case states no inactive-valid requirement;
 /// [`CompileError::UnexpectedCoverageRejection`] when an inactive
 /// relation-case demands a target rejection.
+#[cfg(test)]
 pub fn validate_coverage_census(
     plans: &[RelationCasePlan],
     analysis: &PlanCoverageAnalysis,
 ) -> Result<(), CompileError> {
     crate::engine_attestation::coverage::validate_census(plans, analysis)
-}
-
-/// Validate one relation-case coverage plan against §11.4.
-///
-/// # Errors
-///
-/// Any of the per-relation failures documented on
-/// [`validate_coverage_census`].
-#[allow(dead_code)]
-pub fn validate_relation_coverage(plan: &RelationCoveragePlan) -> Result<(), CompileError> {
-    crate::engine_attestation::coverage::validate_plan(plan)
 }
 
 /// The negative classes one relation requires, by boundary.
@@ -901,6 +903,7 @@ pub fn relation_representation(
 }
 
 /// The declaration behind one relation ID.
+#[cfg(test)]
 fn declared_relation<'a>(
     relations: &'a CompilerRelationAnalysis,
     relation: &RelationId,
@@ -925,6 +928,7 @@ fn declared_relation<'a>(
 /// Any failure of [`analyze_plan_coverage`],
 /// [`crate::carrier::relation_case_eligibility`],
 /// [`validate_coverage_census`], or [`validate_placement_coverage`].
+#[cfg(test)]
 pub fn analyze_placed_coverage(
     relations: &CompilerRelationAnalysis,
     placed: &PlacedProofPlanCandidate,
@@ -955,6 +959,7 @@ pub fn analyze_placed_coverage(
 /// because it travels inside each placed carrier — a per-member role
 /// and a complete-family proof are different alternatives, never one
 /// deduplicated into the other.
+#[cfg(test)]
 pub fn bind_carrier_coverage(
     analysis: &mut PlanCoverageAnalysis,
     eligibility: &[CarrierEligibility],
@@ -987,6 +992,7 @@ pub fn bind_carrier_coverage(
 /// public operands, a compiler-static one compares the compiler's own
 /// selection result, a structural one compares an emitted fact, and an
 /// external one compares an evidence role and subject.
+#[cfg(test)]
 pub fn bind_projection_coverage(analysis: &mut PlanCoverageAnalysis, plans: &[RelationCasePlan]) {
     let sources = plans
         .iter()
@@ -1140,6 +1146,7 @@ fn boundary_sources(plan: &RelationCasePlan, boundary: CoverageBoundary) -> Vec<
 /// operand, not as a projected source row, and not through a layout
 /// requirement a carrier alternative depends on.
 #[must_use]
+#[cfg(test)]
 pub fn coverage_names_sponsor_value(analysis: &PlanCoverageAnalysis) -> bool {
     analysis.plans().any(|plan| {
         let stated = plan
@@ -1173,6 +1180,7 @@ pub fn coverage_names_sponsor_value(analysis: &PlanCoverageAnalysis) -> bool {
 /// # Errors
 ///
 /// [`CompileError::SponsorValueRead`] on any occurrence.
+#[cfg(test)]
 pub fn validate_sponsor_erasure(analysis: &PlanCoverageAnalysis) -> Result<(), CompileError> {
     if coverage_names_sponsor_value(analysis) {
         return Err(CompileError::SponsorValueRead);
@@ -1198,6 +1206,7 @@ pub fn validate_sponsor_erasure(analysis: &PlanCoverageAnalysis) -> Result<(), C
 /// [`CompileError::UnexpectedCoverageLayoutRequirement`] when coverage
 /// references a layout requirement the plan's census does not state;
 /// [`CompileError::SponsorValueRead`] on any erased sponsor value.
+#[cfg(test)]
 pub fn validate_placement_coverage(
     eligibility: &[CarrierEligibility],
     placements: &[PlacementCandidate],
@@ -1545,7 +1554,7 @@ impl ScopeCoverageAnalysis {
 /// [`crate::coverage_graph::resolve_coverage_dependencies`],
 /// [`validate_conditional_coverage`], or
 /// [`validate_representation_coverage`].
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn analyze_scope_coverage(
     relations: &CompilerRelationAnalysis,
     placed: &PlacedProofPlans,

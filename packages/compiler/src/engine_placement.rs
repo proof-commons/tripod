@@ -3,21 +3,24 @@
 //! arrives as finite admissibility records, never as an identity dispatch.
 use crate::{
     carrier::CarrierQuantification,
-    engine_lifecycle::ObjectKey,
-    engine_records::{OperationKey, RelationKey},
+    engine_records::RelationKey,
     placement::{CarrierMultiplicity, PlacementSearchLimits, PlacementSearchReport},
     search_counter::{admit_search_state, record_search_event},
 };
+#[cfg(test)]
+use crate::{engine_lifecycle::ObjectKey, engine_records::OperationKey};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CaseKey {
     Attestation(crate::case::ExecutionCaseId),
+    #[cfg(test)]
     Keyed(OperationKey),
 }
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CarrierKey {
     Attestation(crate::carrier::CarrierRole),
+    #[cfg(test)]
     Member {
         operation: OperationKey,
         object: ObjectKey,
@@ -121,8 +124,6 @@ pub fn validate_census(records: &Records) -> Result<(), Error> {
     Ok(())
 }
 pub fn validate_placement(records: &Records, placement: &Candidate) -> Result<(), Error> {
-    let span = tracing::debug_span!(target: "compiler::engine_placement", "validate_placement", assignment_count = crate::instrumentation::count(placement.assignments.len()));
-    let _entered = span.enter();
     validate_census(records)?;
     let assigned = placement
         .assignments
@@ -280,8 +281,38 @@ pub fn enumerate(
     limits: PlacementSearchLimits,
     report: &mut PlacementSearchReport,
 ) -> Result<Vec<Candidate>, Error> {
-    let span = tracing::debug_span!(target: "compiler::engine_placement", "enumerate", obligation_count = crate::instrumentation::count(records.eligibility.len()));
+    let span = tracing::debug_span!(target: "compiler::engine_placement", "enumerate", obligation_count = crate::instrumentation::count(records.eligibility.len()), state_limit = limits.maximum_states.get(), candidate_limit = limits.maximum_candidates.get());
     let _entered = span.enter();
+    let result = enumerate_core(records, limits, report);
+    let refusal_kind = result.as_ref().err().map(|error| match error {
+        Error::PlacementCensusMismatch { .. } => "placement_census_mismatch",
+        Error::NoEligibleCarrier(_) => "no_eligible_carrier",
+        Error::GlobalRelationHasOnlyLocalCarrier(_) => "global_relation_has_only_local_carrier",
+        Error::UnconditionalRelationOnOptionalCarrier(_) => {
+            "unconditional_relation_on_optional_carrier"
+        }
+        Error::DuplicatePlacedCarrier { .. } => "duplicate_placed_carrier",
+        Error::NonCanonicalCarrierAssignment(_) => "non_canonical_carrier_assignment",
+        Error::UnpermittedCarrierPlacement { .. } => "unpermitted_carrier_placement",
+        Error::MissingLayoutRequirement(_) => "missing_layout_requirement",
+        Error::UnexpectedLayoutRequirement(_) => "unexpected_layout_requirement",
+        Error::StateLimit(_) => "placement_search_state_limit_exceeded",
+        Error::CandidateLimit(_) => "placement_candidate_limit_exceeded",
+    });
+    tracing::debug!(target: "compiler::engine_placement",
+        outcome = if result.is_ok() { "completed" } else { "refused" }, refusal_kind,
+        visited_state_count = report.states_visited,
+        complete_assignment_count = report.complete_assignments,
+        feasible_placement_count = report.feasible_placements,
+        retained_option_count = report.retained_options,
+        message = "placement search completed");
+    result
+}
+fn enumerate_core(
+    records: &Records,
+    limits: PlacementSearchLimits,
+    report: &mut PlacementSearchReport,
+) -> Result<Vec<Candidate>, Error> {
     validate_census(records)?;
     let rows = records
         .eligibility

@@ -57,7 +57,6 @@ pub fn attach_requirements(joined: &mut Joined) {
 }
 
 /// Translate the concrete joined interface into graph symbols without an owner.
-#[allow(dead_code)]
 pub fn symbols(joined: &Joined) -> crate::engine_coverage_graph::PlanSymbols {
     use crate::{
         coverage_graph::CoverageNodeClass as Class,

@@ -37,7 +37,6 @@ pub enum Error {
 }
 
 /// Each operation gets its own search. No product over operations is formed.
-#[allow(dead_code)]
 pub fn analyze(
     selected: &Selected,
     prerequisites: &[(RelationKey, RelationKey)],

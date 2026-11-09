@@ -27,11 +27,17 @@ pub struct FactKey {
     pub subject: Vec<u16>,
 }
 #[derive(Clone, Debug)]
+pub struct ConstructionRequirement {
+    pub node: crate::engine_constructibility::NodeKey,
+    pub optional: bool,
+}
+#[derive(Clone, Debug)]
 pub struct Alternative {
     pub id: AlternativeKey,
     pub capabilities: BTreeSet<RequiredCapability>,
     pub sources: Result<Vec<SourceRow>, LocalProofRejection>,
     pub constructible: bool,
+    pub construction: Vec<ConstructionRequirement>,
     pub evidence: BTreeSet<Evidence>,
     pub incompatible: BTreeSet<(ChoiceKey, ModeKey)>,
 }
@@ -79,8 +85,37 @@ pub fn enumerate(
     limits: ProofSearchLimits,
     report: &mut ProofSearchReport,
 ) -> Result<Vec<Candidate>, Error> {
-    let span = tracing::debug_span!(target: "compiler::engine_proof", "enumerate", relation_count = crate::instrumentation::count(records.obligations.len()), choice_count = crate::instrumentation::count(records.choices.len()));
+    let span = tracing::debug_span!(target: "compiler::engine_proof", "enumerate", relation_count = crate::instrumentation::count(records.obligations.len()), choice_count = crate::instrumentation::count(records.choices.len()), state_limit = limits.maximum_states.get(), candidate_limit = limits.maximum_candidates.get());
     let _entered = span.enter();
+    let result = enumerate_core(records, view, limits, report);
+    let refusal_kind = match &result {
+        Ok(_) => None,
+        Err(Error::NoFeasiblePlan(_)) => Some("no_feasible_proof_plan"),
+        Err(Error::StateLimit(_)) => Some("proof_search_state_limit_exceeded"),
+        Err(Error::CandidateLimit(_)) => Some("proof_candidate_limit_exceeded"),
+        Err(Error::FixedSource(_)) => Some("fixed_source"),
+    };
+    tracing::debug!(target: "compiler::engine_proof",
+        outcome = if result.is_ok() { "completed" } else { "refused" },
+        refusal_kind,
+        visited_state_count = report.states_visited,
+        complete_assignment_count = report.complete_assignments,
+        feasible_assignment_count = report.feasible_assignments,
+        capability_rejection_count = report.rejected_by_capability,
+        source_rejection_count = report.rejected_by_source,
+        constructibility_rejection_count = report.rejected_by_constructibility,
+        representation_rejection_count = report.rejected_by_representation,
+        disclosure_rejection_count = report.rejected_by_disclosure,
+        message = "proof search completed");
+    result
+}
+
+fn enumerate_core(
+    records: &Records,
+    view: &CapabilityView,
+    limits: ProofSearchLimits,
+    report: &mut ProofSearchReport,
+) -> Result<Vec<Candidate>, Error> {
     let mut variables = Vec::new();
     let mut fixed = Vec::new();
     let mut blocked = Vec::new();
@@ -133,7 +168,6 @@ pub fn enumerate(
     state.candidates.sort();
     state.candidates.dedup();
     state.report.feasible_assignments = u64::try_from(state.candidates.len()).unwrap_or(u64::MAX);
-    tracing::debug!(target: "compiler::engine_proof", outcome = "completed", states = state.report.states_visited, candidates = state.report.feasible_assignments, "proof records searched");
     Ok(state.candidates)
 }
 fn local(alternative: &Alternative, view: &CapabilityView) -> Result<(), LocalProofRejection> {

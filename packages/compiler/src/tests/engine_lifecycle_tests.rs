@@ -32,7 +32,7 @@ fn keyed_empty_lifecycle_is_analyzed_and_projected_for_each_scope() {
             super::bound_input(&[OperationId::CompactAsh]).policy(),
         )
         .expect("keyed binding");
-        let analyzed = engine_records::analyze_bound_lifecycle(&input);
+        let analyzed = engine_records::analyze_bound_lifecycle(&input).expect("owner lowering");
         let projection = analyzed
             .result
             .expect("shared lifecycle traversal")
@@ -56,7 +56,7 @@ fn the_bound_attestation_lifecycle_view_equals_the_existing_entry() {
     let relations = crate::relation::build_relation_analysis(&input).expect("graph");
     let expected =
         crate::lifecycle::build_lifecycle_analysis(&input, &relations).expect("existing entry");
-    let lowered = engine_records::analyze_bound_lifecycle(&input);
+    let lowered = engine_records::analyze_bound_lifecycle(&input).expect("owner lowering");
     let actual = lowered
         .lowering
         .lifecycle_compatibility_view(lowered.result)

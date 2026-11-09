@@ -1,8 +1,7 @@
 //! Crate-private relation records consumed without consulting an owner vocabulary.
 //!
-//! This first extraction covers relation-graph construction only. Other engine
-//! stages still consume the attestation compatibility view. Keys are complete
-//! namespace-qualified owner identities, never positions or hashes.
+//! Fixed-owner lowering supplies all shared stages before search. Keys are
+//! complete namespace-qualified owner identities, never positions or hashes.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,48 +11,63 @@ use petgraph::{
     visit::EdgeRef,
 };
 
+/// Typed owner refusal retained by the binding-fixed producer.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum LoweringError {
+    #[error("attestation lowering refused: {0}")]
+    Attestation(#[from] crate::CompileError),
+    #[cfg(any(test, feature = "keyed-experimental"))]
+    #[error("keyed lowering refused: {0:?}")]
+    Keyed(#[from] crate::engine_keyed::KeyedLoweringError),
+}
+
 /// Static lowering authority retained by the input binder. This parameter is
 /// not an engine identity parameter and provides no per-case policy callbacks.
 pub trait RelationOwner {
     type Lowered: LoweredRelations;
+    type Error: Into<LoweringError>;
     fn source_binding(&self) -> crate::engine_program::Source;
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn lower_requirements(
         input: &crate::input::BoundCompilerInput<Self>,
-    ) -> Result<Vec<crate::engine_requirement::Table>, crate::CompileError>
+    ) -> Result<Vec<crate::engine_requirement::Table>, Self::Error>
     where
         Self: Sized;
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn lower_predicates(
         input: &crate::input::BoundCompilerInput<Self>,
-    ) -> Result<crate::engine_foundation::Records, crate::CompileError>
+    ) -> Result<crate::engine_foundation::Records, Self::Error>
     where
         Self: Sized;
-    fn lower_relations(&self) -> Self::Lowered;
+    fn lower_relations(&self) -> Result<Self::Lowered, Self::Error>;
+    #[cfg(test)]
     fn lower_proofs(
         input: &crate::input::BoundCompilerInput<Self>,
-    ) -> Result<crate::engine_proof::Records, crate::CompileError>
+    ) -> Result<crate::engine_proof::Records, Self::Error>
     where
         Self: Sized;
-    #[allow(dead_code)]
+    #[cfg(test)]
     fn lower_cases(
         input: &crate::input::BoundCompilerInput<Self>,
-    ) -> Result<crate::engine_cases::Tables, crate::CompileError>
+    ) -> Result<crate::engine_cases::Tables, Self::Error>
     where
         Self: Sized;
-    fn lower_sources(&self) -> Result<crate::engine_source::SourceRecords, crate::CompileError>;
+    fn lower_sources(&self) -> Result<crate::engine_source::SourceRecords, Self::Error>;
+    #[cfg(test)]
     fn lower_constructibility(
         &self,
-    ) -> Result<crate::engine_constructibility::Records, crate::CompileError>;
+    ) -> Result<crate::engine_constructibility::Records, Self::Error>;
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+#[derive(Debug, thiserror::Error)]
+#[cfg(test)]
 pub enum ProofFailure {
-    Lowering(crate::CompileError),
+    #[error("proof lowering refused: {0:?}")]
+    Lowering(LoweringError),
+    #[error("proof analysis refused: {0:?}")]
     Analysis(crate::engine_proof::Error),
 }
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn analyze_bound_proofs<O: RelationOwner>(
     input: &crate::input::BoundCompilerInput<O>,
     view: &crate::capability::CapabilityView,
@@ -64,7 +78,7 @@ pub fn analyze_bound_proofs<O: RelationOwner>(
     ),
     ProofFailure,
 > {
-    let records = O::lower_proofs(input).map_err(ProofFailure::Lowering)?;
+    let records = O::lower_proofs(input).map_err(|error| ProofFailure::Lowering(error.into()))?;
     let mut report = crate::proof::ProofSearchReport::default();
     let candidates = crate::engine_proof::enumerate(
         &records,
@@ -76,39 +90,43 @@ pub fn analyze_bound_proofs<O: RelationOwner>(
     Ok((candidates, report))
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+#[derive(Debug, thiserror::Error)]
+#[cfg(test)]
 pub enum SourceFailure {
-    Lowering(crate::CompileError),
+    #[error("source lowering refused: {0:?}")]
+    Lowering(LoweringError),
+    #[error("source analysis refused: {0:?}")]
     Analysis(Box<crate::engine_source::SourceError>),
 }
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn analyze_bound_sources<O: RelationOwner>(
     input: &crate::input::BoundCompilerInput<O>,
 ) -> Result<Vec<Vec<crate::engine_source::SourceRow>>, SourceFailure> {
     let records = input
         .owner()
         .lower_sources()
-        .map_err(SourceFailure::Lowering)?;
+        .map_err(|error| SourceFailure::Lowering(error.into()))?;
     crate::engine_source::analyze_sources(&records)
         .map_err(|error| SourceFailure::Analysis(Box::new(error)))
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
+#[derive(Debug, thiserror::Error)]
+#[cfg(test)]
 pub enum ConstructibilityFailure {
-    Lowering(crate::CompileError),
+    #[error("constructibility lowering refused: {0:?}")]
+    Lowering(LoweringError),
+    #[error("constructibility analysis refused: {0:?}")]
     Analysis(Box<crate::engine_constructibility::RecordError>),
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn analyze_bound_constructibility<O: RelationOwner>(
     input: &crate::input::BoundCompilerInput<O>,
 ) -> Result<crate::engine_constructibility::Analysis, ConstructibilityFailure> {
     let records = input
         .owner()
         .lower_constructibility()
-        .map_err(ConstructibilityFailure::Lowering)?;
+        .map_err(|error| ConstructibilityFailure::Lowering(error.into()))?;
     crate::engine_constructibility::analyze_constructibility(&records)
         .map_err(|error| ConstructibilityFailure::Analysis(Box::new(error)))
 }
@@ -127,15 +145,15 @@ pub struct BoundRelationAnalysis<L> {
 
 pub fn analyze_bound_relations<O: RelationOwner>(
     input: &crate::input::BoundCompilerInput<O>,
-) -> BoundRelationAnalysis<O::Lowered> {
-    let lowering = input.owner().lower_relations();
+) -> Result<BoundRelationAnalysis<O::Lowered>, O::Error> {
+    let lowering = input.owner().lower_relations()?;
     let result = analyze_relations(lowering.records());
-    BoundRelationAnalysis { lowering, result }
+    Ok(BoundRelationAnalysis { lowering, result })
 }
 
 // The probe exercises this bound entry for both owners. The existing
 // attestation offered-projection API also uses the same concrete traversal.
-#[allow(dead_code)]
+#[cfg(test)]
 pub struct BoundLifecycleAnalysis<L> {
     pub lowering: L,
     pub result: Result<
@@ -144,13 +162,13 @@ pub struct BoundLifecycleAnalysis<L> {
     >,
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 pub fn analyze_bound_lifecycle<O: RelationOwner>(
     input: &crate::input::BoundCompilerInput<O>,
-) -> BoundLifecycleAnalysis<O::Lowered> {
-    let lowering = input.owner().lower_relations();
+) -> Result<BoundLifecycleAnalysis<O::Lowered>, O::Error> {
+    let lowering = input.owner().lower_relations()?;
     let result = crate::engine_lifecycle::analyze_lifecycle(lowering.lifecycle());
-    BoundLifecycleAnalysis { lowering, result }
+    Ok(BoundLifecycleAnalysis { lowering, result })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -228,7 +246,7 @@ pub enum RelationRecordError {
     },
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct RelationGraph {
     pub graph: DiGraph<RelationRecord, DependencyKind, u32>,
     pub node_by_id: BTreeMap<RelationKey, NodeIndex<u32>>,
@@ -238,18 +256,11 @@ pub struct RelationGraph {
 /// The existing relation-DAG algorithm over owner-produced records.
 /// Namespace and local codes participate only in identity comparisons/order.
 pub fn analyze_relations(records: &RelationRecords) -> Result<RelationGraph, RelationRecordError> {
-    let started = tracing::enabled!(target: "compiler::engine_records", tracing::Level::DEBUG)
-        .then(std::time::Instant::now);
     let span = tracing::debug_span!(target: "compiler::engine_records", "analyze_relations",
         source_node_count = crate::instrumentation::count(records.nodes.len()), source_edge_count = crate::instrumentation::count(records.edges.len()),
         scope_operation_count = crate::instrumentation::count(records.scope.len()));
     let _entered = span.enter();
-    let result = build_graph(records);
-    if let Some(started) = started {
-        tracing::debug!(target: "compiler::engine_records", outcome = if result.is_ok() { "completed" } else { "refused" },
-            elapsed_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX), "relation record analysis completed");
-    }
-    result
+    build_graph(records)
 }
 
 fn build_graph(records: &RelationRecords) -> Result<RelationGraph, RelationRecordError> {

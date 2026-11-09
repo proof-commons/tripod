@@ -1,13 +1,18 @@
 //! Attestation layout facts and lossless placement-coverage compatibility.
 use crate::{
-    CompileError,
-    carrier::CarrierEligibility,
-    coverage::{CarrierAssignmentAlternative, PlanCoverageAnalysis},
-    engine_coverage_join as core, engine_placement as placement,
-    layout::{LayoutRequirement, selected_carrier_requirements},
-    placement::{PlacedCarrier, PlacementCandidate, RelationCaseKey},
+    CompileError, coverage::CarrierAssignmentAlternative, engine_coverage_join as core,
+    engine_placement as placement, placement::PlacedCarrier,
 };
-use std::collections::{BTreeMap, BTreeSet};
+#[cfg(test)]
+use crate::{
+    carrier::CarrierEligibility,
+    coverage::PlanCoverageAnalysis,
+    layout::{LayoutRequirement, selected_carrier_requirements},
+    placement::{PlacementCandidate, RelationCaseKey},
+};
+use std::collections::BTreeMap;
+#[cfg(test)]
+use std::collections::BTreeSet;
 
 fn placed(value: &PlacedCarrier) -> placement::Placed {
     placement::Placed {
@@ -26,6 +31,7 @@ pub fn alternative(value: &CarrierAssignmentAlternative) -> core::Alternative {
             .collect(),
     }
 }
+#[cfg(test)]
 pub fn attach_requirements(plan: &mut crate::coverage::RelationCoveragePlan) {
     use crate::{
         coverage::{
@@ -61,7 +67,12 @@ pub fn attach_requirements(plan: &mut crate::coverage::RelationCoveragePlan) {
                 EvidenceRole::TargetExecution,
                 Vec::new(),
             ),
-            _ => continue,
+            Purpose::Attestation(_) => continue,
+            #[cfg(test)]
+            Purpose::Verified(_)
+            | Purpose::Rejected { .. }
+            | Purpose::ClauseAccepted
+            | Purpose::ClauseRejected => continue,
         };
         plan.positive.push(PositiveCoverageRequirement {
             id: CoverageRequirementId {
@@ -78,6 +89,7 @@ pub fn attach_requirements(plan: &mut crate::coverage::RelationCoveragePlan) {
     plan.positive.sort();
     plan.positive.dedup();
 }
+#[cfg(test)]
 fn entries(eligibility: &[CarrierEligibility]) -> BTreeMap<placement::Key, Vec<placement::Entry>> {
     eligibility
         .iter()
@@ -105,6 +117,7 @@ fn entries(eligibility: &[CarrierEligibility]) -> BTreeMap<placement::Key, Vec<p
         })
         .collect()
 }
+#[cfg(test)]
 pub fn carrier_alternatives(
     eligibility: &[CarrierEligibility],
     placements: &[PlacementCandidate],
@@ -147,6 +160,7 @@ pub fn carrier_alternatives(
     .collect()
 }
 
+#[cfg(test)]
 pub fn validate(
     eligibility: &[CarrierEligibility],
     placements: &[PlacementCandidate],

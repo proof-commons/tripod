@@ -23,22 +23,26 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(test)]
+use crate::{
+    case::{ExecutionCaseId, is_active},
+    constructibility::CompilerConstructibilityAnalysis,
+    relation::CompilerRelationAnalysis,
+};
 use architecture::ObjectId;
+#[cfg(test)]
+use realization::RelationDeclaration;
 use realization::{
-    ExternalEvidenceRequirement, ProofAlternativeId, RelationDeclaration, RelationId,
-    RepresentationMode,
+    ExternalEvidenceRequirement, ProofAlternativeId, RelationId, RepresentationMode,
 };
 
 use crate::{
     CompileError,
     capability::RequiredCapability,
-    case::{ExecutionCaseId, is_active},
-    constructibility::CompilerConstructibilityAnalysis,
     disclosure::{CompilerDisclosureReason, derive_disclosure, validate_disclosure},
     input::BoundCompilerInput,
     lifecycle::{CompilerLifecycleAnalysis, LifecycleRequirement, RepresentationChoiceId},
     proof::ProofPlanCandidate,
-    relation::CompilerRelationAnalysis,
     source::{OperandRole, RequiredSourceKind, SourceRequirement, is_sponsor_amount_operand},
 };
 
@@ -103,10 +107,7 @@ pub struct RelationRequirements {
 /// Any failure of [`derive_relation_requirements`],
 /// [`validate_aggregate_closure`], [`validate_disclosure_closure`], or
 /// [`validate_lifecycle_closure`].
-#[allow(
-    dead_code,
-    reason = "Compatibility entry retained for direct stage controls"
-)]
+#[cfg(test)]
 pub fn relation_requirements(
     input: &BoundCompilerInput,
     relations: &CompilerRelationAnalysis,
@@ -139,10 +140,7 @@ pub fn relation_requirements(
 /// no proof carries one; [`CompileError::SponsorValueRead`] on any
 /// sponsor amount operand; any failure of
 /// [`crate::constructibility::validate_source_constructibility`].
-#[allow(
-    dead_code,
-    reason = "Compatibility entry retained for direct stage controls"
-)]
+#[cfg(test)]
 pub fn derive_relation_requirements(
     relations: &CompilerRelationAnalysis,
     constructibility: &CompilerConstructibilityAnalysis,
@@ -301,6 +299,7 @@ pub fn validate_lifecycle_closure(
 /// uses. A case belonging to another operation selects nothing: the
 /// caller pairs a relation with its own operation's cases.
 #[must_use]
+#[cfg(test)]
 pub fn active_source_requirements(
     requirements: &RelationRequirements,
     case: &ExecutionCaseId,
@@ -344,10 +343,7 @@ pub fn validate_sponsor_erasure(requirements: &RelationRequirements) -> Result<(
 /// this type exists to prevent; per-object activation still resolves
 /// such a relation's source rows case by case.
 #[must_use]
-#[allow(
-    dead_code,
-    reason = "Compatibility entry retained for direct stage controls"
-)]
+#[cfg(test)]
 pub fn owned_representation(
     declaration: &RelationDeclaration,
     candidate: &ProofPlanCandidate,
@@ -356,10 +352,7 @@ pub fn owned_representation(
 }
 
 /// The candidate lifecycle rows this relation declares.
-#[allow(
-    dead_code,
-    reason = "Compatibility entry retained for direct stage controls"
-)]
+#[cfg(test)]
 pub fn owned_lifecycle(
     declaration: &RelationDeclaration,
     candidate: &ProofPlanCandidate,
@@ -371,6 +364,7 @@ pub fn owned_lifecycle(
 ///
 /// Exhaustive by construction: a new realization relation variant makes
 /// this match fail to compile until its object census is stated.
+#[cfg(test)]
 pub use crate::engine_attestation::requirement::relation_objects;
 
 /// The fact one source row needs published as an exact public value.

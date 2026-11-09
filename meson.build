@@ -671,6 +671,30 @@ cargo_clippy_stamp = custom_target(
   console: true,
 )
 
+# Compile library bodies in both containment states; all-target Clippy enables
+# dev-dependency features and therefore cannot establish the default surface.
+cargo_owner_features_stamp = custom_target(
+  'cargo-owner-feature-states-check',
+  output: ['cargo-owner-feature-states.ok', 'cargo-owner-feature-states.log'],
+  command: cargo_quiet_stamp_wrap + [
+    sh, '-c',
+    '"$1" clippy --manifest-path "$2" -p tripod-architecture -p tripod-realization -p tripod-compiler --lib -- -D warnings && "$1" clippy --manifest-path "$2" -p tripod-compiler --lib --features keyed-experimental -- -D warnings',
+    'sh', cargo, cargo_manifest,
+  ],
+  build_by_default: false,
+  build_always_stale: true,
+  console: true,
+)
+
+test(
+  'cargo-owner-feature-states',
+  sh,
+  args: stamp_probe + [cargo_owner_features_stamp[0].full_path()],
+  depends: cargo_owner_features_stamp,
+  suite: 'lint',
+  timeout: 60,
+)
+
 # Budget: 0:20 warm, tolerance 6:00 cold. The stamp target compiles the whole
 # workspace with all targets on a cold cache; warm it is a cargo freshness
 # check. Both figures are the same lane, and the spread is the cache. The
