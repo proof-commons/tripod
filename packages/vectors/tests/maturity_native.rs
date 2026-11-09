@@ -11,6 +11,7 @@ mod keyed_continuation;
 mod keyed_cost;
 mod keyed_funding;
 mod keyed_native;
+mod keyed_scaling;
 
 use std::fmt::Write as _;
 use std::path::Path;

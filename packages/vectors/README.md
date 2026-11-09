@@ -409,3 +409,44 @@ env \
 ```
 
 Executor deadline is 3,600 seconds. The environment wrapper supplies `PATH`, `HOME`, `TMPDIR`, `CARGO_HOME`, `CARGO_TARGET_DIR` and `RUSTUP_HOME`. Expected files are `<short>.report.capture`, `<short>.report.timing`, `<short>.report.capture.timing`, `RUN-REPORT`, `MANIFEST.sha256` covering the other four, and separate `diagnostics/`. Complete and partial journals are retained before eligibility is asserted; failed preflight or writes may leave incomplete files. `eligible_for_review` requires completed replay, classified points and ordinary-relay controls (including both open-output rows), but does not itself settle a threshold; `admitted` is always false. No funding number, policy law or measurement record is accepted by staging.
+
+
+## Keyed scaling staging (measurement f)
+
+`keyed_scaling` stages measurement (f) in `plans/guides/guide_fifteen.md` in the route study's explicit policy-asset envelope. Every MERGE input consumes output zero of a distinct, exactly mined SOURCE transaction under the reconstructed public keyed descriptor. No sibling output counts as a handle. SOURCE preparation is separately tagged and costed. Each SOURCE uses one admitted P2WPKH sponsor, keyed output zero of 10,000 satoshis, ordinary change and a 1,000-satoshi explicit fee. MERGE uses one such fee sponsor, a 10,000-satoshi keyed successor, ordinary change and a 20,000-satoshi explicit fee; these are fixture values, not funding floors. Every response's policy and exact weight must establish that its own fee covers the reported floor. The explicit funding route is reused from measurement (e); other assets, confidential witnesses/outputs, issuance and peg-in are outside this fixed envelope.
+
+Frozen count arithmetic starts from the admitted complete keyed weights 1331 and 1586 (the keyed cost record in `plans/research/state-constructor.md`): a marginal input is 255 units (41 stripped bytes times four plus 91 witness bytes). The one-input carrier has 1076 fixed units; reserving one more signature byte gives 1077 for a 72-byte low-S DER signature including sighash, with a 33-byte compressed public key. The larger input count adds eight units of `CompactSize` framing, yielding `1085 + 255*n`. Against the reviewed 400,000 standard-weight envelope (`packages/target-elements/src/resource.rs`), the proposed maximum is 1564 (worst-envelope weight 399905), its neighbour 1565 (400160), and the representative interior is 782. Actual signature sizes and node weights are retained, never forced to the upper envelope; any mismatch remains evidence. This is the nearest input-count neighbour in the fixed output/witness family, not a one-weight-unit pair. An observed failure at another boundary leaves the weight-boundary claim open. The maximum is provisional until capture and admission.
+
+Submission order is standalone SOURCE (zero covenant inputs), MERGE 1, MERGE 2, MERGE 782, overweight MERGE 1565, then MERGE 1564. Each MERGE has disjoint fresh preparation coins: the executor may directly mine the policy-refused neighbour, so sharing its coins with the control would invalidate the experiment. There are 3915 SOURCE creations, 21 fundings (batches no larger than 255 outputs), 3920 signings and 3920 submissions: 7861 exchanges. The sole standalone SOURCE remains unspent. The largest complete request and response carriers are checked offline against the existing 4 MiB limits, with 64 KiB reserved for native metadata; no protocol or executor change and no count approximation is made. There is no exchange-count cap in the existing planner loop. The 3600-second deadline is a capture configuration, not a promised measured runtime; a timeout or oversize response retains a partial, ineligible capture rather than selecting fewer inputs. If that occurs, split into independently bound small/interior and endpoint captures, each with its own distinct SOURCE preparation; no split is asserted necessary without that evidence.
+
+Default-relay controls require exact mined bytes, unchanged policy, exact node/serialized weight agreement and sufficient fee. The neighbour requires exact `tx-size` relay text; direct-block acceptance is classified separately from relay admission, while an exact `bad-txns-oversize` verdict is separately labelled consensus. Ambiguous errors, insufficient fee, mismatched readback or earlier refusals remain open. The keyed descriptor constructor has no transaction input-count limit; `transaction::construct::check_weight` checks the 4,000,000 consensus envelope and accepts both staged boundary carriers offline. There is therefore no existing typed N+1 construction refusal to stage at this policy bound. No covenant count law or new construction policy is invented.
+
+For an independently authorized capture, run the following from the clean repository root inside `localhost/tripod-native:f44`, with the read-only `/elements` installation and isolated writable toolchain/cache mounts described above. Supply a fresh `$KEYED_SCALING_REPORT_DIR`, `$KEYED_NETWORK_ID`, `$KEYED_GENESIS_ID` and `$ELEMENTS_INTENDED_TIP` from the installation provenance. This staging step runs no native test.
+
+```sh
+env \
+  TRIPOD_LIVE_EXECUTOR="$PWD/scripts/elements-native-executor.sh" \
+  TRIPOD_LIVE_REPORT_DIR="$KEYED_SCALING_REPORT_DIR" \
+  TRIPOD_LIVE_SUITE_SHORT_SHA="$(git rev-parse --short=12 HEAD)" \
+  TRIPOD_LIVE_SUITE_COMMIT="$(git rev-parse HEAD)" \
+  TRIPOD_LIVE_SUITE_TREE="$(git rev-parse HEAD^{tree})" \
+  TRIPOD_LIVE_NETWORK_ID="$KEYED_NETWORK_ID" \
+  TRIPOD_LIVE_GENESIS_ID="$KEYED_GENESIS_ID" \
+  ELEMENTS_NATIVE_EXECUTOR_ELEMENTSD=/elements/bin/elementsd \
+  ELEMENTS_NATIVE_EXECUTOR_ELEMENTS_CLI=/elements/bin/elements-cli \
+  ELEMENTS_NATIVE_EXECUTOR_FRAMEWORK=/elements/src/test/functional \
+  ELEMENTS_NATIVE_EXECUTOR_INTENDED_TIP="$ELEMENTS_INTENDED_TIP" \
+  ELEMENTS_NATIVE_EXECUTOR_NETWORK_ID="$KEYED_NETWORK_ID" \
+  ELEMENTS_NATIVE_EXECUTOR_ENABLE_WALLET=1 \
+  ELEMENTS_NATIVE_EXECUTOR_ZK_LIBRARY=/elements/lib/libsecp256k1.so \
+  ELEMENTS_NATIVE_EXECUTOR_FEE_POLICY=node-defaults \
+  ELEMENTS_NATIVE_EXECUTOR_MATURITY_OBSERVATION=1 \
+  ELEMENTS_NATIVE_EXECUTOR_PYTHON=python3 \
+  ELEMENTS_NATIVE_EXECUTOR_LAUNCH_PREFIX= \
+  ELEMENTS_NATIVE_EXECUTOR_UPSTREAM_BASE= \
+  ELEMENTS_NATIVE_EXECUTOR_LOCAL_TOPICS= \
+  cargo test -p tripod-vectors --profile gate --test maturity_native \
+    keyed_scaling::keyed_scaling_campaign_runs_against_a_real_target -- --ignored --exact --nocapture
+```
+
+The wrapper supplies `PATH`, `HOME`, `TMPDIR`, `CARGO_HOME`, `CARGO_TARGET_DIR` and `RUSTUP_HOME`. The command lists every campaign/executor environment variable; none introduces a policy override. Expected files are `<short>.report.capture`, `<short>.report.timing`, `<short>.report.capture.timing`, `RUN-REPORT`, `MANIFEST.sha256` (covering the other four), plus separate `diagnostics/`. Each complete executor response is retained in the capture's wire JSON. Replay reconstructs requests from the descriptor and schedule without debug text. Eligibility requires the full census, all default-relay controls and a classified overweight neighbour; `admitted` remains false. Report the run identity, all counts, SOURCE preparation and MERGE costs separately, actual signature lengths, exact refusal/route, node weights and mined readbacks, walls, resource mismatches and absent native stack/validation/opcode-timing dimensions. Tracing spans expose construction counts, exchange progress and replay outcome; the library prints nothing.
