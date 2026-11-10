@@ -4,6 +4,7 @@
 # by the categorical exclusion pattern in the parent meson.build.
 script_source_files = files(
   'cargo-test-warmup.py',
+  'keyed-cost-kranich.py',
   'check-vector-test-targets.py',
   'check-workspace-tracing.py',
   'ci-timing-report.py',

@@ -1,0 +1,28 @@
+{
+  "all_checked_pins_equal": true,
+  "artifact_path": "/var/home/tripod/loops/evidence/wave1/keyed-cost/w20b1-keyed-cost-dry-20261110T164635Z",
+  "baseline_keyed": "absent",
+  "baseline_tag": "0.7.96-dev",
+  "build_matrix": "deferred; dry mode only compiles seeded runtime harnesses",
+  "full_campaign": false,
+  "manifest": "manifest.json at artifact_path; contains exact runner, harness, toolchain, image and source identities",
+  "measured_repetitions_per_side": 1,
+  "mode": "dry-run",
+  "performance_claim": "none",
+  "phase_names": [
+    "derivation_inclusive",
+    "projection",
+    "format",
+    "digest"
+  ],
+  "prior_preflight_seconds": 161.64894518704386,
+  "run": "w20b1-keyed-cost-dry-20261110T164635Z",
+  "sample_count": 4,
+  "schema": 1,
+  "setup_history": "four failed setup units retained under preflight-history; no samples before successful unit",
+  "slot_wait_seconds": 0.00012109399540349841,
+  "subject": "realization-C",
+  "this_unit_wall_seconds": 157.67201855097665,
+  "wall_seconds": 319.32096191402525,
+  "warmups_per_side": 1
+}
