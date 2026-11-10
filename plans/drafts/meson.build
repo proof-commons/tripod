@@ -11,6 +11,7 @@ plans_drafts_files = files(
   'wave0-completion-strategy.md',
   'wave0-route-study.md',
   'wave1-bite-1-2-plan.md',
+  'wave1-bite-1-3-plan.md',
   'wave1-completion-strategy.md',
   'wave1-engine-study.md',
   'wave1-home-disposition-study.md',
