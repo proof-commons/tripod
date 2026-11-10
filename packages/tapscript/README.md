@@ -14,7 +14,7 @@ enough to use the public API correctly on its own.
 
 ## Dependencies
 
-Three first-party packages and two general-purpose third-party crates:
+Four first-party packages and two general-purpose third-party crates:
 
 ```text
 architecture
@@ -25,15 +25,7 @@ sha2
 thiserror
 ```
 
-`model` remains absent. An assessment names
-compiler-owned abstract capabilities and target-owned primitives; the compiler
-already publishes the architecture-owned facts it is willing to project, and
-the keyed bundle names architecture's public binding and semantic identity types
-only as carried by that projection. It does not derive or validate an architecture
-manifest. The STATE constructor separately consumes the canonical metadata
-encoding owned by `realization`, uses `sha2` for the target's tagged hashes, and
-uses `thiserror` for its closed refusal sum. `linker`, `transaction`, `vectors`,
-`release`, and `artifacts` remain downstream rather than dependencies.
+`model` remains absent. An assessment names compiler-owned abstract capabilities and target-owned primitives; the compiler already publishes the architecture-owned facts it is willing to project, and the keyed bundle names architecture's public binding and semantic identity types only as carried by that projection. It does not derive or validate an architecture manifest. The STATE constructor separately consumes the canonical metadata encoding owned by `realization`, uses `sha2` for the target's tagged hashes, and uses `thiserror` for its closed refusal sum. `linker`, `transaction`, `vectors`, `release`, and `artifacts` remain downstream rather than dependencies.
 
 ### How the neighbors relate
 
@@ -740,10 +732,13 @@ claim: nothing here reads it, and no type here changes because of it.
 Evidence about the target's actual behavior is produced elsewhere, by
 `tripod-target-elements-conformance`, and nothing in this crate reads
 it.
+
 ## Keyed plan emission
 
 `keyed_bundle::emit_keyed_bundle` consumes the compiler's immutable `KeyedPlan`, an explicit `KeyedBundleSelection` (binding, exact scope, proof index and one placement index per operation), the reviewed target and a `KeyedLeafRecipe` containing public semantic bytes. It performs no planning or owner selection. Its immutable `KeyedEmissionBundle` retains the selected proof's relation/coverage rows, selected placements, evidence premises and selection identity, plus the exact existing birth/continuation fragments. SOURCE has no runtime fragment: its successor leaf is construction material for later spending. Evidence is outstanding, not admitted by emission.
 
 The default-library adapter shares the existing composition through a crate-private helper; the provisional `keyed-constructor` API and its feature remain until the adopted step-3 promotion. The recipe value here selects only the public 32-byte key, with no creator secret or alternate leaf/version policy. It does not construct a committed output or authenticate a control block. Complete stack/resource proofs, constructor closure and concrete per-member binding remain later bite-1.3 steps (`[PLAN-rec:w1b13:adoption]`). No new transaction, native evidence or final realization is claimed.
 
-Adapter refusals distinguish binding/scope, proof/placement selection, copied-relation census/content, runtime-clause shape, evidence moved to runtime and checked fragment construction. They are not target execution verdicts. The synthetic copy-corruption controls stay inside unit tests; external tests use only sealed plans and public selection offers.
+Callers of `emit_keyed_bundle` can observe five refusal variants: `BindingMismatch`, `ScopeMismatch`, `ProofSelection`, `PlacementScopeMismatch` and `PlacementSelection`. `MissingRelation`, `DuplicateRelation`, `UnexpectedRelation` and `RelationMismatch` are internal-consistency guards over the retained selection behind the sealed plan; their synthetic subjects are not public-entry negatives. `RuntimeClauseMismatch` (including an inactive runtime row) and `EvidenceRuntimeCarrier` guard unsupported published shapes, which the current compiler contract does not publish. `Fragment(TapscriptError)` remains a typed pass-through that the reviewed target does not produce for these fixed literals (`[PLAN-rec:w1b13:bundle-surface]`). No refusal here is a target execution verdict.
+
+The authority lock scans explicit Rust source for public mutation signatures, bundle-producing constructors/conversions, public bundle fields and mutation trait impls; each forbidden form has a mutant beside the real source. It does not expand macros, resolve aliases or prove arbitrary trait behavior. Rust privacy and the compile-fail literal/assignment doctests complement this textual regression lock; review remains required when introducing such indirect routes. The narrow architecture dependency is limited to binding and semantic-identity types already carried by the compiler publication, with no manifest derivation or validation (`[PLAN-rec:w1b13:bundle-surface]`).

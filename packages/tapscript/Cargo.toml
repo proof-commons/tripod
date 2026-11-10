@@ -23,6 +23,7 @@ keyed-constructor = []
 # Curve arithmetic remains a downstream capability, not a dependency.
 # thiserror derives the constructor's closed refusal vocabulary.
 [dependencies]
+# Binding and semantic-identity vocabulary only; no manifest derivation or validation.
 architecture = { workspace = true }
 tracing = { workspace = true }
 compiler = { workspace = true }
@@ -31,7 +32,6 @@ sha2 = { workspace = true }
 target-elements = { workspace = true }
 thiserror = { workspace = true }
 
-# Architecture also supplies the public binding and scoped identity vocabulary.
 [dev-dependencies]
 tracing-subscriber = { workspace = true }
 

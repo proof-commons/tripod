@@ -58,7 +58,7 @@ release
 artifacts
 ```
 
-Use compiler-carried architecture/realization IDs rather than bypassing analysis. The keyed bundle names the architecture-owned binding and semantic identity types exposed in the compiler's public plan; that narrow vocabulary dependency does not authorize manifest derivation, validation or a second planner (`rec:w1b13:adoption`).
+Use compiler-carried architecture/realization IDs rather than bypassing analysis. The keyed bundle names the architecture-owned binding and semantic identity types exposed in the compiler's public plan; that narrow vocabulary dependency does not authorize manifest derivation, validation or a second planner (`rec:w1b13:bundle-surface`).
 
 The candidate STATE constructor commits the canonical STATE metadata bytes that only realization's codec produces and no compiler projection carries, so the constructor consumes `EncodedStateMetadata` directly, while the assessment path keeps consuming compiler-carried architecture and realization identifiers and the reach-around prohibition above stands for it (ruling 22 at (`rule:phase6:wave4-rulings`)). The constructor also takes the workspace's `sha2` for the target's tagged hashes, as ruling 22 states at (`rule:phase6:wave4-rulings`), and `thiserror` to derive the closed refusal sum's error form as the realization does.
 
@@ -295,6 +295,7 @@ See [`errors/tapscript.md`](errors/tapscript.md).
 - Is a local typed interpreter needed in addition to target-native execution?
 - What leaf-weight policy is handed to the linker?
 - On what evidence is an accepted prototype promoted to a production pattern?
+
 ## Keyed adapter increment · `rec:tapscript:keyed-bundle`
 
 The default `tapscript::keyed_bundle` adapter implements the first step of (`step:w1b13:adapter`): explicit candidate selection from an immutable compiler plan, no search, retained relation/coverage and evidence rows, and byte-preserving lowering to the existing two fragments. SOURCE's canonical successor leaf is construction material, never a runtime carrier. The public inventory is recorded at (`rec:w1b13:bundle-surface`). Full resources, constructor closure, concrete member coverage and target-form admission remain the subsequent adopted steps; this increment alone does not meet (`gate:wave1:bite-1-3-packet`).
