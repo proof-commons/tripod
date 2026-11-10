@@ -11,7 +11,7 @@ use architecture::{
 };
 
 fn keyed(scope: Vec<KeyedOperationId>) -> crate::BoundCompilerInput<crate::input::KeyedOwner> {
-    let manifest = KeyedManifest::probe().expect("binding");
+    let manifest = KeyedManifest::contract().expect("binding");
     let source = realization::keyed::KeyedRealizationDraft::derive(&manifest)
         .expect("declaration")
         .validate(&manifest)

@@ -4,11 +4,17 @@
 
 ## Position and boundary
 
+The independent Keyed Provenance Covenant manifest is also a stable declaration API: `keyed::KeyedManifest::contract()` binds `papers/lineage/` version `1.0.0`, its ten named anchors, `KeyParameterId::CovenantKey`, one `KeyedObjectId::Handle`, `KeyedOperationId::{Source, Merge}` and exactly `KeyedClause::{BornFirst, ContinueFirst}`. `semantic` qualifies object and operation keys by profile; it does not add members to attestation's 13-operation/14-object census. This surface is available without a Cargo feature. Compiler binding and unfinished keyed analysis have a separate experimental boundary.
+
+Keyed identity follows ruling 173 at (`[PLAN-rule:phase7:wave1-home-rulings]`): schema 2, domain bytes `b"tripod keyed provenance covenant manifest v2\n"`, then big-endian u32 schema, u16 profile (2), u16 symbolic key (1), u64 byte-length-framed UTF-8 paper path and version, the validated 32-byte anchor-set hash (`sha256-anchor-set-v2`: SHA-256 of `b"tripod layer-0 anchor set v2\n"` followed by newline-joined, byte-sorted distinct names from `KEYED_ANCHORS` in `src/keyed.rs`, as implemented in `src/canonical.rs`), and object, operation and clause tables in that order. Each sorted table has a u64 row count followed by pairs of u16 namespace/local codes; clause namespace is zero. Schema 2 fixes this anchor-set recipe; changing it requires a new keyed version under ruling 173. SHA-256 of these 165 bytes is the keyed binding digest. `keyed_v2_identity_matches_the_independent_ruling_173_grammar` writes the expected grammar independently and pins the digest; it never obtains expected bytes from the production encoder. The key is symbolic, not a generated covenant key or a deployment identifier. Attestation schema 18, `DOCUMENT`, canonical bytes and publication hashes are unchanged.
+
+`validate_draft` refuses malformed profile, schema, paper binding and object/operation/clause censuses before constructing `ValidatedKeyedManifest`; only that wrapper computes canonical bytes and `KeyedArchitectureBinding`. Bindings have public fields; realization re-derives the binding and refuses any unequal value as `ArchitectureBindingMismatch`, regardless of how it was constructed. The independent paper binding is beside, never a replacement for, attestation `DOCUMENT`. The singleton key has no alternate constructible enum value. No amount floor, funding choice, finality rule, input-count bound, history oracle or production reader is part of this manifest. Stable declaration identity is not realization or deployment acceptance. The frozen attestation publication lives locally in `tests/fixtures/keyed_base_architecture.json` and is compared without regenerating expected values.
+
 The crate is the root of the first-party dependency graph and depends on no
 other first-party package. It is a leaf in the other direction too: nothing in
 it opens a file, reads an environment variable, or touches the network. Its
 entire input is the [`ARCHITECTURE`](src/spec.rs) constant compiled into it,
-plus whatever typed `Architecture` value a caller passes in; everything it
+plus typed `Architecture` and `KeyedManifest` values supplied by callers; everything it
 produces is a deterministic function of that value.
 
 It deliberately contains no UTXO state, branch execution, script

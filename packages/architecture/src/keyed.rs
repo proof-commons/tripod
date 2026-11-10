@@ -1,7 +1,7 @@
-//! Standalone experimental keyed manifest. No attestation census is borrowed.
+//! Standalone Keyed Provenance Covenant manifest. No attestation census is borrowed.
 //!
-//! The probe binds paper law, not a deployment, key encoding, funding floor,
-//! finite input bound, or finality depth. Its binding is not a release claim.
+//! The manifest binds paper law, not a deployment, key encoding, funding floor,
+//! finite input bound, or finality depth. Its binding is not a deployment or realization claim.
 
 use sha2::{Digest as _, Sha256};
 
@@ -9,7 +9,7 @@ use crate::semantic::{
     KeyedObjectId, KeyedOperationId, SemanticObjectId, SemanticOperationId, SemanticProfileId,
 };
 
-pub const KEYED_SCHEMA_VERSION: u32 = 1;
+pub const KEYED_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u16)]
@@ -20,8 +20,9 @@ pub enum KeyedClause {
 
 /// A symbolic parameter fixed at covenant generation, not a chosen key encoding.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u16)]
 pub enum KeyParameterId {
-    CovenantKey,
+    CovenantKey = 1,
 }
 
 pub const KEYED_ANCHORS: &[&str] = &[
@@ -76,8 +77,8 @@ pub struct KeyedManifest {
 }
 
 impl KeyedManifest {
-    /// The two-operation standalone subject offered to owner validation.
-    pub fn probe() -> Result<Self, crate::AnchorNameDefect> {
+    /// The stable SOURCE/MERGE manifest declared by the Keyed Provenance Covenant paper.
+    pub fn contract() -> Result<Self, crate::AnchorNameDefect> {
         Ok(Self {
             profile: SemanticProfileId::KeyedProvenance,
             schema_version: KEYED_SCHEMA_VERSION,
@@ -125,18 +126,19 @@ impl ValidatedKeyedManifest<'_> {
         self.0
     }
 
-    /// Canonical probe bytes: fixed domain, schema, namespace, paper anchor pin,
-    /// then sorted, length-framed identifier and clause rows. Validation admits
-    /// exactly one paper/version/key-parameter spelling; none is caller ambient.
+    /// Canonical version-2 bytes under ruling 173: domain, schema, profile, key,
+    /// length-framed paper/version, anchor-set hash and sorted identifier rows.
+    /// All numeric fields are big-endian; text lengths and row counts are u64.
     pub fn canonical_bytes(&self) -> Vec<u8> {
-        let mut bytes = b"tripod keyed semantic probe v1\n".to_vec();
+        let mut bytes = b"tripod keyed provenance covenant manifest v2\n".to_vec();
         bytes.extend(self.0.schema_version.to_be_bytes());
         bytes.extend((self.0.profile as u16).to_be_bytes());
-        bytes.extend(self.0.document.anchor_set_hash);
+        bytes.extend((self.0.key as u16).to_be_bytes());
         for text in [&self.0.document.paper, &self.0.document.version] {
+            bytes.extend(u64::try_from(text.len()).unwrap_or(u64::MAX).to_be_bytes());
             bytes.extend(text.as_bytes());
-            bytes.push(0);
         }
+        bytes.extend(self.0.document.anchor_set_hash);
         let mut objects = self.0.objects.clone();
         objects.sort();
         let mut operations = self.0.operations.clone();
@@ -158,7 +160,7 @@ impl ValidatedKeyedManifest<'_> {
         bytes
     }
 
-    /// Internal experimental binding, never an attestation publication identity.
+    /// Independent keyed declaration binding, never an attestation publication identity.
     pub fn binding(&self) -> KeyedArchitectureBinding {
         let span = tracing::debug_span!(target: "architecture::keyed", "keyed_binding");
         let _entered = span.enter();

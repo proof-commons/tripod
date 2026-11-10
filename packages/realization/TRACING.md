@@ -96,6 +96,6 @@ The shared `cli-common` subscriber and amended ADR-010 are in force. Executable 
 - An expected typed refusal is DEBUG; a returned operational failure stays at its span's tier, and the executable's shared command boundary owns the final ERROR diagnostic. Realization emits no duplicate nested warning.
 - Tests use a package-local scoped capture rather than a shared helper or global subscriber; process-stream and early-control assertions belong to executable subprocess tests using the shared bootstrap.
 
-## Keyed boundary probe · `sec:tracing-realization:keyed-probe`
+## Keyed declarations · `sec:tracing-realization:keyed-probe`
 
-The experimental keyed declaration and validation spans are DEBUG and carry operation counts. Validation emits a completed/refused outcome and a payload-free refusal kind; span-close records supply timing. No key contents, history contents or native evidence is emitted. Existing attestation entry instrumentation remains unchanged.
+The keyed declaration and validation spans are DEBUG and carry operation counts. Validation emits a completed/refused outcome and a payload-free refusal kind; span-close records supply timing. No key contents, history contents or native evidence is emitted. Existing attestation entry instrumentation remains unchanged.

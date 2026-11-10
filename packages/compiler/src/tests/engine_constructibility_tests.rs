@@ -24,7 +24,7 @@ fn both_bound_owners_reach_constructibility() {
         vec![KeyedOperationId::Merge],
         vec![KeyedOperationId::Source, KeyedOperationId::Merge],
     ] {
-        let manifest = KeyedManifest::probe().expect("binding");
+        let manifest = KeyedManifest::contract().expect("binding");
         let source = realization::keyed::KeyedRealizationDraft::derive(&manifest)
             .expect("declaration")
             .validate(&manifest)

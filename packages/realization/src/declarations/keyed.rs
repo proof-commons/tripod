@@ -1,4 +1,4 @@
-//! The probe's SOURCE and MERGE declarations, with no execution invented for SOURCE.
+//! The Keyed Provenance Covenant SOURCE and MERGE declarations, with no execution invented for SOURCE.
 
 use crate::TransactionSide;
 use crate::keyed::KeyedOperationRealization;

@@ -6,7 +6,6 @@ use crate::{OperationRealization, RealizationError};
 
 pub mod announce_maturity;
 pub mod compact_ash;
-#[cfg(any(test, feature = "keyed-experimental"))]
 pub mod keyed;
 pub mod transfer_live;
 
@@ -25,7 +24,6 @@ fn derive_attestation_operation(
 mod sealed {
     pub trait Sealed {}
     impl Sealed for architecture::Architecture {}
-    #[cfg(any(test, feature = "keyed-experimental"))]
     impl Sealed for architecture::keyed::KeyedManifest {}
 }
 
@@ -46,7 +44,6 @@ impl OperationDeclaration for Architecture {
     }
 }
 
-#[cfg(any(test, feature = "keyed-experimental"))]
 impl OperationDeclaration for architecture::keyed::KeyedManifest {
     type Id = architecture::semantic::SemanticOperationId;
     type Declaration = crate::keyed::KeyedOperationRealization;

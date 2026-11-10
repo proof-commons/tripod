@@ -1,4 +1,4 @@
-//! Experimental semantic namespaces for the Wave-1 boundary probe.
+//! Semantic namespaces for independently owned contract declarations.
 //!
 //! These identifiers do not extend the attestation enums or their ALL censuses.
 //! Encoding arms are vocabulary, never a selection of contract policy.

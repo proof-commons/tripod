@@ -286,3 +286,39 @@ fn announcement_is_available_through_explicit_public_scope() {
         &[OperationId::TransferLive, OperationId::CompactAsh]
     );
 }
+
+#[test]
+fn stable_keyed_declarations_are_public_without_a_feature() {
+    use architecture::semantic::{KeyedOperationId, SemanticOperationId};
+    use realization::keyed::KeyedRealizationDraft;
+    use realization::relation::{KeyedRelation, KeyedRelationDeclaration};
+
+    let manifest = architecture::keyed::KeyedManifest::contract().unwrap();
+    let validated = KeyedRealizationDraft::derive(&manifest)
+        .unwrap()
+        .validate(&manifest)
+        .unwrap();
+    validated.validate_against(&manifest).unwrap();
+    let rows: Vec<KeyedRelationDeclaration> = validated.project();
+    assert_eq!(rows.len(), 9);
+    for (operation, count) in [(KeyedOperationId::Source, 4), (KeyedOperationId::Merge, 5)] {
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.id.operation == SemanticOperationId::Keyed(operation))
+                .count(),
+            count
+        );
+    }
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row.relation == KeyedRelation::BornFirst)
+            .count(),
+        1
+    );
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row.relation == KeyedRelation::ContinueFirst)
+            .count(),
+        1
+    );
+}

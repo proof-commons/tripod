@@ -12,9 +12,6 @@ version.workspace = true
 [lib]
 name = "realization"
 
-[features]
-keyed-experimental = ["architecture/keyed-experimental"]
-
 [dependencies]
 tracing = { workspace = true }
 architecture = { workspace = true }
@@ -22,7 +19,6 @@ petgraph = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-architecture = { workspace = true, features = ["keyed-experimental"] }
 proptest = { workspace = true }
 tracing-subscriber = { workspace = true }
 

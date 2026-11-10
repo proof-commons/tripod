@@ -4,8 +4,110 @@ use crate::semantic::{
 };
 
 #[test]
+fn keyed_v2_identity_matches_the_independent_ruling_173_grammar() {
+    use sha2::{Digest as _, Sha256};
+    // This reference writes the ruling's literal grammar, without calling the
+    // production encoder, identifier encoding methods or anchor hash helper.
+    let mut anchors = [
+        "def:kpc-model:history",
+        "def:kpc-model:keyed-membership",
+        "def:kpc-model:first-output",
+        "op:kpc-operations:source",
+        "op:kpc-operations:merge",
+        "def:kpc-operations:classification",
+        "def:kpc-interface:membership-reading",
+        "rem:kpc-interface:record-evidence",
+        "sec:kpc:interface",
+        "thm:kpc-interface:membership-correctness",
+    ];
+    anchors.sort_unstable();
+    let mut anchor_hasher = Sha256::new();
+    anchor_hasher.update(b"tripod layer-0 anchor set v2\n");
+    anchor_hasher.update(anchors.join("\n").as_bytes());
+    let mut expected = b"tripod keyed provenance covenant manifest v2\n".to_vec();
+    expected.extend([0, 0, 0, 2, 0, 2, 0, 1]); // schema, profile, symbolic key
+    for text in ["papers/lineage/", "1.0.0"] {
+        expected.extend(u64::try_from(text.len()).unwrap().to_be_bytes());
+        expected.extend(text.as_bytes());
+    }
+    expected.extend(anchor_hasher.finalize());
+    for rows in [&[[2_u16, 1]][..], &[[2, 1], [2, 2]], &[[0, 1], [0, 2]]] {
+        expected.extend(u64::try_from(rows.len()).unwrap().to_be_bytes());
+        for row in rows {
+            for component in row {
+                expected.extend(component.to_be_bytes());
+            }
+        }
+    }
+    let digest: [u8; 32] = Sha256::digest(&expected).into();
+    assert_eq!(
+        digest,
+        [
+            158, 31, 207, 235, 173, 81, 43, 197, 82, 41, 94, 212, 227, 182, 134, 234, 237, 253,
+            225, 200, 73, 186, 143, 59, 4, 89, 114, 6, 95, 97, 18, 151
+        ]
+    );
+    assert_eq!(expected.len(), 165);
+    assert_eq!(crate::keyed::KeyParameterId::CovenantKey as u16, 1);
+    let manifest = KeyedManifest::contract().unwrap();
+    let validated = crate::validate_draft(&manifest).unwrap();
+    assert_eq!(validated.canonical_bytes(), expected);
+    assert_eq!(validated.binding().digest, digest);
+}
+
+#[test]
+fn keyed_manifest_refuses_schema_paper_and_census_mutations() {
+    let control = KeyedManifest::contract().unwrap();
+    crate::validate_draft(&control).unwrap();
+    let mut subject = control.clone();
+    subject.schema_version = 1;
+    assert_eq!(
+        crate::validate_draft(&subject).unwrap_err(),
+        KeyedManifestError::SchemaVersion
+    );
+    for field in 0..3 {
+        let mut subject = control.clone();
+        match field {
+            0 => subject.document.paper.push('x'),
+            1 => subject.document.version.push('x'),
+            _ => {
+                subject.document.anchors.pop();
+            }
+        }
+        assert_eq!(
+            crate::validate_draft(&subject).unwrap_err(),
+            KeyedManifestError::PaperBinding
+        );
+    }
+    let mut subject = control.clone();
+    subject.objects.clear();
+    assert_eq!(
+        crate::validate_draft(&subject).unwrap_err(),
+        KeyedManifestError::ObjectCensus
+    );
+    let mut subject = control.clone();
+    subject.operations.pop();
+    assert_eq!(
+        crate::validate_draft(&subject).unwrap_err(),
+        KeyedManifestError::OperationCensus
+    );
+    let mut subject = control.clone();
+    subject.operations.push(subject.operations[0]);
+    assert_eq!(
+        crate::validate_draft(&subject).unwrap_err(),
+        KeyedManifestError::OperationCensus
+    );
+    let mut subject = control;
+    subject.clauses.push(subject.clauses[0]);
+    assert_eq!(
+        crate::validate_draft(&subject).unwrap_err(),
+        KeyedManifestError::ClauseCensus
+    );
+}
+
+#[test]
 fn keyed_profile_binding_corruption_has_an_accepted_control() {
-    let control = KeyedManifest::probe().unwrap();
+    let control = KeyedManifest::contract().unwrap();
     let binding = crate::validate_draft(&control).unwrap().binding();
     assert_eq!(binding.profile, SemanticProfileId::KeyedProvenance);
     let mut subject = control;
@@ -18,7 +120,7 @@ fn keyed_profile_binding_corruption_has_an_accepted_control() {
 
 #[test]
 fn a_foreign_operation_cannot_enter_the_keyed_manifest() {
-    let control = KeyedManifest::probe().unwrap();
+    let control = KeyedManifest::contract().unwrap();
     crate::validate_draft(&control).unwrap();
     let mut subject = control;
     subject.operations[0] = SemanticOperationId::Attestation(crate::OperationId::CreateRequest);
@@ -46,7 +148,7 @@ fn semantic_keys_keep_namespace_in_equality_ordering_and_encoding() {
 
 #[test]
 fn keyed_binding_is_order_independent_and_paper_owned() {
-    let control = KeyedManifest::probe().unwrap();
+    let control = KeyedManifest::contract().unwrap();
     let expected = crate::validate_draft(&control).unwrap().canonical_bytes();
     let mut permuted = control.clone();
     permuted.operations.reverse();
@@ -78,7 +180,7 @@ fn keyed_binding_is_order_independent_and_paper_owned() {
 
 #[test]
 fn keyed_manifest_has_exactly_two_clauses_without_an_input_bound() {
-    let control = KeyedManifest::probe().unwrap();
+    let control = KeyedManifest::contract().unwrap();
     crate::validate_draft(&control).unwrap();
     let mut subject = control;
     subject.clauses.pop();
@@ -96,7 +198,7 @@ fn attestation_canonical_bytes_and_publication_equal_the_opening_base() {
     // Frozen bytes were extracted from the opening base's generated artifact,
     // before any semantic source change. See the probe gate provenance record.
     let before: crate::PublishedArchitecture = serde_json::from_str(include_str!(
-        "../../../compiler/tests/fixtures/keyed_base_architecture.json"
+        "../../tests/fixtures/keyed_base_architecture.json"
     ))
     .unwrap();
     before.verify_hashes().unwrap();
@@ -131,7 +233,7 @@ fn keyed_validation_tracing_preserves_the_binding_refusal() {
     ) {
         return;
     }
-    let control = KeyedManifest::probe().unwrap();
+    let control = KeyedManifest::contract().unwrap();
     let plain = crate::validate_draft(&control).unwrap().canonical_bytes();
     let (observed, _) = capture(|| crate::validate_draft(&control).unwrap().canonical_bytes());
     assert_eq!(observed, plain);

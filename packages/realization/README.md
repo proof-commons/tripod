@@ -449,3 +449,7 @@ are reviewed.
 The compiler states symbolic laws between the six input and six output STATE facts; executable declaration relations remain unchanged.
 
 Both STATE sides carry a public confidentiality baseline; that baseline does not specify when an output becomes available.
+
+## Stable keyed declarations
+
+`keyed::KeyedRealizationDraft` derives and validates SOURCE and MERGE from `architecture::keyed::KeyedManifest::contract()` without a feature flag. The normative nine-row paper weld, evidence obligations and refusal boundaries are in (`[PLAN-sec:realization:keyed-declarations]`). This stable declaration API does not make the compiler's test-only keyed analysis a production API; that remains bite-1.2 work.

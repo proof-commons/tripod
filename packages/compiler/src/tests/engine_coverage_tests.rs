@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 pub(super) fn bound(
     scope: Vec<KeyedOperationId>,
 ) -> crate::BoundCompilerInput<crate::input::KeyedOwner> {
-    let manifest = KeyedManifest::probe().expect("manifest");
+    let manifest = KeyedManifest::contract().expect("manifest");
     let source = realization::keyed::KeyedRealizationDraft::derive(&manifest)
         .expect("declarations")
         .validate(&manifest)

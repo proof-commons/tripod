@@ -25,9 +25,7 @@ pub mod canonical;
 pub mod deployment;
 pub mod export;
 pub mod ids;
-#[cfg(any(test, feature = "keyed-experimental"))]
 pub mod keyed;
-#[cfg(any(test, feature = "keyed-experimental"))]
 pub mod semantic;
 pub mod spec;
 pub mod validate;

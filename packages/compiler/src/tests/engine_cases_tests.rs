@@ -7,7 +7,7 @@ use architecture::{
 };
 
 fn keyed() -> crate::BoundCompilerInput<crate::input::KeyedOwner> {
-    let manifest = KeyedManifest::probe().expect("manifest");
+    let manifest = KeyedManifest::contract().expect("manifest");
     let source = realization::keyed::KeyedRealizationDraft::derive(&manifest)
         .expect("declarations")
         .validate(&manifest)

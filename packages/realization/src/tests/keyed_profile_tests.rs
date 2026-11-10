@@ -4,10 +4,209 @@ use architecture::keyed::KeyedManifest;
 use architecture::semantic::{KeyedOperationId, SemanticOperationId, SemanticProfileId};
 
 fn control() -> (KeyedManifest, KeyedRealizationDraft) {
-    let manifest = KeyedManifest::probe().unwrap();
+    let manifest = KeyedManifest::contract().unwrap();
     let draft = KeyedRealizationDraft::derive(&manifest).unwrap();
     draft.clone().validate(&manifest).unwrap();
     (manifest, draft)
+}
+
+#[test]
+fn stable_source_and_merge_have_exactly_the_nine_paper_relations() {
+    use crate::TransactionSide;
+    use crate::relation::{KeyedCardinality, RecordRecurrence};
+    let (_, accepted) = control();
+    for (id, expected) in [
+        (
+            KeyedOperationId::Source,
+            vec![
+                KeyedRelation::HandleFamily {
+                    side: TransactionSide::Input,
+                    cardinality: KeyedCardinality::Zero,
+                },
+                KeyedRelation::HandleFamily {
+                    side: TransactionSide::Output,
+                    cardinality: KeyedCardinality::One,
+                },
+                KeyedRelation::SourceClassification,
+                KeyedRelation::MembershipReading {
+                    recurrence: RecordRecurrence::SourceSingleton,
+                },
+            ],
+        ),
+        (
+            KeyedOperationId::Merge,
+            vec![
+                KeyedRelation::HandleFamily {
+                    side: TransactionSide::Input,
+                    cardinality: KeyedCardinality::OneOrMore,
+                },
+                KeyedRelation::HandleFamily {
+                    side: TransactionSide::Output,
+                    cardinality: KeyedCardinality::One,
+                },
+                KeyedRelation::BornFirst,
+                KeyedRelation::ContinueFirst,
+                KeyedRelation::MembershipReading {
+                    recurrence: RecordRecurrence::ConsumedUnion,
+                },
+            ],
+        ),
+    ] {
+        let operation = accepted
+            .operations
+            .iter()
+            .find(|op| op.operation == SemanticOperationId::Keyed(id))
+            .unwrap();
+        assert_eq!(
+            operation
+                .relations
+                .iter()
+                .map(|row| row.relation)
+                .collect::<Vec<_>>(),
+            expected
+        );
+        assert!(operation.relations.iter().all(|row| row.id.object
+            == architecture::semantic::SemanticObjectId::Keyed(
+                architecture::semantic::KeyedObjectId::Handle
+            )));
+    }
+}
+
+#[test]
+fn old_experimental_and_changed_digest_bindings_are_refused() {
+    let (manifest, accepted) = control();
+    let mut subject = accepted.clone();
+    // Independently reconstructed from the 0.7.95-dev v1 encoder: 135 bytes.
+    // The literal must never be upgraded silently by changing only its schema.
+    subject.binding = architecture::keyed::KeyedArchitectureBinding {
+        profile: SemanticProfileId::KeyedProvenance,
+        schema_version: 1,
+        digest: [
+            82, 29, 248, 235, 187, 21, 83, 172, 38, 247, 128, 67, 180, 202, 46, 205, 5, 250, 41,
+            28, 30, 167, 186, 232, 87, 171, 203, 148, 207, 241, 53, 92,
+        ],
+    };
+    assert_eq!(
+        subject.clone().validate(&manifest).unwrap_err(),
+        KeyedRealizationError::ArchitectureBindingMismatch
+    );
+    // Only the digest now differs from the accepted schema-2 binding.
+    subject.binding.schema_version = 2;
+    assert_eq!(
+        subject.validate(&manifest).unwrap_err(),
+        KeyedRealizationError::ArchitectureBindingMismatch
+    );
+    let mut subject = accepted;
+    subject.binding.digest[0] ^= 1;
+    assert_eq!(
+        subject.validate(&manifest).unwrap_err(),
+        KeyedRealizationError::ArchitectureBindingMismatch
+    );
+}
+
+#[test]
+fn keyed_relation_identity_mutations_are_refused_by_the_owner() {
+    use crate::relation::KeyedRelationKind;
+    let (manifest, accepted) = control();
+    for change in 0..3 {
+        let mut subject = accepted.clone();
+        let operation = subject.operations[0].operation;
+        let row = &mut subject.operations[0].relations[0];
+        match change {
+            0 => {
+                row.id.operation =
+                    SemanticOperationId::Attestation(architecture::OperationId::CompactAsh);
+            }
+            1 => row.id.kind = KeyedRelationKind::MembershipReading,
+            _ => {
+                row.id.object = architecture::semantic::SemanticObjectId::Attestation(
+                    architecture::ObjectId::State,
+                );
+            }
+        }
+        let expected = if change == 2 {
+            KeyedRealizationError::DeclarationCensus(operation)
+        } else {
+            KeyedRealizationError::RelationIdentity(row.id)
+        };
+        assert_eq!(subject.validate(&manifest).unwrap_err(), expected);
+    }
+}
+
+#[test]
+fn keyed_cardinality_and_recurrence_mutations_preserve_the_refusal_boundary() {
+    use crate::relation::{KeyedCardinality, RecordRecurrence};
+    let (manifest, accepted) = control();
+    for operation_index in 0..accepted.operations.len() {
+        for recurrence in [false, true] {
+            let mut subject = accepted.clone();
+            let operation = &mut subject.operations[operation_index];
+            let identity = operation.operation;
+            let row = operation
+                .relations
+                .iter_mut()
+                .find(|row| {
+                    if recurrence {
+                        matches!(row.relation, KeyedRelation::MembershipReading { .. })
+                    } else {
+                        matches!(
+                            row.relation,
+                            KeyedRelation::HandleFamily {
+                                side: crate::TransactionSide::Input,
+                                ..
+                            }
+                        )
+                    }
+                })
+                .unwrap();
+            match &mut row.relation {
+                KeyedRelation::MembershipReading { recurrence } => {
+                    *recurrence = match recurrence {
+                        RecordRecurrence::SourceSingleton => RecordRecurrence::ConsumedUnion,
+                        RecordRecurrence::ConsumedUnion => RecordRecurrence::SourceSingleton,
+                    }
+                }
+                KeyedRelation::HandleFamily { cardinality, .. } => {
+                    *cardinality = KeyedCardinality::One;
+                }
+                _ => unreachable!("selected relation"),
+            }
+            assert_eq!(
+                subject.validate(&manifest).unwrap_err(),
+                KeyedRealizationError::DeclarationCensus(identity)
+            );
+        }
+    }
+}
+
+#[test]
+fn keyed_output_cardinality_mutations_are_refused_for_both_operations() {
+    use crate::relation::KeyedCardinality;
+    let (manifest, accepted) = control();
+    for (index, declaration) in accepted.operations.iter().enumerate() {
+        let mut subject = accepted.clone();
+        let row = subject.operations[index]
+            .relations
+            .iter_mut()
+            .find(|row| {
+                matches!(
+                    row.relation,
+                    KeyedRelation::HandleFamily {
+                        side: crate::TransactionSide::Output,
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        row.relation = KeyedRelation::HandleFamily {
+            side: crate::TransactionSide::Output,
+            cardinality: KeyedCardinality::OneOrMore,
+        };
+        assert_eq!(
+            subject.validate(&manifest).unwrap_err(),
+            KeyedRealizationError::DeclarationCensus(declaration.operation)
+        );
+    }
 }
 
 #[test]

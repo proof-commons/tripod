@@ -16,7 +16,6 @@ pub mod error;
 pub mod evaluate;
 pub mod expression;
 pub mod identity;
-#[cfg(any(test, feature = "keyed-experimental"))]
 pub mod keyed;
 pub mod lifecycle;
 pub mod observation;

@@ -33,7 +33,7 @@ packages_doc_files = architecture_doc_files + artifacts_doc_files \
   + tapscript_doc_files + target_elements_doc_files \
   + target_elements_conformance_doc_files \
   + transaction_doc_files + vectors_doc_files
-packages_excluded_files = artifacts_excluded_files + cli_common_excluded_files \
+packages_excluded_files = architecture_excluded_files + artifacts_excluded_files + cli_common_excluded_files \
   + compiler_excluded_files + document_stamps_excluded_files \
   + execwrap_excluded_files \
   + flatten_latex_main_excluded_files + labels_excluded_files \

@@ -1,6 +1,6 @@
 # Typed Realization Package · `pkg:realization:contract`
 
-> **Status:** Active — `compact-ash`, `transfer-live-receipts`, and `announce-maturity` have typed declarations; `RealizationScope::phase1_pilots()` retains the two-operation pilot scope and `RealizationScope::from_operations` reaches the announcement through `derive`
+> **Status:** Active — `compact-ash`, `transfer-live-receipts`, and `announce-maturity` have typed attestation declarations; keyed SOURCE and MERGE have stable typed declarations; `RealizationScope::phase1_pilots()` retains the two-operation pilot scope and `RealizationScope::from_operations` reaches the announcement through `derive`
 > **Phase:** [Phase 1](../phases/01-realization.md)
 > **Package:** `tripod-realization`
 > **Library:** `realization`
@@ -30,6 +30,30 @@ needed below them.
 The package implements typed semantics corresponding to
 (`[RZ-rem:oracle:thesis]`) and the representation boundary of
 (`[RZ-sec:realization:representation]`).
+
+## Keyed declaration contract · `sec:realization:keyed-declarations`
+
+Under (`rule:phase7:wave1-home-rulings`), the stable `keyed` and `relation` APIs declare the Keyed Provenance Covenant independently of the attestation census, without a declaration-side feature. `KeyedOperationRealization` is `OperationRealization<SemanticOperationId, KeyedRelationDeclaration>`; each `KeyedRelationId` contains the namespace-qualified operation, `SemanticObjectId::Keyed(KeyedObjectId::Handle)` and relation kind. `KeyedRealizationDraft::derive` consumes `architecture::keyed::KeyedManifest::contract()` through sealed declaration ownership; `validate` re-derives the complete declaration, verifies its architecture binding, refuses foreign/duplicate/misidentified rows and compares the complete shell. The canonical project orders validated relation identities independently of insertion order. There is one object, two operations, two covenant clauses, five relation variants, six kinds and nine relation rows.
+
+**Table (Normative keyed paper weld)** · `tab:realization:keyed-paper-weld`
+
+| Operation | Exact relation | Paper obligation |
+|---|---|---|
+| SOURCE | `HandleFamily { side: Input, cardinality: Zero }` | Complete authenticated same-key input classification under (`[A-op:kpc-operations:source]`), (`[A-def:kpc-model:keyed-membership]`) and the Retrieval assumption in (`[A-sec:kpc:interface]`); unrelated inputs remain open because no keyed covenant is evaluated at SOURCE. |
+| SOURCE | `HandleFamily { side: Output, cardinality: One }` | Same-key output-0 handle under (`[A-def:kpc-model:keyed-membership]`) and (`[A-op:kpc-operations:source]`); later shaped outputs are not handles. |
+| SOURCE | `SourceClassification` | The empty consumed family classifies SOURCE under (`[A-def:kpc-operations:classification]`), not an invented spending condition. |
+| SOURCE | `MembershipReading { recurrence: SourceSingleton }` | Reader-derived singleton under (`[A-def:kpc-interface:membership-reading]`), (`[A-def:kpc-model:keyed-membership]`) and (`[A-op:kpc-operations:source]`); no stored record field. |
+| MERGE | `HandleFamily { side: Input, cardinality: OneOrMore }` | Nonempty authenticated same-key consumed family under (`[A-op:kpc-operations:merge]`), with no covenant maximum. |
+| MERGE | `HandleFamily { side: Output, cardinality: One }` | Same-key successor at output 0 under (`[A-def:kpc-model:first-output]`); unrelated outputs remain open. |
+| MERGE | `BornFirst` | Each consumed handle's authenticated birth position is zero under (`[A-def:kpc-model:first-output]`). |
+| MERGE | `ContinueFirst` | Each consumed handle requires an authenticated same-key first successor under (`[A-def:kpc-model:first-output]`). |
+| MERGE | `MembershipReading { recurrence: ConsumedUnion }` | Reader-derived union under (`[A-def:kpc-interface:membership-reading]`), (`[A-def:kpc-model:keyed-membership]`) and (`[A-op:kpc-operations:merge]`), without a fresh record or emitted history traversal. |
+
+Table spellings are `KeyedRelation` variants; sides are `TransactionSide`, cardinalities are `KeyedCardinality` and recurrences are `RecordRecurrence`. The remaining paper anchors complete the ten-anchor independent binding: (`[A-def:kpc-model:history]`) supplies immutable history; (`[A-sec:kpc:interface]`), (`[A-def:kpc-interface:membership-reading]`), (`[A-rem:kpc-interface:record-evidence]`) and (`[A-thm:kpc-interface:membership-correctness]`) keep retrieval, inclusion, acceptance and finality premises explicit evidence obligations. SOURCE has four evidence obligations and no synthetic execution carrier; MERGE has three evidence obligations and two per-member runtime obligations. These declarations do not implement a trusted history reader or discharge those premises.
+
+All nine ancillary fields are explicitly empty for both declarations: expressions, relation dependencies, constructibility nodes/edges, lifecycle nodes/edges and disclosure nodes/edges/seeds. Nonempty fields, changed cardinality or recurrence, and coherently removed clauses refuse as `DeclarationCensus`; duplicate relations refuse as `DuplicateRelation`, mismatched operation/kind identities as `RelationIdentity`, foreign operations as `ForeignOperation`, and changed or old experimental bindings as `ArchitectureBindingMismatch`. A coherent foreign-object substitution also fails complete declaration comparison. Each refusal is paired with an accepted declaration in `src/tests/keyed_profile_tests.rs`; the exact nine-row control is independent of the declaration constructors. A reader runtime assignment remains the shared compiler's `PlacementCensusMismatch` control, not an excuse to add a carrier here.
+
+Bite 1.2 still owes production keyed preparation/publication, all seven shared stages and independent fixed-owner validation outside `cfg(test)`, opaque identity/adapter work, complete eligibility comparison and the scheduled measurements. Compiler retains its own `keyed-experimental` boundary until that gate. Ruling 180 assigns the envelope-specific 1,564/1,565 construction-policy boundary to the bite-1.4 transaction constructor; `OneOrMore` stays unbounded in the paper declaration. Stable declarations accept no realization, deployment or completed bite 1.2.
 
 ## Dependencies · `sec:realization:dependencies`
 
@@ -68,7 +92,8 @@ No target or evidence package may become necessary to construct a realization.
 
 The package consumes:
 
-- a validated `architecture::Architecture`;
+- a validated `architecture::Architecture` for attestation;
+- an `architecture::keyed::KeyedManifest`, validated by `KeyedRealizationDraft::derive`, for SOURCE and MERGE;
 - realization-owned typed Rust semantic declarations;
 - architecture IDs and bound references.
 

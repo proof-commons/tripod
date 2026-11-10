@@ -89,7 +89,7 @@ fn bound_owners_explicitly_lower_the_empty_predicate_stage() {
         .expect("attestation predicates");
     assert_eq!(records.predicates, []);
     assert_eq!(core::validate_predicates(&records), Ok(()));
-    let manifest = KeyedManifest::probe().expect("manifest");
+    let manifest = KeyedManifest::contract().expect("manifest");
     let realization = realization::keyed::KeyedRealizationDraft::derive(&manifest)
         .expect("derive")
         .validate(&manifest)

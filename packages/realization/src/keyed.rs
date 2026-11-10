@@ -1,4 +1,4 @@
-//! Experimental scoped declaration owner. This is not a history oracle or reader.
+//! Keyed Provenance Covenant scoped declaration owner. This is not a history oracle or reader.
 //!
 //! Exact owner re-derivation catches a coherently removed clause, even if all
 //! references to it were also removed. Evidence obligations remain unresolved.

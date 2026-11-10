@@ -138,7 +138,7 @@ fn source_evidence_graph_has_no_runtime_carrier_and_rejects_reversed_evidence_ed
         keyed::KeyedManifest,
         semantic::{KeyedOperationId, SemanticOperationId},
     };
-    let manifest = KeyedManifest::probe().expect("manifest");
+    let manifest = KeyedManifest::contract().expect("manifest");
     let source = realization::keyed::KeyedRealizationDraft::derive(&manifest)
         .expect("derive")
         .validate(&manifest)

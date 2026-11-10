@@ -52,7 +52,7 @@ fn keyed_case_facts_preserve_their_typed_lowering_refusals() {
 #[test]
 fn keyed_lowering_reads_every_declaration_shell_field() {
     use crate::engine_keyed::{KeyedLoweringError, ShellField as F, read_shells};
-    let manifest = KeyedManifest::probe().expect("manifest");
+    let manifest = KeyedManifest::contract().expect("manifest");
     let control = KeyedRealizationDraft::derive(&manifest).expect("declarations");
     control
         .clone()
@@ -148,7 +148,7 @@ const SOURCE: SemanticOperationId = SemanticOperationId::Keyed(KeyedOperationId:
 const MERGE: SemanticOperationId = SemanticOperationId::Keyed(KeyedOperationId::Merge);
 
 fn bound(scope: Vec<SemanticOperationId>) -> crate::BoundCompilerInput<crate::input::KeyedOwner> {
-    let manifest = KeyedManifest::probe().expect("paper binding");
+    let manifest = KeyedManifest::contract().expect("paper binding");
     let source = KeyedRealizationDraft::derive(&manifest)
         .expect("declarations")
         .validate(&manifest)
@@ -212,7 +212,7 @@ fn source_merge_and_combined_scopes_use_the_shared_graph_entry() {
 
 #[test]
 fn keyed_binding_refuses_an_attestation_scope_with_its_numeric_collision() {
-    let manifest = KeyedManifest::probe().expect("paper binding");
+    let manifest = KeyedManifest::contract().expect("paper binding");
     let source = KeyedRealizationDraft::derive(&manifest)
         .expect("declarations")
         .validate(&manifest)

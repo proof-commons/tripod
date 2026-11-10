@@ -20,7 +20,7 @@ fn keyed_empty_lifecycle_is_analyzed_and_projected_for_each_scope() {
     let source_id = SemanticOperationId::Keyed(KeyedOperationId::Source);
     let merge_id = SemanticOperationId::Keyed(KeyedOperationId::Merge);
     for scope in [vec![source_id], vec![merge_id], vec![source_id, merge_id]] {
-        let manifest = KeyedManifest::probe().expect("paper binding");
+        let manifest = KeyedManifest::contract().expect("paper binding");
         let source = KeyedRealizationDraft::derive(&manifest)
             .expect("declarations")
             .validate(&manifest)

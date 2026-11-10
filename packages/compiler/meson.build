@@ -124,4 +124,4 @@ compiler_doc_files = files('README.md', 'TRACING.md')
 # Integration-test sources are cargo test inputs rather than label
 # graph subjects. The explicit exclusion keeps the tracked-file census
 # welded to that classification.
-compiler_excluded_files = files('tests/public_api.rs', 'tests/fixtures/engine_base/MANIFEST', 'tests/fixtures/keyed_base_architecture.json')
+compiler_excluded_files = files('tests/public_api.rs', 'tests/fixtures/engine_base/MANIFEST')

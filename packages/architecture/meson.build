@@ -29,3 +29,6 @@ architecture_source_files = files(
 
 # Crate documentation (DOC owner).
 architecture_doc_files = files('README.md', 'TRACING.md')
+
+# Frozen publication bytes owned by the architecture comparison.
+architecture_excluded_files = files('tests/fixtures/keyed_base_architecture.json')
