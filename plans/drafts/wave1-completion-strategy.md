@@ -163,7 +163,7 @@ Compare three options, perform the profile boundary test and its first-contract 
 
 **Open realization obligation (MERGE input bound)**
 
-Bite 1.1's home disposition must hand the accepted envelope-specific 1,564-keyed-handle MERGE bound to its owning realization constructor, which must implement a typed N+1 construction-policy refusal beside an admitted N control (`rec:state-constructor:keyed-scaling`), (`rule:phase7:wave1-realization-rulings`). The bound is accepted on the measured range and worst-witness evidence; this implementation obligation remains open because the current keyed constructor exposes no input-count bound. It adds no covenant count condition, and a changed witness, funding or output envelope reopens the bound.
+The explicit semantic-profile home is accepted under ruling 171 at (`rule:phase7:wave1-home-rulings`); the next bite-1.1 step is the stable SOURCE/MERGE declaration packet (`proposal:w1home:packet`). Ruling 180 assigns the accepted envelope-specific 1,564-keyed-handle MERGE bound and its typed N+1 construction-policy refusal to the owning keyed transaction constructor in `packages/transaction`, implemented in bite 1.4 beside an admitted N control (`rec:state-constructor:keyed-scaling`), (`rule:phase7:wave1-realization-rulings`). The assignment is settled; implementation remains open because the current keyed constructor exposes no input-count bound. The bound rests on the admitted measured range and worst-witness evidence, adds no covenant count condition, and reopens on a changed witness, funding or output envelope; final-byte repetition belongs to bite 1.6.
 
 **Gate (Declaration packet completion)** · `gate:wave1:bite-1-1-packet`
 

@@ -1,6 +1,6 @@
 # Wave 1 home disposition study · `sec:w1home:study`
 
-This study proposes, binds nothing and accepts no home, stable types or realization. It reads `0.7.94-dev`, the landed shared-engine refit, under (`rule:phase7:wave1-realization-rulings`) and (`rule:phase7:wave1-engine-rulings`). All current code citations below are file and line at that tag; proposed paths and spellings are explicitly marked. The task is the home disposition preceding (`gate:guide15-exec:bite-1-1-gate`), not completion of that gate or of bite 1.2. No build, test, timing experiment or native capture was performed for this study. Passing Rust results are retained evidence from (`rec:phase7:wave1-engine-refit`), with the import gate's green standing supplied by the opening brief; the census below is a fresh source reading.
+This study records the reasoning for its packet, adopted as rulings 171 to 180 at (`rule:phase7:wave1-home-rulings`), which now govern, with one change to 175: stable architecture/realization declaration APIs remove their feature guards and `keyed-experimental` features and update workspace dev-dependency requests in the same change, without compatibility aliases. The proposals below remain the record of the reasoning; this draft has no independent governing authority. It reads `0.7.94-dev`, the landed shared-engine refit, under (`rule:phase7:wave1-realization-rulings`) and (`rule:phase7:wave1-engine-rulings`). All current code citations below are file and line at that tag; proposed paths and spellings are explicitly marked. The task is the home disposition preceding (`gate:guide15-exec:bite-1-1-gate`), not completion of that gate or of bite 1.2. No build, test, timing experiment or native capture was performed for this study. Passing Rust results are retained evidence from (`rec:phase7:wave1-engine-refit`), with the import gate's green standing supplied by the opening brief; the census below is a fresh source reading.
 
 ## 1. Boundary recount and acceptance reading · `sec:w1home:boundary`
 
@@ -85,7 +85,7 @@ The refit reduced repeated work by code-path count, not by a speedup claim: rela
 
 ## 3. Proposed rulings for disposition · `sec:w1home:rulings`
 
-Numbers 171–180 are proposed only; they are not additions to the governing Phase-7 rulings. Each acceptance condition below belongs to the stated later packet, not to this documents-only study.
+The five-section study packet was adopted as rulings 171–180 at (`rule:phase7:wave1-home-rulings`), which now govern; ruling 175 removes declaration-side features and updates their workspace consumers instead of retaining compatibility aliases. The proposals below are retained as the record of the reasoning, including that superseded alias proposal. Each implementation acceptance condition belongs to the stated later packet, not to this documents-only study.
 
 **Proposal (171 — Semantic home)** · `proposal:w1home:home`
 
