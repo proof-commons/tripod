@@ -1,0 +1,775 @@
+{
+  "all_checked_pins_equal": true,
+  "artifact_path": "/var/home/tripod/loops/evidence/wave1/keyed-cost/w20b1-keyed-cost-20261110T171100Z",
+  "attestation_pin_checks": 80,
+  "baseline_keyed": "absent",
+  "baseline_tag": "0.7.96-dev",
+  "build_command_count": 32,
+  "build_counter_status": "unavailable: non-monotone command counters; cause not established; no CPU/stall build inference",
+  "build_matrix": {
+    "baseline/default/clean": {
+      "counter_status": "invalid command accounting; negative deltas; raw values retained in commands.json",
+      "cpu_s": null,
+      "cpu_stall_s": null,
+      "n": 3,
+      "wall_s": [46.865005687, 59.949020599, 67.354367459]
+    },
+    "baseline/default/incremental": {
+      "counter_status": "invalid command accounting; negative deltas; raw values retained in commands.json",
+      "cpu_s": null,
+      "cpu_stall_s": null,
+      "n": 3,
+      "wall_s": [1.622316219, 3.3574469, 4.01693297]
+    },
+    "baseline/keyed-experimental/clean": {
+      "counter_status": "invalid command accounting; negative deltas; raw values retained in commands.json",
+      "cpu_s": null,
+      "cpu_stall_s": null,
+      "n": 3,
+      "wall_s": [45.461687043, 51.574731958, 66.97588957]
+    },
+    "baseline/keyed-experimental/incremental": {
+      "counter_status": "invalid command accounting; negative deltas; raw values retained in commands.json",
+      "cpu_s": null,
+      "cpu_stall_s": null,
+      "n": 3,
+      "wall_s": [1.597862695, 2.279759933, 2.414779463]
+    },
+    "candidate/default/clean": {
+      "counter_status": "invalid command accounting; negative deltas; raw values retained in commands.json",
+      "cpu_s": null,
+      "cpu_stall_s": null,
+      "n": 3,
+      "wall_s": [50.208266348, 53.649012106, 71.632212755]
+    },
+    "candidate/default/incremental": {
+      "counter_status": "invalid command accounting; negative deltas; raw values retained in commands.json",
+      "cpu_s": null,
+      "cpu_stall_s": null,
+      "n": 3,
+      "wall_s": [1.831881644, 2.253802009, 2.988999359]
+    },
+    "candidate/keyed-experimental/clean": {
+      "counter_status": "invalid command accounting; negative deltas; raw values retained in commands.json",
+      "cpu_s": null,
+      "cpu_stall_s": null,
+      "n": 3,
+      "wall_s": [46.230715145, 53.069725419, 65.276051841]
+    },
+    "candidate/keyed-experimental/incremental": {
+      "counter_status": "invalid command accounting; negative deltas; raw values retained in commands.json",
+      "cpu_s": null,
+      "cpu_stall_s": null,
+      "n": 3,
+      "wall_s": [1.77032554, 2.169304684, 2.429527138]
+    }
+  },
+  "candidate_tag": "0.7.101-dev",
+  "conditions": {
+    "cache_policy": "isolated per-side targets; dry-run reflink seed only; full builds start empty",
+    "cpus": [0, 1, 2, 3],
+    "image_label": "localhost/tripod-doc:f44",
+    "incremental": "1",
+    "jobs": 4,
+    "profile": "gate",
+    "rustflags": "",
+    "slot_policy": "slot 1 under slot-governor.sh; slots 2-4 held by governor",
+    "source_mount": "/src",
+    "target_mount": "/cargo-target",
+    "toolchain_release": "rustc 1.102.0-nightly (2026-11-07), LLVM 23.1.5; exact identities in retained manifest"
+  },
+  "cpu_stall_definition": "cpu.some pressure total delta; other raw counters retained in artifacts",
+  "derivation_note": "Keyed derivation_inclusive contains producer and independent validator; their individual derivation times are not separately instrumented. The two nested publication intervals are reported separately in execution order.",
+  "distribution_order": [
+    "minimum",
+    "median",
+    "maximum"
+  ],
+  "full_campaign": true,
+  "keyed_repeat_digests_equal": true,
+  "measured_build_command_count": 24,
+  "measured_repetitions_per_side": 3,
+  "measurement_limitations": [
+    "Build CPU and stall deltas are invalid; wall intervals remain available.",
+    "Keyed producer and validator derivation durations are not individually instrumented; combined derivation and two publication intervals are retained.",
+    "Three measured repetitions are distributions only; no threshold or performance claim."
+  ],
+  "mode": "campaign",
+  "performance_claim": "none",
+  "prior_preflight_seconds": 0,
+  "raw_artifacts": [
+    "manifest.json",
+    "commands.json",
+    "distributions.json",
+    "runner.py",
+    "engine_cost.rs",
+    "Cargo-baseline.lock",
+    "Cargo-candidate.lock"
+  ],
+  "run": "w20b1-keyed-cost-20261110T171100Z",
+  "runtime": {
+    "baseline": {
+      "compiler-A": {
+        "derivation_inclusive": {
+          "cpu_s": [0.179848, 0.288095, 0.380354],
+          "cpu_stall_s": [7.8e-05, 0.000227, 0.023884],
+          "n": 3,
+          "wall_s": [0.183412945, 0.296802408, 0.413366625]
+        },
+        "digest": {
+          "cpu_s": [0.025712, 0.026426, 0.029231],
+          "cpu_stall_s": [0.0, 0.0, 0.003146],
+          "n": 3,
+          "wall_s": [0.02606814, 0.027298685, 0.032945839]
+        },
+        "format": {
+          "cpu_s": [0.686731, 0.998572, 1.118918],
+          "cpu_stall_s": [0.000226, 0.000786, 0.006415],
+          "n": 3,
+          "wall_s": [0.692902907, 1.024744558, 1.145070291]
+        },
+        "projection": {
+          "cpu_s": [0.002964, 0.003895, 0.009776],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.002407851, 0.003923737, 0.009415529]
+        }
+      },
+      "compiler-C": {
+        "derivation_inclusive": {
+          "cpu_s": [0.174073, 0.187336, 0.28303],
+          "cpu_stall_s": [1.3e-05, 2.1e-05, 5.3e-05],
+          "n": 3,
+          "wall_s": [0.176922492, 0.190654511, 0.29043719]
+        },
+        "digest": {
+          "cpu_s": [0.025573, 0.027667, 0.029345],
+          "cpu_stall_s": [0.0, 0.0, 3.3e-05],
+          "n": 3,
+          "wall_s": [0.026372615, 0.027248156, 0.029535618]
+        },
+        "format": {
+          "cpu_s": [0.709962, 0.801163, 0.987342],
+          "cpu_stall_s": [0.000223, 0.00028, 0.00669],
+          "n": 3,
+          "wall_s": [0.717464657, 0.818083476, 1.014551278]
+        },
+        "projection": {
+          "cpu_s": [0.001971, 0.002925, 0.002964],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.002651202, 0.002659506, 0.003145675]
+        }
+      },
+      "compiler-CT": {
+        "derivation_inclusive": {
+          "cpu_s": [0.720045, 0.99915, 1.486903],
+          "cpu_stall_s": [0.000195, 0.000529, 0.119527],
+          "n": 3,
+          "wall_s": [0.731522418, 1.024289285, 1.639315161]
+        },
+        "digest": {
+          "cpu_s": [0.107751, 0.114526, 0.118976],
+          "cpu_stall_s": [2.8e-05, 0.000753, 0.012394],
+          "n": 3,
+          "wall_s": [0.108472502, 0.123954876, 0.129252217]
+        },
+        "format": {
+          "cpu_s": [2.883053, 3.223926, 5.437243],
+          "cpu_stall_s": [0.00096, 0.002348, 0.298103],
+          "n": 3,
+          "wall_s": [2.911984623, 3.28697042, 5.839246281]
+        },
+        "projection": {
+          "cpu_s": [0.01083, 0.017545, 0.032363],
+          "cpu_stall_s": [0.0, 0.0, 1.9e-05],
+          "n": 3,
+          "wall_s": [0.011533395, 0.018664466, 0.032552981]
+        }
+      },
+      "compiler-CTA": {
+        "derivation_inclusive": {
+          "cpu_s": [2.31178, 3.635251, 3.984989],
+          "cpu_stall_s": [0.001059, 0.004661, 0.061933],
+          "n": 3,
+          "wall_s": [2.358577397, 3.774393483, 4.104005844]
+        },
+        "digest": {
+          "cpu_s": [0.318366, 0.324868, 0.325024],
+          "cpu_stall_s": [0.0, 5.3e-05, 0.001817],
+          "n": 3,
+          "wall_s": [0.321948007, 0.329905964, 0.332068889]
+        },
+        "format": {
+          "cpu_s": [8.599983, 9.233473, 9.513408],
+          "cpu_stall_s": [0.002688, 0.003023, 0.006905],
+          "n": 3,
+          "wall_s": [8.683988884, 9.369969845, 9.686608662]
+        },
+        "projection": {
+          "cpu_s": [0.033565, 0.035408, 0.04886],
+          "cpu_stall_s": [0.0, 0.0, 3e-05],
+          "n": 3,
+          "wall_s": [0.033734161, 0.035972344, 0.050682812]
+        }
+      },
+      "compiler-T": {
+        "derivation_inclusive": {
+          "cpu_s": [0.18397, 0.257302, 0.41494],
+          "cpu_stall_s": [3.3e-05, 3.6e-05, 0.023646],
+          "n": 3,
+          "wall_s": [0.187601174, 0.26412936, 0.447576545]
+        },
+        "digest": {
+          "cpu_s": [0.027529, 0.028682, 0.030842],
+          "cpu_stall_s": [0.0, 0.0, 1.4e-05],
+          "n": 3,
+          "wall_s": [0.0286216, 0.029279319, 0.032030168]
+        },
+        "format": {
+          "cpu_s": [0.749694, 1.131148, 1.326481],
+          "cpu_stall_s": [0.000149, 0.000599, 0.055133],
+          "n": 3,
+          "wall_s": [0.756986279, 1.161508135, 1.409313836]
+        },
+        "projection": {
+          "cpu_s": [0.002922, 0.003936, 0.01276],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.003175692, 0.00326164, 0.012524947]
+        }
+      },
+      "realization-A": {
+        "derivation_inclusive": {
+          "cpu_s": [0.001515, 0.001819, 0.001959],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.001847472, 0.001955462, 0.002152997]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [2.9995e-05, 3.3392e-05, 3.4654e-05]
+        },
+        "format": {
+          "cpu_s": [0.000955, 0.000978, 0.00098],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.000703252, 0.000808347, 0.000841999]
+        },
+        "projection": {
+          "cpu_s": [0.0, 0.0, 0.000958],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [1.3375e-05, 1.3906e-05, 1.9656e-05]
+        }
+      },
+      "realization-C": {
+        "derivation_inclusive": {
+          "cpu_s": [0.001646, 0.001696, 0.001955],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.001402237, 0.001801656, 0.002065085]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [2.8774e-05, 3.0456e-05, 3.2771e-05]
+        },
+        "format": {
+          "cpu_s": [0.0, 0.000963, 0.000984],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.000424266, 0.000776758, 0.000848952]
+        },
+        "projection": {
+          "cpu_s": [0.0, 0.0, 0.000962],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [1.048e-05, 1.3375e-05, 1.9747e-05]
+        }
+      },
+      "realization-CT": {
+        "derivation_inclusive": {
+          "cpu_s": [0.000982, 0.001387, 0.002596],
+          "cpu_stall_s": [0.0, 0.0, 3e-06],
+          "n": 3,
+          "wall_s": [0.001397819, 0.001518663, 0.002420282]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [4.842e-05, 5.2277e-05, 6.0853e-05]
+        },
+        "format": {
+          "cpu_s": [0.0, 0.000537, 0.001925],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.000745992, 0.0008258, 0.001651108]
+        },
+        "projection": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [1.2353e-05, 1.2804e-05, 1.9536e-05]
+        }
+      },
+      "realization-CTA": {
+        "derivation_inclusive": {
+          "cpu_s": [0.001001, 0.001447, 0.0015],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.001627143, 0.001629338, 0.001983594]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [7.1803e-05, 7.6492e-05, 8.4066e-05]
+        },
+        "format": {
+          "cpu_s": [0.000982, 0.001938, 0.002002],
+          "cpu_stall_s": [0.0, 0.0, 4e-06],
+          "n": 3,
+          "wall_s": [0.001138068, 0.001299276, 0.002070665]
+        },
+        "projection": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [1.7993e-05, 1.8013e-05, 2.3493e-05]
+        }
+      },
+      "realization-T": {
+        "derivation_inclusive": {
+          "cpu_s": [0.001589, 0.001635, 0.001814],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.001471436, 0.001867319, 0.001991188]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.0, 0.000984],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [2.9535e-05, 3.224e-05, 4.6386e-05]
+        },
+        "format": {
+          "cpu_s": [0.0, 0.000953, 0.000982],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.000400151, 0.000733889, 0.000831931]
+        },
+        "projection": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [9.367e-06, 1.2503e-05, 1.2684e-05]
+        }
+      }
+    },
+    "candidate": {
+      "compiler-A": {
+        "derivation_inclusive": {
+          "cpu_s": [0.442338, 0.508707, 0.886732],
+          "cpu_stall_s": [3.1e-05, 9.4e-05, 0.003969],
+          "n": 3,
+          "wall_s": [0.4459053, 0.518833615, 0.921916107]
+        },
+        "digest": {
+          "cpu_s": [0.024814, 0.025533, 0.030298],
+          "cpu_stall_s": [0.0, 0.0, 3.6e-05],
+          "n": 3,
+          "wall_s": [0.025204191, 0.026245585, 0.030556649]
+        },
+        "format": {
+          "cpu_s": [0.661668, 0.77366, 1.272345],
+          "cpu_stall_s": [9.6e-05, 0.000116, 0.003605],
+          "n": 3,
+          "wall_s": [0.665384958, 0.789321, 1.30059746]
+        },
+        "projection": {
+          "cpu_s": [0.001985, 0.002942, 0.004871],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.002494931, 0.002988214, 0.004742843]
+        }
+      },
+      "compiler-C": {
+        "derivation_inclusive": {
+          "cpu_s": [0.465148, 0.490542, 0.826673],
+          "cpu_stall_s": [1.8e-05, 4.4e-05, 0.025212],
+          "n": 3,
+          "wall_s": [0.470410276, 0.499956325, 0.873566456]
+        },
+        "digest": {
+          "cpu_s": [0.025798, 0.026567, 0.030146],
+          "cpu_stall_s": [0.0, 0.0, 7.1e-05],
+          "n": 3,
+          "wall_s": [0.025536225, 0.026438162, 0.031278325]
+        },
+        "format": {
+          "cpu_s": [0.683589, 0.714483, 1.516689],
+          "cpu_stall_s": [1.5e-05, 5.3e-05, 0.094029],
+          "n": 3,
+          "wall_s": [0.688120556, 0.724472735, 1.646560691]
+        },
+        "projection": {
+          "cpu_s": [0.002955, 0.00297, 0.004872],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.002566173, 0.003037825, 0.004488472]
+        }
+      },
+      "compiler-CT": {
+        "derivation_inclusive": {
+          "cpu_s": [2.241048, 2.401666, 3.592862],
+          "cpu_stall_s": [2.7e-05, 0.000477, 0.162558],
+          "n": 3,
+          "wall_s": [2.269643971, 2.447134851, 3.847875699]
+        },
+        "digest": {
+          "cpu_s": [0.101524, 0.105103, 0.124429],
+          "cpu_stall_s": [1.8e-05, 2.6e-05, 0.006432],
+          "n": 3,
+          "wall_s": [0.102943595, 0.105999531, 0.133090444]
+        },
+        "format": {
+          "cpu_s": [2.820912, 2.901375, 5.721382],
+          "cpu_stall_s": [0.000533, 0.000748, 0.23518],
+          "n": 3,
+          "wall_s": [2.84284261, 2.942389509, 6.100885231]
+        },
+        "projection": {
+          "cpu_s": [0.010856, 0.011802, 0.022409],
+          "cpu_stall_s": [0.0, 0.0, 9e-06],
+          "n": 3,
+          "wall_s": [0.011303135, 0.011918162, 0.023051941]
+        }
+      },
+      "compiler-CTA": {
+        "derivation_inclusive": {
+          "cpu_s": [6.297819, 7.399789, 10.268905],
+          "cpu_stall_s": [0.002689, 0.012531, 0.118826],
+          "n": 3,
+          "wall_s": [6.426772594, 7.529182817, 10.66418559]
+        },
+        "digest": {
+          "cpu_s": [0.316597, 0.330366, 0.344283],
+          "cpu_stall_s": [3.5e-05, 0.000127, 0.000292],
+          "n": 3,
+          "wall_s": [0.321546145, 0.337873439, 0.353237923]
+        },
+        "format": {
+          "cpu_s": [8.716234, 14.472936, 17.217646],
+          "cpu_stall_s": [0.007128, 0.19509, 0.605016],
+          "n": 3,
+          "wall_s": [8.809321308, 15.030971695, 18.298381481]
+        },
+        "projection": {
+          "cpu_s": [0.034485, 0.074016, 0.098818],
+          "cpu_stall_s": [0.0, 0.0, 0.012402],
+          "n": 3,
+          "wall_s": [0.034620831, 0.076324618, 0.113069447]
+        }
+      },
+      "compiler-T": {
+        "derivation_inclusive": {
+          "cpu_s": [0.677766, 0.823901, 0.840905],
+          "cpu_stall_s": [0.000352, 0.005676, 0.054139],
+          "n": 3,
+          "wall_s": [0.694211958, 0.860116287, 0.899111214]
+        },
+        "digest": {
+          "cpu_s": [0.02753, 0.029518, 0.031232],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.02822757, 0.029687069, 0.031933028]
+        },
+        "format": {
+          "cpu_s": [1.320654, 1.446498, 1.530099],
+          "cpu_stall_s": [0.001509, 0.002352, 0.047007],
+          "n": 3,
+          "wall_s": [1.351485601, 1.472283602, 1.612609776]
+        },
+        "projection": {
+          "cpu_s": [0.00488, 0.004892, 0.005904],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.004741561, 0.005003676, 0.005582289]
+        }
+      },
+      "keyed-MERGE": {
+        "derivation_excluding_nested_publication": {
+          "cpu_s": [0.001596, 0.001717, 0.002384],
+          "cpu_stall_s": [0.0, 4e-06, 4.5e-05],
+          "n": 3,
+          "wall_s": [0.002047302, 0.002413559, 0.002567705]
+        },
+        "derivation_inclusive": {
+          "cpu_s": [0.001596, 0.002384, 0.002651],
+          "cpu_stall_s": [0.0, 4e-06, 4.5e-05],
+          "n": 3,
+          "wall_s": [0.002138851, 0.002584796, 0.002712023]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.0, 0.000988],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [7.022e-05, 7.1402e-05, 8.5879e-05]
+        },
+        "format": {
+          "cpu_s": [0.00098, 0.0029, 0.003873],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.00163594, 0.003269686, 0.003445671]
+        },
+        "producer_publication": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [5.7666e-05, 7.047e-05, 0.000100727]
+        },
+        "projection_snapshot": {
+          "cpu_s": [0.0, 0.0, 0.000965],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [6.091e-06, 8.686e-06, 9.497e-06]
+        },
+        "validator_publication": {
+          "cpu_s": [0.0, 0.0, 0.000934],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [3.3883e-05, 4.3591e-05, 0.000100767]
+        }
+      },
+      "keyed-SOURCE": {
+        "derivation_excluding_nested_publication": {
+          "cpu_s": [0.001934, 0.00195, 0.002463],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.001993962, 0.002237054, 0.002256449]
+        },
+        "derivation_inclusive": {
+          "cpu_s": [0.001934, 0.00195, 0.002463],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.002081224, 0.002341147, 0.002368917]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.00097, 0.000973],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [6.1253e-05, 6.4921e-05, 9.8052e-05]
+        },
+        "format": {
+          "cpu_s": [0.001918, 0.002899, 0.002915],
+          "cpu_stall_s": [0.0, 0.0, 4e-06],
+          "n": 3,
+          "wall_s": [0.00234918, 0.002990889, 0.003097095]
+        },
+        "producer_publication": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [5.7086e-05, 6.8938e-05, 7.8866e-05]
+        },
+        "projection_snapshot": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [6.763e-06, 7.614e-06, 8.656e-06]
+        },
+        "validator_publication": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [3.0176e-05, 3.3602e-05, 3.5155e-05]
+        }
+      },
+      "keyed-joint": {
+        "derivation_excluding_nested_publication": {
+          "cpu_s": [0.001566, 0.002649, 0.002881],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.002174757, 0.003097478, 0.003339324]
+        },
+        "derivation_inclusive": {
+          "cpu_s": [0.002649, 0.002881, 0.003496],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.002292656, 0.003316352, 0.003527593]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.000126454, 0.000134088, 0.000137044]
+        },
+        "format": {
+          "cpu_s": [0.002944, 0.005803, 0.005825],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.003150626, 0.005523109, 0.006245897]
+        },
+        "producer_publication": {
+          "cpu_s": [0.0, 0.0, 0.000962],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [7.2745e-05, 0.000115774, 0.000153774]
+        },
+        "projection_snapshot": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [9.126e-06, 1.2273e-05, 1.2493e-05]
+        },
+        "validator_publication": {
+          "cpu_s": [0.0, 0.0, 0.000968],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [4.5154e-05, 6.51e-05, 7.2495e-05]
+        }
+      },
+      "realization-A": {
+        "derivation_inclusive": {
+          "cpu_s": [0.001325, 0.001929, 0.00195],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.001843304, 0.002146916, 0.002304307]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [2.71e-05, 2.8072e-05, 3.1057e-05]
+        },
+        "format": {
+          "cpu_s": [0.000968, 0.000986, 0.000987],
+          "cpu_stall_s": [0.0, 0.0, 2.4e-05],
+          "n": 3,
+          "wall_s": [0.000751322, 0.000802326, 0.000970257]
+        },
+        "projection": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [1.2794e-05, 1.3786e-05, 1.9255e-05]
+        }
+      },
+      "realization-C": {
+        "derivation_inclusive": {
+          "cpu_s": [0.000989, 0.001581, 0.001695],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.001356032, 0.002038225, 0.002048183]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [2.5276e-05, 2.6289e-05, 2.733e-05]
+        },
+        "format": {
+          "cpu_s": [0.000945, 0.000976, 0.000982],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.000412384, 0.000795523, 0.000843311]
+        },
+        "projection": {
+          "cpu_s": [0.0, 0.0, 0.000975],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [9.748e-06, 1.4978e-05, 1.6882e-05]
+        }
+      },
+      "realization-CT": {
+        "derivation_inclusive": {
+          "cpu_s": [0.00095, 0.001925, 0.001941],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.001353126, 0.0020624, 0.002110869]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [4.7579e-05, 4.9783e-05, 5.0082e-05]
+        },
+        "format": {
+          "cpu_s": [0.000983, 0.001944, 0.001944],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.000793229, 0.001569707, 0.00164191]
+        },
+        "projection": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [1.2784e-05, 1.8995e-05, 2.0418e-05]
+        }
+      },
+      "realization-CTA": {
+        "derivation_inclusive": {
+          "cpu_s": [0.00133, 0.001338, 0.002488],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.001345362, 0.0015551, 0.002356093]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [7.2204e-05, 7.4117e-05, 8.5187e-05]
+        },
+        "format": {
+          "cpu_s": [0.000635, 0.001951, 0.003037],
+          "cpu_stall_s": [0.0, 0.0, 0.002864],
+          "n": 3,
+          "wall_s": [0.001152064, 0.001284639, 0.005435045]
+        },
+        "projection": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [1.6571e-05, 1.7222e-05, 2.6639e-05]
+        }
+      },
+      "realization-T": {
+        "derivation_inclusive": {
+          "cpu_s": [0.001377, 0.001804, 0.00237],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.001329062, 0.001929653, 0.002016665]
+        },
+        "digest": {
+          "cpu_s": [0.0, 0.0, 0.000966],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [2.4796e-05, 2.6429e-05, 2.9545e-05]
+        },
+        "format": {
+          "cpu_s": [0.0, 0.000971, 0.000971],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [0.000396354, 0.000764756, 0.000769575]
+        },
+        "projection": {
+          "cpu_s": [0.0, 0.0, 0.0],
+          "cpu_stall_s": [0.0, 0.0, 0.0],
+          "n": 3,
+          "wall_s": [8.856e-06, 1.4728e-05, 1.4908e-05]
+        }
+      }
+    }
+  },
+  "runtime_counter_status": "all recorded phase deltas nonnegative",
+  "sample_count": 92,
+  "schema": 1,
+  "slot_wait_seconds": 1770.177663925977,
+  "this_unit_wall_seconds": 1407.2992020079982,
+  "wall_seconds": 1407.299200776033,
+  "warmups_per_side": 1
+}
