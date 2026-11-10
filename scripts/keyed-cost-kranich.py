@@ -3,7 +3,8 @@
 
 No engine code is changed for runtime samples. The identical measurement-only
 unit module is installed in both scratch clones. The baseline has no keyed plan
-entry; only the candidate enables the harness's cost-keyed feature.
+entry; only the candidate enables the harness-only cost-keyed feature. The
+candidate production libraries use their default public surface.
 """
 import argparse
 import fcntl
@@ -212,9 +213,18 @@ class Campaign:
                 stream.write("\nmod engine_cost_measurement;\n")
             cargo = clone / "packages/compiler/Cargo.toml"
             text = cargo.read_text()
-            if text.count("[features]") != 1:
+            feature_tables = text.count("[features]")
+            if feature_tables > 1:
                 raise RuntimeError("unexpected feature table")
-            cargo.write_text(text.replace("[features]", '[features]\ncost-keyed = ["keyed-experimental"]'))
+            # This switch selects harness code absent on the baseline. It enables
+            # no production feature; keyed plans are part of the candidate library.
+            if feature_tables:
+                text = text.replace("[features]", "[features]\ncost-keyed = []")
+            else:
+                text += "\n[features]\ncost-keyed = []\n"
+            cargo.write_text(text)
+            self.manifest[side]["production_features"] = []
+            self.manifest[side]["build_feature_states"] = ["default", "keyed-experimental"] if side == "baseline" else ["default"]
             self.manifest[side]["runtime_features"] = ["cost-keyed"] if side == "candidate" else []
             self.targets[side] = self.work / f"target-{side}-runtime"
             if self.args.dry_run:
@@ -287,7 +297,7 @@ class Campaign:
         for repetition in range(4):
             order = ("baseline", "candidate") if repetition % 2 == 0 else ("candidate", "baseline")
             for side in order:
-                for feature in ("default", "keyed-experimental"):
+                for feature in self.manifest[side]["build_feature_states"]:
                     target = self.work / f"build-target-{side}-{feature}"
                     if target.exists():
                         shutil.rmtree(target)
@@ -307,7 +317,7 @@ class Campaign:
                         source.write_bytes(original)
                     if digest(source.read_bytes()) != self.manifest[side]["edit_original_sha256"]:
                         raise RuntimeError("edit not restored")
-        self.manifest["build_matrix"] = "one warmup (0), three measured repetitions; alternating side order; both feature states"
+        self.manifest["build_matrix"] = "one warmup (0), three measured repetitions; alternating side order; baseline historical default/keyed-experimental states, candidate default only"
 
     def execute(self):
         try:
