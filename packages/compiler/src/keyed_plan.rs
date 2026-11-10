@@ -209,6 +209,8 @@ pub enum Defect {
     FixedSource,
     ForeignEvidence,
     UnsupportedRuntimeScope,
+    UnsupportedEvidenceSide,
+    RuntimeObjectMismatch,
     UnexpectedLayoutRequirement,
     RepresentationChoices,
     LifecycleRequirements,

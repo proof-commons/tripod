@@ -227,7 +227,7 @@ fn keyed_publication_names_unexpected_layouts_and_runtime_scope() {
     let legacy_input = crate::tests::bound_input(&[architecture::OperationId::CompactAsh]);
     let (legacy, _) = crate::engine_attestation::program::test_preparation(&legacy_input).unwrap();
     let layout = legacy.cases.layout_scopes.keys().next().unwrap();
-    for variant in 0..4 {
+    for variant in 0..6 {
         let mut subject = program.clone();
         let operation = subject
             .plans
@@ -260,9 +260,22 @@ fn keyed_publication_names_unexpected_layouts_and_runtime_scope() {
                     alternative.layout.insert(layout.clone());
                     bundle.carriers.insert(alternative);
                     (Stage::Coverage, Defect::UnexpectedLayout)
-                } else {
+                } else if variant == 3 {
                     bundle.facts.runtime[0].scope = crate::engine_case_facts::Scope::Transaction;
                     (Stage::Cases, Defect::UnsupportedRuntimeScope)
+                } else {
+                    let crate::engine_case_facts::Scope::Member { side, object } =
+                        &mut bundle.facts.runtime[0].scope
+                    else {
+                        panic!("member")
+                    };
+                    if variant == 4 {
+                        *side = u16::MAX;
+                        (Stage::Cases, Defect::UnsupportedRuntimeScope)
+                    } else {
+                        object.code = u16::MAX;
+                        (Stage::Cases, Defect::RuntimeObjectMismatch)
+                    }
                 }
             }
         };
@@ -277,4 +290,28 @@ fn keyed_publication_names_unexpected_layouts_and_runtime_scope() {
             })
         );
     }
+}
+
+#[test]
+fn keyed_layout_symbol_refuses_at_coverage_with_one_unknown_key() {
+    let input = bound(&[K::Merge]);
+    let prepared = Prepared::new(&input).unwrap();
+    assert!(
+        prepared
+            .publish(&prepared.analyze(limits()).unwrap())
+            .is_ok()
+    );
+    let legacy_input = crate::tests::bound_input(&[architecture::OperationId::CompactAsh]);
+    let (legacy, _) = crate::engine_attestation::program::test_preparation(&legacy_input).unwrap();
+    let layout = legacy.cases.layout_scopes.keys().next().unwrap().clone();
+    assert_eq!(
+        prepared.symbol(&crate::engine_coverage_graph::Key::Layout(layout)),
+        Err(KeyedPlanError::Refused {
+            stage: Stage::Coverage,
+            defect: Defect::UnexpectedLayout,
+            relations: Vec::new(),
+            operations: Vec::new(),
+            unrestored_key_count: 1,
+        })
+    );
 }

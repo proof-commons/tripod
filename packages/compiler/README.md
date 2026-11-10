@@ -158,17 +158,17 @@ the coverage graph, explicit evidence premises, seven stage censuses, and proof
 and placement limits/reports. SOURCE has four evidence rows and no runtime
 carrier; MERGE has three evidence rows and two universally quantified
 per-consumed-handle clauses, each with a `RuntimeClause` restored from case facts
-that explicitly names `TransactionSide::Input` and `CarrierMultiplicity::EveryMember`.
+that explicitly names `TransactionSide::Input` and `CarrierMultiplicity::EveryMember`; publication checks the clause object against its alternative carriers.
 Reading retains inclusion, retrieval and finality
 premises; publishing an obligation does not certify its witness or a target script.
 
 `KeyedPlanError` preserves stage and defect distinctions with all restorable owner
 identities. `Refused` and `CoverageGraph` include `unrestored_key_count`; a foreign
-key does not erase the original refusal. Census subjects are the sorted,
+key does not erase the original refusal. The count is of distinct unrestored keys. Census subjects are the sorted,
 deduplicated union of missing and unexpected relations. Complete proof-source,
 no-feasible-plan and region refusals use dedicated variants; partial restoration
 uses `Refused` with the same stage and named defect. Publication registry failures
-and genuinely unrestorable lowering facts use class-3 `CompileError::MissingOwnerIdentity`.
+use class-3 `CompileError::MissingOwnerIdentity`; lowering refusals retain their named defect even if their relation is unknown.
 This distinguishes partial diagnostics from broken publication registries, as the
 attestation adapter does. Unexpected layouts, unsupported runtime scopes and
 foreign evidence receive named typed defects rather than that generic error.

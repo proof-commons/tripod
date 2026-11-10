@@ -13,6 +13,9 @@ use crate::{
 use architecture::semantic::KeyedOperationId as K;
 type Rows = Vec<(core::Error, E)>;
 struct Keys {
+    other_relation: r::RelationKey,
+    other_id: realization::relation::KeyedRelationId,
+    other_case: p::Key,
     relation: r::RelationKey,
     id: realization::relation::KeyedRelationId,
     case: p::Key,
@@ -24,6 +27,22 @@ struct Keys {
     authorization: crate::engine_constructibility::Authorization,
 }
 impl Keys {
+    fn both(&self, stage: S, defect: D) -> E {
+        let relations = std::collections::BTreeSet::from([self.id, self.other_id]);
+        E::Refused {
+            stage,
+            defect,
+            operations: relations
+                .iter()
+                .map(|id| id.operation)
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            relations: relations.into_iter().collect(),
+            unrestored_key_count: 0,
+        }
+    }
+
     fn refused(&self, stage: S, defect: D) -> E {
         E::Refused {
             stage,
@@ -57,59 +76,82 @@ fn keyed_refusal_table_restores_every_adapter_arm() {
     let input = bound(&[K::Source, K::Merge]);
     let prepared = Prepared::new(&input).unwrap();
     assert!(prepared.analyze(limits()).is_ok());
-    let table = &prepared.records.sources.tables[0];
-    let relation = table.relation.clone();
-    let id = prepared.relation(&relation).unwrap();
-    let case = prepared
-        .records
-        .cases
-        .rows
-        .iter()
-        .find(|row| row.key.relation == relation)
-        .unwrap()
-        .key
-        .clone();
-    let attestation = crate::tests::bound_input(&[architecture::OperationId::CompactAsh]);
-    let (legacy, _) = crate::engine_attestation::program::test_preparation(&attestation).unwrap();
-    let keys = Keys {
-        id,
-        case,
-        alternative: proof::AlternativeKey {
-            relation: relation.clone(),
-            namespace: table.proof_namespace,
-            kind: table.proof_kind,
-        },
-        row: table.rows[0].clone(),
-        evidence: prepared.evidence.keys().next().unwrap().clone(),
-        carrier: prepared.identities.carriers.keys().next().unwrap().clone(),
-        layout: legacy.cases.layout_scopes.keys().next().unwrap().clone(),
-        authorization: legacy.constructibility.operations[0].1[0].clone(),
-        relation,
-    };
-    let rows = [
-        relations(&keys),
-        sources(&keys),
-        joins(&keys),
-        proofs(&keys),
-        predicates(&keys),
-        construction(&keys),
-        lifecycle(&keys),
-        requirements(&keys),
-        cases(&keys),
-        placement(&keys),
-        coverage(&keys),
-        graph(&keys),
-        wrappers(&keys),
-    ];
-    for (error, expected) in rows.into_iter().flatten() {
-        assert_eq!(prepared.refusal(error.clone()), expected, "{error:?}");
-    }
-    for (error, expected) in lowering_rows(&keys) {
-        assert_eq!(
-            refusal::lowering(input.owner(), error.clone()),
-            expected,
-            "{error:?}"
-        );
+    for table in &prepared.records.sources.tables {
+        let other_table = prepared
+            .records
+            .sources
+            .tables
+            .iter()
+            .find(|other| other.relation.operation != table.relation.operation)
+            .unwrap();
+        let other_relation = other_table.relation.clone();
+        let other_id = prepared.relation(&other_relation).unwrap();
+        let other_case = prepared
+            .records
+            .cases
+            .rows
+            .iter()
+            .find(|row| row.key.relation == other_relation)
+            .unwrap()
+            .key
+            .clone();
+        let relation = table.relation.clone();
+        let id = prepared.relation(&relation).unwrap();
+        let case = prepared
+            .records
+            .cases
+            .rows
+            .iter()
+            .find(|row| row.key.relation == relation)
+            .unwrap()
+            .key
+            .clone();
+        let attestation = crate::tests::bound_input(&[architecture::OperationId::CompactAsh]);
+        let (legacy, _) =
+            crate::engine_attestation::program::test_preparation(&attestation).unwrap();
+        let keys = Keys {
+            other_relation,
+            other_id,
+            other_case,
+            id,
+            case,
+            alternative: proof::AlternativeKey {
+                relation: relation.clone(),
+                namespace: table.proof_namespace,
+                kind: table.proof_kind,
+            },
+            row: table.rows[0].clone(),
+            evidence: prepared.evidence.keys().next().unwrap().clone(),
+            carrier: prepared.identities.carriers.keys().next().unwrap().clone(),
+            layout: legacy.cases.layout_scopes.keys().next().unwrap().clone(),
+            authorization: legacy.constructibility.operations[0].1[0].clone(),
+            relation,
+        };
+        let rows = [
+            relations(&keys),
+            sources(&keys),
+            joins(&keys),
+            proofs(&keys),
+            predicates(&keys),
+            construction(&keys),
+            lifecycle(&keys),
+            requirements(&keys),
+            cases(&keys),
+            placement(&keys),
+            coverage(&keys),
+            graph(&keys),
+            wrappers(&keys),
+        ];
+        for (error, expected) in rows.into_iter().flatten() {
+            assert_eq!(prepared.refusal(error.clone()), expected, "{error:?}");
+        }
+        for (error, expected) in lowering_rows(&keys) {
+            assert_eq!(
+                refusal::lowering(input.owner(), error.clone()),
+                expected,
+                "{error:?}"
+            );
+        }
     }
 }
 
@@ -118,9 +160,9 @@ fn relations(k: &Keys) -> Rows {
         (
             core::Error::Relations(r::RelationRecordError::ForeignProofOwner {
                 relation: k.relation.clone(),
-                alternative_relation: k.relation.clone(),
+                alternative_relation: k.other_relation.clone(),
             }),
-            k.refused(S::Relations, D::ForeignProofOwner),
+            k.both(S::Relations, D::ForeignProofOwner),
         ),
         (
             core::Error::Relations(r::RelationRecordError::DuplicateRelation {
@@ -137,20 +179,20 @@ fn relations(k: &Keys) -> Rows {
         (
             core::Error::Relations(r::RelationRecordError::EscapesScope {
                 prerequisite: k.relation.clone(),
-                dependent: k.relation.clone(),
+                dependent: k.other_relation.clone(),
             }),
-            k.refused(S::Relations, D::EscapesScope),
+            k.both(S::Relations, D::EscapesScope),
         ),
         (
             core::Error::Relations(r::RelationRecordError::DuplicateDependency {
                 prerequisite: k.relation.clone(),
-                dependent: k.relation.clone(),
+                dependent: k.other_relation.clone(),
                 kind: r::DependencyKind {
                     namespace: 2,
                     code: 0,
                 },
             }),
-            k.refused(S::Relations, D::DuplicateDependency),
+            k.both(S::Relations, D::DuplicateDependency),
         ),
         (
             core::Error::Relations(r::RelationRecordError::Cycle {
@@ -164,9 +206,9 @@ fn relations(k: &Keys) -> Rows {
         (
             core::Error::Relations(r::RelationRecordError::CensusMismatch {
                 missing: vec![k.relation.clone()],
-                unexpected: vec![k.relation.clone()],
+                unexpected: vec![k.other_relation.clone()],
             }),
-            k.refused(S::Relations, D::CensusMismatch),
+            k.both(S::Relations, D::CensusMismatch),
         ),
     ]
 }
@@ -246,33 +288,33 @@ fn joins(k: &Keys) -> Rows {
             core::Error::StageCensus {
                 stage: core::Stage::Source,
                 missing: vec![k.relation.clone()],
-                unexpected: vec![k.relation.clone()],
+                unexpected: vec![k.other_relation.clone()],
             },
-            k.refused(S::Sources, D::CensusMismatch),
+            k.both(S::Sources, D::CensusMismatch),
         ),
         (
             core::Error::StageCensus {
                 stage: core::Stage::Proof,
                 missing: vec![k.relation.clone()],
-                unexpected: vec![k.relation.clone()],
+                unexpected: vec![k.other_relation.clone()],
             },
-            k.refused(S::Proof, D::CensusMismatch),
+            k.both(S::Proof, D::CensusMismatch),
         ),
         (
             core::Error::StageCensus {
                 stage: core::Stage::Requirement,
                 missing: vec![k.relation.clone()],
-                unexpected: vec![k.relation.clone()],
+                unexpected: vec![k.other_relation.clone()],
             },
-            k.refused(S::Requirements, D::CensusMismatch),
+            k.both(S::Requirements, D::CensusMismatch),
         ),
         (
             core::Error::StageCensus {
                 stage: core::Stage::Case,
                 missing: vec![k.relation.clone()],
-                unexpected: vec![k.relation.clone()],
+                unexpected: vec![k.other_relation.clone()],
             },
-            k.refused(S::Cases, D::CensusMismatch),
+            k.both(S::Cases, D::CensusMismatch),
         ),
     ]
 }
@@ -520,9 +562,9 @@ fn cases(k: &Keys) -> Rows {
         (
             core::Error::Cases(c::Error::CaseCensusMismatch {
                 missing: vec![k.case.clone()],
-                unexpected: vec![k.case.clone()],
+                unexpected: vec![k.other_case.clone()],
             }),
-            k.refused(S::Cases, D::CensusMismatch),
+            k.both(S::Cases, D::CensusMismatch),
         ),
         (
             core::Error::Cases(c::Error::DuplicateCase(k.case.clone())),
@@ -587,9 +629,9 @@ fn placement(k: &Keys) -> Rows {
         (
             wrap(p::Error::PlacementCensusMismatch {
                 missing: vec![k.case.clone()],
-                unexpected: vec![k.case.clone()],
+                unexpected: vec![k.other_case.clone()],
             }),
-            k.refused(S::Placement, D::CensusMismatch),
+            k.both(S::Placement, D::CensusMismatch),
         ),
         (
             wrap(p::Error::UnexpectedLayoutRequirement(vec![
@@ -655,9 +697,9 @@ fn coverage(k: &Keys) -> Rows {
         (
             wrap(c::Error::CensusMismatch {
                 missing: vec![k.case.clone()],
-                unexpected: vec![k.case.clone()],
+                unexpected: vec![k.other_case.clone()],
             }),
-            k.refused(S::Coverage, D::CensusMismatch),
+            k.both(S::Coverage, D::CensusMismatch),
         ),
         (
             wrap(c::Error::DuplicateRequirement(c::Requirement {
@@ -706,7 +748,7 @@ fn graph(k: &Keys) -> Rows {
     let symbol = g::Key::Relation(k.case.clone());
     let edge = g::Dependency {
         source: symbol.clone(),
-        target: symbol.clone(),
+        target: g::Key::Relation(k.other_case.clone()),
         edge: crate::coverage_graph::CoverageEdge::RelationPrerequisite,
     };
     let wrap =
@@ -714,6 +756,16 @@ fn graph(k: &Keys) -> Rows {
     let expected = |defect| E::CoverageGraph {
         defect,
         symbols: vec![crate::keyed_plan::CoverageSymbol::Relation(k.id)],
+        unrestored_key_count: 0,
+    };
+    let both = |defect| E::CoverageGraph {
+        defect,
+        symbols: std::collections::BTreeSet::from([
+            crate::keyed_plan::CoverageSymbol::Relation(k.id),
+            crate::keyed_plan::CoverageSymbol::Relation(k.other_id),
+        ])
+        .into_iter()
+        .collect(),
         unrestored_key_count: 0,
     };
     vec![
@@ -727,15 +779,15 @@ fn graph(k: &Keys) -> Rows {
         ),
         (
             wrap(g::Error::EndpointClass(Box::new(edge.clone()))),
-            expected(D::EndpointClass),
+            both(D::EndpointClass),
         ),
         (
             wrap(g::Error::CrossOperation(Box::new(edge.clone()))),
-            expected(D::CrossOperation),
+            both(D::CrossOperation),
         ),
         (
             wrap(g::Error::DuplicateDependency(Box::new(edge.clone()))),
-            expected(D::DuplicateDependency),
+            both(D::DuplicateDependency),
         ),
         (
             wrap(g::Error::Cycle(vec![g::Cycle {
@@ -751,9 +803,9 @@ fn wrappers(k: &Keys) -> Rows {
     vec![
         (
             core::Error::Operations(Box::new(crate::engine_operation::Error::Prerequisite(
-                Box::new((k.case.clone(), k.case.clone())),
+                Box::new((k.case.clone(), k.other_case.clone())),
             ))),
-            k.refused(S::Coverage, D::Prerequisite),
+            k.both(S::Coverage, D::Prerequisite),
         ),
         (
             core::Error::Operations(Box::new(crate::engine_operation::Error::CaseFacts {
@@ -765,9 +817,9 @@ fn wrappers(k: &Keys) -> Rows {
         (
             core::Error::Operations(Box::new(crate::engine_operation::Error::CaseCensus {
                 missing: vec![k.case.clone()],
-                unexpected: vec![k.case.clone()],
+                unexpected: vec![k.other_case.clone()],
             })),
-            k.refused(S::Cases, D::CensusMismatch),
+            k.both(S::Cases, D::CensusMismatch),
         ),
         (core::Error::SourceMismatch, E::PublicationMismatch),
         (core::Error::ProgramMismatch, E::PublicationMismatch),
@@ -853,7 +905,7 @@ fn partial_keyed_restoration_keeps_known_subjects_and_unknown_counts() {
         (
             core::Error::Relations(r::RelationRecordError::CensusMismatch {
                 missing: vec![known.clone(), unknown.clone()],
-                unexpected: vec![known.clone()],
+                unexpected: vec![known.clone(), unknown.clone()],
             }),
             expected(
                 S::Relations,
@@ -907,5 +959,53 @@ fn partial_keyed_restoration_keeps_known_subjects_and_unknown_counts() {
     ];
     for (offered, expected) in rows {
         assert_eq!(prepared.refusal(offered), expected);
+    }
+}
+
+#[test]
+fn unknown_lowering_keys_keep_their_named_defect() {
+    use crate::engine_keyed::KeyedLoweringError as L;
+    use crate::engine_requirement::ProofBundleError as B;
+    let input = bound(&[K::Source]);
+    let prepared = Prepared::new(&input).unwrap();
+    let mut key = prepared.records.sources.tables[0].relation.clone();
+    assert!(matches!(
+        refusal::lowering(input.owner(), L::MissingSourceTable(key.clone())),
+        E::Refused {
+            unrestored_key_count: 0,
+            ..
+        }
+    ));
+    key.subject.push(u16::MAX);
+    let alternative = proof::AlternativeKey {
+        relation: key.clone(),
+        namespace: 2,
+        kind: 0,
+    };
+    for (error, defect) in [
+        (L::MissingSourceTable(key.clone()), D::MissingSourceTable),
+        (L::RuntimeSourcePayload(key), D::RuntimeSourcePayload),
+        (
+            L::ProofBundle(B::Constructibility(alternative.clone())),
+            D::Constructibility,
+        ),
+        (
+            L::ProofBundle(B::Source {
+                alternative,
+                reason: crate::proof::LocalProofRejection::SourceDerivation,
+            }),
+            D::SourceRows,
+        ),
+    ] {
+        assert_eq!(
+            refusal::lowering(input.owner(), error),
+            E::Refused {
+                stage: S::Lowering,
+                defect,
+                relations: Vec::new(),
+                operations: Vec::new(),
+                unrestored_key_count: 1,
+            }
+        );
     }
 }

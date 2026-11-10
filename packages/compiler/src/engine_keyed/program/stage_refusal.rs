@@ -12,6 +12,8 @@ impl Prepared<'_> {
         let mut unrestored_key_count = 0;
         let operations = keys
             .into_iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
             .filter_map(|key| {
                 self.operations.get(&key).map_or_else(
                     || {
@@ -199,6 +201,8 @@ impl Prepared<'_> {
         let mut unrestored_key_count = 0;
         let symbols = symbols
             .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
             .filter_map(|key| {
                 self.symbol(key).map_or_else(
                     |_| {

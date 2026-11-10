@@ -331,6 +331,6 @@ fn keyed_evidence_refuses_foreign_vocabulary_with_its_named_defect() {
     }
     assert_eq!(
         super::decode_side(u16::MAX),
-        Err(super::fact_refusal(Defect::UnsupportedRuntimeScope))
+        Err(super::fact_refusal(Defect::UnsupportedEvidenceSide))
     );
 }

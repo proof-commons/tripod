@@ -1,5 +1,5 @@
 //! Restore public owner identities at the keyed error boundary.
-use super::{Prepared, missing};
+use super::Prepared;
 use crate::{
     engine_program as core,
     keyed_plan::{Defect as D, KeyedPlanError as E, Stage as S},
@@ -38,7 +38,13 @@ pub(super) fn lowering(
         .into_iter()
         .find(|row| super::super::relation_key(row.id) == key)
     else {
-        return missing();
+        return E::Refused {
+            stage: S::Lowering,
+            defect,
+            relations: Vec::new(),
+            operations: Vec::new(),
+            unrestored_key_count: 1,
+        };
     };
     if let Some(reason) = proof {
         return E::ProofBundle {
@@ -63,6 +69,8 @@ impl Prepared<'_> {
     ) -> E {
         let mut unrestored_key_count = 0;
         let relations = keys
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .filter_map(|key| {
                 self.relation(&key).map_or_else(
@@ -237,7 +245,10 @@ impl Prepared<'_> {
                     defect: D::UnexpectedLayoutRequirement,
                     relations: Vec::new(),
                     operations: Vec::new(),
-                    unrestored_key_count: keys.len(),
+                    unrestored_key_count: keys
+                        .into_iter()
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len(),
                 },
             },
             O::Coverage(error) => self.coverage_refusal(*error),

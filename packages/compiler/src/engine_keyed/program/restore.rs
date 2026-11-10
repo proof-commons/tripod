@@ -97,9 +97,13 @@ impl Prepared<'_> {
                 carrier: self.carrier(placed)?,
             },
             graph::Key::Layout(_) => {
-                return Err(super::fact_refusal(
-                    crate::keyed_plan::Defect::UnexpectedLayout,
-                ));
+                return Err(KeyedPlanError::Refused {
+                    stage: crate::keyed_plan::Stage::Coverage,
+                    defect: crate::keyed_plan::Defect::UnexpectedLayout,
+                    relations: Vec::new(),
+                    operations: Vec::new(),
+                    unrestored_key_count: 1,
+                });
             }
             #[cfg(test)]
             graph::Key::Owner(_) => return Err(missing()),
@@ -147,7 +151,7 @@ impl Prepared<'_> {
                             .runtime
                             .iter()
                             .map(|row| {
-                                let crate::engine_case_facts::Scope::Member { side, .. } =
+                                let crate::engine_case_facts::Scope::Member { side, object } =
                                     row.scope
                                 else {
                                     return Err(self.refused(
@@ -156,8 +160,31 @@ impl Prepared<'_> {
                                         vec![key.relation.clone()],
                                     ));
                                 };
+                                let side = super::decode_side(side).map_err(|_| {
+                                    self.refused(
+                                        crate::keyed_plan::Stage::Cases,
+                                        crate::keyed_plan::Defect::UnsupportedRuntimeScope,
+                                        vec![key.relation.clone()],
+                                    )
+                                })?;
+                                let carrier_objects = bundle
+                                    .carriers
+                                    .iter()
+                                    .flat_map(|alternative| &alternative.carriers)
+                                    .map(|placed| self.carrier(placed))
+                                    .collect::<Result<Vec<_>, _>>()?;
+                                if !carrier_objects.iter().any(|carrier| {
+                                    crate::engine_identity::object(carrier.object)
+                                        == [object.namespace, object.code]
+                                }) {
+                                    return Err(self.refused(
+                                        crate::keyed_plan::Stage::Cases,
+                                        crate::keyed_plan::Defect::RuntimeObjectMismatch,
+                                        vec![key.relation.clone()],
+                                    ));
+                                }
                                 Ok(RuntimeClause {
-                                    side: super::decode_side(side)?,
+                                    side,
                                     multiplicity: row.multiplicity,
                                 })
                             })

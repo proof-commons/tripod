@@ -205,5 +205,5 @@ fn decode_side(code: u16) -> Result<realization::TransactionSide, KeyedPlanError
     [TransactionSide::Input, TransactionSide::Output]
         .into_iter()
         .find(|side| crate::engine_identity::side_code(*side) == code)
-        .ok_or_else(|| fact_refusal(crate::keyed_plan::Defect::UnsupportedRuntimeScope))
+        .ok_or_else(|| fact_refusal(crate::keyed_plan::Defect::UnsupportedEvidenceSide))
 }

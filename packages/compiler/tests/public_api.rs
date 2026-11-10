@@ -1581,19 +1581,31 @@ fn keyed_plan_surface_locks_reexports_privacy_and_immutability() {
         ]
     );
     let mut declaration = String::new();
+    let mut type_body = false;
     for line in code.lines() {
-        if line.trim_start().starts_with("pub") || !declaration.is_empty() {
+        let trimmed = line.trim_start();
+        if declaration.is_empty() && trimmed.starts_with("pub") {
+            type_body = line.starts_with("pub enum ") || line.starts_with("pub struct ");
+        }
+        if trimmed.starts_with("pub") || !declaration.is_empty() {
             declaration.push_str(line);
-            if line.trim_end().ends_with(['{', ';', ',']) {
+            let complete = if type_body {
+                line == "}" || line.ends_with(';') && !declaration.contains('{')
+            } else {
+                line.contains('{') || line.trim_end().ends_with([';', ','])
+            };
+            if complete {
                 assert!(
                     !declaration.contains("engine_")
                         || declaration
-                            == "pub use crate::engine_keyed::ShellField as DeclarationField;"
+                            == "pub use crate::engine_keyed::ShellField as DeclarationField;",
+                    "engine path in public declaration: {declaration}"
                 );
                 declaration.clear();
             }
         }
     }
+    assert!(declaration.is_empty(), "unterminated public declaration");
     for banned in [
         "pub fn new(",
         "Default",
