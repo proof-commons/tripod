@@ -6,7 +6,7 @@ use crate::{
     keyed_plan::{
         CoverageDependency, CoverageNode, CoveragePurpose, CoverageRequirement, CoverageSymbol,
         EvidenceDefect, EvidenceObligation, KeyedPlanError, KeyedPlanProjection, OperationPlan,
-        ProofPlan, RelationPlan, RuntimeCarrier, StageCensus,
+        ProofPlan, RelationPlan, RuntimeCarrier, RuntimeClause, StageCensus,
     },
 };
 use realization::relation::KeyedRelationId;
@@ -96,7 +96,11 @@ impl Prepared<'_> {
                 relation: self.case(key)?,
                 carrier: self.carrier(placed)?,
             },
-            graph::Key::Layout(_) => return Err(missing()),
+            graph::Key::Layout(_) => {
+                return Err(super::fact_refusal(
+                    crate::keyed_plan::Defect::UnexpectedLayout,
+                ));
+            }
             #[cfg(test)]
             graph::Key::Owner(_) => return Err(missing()),
         })
@@ -116,7 +120,11 @@ impl Prepared<'_> {
                     .iter()
                     .map(|alternative| {
                         if !alternative.layout.is_empty() {
-                            return Err(missing());
+                            return Err(self.refused(
+                                crate::keyed_plan::Stage::Coverage,
+                                crate::keyed_plan::Defect::UnexpectedLayout,
+                                vec![key.relation.clone()],
+                            ));
                         }
                         alternative
                             .carriers
@@ -134,6 +142,26 @@ impl Prepared<'_> {
                             .ok_or_else(missing)?
                             .relation,
                         active: plan.active,
+                        runtime: bundle
+                            .facts
+                            .runtime
+                            .iter()
+                            .map(|row| {
+                                let crate::engine_case_facts::Scope::Member { side, .. } =
+                                    row.scope
+                                else {
+                                    return Err(self.refused(
+                                        crate::keyed_plan::Stage::Cases,
+                                        crate::keyed_plan::Defect::UnsupportedRuntimeScope,
+                                        vec![key.relation.clone()],
+                                    ));
+                                };
+                                Ok(RuntimeClause {
+                                    side: super::decode_side(side)?,
+                                    multiplicity: row.multiplicity,
+                                })
+                            })
+                            .collect::<Result<_, KeyedPlanError>>()?,
                         boundaries: plan.boundaries.clone(),
                         positive: plan
                             .positive
@@ -163,7 +191,11 @@ impl Prepared<'_> {
         value: &engine_operation::Operation,
     ) -> Result<OperationPlan, KeyedPlanError> {
         if !value.layout.is_empty() {
-            return Err(missing());
+            return Err(self.operation_defect(
+                crate::keyed_plan::Stage::Coverage,
+                crate::keyed_plan::Defect::UnexpectedLayout,
+                vec![value.id],
+            ));
         }
         let relations = self.relation_plans(value)?;
         let placements = value
@@ -171,7 +203,11 @@ impl Prepared<'_> {
             .iter()
             .map(|candidate| {
                 if !candidate.layout.is_empty() {
-                    return Err(missing());
+                    return Err(self.operation_defect(
+                        crate::keyed_plan::Stage::Placement,
+                        crate::keyed_plan::Defect::UnexpectedLayout,
+                        vec![value.id],
+                    ));
                 }
                 candidate
                     .assignments

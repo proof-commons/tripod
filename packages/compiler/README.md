@@ -157,13 +157,23 @@ carrier alternatives and placement assignments, positive/negative coverage rows,
 the coverage graph, explicit evidence premises, seven stage censuses, and proof
 and placement limits/reports. SOURCE has four evidence rows and no runtime
 carrier; MERGE has three evidence rows and two universally quantified
-per-consumed-handle clauses. Reading retains inclusion, retrieval and finality
+per-consumed-handle clauses, each with a `RuntimeClause` restored from case facts
+that explicitly names `TransactionSide::Input` and `CarrierMultiplicity::EveryMember`.
+Reading retains inclusion, retrieval and finality
 premises; publishing an obligation does not certify its witness or a target script.
 
-`KeyedPlanError` preserves stage and defect distinctions with owner relation or
-operation identities; coverage graph errors carry owner-typed symbols. Missing
-reverse identities use `CompileError::MissingOwnerIdentity` through `Compiler`,
-the same class-3 internal defect as the attestation adapter. Neither successful
+`KeyedPlanError` preserves stage and defect distinctions with all restorable owner
+identities. `Refused` and `CoverageGraph` include `unrestored_key_count`; a foreign
+key does not erase the original refusal. Census subjects are the sorted,
+deduplicated union of missing and unexpected relations. Complete proof-source,
+no-feasible-plan and region refusals use dedicated variants; partial restoration
+uses `Refused` with the same stage and named defect. Publication registry failures
+and genuinely unrestorable lowering facts use class-3 `CompileError::MissingOwnerIdentity`.
+This distinguishes partial diagnostics from broken publication registries, as the
+attestation adapter does. Unexpected layouts, unsupported runtime scopes and
+foreign evidence receive named typed defects rather than that generic error.
+The test-only opaque graph Owner symbol has no keyed reverse registry and remains
+a documented class-3 publication site. Neither successful
 plans nor errors expose raw engine records. The sealed public API cannot construct
 synthetic stage defects; paired internal controls enter the production preparation
 and analysis path, while `tests/keyed_plan.rs` is the external consumer. The raw

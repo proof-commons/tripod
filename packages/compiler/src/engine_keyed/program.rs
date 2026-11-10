@@ -14,6 +14,8 @@ use std::collections::BTreeMap;
 #[cfg(test)]
 mod negative_tests;
 mod refusal;
+#[cfg(test)]
+mod refusal_tests;
 mod restore;
 mod stage_refusal;
 #[cfg(test)]
@@ -146,7 +148,7 @@ fn missing() -> KeyedPlanError {
 
 fn premises(value: &crate::engine_source::Evidence) -> Result<EvidencePremises, KeyedPlanError> {
     use crate::engine_source::{Evidence as E, Recurrence};
-    use realization::{TransactionSide as S, relation::RecordRecurrence as R};
+    use realization::relation::RecordRecurrence as R;
     Ok(match value {
         E::HandleClassification {
             side,
@@ -154,11 +156,7 @@ fn premises(value: &crate::engine_source::Evidence) -> Result<EvidencePremises, 
             maximum,
             ..
         } => EvidencePremises::HandleClassification {
-            side: match *side {
-                0 => S::Input,
-                1 => S::Output,
-                _ => return Err(missing()),
-            },
+            side: decode_side(*side)?,
             minimum: *minimum,
             maximum: *maximum,
         },
@@ -179,7 +177,7 @@ fn premises(value: &crate::engine_source::Evidence) -> Result<EvidencePremises, 
             finality_for_final_reading: *finality_for_final_reading,
         },
         E::Operator { .. } | E::ConfidentialValue { .. } | E::SubstrateValue { .. } => {
-            return Err(missing());
+            return Err(fact_refusal(crate::keyed_plan::Defect::ForeignEvidence));
         }
     })
 }
@@ -191,4 +189,21 @@ pub fn derive(
     let prepared = Prepared::new(input)?;
     let program = prepared.analyze(limits)?;
     prepared.publish(&program)
+}
+
+const fn fact_refusal(defect: crate::keyed_plan::Defect) -> KeyedPlanError {
+    KeyedPlanError::Refused {
+        stage: crate::keyed_plan::Stage::Lowering,
+        defect,
+        relations: Vec::new(),
+        operations: Vec::new(),
+        unrestored_key_count: 0,
+    }
+}
+fn decode_side(code: u16) -> Result<realization::TransactionSide, KeyedPlanError> {
+    use realization::TransactionSide;
+    [TransactionSide::Input, TransactionSide::Output]
+        .into_iter()
+        .find(|side| crate::engine_identity::side_code(*side) == code)
+        .ok_or_else(|| fact_refusal(crate::keyed_plan::Defect::UnsupportedRuntimeScope))
 }

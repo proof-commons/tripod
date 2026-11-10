@@ -25,12 +25,12 @@ pub(super) fn lowering(
         L::MissingSourceTable(key) => (D::MissingSourceTable, key, None),
         L::RuntimeSourcePayload(key) => (D::RuntimeSourcePayload, key, None),
         L::ProofBundle(crate::engine_requirement::ProofBundleError::Constructibility(key)) => {
-            (D::ProofBundle, key.relation, Some(None))
+            (D::Constructibility, key.relation, Some(None))
         }
         L::ProofBundle(crate::engine_requirement::ProofBundleError::Source {
             alternative,
             reason,
-        }) => (D::ProofBundle, alternative.relation, Some(Some(reason))),
+        }) => (D::SourceRows, alternative.relation, Some(Some(reason))),
     };
     let Some(row) = owner
         .source()
@@ -51,6 +51,7 @@ pub(super) fn lowering(
         defect,
         relations: vec![row.id],
         operations: vec![row.id.operation],
+        unrestored_key_count: 0,
     }
 }
 impl Prepared<'_> {
@@ -60,23 +61,30 @@ impl Prepared<'_> {
         defect: D,
         keys: Vec<crate::engine_records::RelationKey>,
     ) -> E {
-        match keys
+        let mut unrestored_key_count = 0;
+        let relations = keys
             .into_iter()
-            .map(|key| self.relation(&key))
-            .collect::<Result<Vec<_>, _>>()
-        {
-            Ok(relations) => E::Refused {
-                stage,
-                defect,
-                operations: relations
-                    .iter()
-                    .map(|r| r.operation)
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .into_iter()
-                    .collect(),
-                relations,
-            },
-            Err(error) => error,
+            .filter_map(|key| {
+                self.relation(&key).map_or_else(
+                    |_| {
+                        unrestored_key_count += 1;
+                        None
+                    },
+                    Some,
+                )
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        E::Refused {
+            stage,
+            defect,
+            operations: relations
+                .iter()
+                .map(|r| r.operation)
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            relations: relations.into_iter().collect(),
+            unrestored_key_count,
         }
     }
     pub(super) fn refusal(&self, error: core::Error) -> E {
@@ -87,21 +95,24 @@ impl Prepared<'_> {
             defect: D::InvalidRecords,
             relations: Vec::new(),
             operations: Vec::new(),
+            unrestored_key_count: 0,
         };
         match error {
             core::Error::Relations(error) => self.relations_refusal(error),
             core::Error::Sources(error) => self.source_refusal(*error),
             core::Error::Proof(error) => match error {
-                P::NoFeasiblePlan(keys) => {
-                    match keys.iter().map(|key| self.relation(key)).collect() {
-                        Ok(keys) => E::NoFeasiblePlan(keys),
-                        Err(error) => error,
-                    }
-                }
-                P::FixedSource(key) => match self.relation(&key) {
-                    Ok(key) => E::FixedSource(key),
-                    Err(error) => error,
+                P::NoFeasiblePlan(keys) => match self.refused(S::Proof, D::NoFeasiblePlan, keys) {
+                    E::Refused {
+                        relations,
+                        unrestored_key_count: 0,
+                        ..
+                    } => E::NoFeasiblePlan(relations),
+                    partial => partial,
                 },
+                P::FixedSource(key) => self.relation(&key).map_or_else(
+                    |_| self.refused(S::Proof, D::FixedSource, vec![key]),
+                    E::FixedSource,
+                ),
                 P::StateLimit(limit) => E::SearchLimit {
                     stage: S::Proof,
                     candidates: false,
@@ -157,9 +168,6 @@ impl Prepared<'_> {
             core::Error::Lifecycle(error) => self.lifecycle_refusal(&error),
             core::Error::Requirements(error) => self.requirement_refusal(error),
             core::Error::Aggregate(error) => self.aggregate_refusal(*error),
-            core::Error::Cases(crate::engine_cases::Error::OwnerRefusal(error)) => {
-                E::Compiler(error)
-            }
             core::Error::Cases(error) => self.case_refusal(error),
             #[cfg(test)]
             core::Error::Lowering(_) => empty(S::Lowering),
@@ -224,7 +232,13 @@ impl Prepared<'_> {
                     D::UnpermittedCarrierPlacement,
                     vec![key.relation],
                 ),
-                P::UnexpectedLayoutRequirement(_) => missing(),
+                P::UnexpectedLayoutRequirement(keys) => E::Refused {
+                    stage: S::Placement,
+                    defect: D::UnexpectedLayoutRequirement,
+                    relations: Vec::new(),
+                    operations: Vec::new(),
+                    unrestored_key_count: keys.len(),
+                },
             },
             O::Coverage(error) => self.coverage_refusal(*error),
             O::Join(error) => self.join_refusal(error),
@@ -292,10 +306,10 @@ impl Prepared<'_> {
             F::ForeignOperand(key) => (D::ForeignOperand, key.relation),
             F::DuplicateRow(key) => (D::DuplicateRow, key.relation),
             F::UndecidableRegion(operation) => {
-                return self
-                    .operations
-                    .get(&operation)
-                    .map_or_else(missing, |operation| E::UndecidableRegion(*operation));
+                return self.operations.get(&operation).map_or_else(
+                    || self.operation_defect(S::Sources, D::UndecidableRegion, vec![operation]),
+                    |operation| E::UndecidableRegion(*operation),
+                );
             }
         };
         self.refused(S::Sources, defect, vec![key])

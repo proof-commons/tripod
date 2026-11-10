@@ -304,25 +304,25 @@ impl RelationOwner for KeyedOwner {
     fn lower_requirements(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<Vec<crate::engine_requirement::Table>, KeyedLoweringError> {
-        Self::lower_requirements(input)
+        oracle_lower_requirements(input)
     }
     #[cfg(test)]
     fn lower_predicates(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<crate::engine_foundation::Records, KeyedLoweringError> {
-        Self::lower_predicates(input)
+        oracle_lower_predicates(input)
     }
     #[cfg(test)]
     fn lower_proofs(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<crate::engine_proof::Records, KeyedLoweringError> {
-        Self::lower_proofs(input)
+        oracle_lower_proofs(input)
     }
     #[cfg(test)]
     fn lower_cases(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<crate::engine_cases::Tables, KeyedLoweringError> {
-        Self::lower_cases(input)
+        oracle_lower_cases(input)
     }
     fn lower_sources(&self) -> Result<crate::engine_source::SourceRecords, KeyedLoweringError> {
         self.shells()?;
@@ -332,7 +332,7 @@ impl RelationOwner for KeyedOwner {
     fn lower_constructibility(
         &self,
     ) -> Result<crate::engine_constructibility::Records, KeyedLoweringError> {
-        Self::lower_constructibility(self)
+        oracle_lower_constructibility(self)
     }
 
     fn lower_relations(&self) -> Result<Self::Lowered, KeyedLoweringError> {
@@ -713,42 +713,40 @@ fn source_evidence(value: &crate::engine_source::Evidence) -> Part {
     })
 }
 
-impl KeyedOwner {
-    #[cfg(test)]
-    pub(super) fn lower_requirements(
-        input: &crate::input::BoundCompilerInput<Self>,
-    ) -> Result<Vec<crate::engine_requirement::Table>, KeyedLoweringError> {
-        crate::engine_requirement::proof_tables(&Self::lower_proofs(input)?)
-            .map_err(KeyedLoweringError::ProofBundle)
-    }
-    #[cfg(test)]
-    pub(super) fn lower_predicates(
-        input: &crate::input::BoundCompilerInput<Self>,
-    ) -> Result<crate::engine_foundation::Records, KeyedLoweringError> {
-        let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_predicates", scope_count = crate::instrumentation::count(input.owner().scope().len()));
-        let _entered = span.enter();
-        Ok(input.owner().shells()?.predicates)
-    }
-    #[cfg(test)]
-    pub(super) fn lower_proofs(
-        input: &crate::input::BoundCompilerInput<Self>,
-    ) -> Result<crate::engine_proof::Records, KeyedLoweringError> {
-        input.owner().shells()?;
-        Ok(proof_records(input.owner().lower_sources()?))
-    }
-    #[cfg(test)]
-    pub(super) fn lower_cases(
-        input: &crate::input::BoundCompilerInput<Self>,
-    ) -> Result<crate::engine_cases::Tables, KeyedLoweringError> {
-        input.owner().shells()?;
-        case_records(input.owner(), &lower_sources(input.owner()))
-    }
-    #[cfg(test)]
-    pub(super) fn lower_constructibility(
-        &self,
-    ) -> Result<crate::engine_constructibility::Records, KeyedLoweringError> {
-        Ok(self.shells()?.construction())
-    }
+#[cfg(test)]
+fn oracle_lower_requirements(
+    input: &crate::input::BoundCompilerInput<KeyedOwner>,
+) -> Result<Vec<crate::engine_requirement::Table>, KeyedLoweringError> {
+    crate::engine_requirement::proof_tables(&oracle_lower_proofs(input)?)
+        .map_err(KeyedLoweringError::ProofBundle)
+}
+#[cfg(test)]
+fn oracle_lower_predicates(
+    input: &crate::input::BoundCompilerInput<KeyedOwner>,
+) -> Result<crate::engine_foundation::Records, KeyedLoweringError> {
+    let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_predicates", scope_count = crate::instrumentation::count(input.owner().scope().len()));
+    let _entered = span.enter();
+    Ok(input.owner().shells()?.predicates)
+}
+#[cfg(test)]
+fn oracle_lower_proofs(
+    input: &crate::input::BoundCompilerInput<KeyedOwner>,
+) -> Result<crate::engine_proof::Records, KeyedLoweringError> {
+    input.owner().shells()?;
+    Ok(proof_records(input.owner().lower_sources()?))
+}
+#[cfg(test)]
+fn oracle_lower_cases(
+    input: &crate::input::BoundCompilerInput<KeyedOwner>,
+) -> Result<crate::engine_cases::Tables, KeyedLoweringError> {
+    input.owner().shells()?;
+    case_records(input.owner(), &lower_sources(input.owner()))
+}
+#[cfg(test)]
+fn oracle_lower_constructibility(
+    owner: &KeyedOwner,
+) -> Result<crate::engine_constructibility::Records, KeyedLoweringError> {
+    Ok(owner.shells()?.construction())
 }
 
 fn proof_records(source: crate::engine_source::SourceRecords) -> crate::engine_proof::Records {
@@ -816,6 +814,9 @@ fn case_records(
         .plans
         .iter()
         .map(|(key, runtime)| {
+            let covered = coverage
+                .get(key)
+                .ok_or_else(|| KeyedLoweringError::MissingSourceTable(key.relation.clone()))?;
             Ok(core::Row {
                 key: key.clone(),
                 proof: None,
@@ -826,11 +827,11 @@ fn case_records(
                     .filter(|row| row.key == *key)
                     .cloned()
                     .collect(),
-                coverage: Ok(coverage[key].clone()),
+                coverage: Ok(covered.clone()),
                 refusal: None,
-                facts: Some(case_facts(key, *runtime, &coverage[key], sources)?),
-                projections: coverage[key].boundaries.clone(),
-                collateral: coverage[key]
+                facts: Some(case_facts(key, *runtime, covered, sources)?),
+                projections: covered.boundaries.clone(),
+                collateral: covered
                     .negative
                     .iter()
                     .filter(|row| row.boundary == crate::coverage::CoverageBoundary::RuntimeCarrier)

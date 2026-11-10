@@ -8,10 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub use crate::carrier::CarrierQuantification;
 pub use crate::coverage::CoverageBoundary;
-pub use crate::coverage_graph::{CoverageEdge, CoverageNodeClass};
+pub use crate::coverage_graph::{CoverageEdge, CoverageEdgeClass, CoverageNodeClass};
 pub use crate::engine_keyed::ShellField as DeclarationField;
 pub use crate::input::ProofSearchLimits;
-pub use crate::placement::{PlacementSearchLimits, PlacementSearchReport};
+pub use crate::placement::{CarrierMultiplicity, PlacementSearchLimits, PlacementSearchReport};
 pub use crate::proof::{LocalProofRejection, ProofSearchReport};
 
 /// A premise still owed at the evidence boundary, not an admitted witness.
@@ -72,11 +72,18 @@ pub struct CoverageRequirement {
     pub purpose: CoveragePurpose,
     pub inactive: bool,
 }
+/// Runtime clause restored from the shared case facts, not inferred from a carrier.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RuntimeClause {
+    pub side: realization::TransactionSide,
+    pub multiplicity: CarrierMultiplicity,
+}
 /// Complete per-relation publication from a shared operation bundle.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RelationPlan {
     pub declaration: KeyedRelation,
     pub active: bool,
+    pub runtime: Vec<RuntimeClause>,
     pub boundaries: BTreeSet<CoverageBoundary>,
     pub positive: Vec<CoverageRequirement>,
     pub negative: Vec<CoverageRequirement>,
@@ -164,6 +171,7 @@ impl KeyedPlan {
 }
 /// Stage at which a keyed declaration or its lowering was refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Stage {
     Lowering,
     Relations,
@@ -180,11 +188,10 @@ pub enum Stage {
 }
 /// Typed record defect. These are internal contract failures, not partial plans.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Defect {
-    UnsupportedShell,
     MissingSourceTable,
     RuntimeSourcePayload,
-    ProofBundle,
     ForeignProofOwner,
     DuplicateRelation,
     UnknownEndpoint,
@@ -196,7 +203,13 @@ pub enum Defect {
     MissingOperand,
     ForeignOperand,
     DuplicateRow,
+    /// Partial restoration fallback; complete identities use the dedicated error.
     UndecidableRegion,
+    NoFeasiblePlan,
+    FixedSource,
+    ForeignEvidence,
+    UnsupportedRuntimeScope,
+    UnexpectedLayoutRequirement,
     RepresentationChoices,
     LifecycleRequirements,
     Constructibility,
@@ -204,6 +217,7 @@ pub enum Defect {
     DuplicateSourceTable,
     UnnamedSourceTable,
     ProofSource,
+    /// Only the private raw-record test oracle can return a lowering wrapper.
     InvalidRecords,
     UnknownExpression,
     NonBoolean,
@@ -264,6 +278,7 @@ pub enum KeyedPlanError {
     CoverageGraph {
         defect: Defect,
         symbols: Vec<CoverageSymbol>,
+        unrestored_key_count: usize,
     },
     #[error("unsupported keyed declaration field {field:?} in {operation:?}: {count}")]
     UnsupportedShell {
@@ -274,11 +289,14 @@ pub enum KeyedPlanError {
     #[error("undecidable keyed region for {0:?}")]
     UndecidableRegion(SemanticOperationId),
     #[error("keyed {stage:?} refused: {defect:?} at {relations:?}")]
+    /// Census subjects merge missing and unexpected identities into a sorted,
+    /// deduplicated union. The count records unrestored key occurrences.
     Refused {
         stage: Stage,
         defect: Defect,
         relations: Vec<KeyedRelationId>,
         operations: Vec<SemanticOperationId>,
+        unrestored_key_count: usize,
     },
     #[error("keyed proof source is unavailable for {0:?}")]
     FixedSource(KeyedRelationId),

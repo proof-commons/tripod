@@ -1,4 +1,5 @@
 //! Aggregate and per-relation evidence cannot silently diverge.
+use crate::engine_records::RelationOwner;
 use crate::{
     engine_records::{OperationKey, RelationKey},
     engine_requirement as core,

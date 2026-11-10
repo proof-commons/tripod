@@ -1,4 +1,5 @@
 //! Both vocabularies use the exact finite proof search, including evidence-only SOURCE.
+use crate::engine_records::RelationOwner;
 use crate::{
     capability::CapabilityView,
     engine_proof as core,

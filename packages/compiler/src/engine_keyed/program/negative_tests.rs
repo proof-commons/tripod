@@ -106,7 +106,8 @@ fn production_keyed_unavailable_source_preserves_constructibility_boundary() {
             relations: Vec::new(),
             operations: vec![architecture::semantic::SemanticOperationId::Keyed(
                 K::Source
-            )]
+            )],
+            unrestored_key_count: 0,
         })
     );
 }
@@ -139,14 +140,22 @@ fn production_keyed_reader_assignment_refuses_at_placement_census() {
         .unwrap();
     carrier.key = reader.key.clone();
     reader.eligibility.push(carrier);
-    assert!(matches!(
-        subject.analyze(limits()),
-        Err(KeyedPlanError::Refused {
+    let reader_key = reader.key.relation.clone();
+    let relation = subject.relation(&reader_key).unwrap();
+    assert_eq!(
+        relation.kind,
+        realization::relation::KeyedRelationKind::MembershipReading
+    );
+    assert_eq!(
+        subject.analyze(limits()).err(),
+        Some(KeyedPlanError::Refused {
             stage: Stage::Placement,
             defect: Defect::CensusMismatch,
-            ..
+            relations: vec![relation],
+            operations: vec![relation.operation],
+            unrestored_key_count: 0,
         })
-    ));
+    );
 }
 
 #[test]
@@ -163,9 +172,41 @@ fn production_routes_refuse_foreign_bindings_and_vocabulary_both_directions() {
         Err(KeyedPlanError::PublicationMismatch)
     );
     prepared.records.proofs = crate::input::AttestationOwner::lower_proofs(&attestation).unwrap();
-    assert_eq!(prepared.analyze(limits()).err(), Some(super::missing()));
+    let unknown = prepared.records.proofs.obligations.len();
+    let relations = keyed
+        .owner()
+        .source()
+        .project()
+        .into_iter()
+        .filter(|r| keyed.owner().scope().contains(&r.id.operation))
+        .map(|r| r.id)
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    assert_eq!(
+        prepared.analyze(limits()).err(),
+        Some(KeyedPlanError::Refused {
+            stage: Stage::Proof,
+            defect: Defect::CensusMismatch,
+            relations,
+            operations: vec![architecture::semantic::SemanticOperationId::Keyed(
+                K::Source
+            )],
+            unrestored_key_count: unknown,
+        })
+    );
     let (mut records, stages) =
         crate::engine_attestation::program::test_preparation(&attestation).unwrap();
+    let (control_records, control_stages) =
+        crate::engine_attestation::program::test_preparation(&attestation).unwrap();
+    assert!(
+        crate::analyzed::analyze_bound_prepared(
+            &attestation,
+            limits(),
+            (control_records, control_stages)
+        )
+        .is_ok()
+    );
     records.proofs = KeyedOwner::lower_proofs(&keyed).unwrap();
     let result = crate::analyzed::analyze_bound_prepared(&attestation, limits(), (records, stages));
     assert!(matches!(
@@ -175,4 +216,65 @@ fn production_routes_refuse_foreign_bindings_and_vocabulary_both_directions() {
             ..
         })
     ));
+}
+
+#[test]
+fn keyed_publication_names_unexpected_layouts_and_runtime_scope() {
+    let input = bound(&[K::Merge]);
+    let prepared = Prepared::new(&input).unwrap();
+    let program = prepared.analyze(limits()).unwrap();
+    assert!(prepared.publish(&program).is_ok());
+    let legacy_input = crate::tests::bound_input(&[architecture::OperationId::CompactAsh]);
+    let (legacy, _) = crate::engine_attestation::program::test_preparation(&legacy_input).unwrap();
+    let layout = legacy.cases.layout_scopes.keys().next().unwrap();
+    for variant in 0..4 {
+        let mut subject = program.clone();
+        let operation = subject
+            .plans
+            .values_mut()
+            .next()
+            .unwrap()
+            .operations
+            .values_mut()
+            .next()
+            .unwrap();
+        let mut relations = Vec::new();
+        let (stage, defect) = match variant {
+            0 => {
+                operation.layout.insert(layout.clone());
+                (Stage::Coverage, Defect::UnexpectedLayout)
+            }
+            1 => {
+                operation.placements[0].layout.push(layout.clone());
+                (Stage::Placement, Defect::UnexpectedLayout)
+            }
+            _ => {
+                let (key, bundle) = operation
+                    .bundles
+                    .iter_mut()
+                    .find(|(_, bundle)| !bundle.facts.runtime.is_empty())
+                    .unwrap();
+                relations.push(prepared.relation(&key.relation).unwrap());
+                if variant == 2 {
+                    let mut alternative = bundle.carriers.pop_first().unwrap();
+                    alternative.layout.insert(layout.clone());
+                    bundle.carriers.insert(alternative);
+                    (Stage::Coverage, Defect::UnexpectedLayout)
+                } else {
+                    bundle.facts.runtime[0].scope = crate::engine_case_facts::Scope::Transaction;
+                    (Stage::Cases, Defect::UnsupportedRuntimeScope)
+                }
+            }
+        };
+        assert_eq!(
+            prepared.publish(&subject).err(),
+            Some(KeyedPlanError::Refused {
+                stage,
+                defect,
+                relations,
+                operations: vec![architecture::semantic::SemanticOperationId::Keyed(K::Merge)],
+                unrestored_key_count: 0,
+            })
+        );
+    }
 }

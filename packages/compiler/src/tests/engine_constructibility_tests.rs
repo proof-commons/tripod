@@ -1,4 +1,5 @@
 //! Bound-owner and unavailable-required-source controls for the shared traversal.
+use crate::engine_records::RelationOwner;
 use crate::{
     engine_constructibility as core,
     engine_records::{self, OperationKey},

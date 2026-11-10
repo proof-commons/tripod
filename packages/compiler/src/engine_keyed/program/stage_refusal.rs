@@ -1,26 +1,35 @@
 //! Exhaustive stage vocabulary restoration; no profile dispatch.
-use super::{Prepared, missing};
+use super::Prepared;
 use crate::keyed_plan::{Defect as D, KeyedPlanError as E, Stage as S};
 
 impl Prepared<'_> {
-    fn operation_defect(
+    pub(super) fn operation_defect(
         &self,
         stage: S,
         defect: D,
         keys: Vec<crate::engine_records::OperationKey>,
     ) -> E {
-        match keys
+        let mut unrestored_key_count = 0;
+        let operations = keys
             .into_iter()
-            .map(|key| self.operations.get(&key).copied().ok_or_else(missing))
-            .collect::<Result<Vec<_>, _>>()
-        {
-            Ok(operations) => E::Refused {
-                stage,
-                defect,
-                relations: Vec::new(),
-                operations,
-            },
-            Err(error) => error,
+            .filter_map(|key| {
+                self.operations.get(&key).map_or_else(
+                    || {
+                        unrestored_key_count += 1;
+                        None
+                    },
+                    |value| Some(*value),
+                )
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        E::Refused {
+            stage,
+            defect,
+            relations: Vec::new(),
+            operations,
+            unrestored_key_count,
         }
     }
     pub(super) fn predicate_refusal(&self, error: crate::engine_foundation::Error) -> E {
@@ -187,9 +196,25 @@ impl Prepared<'_> {
                 cycles.into_iter().flat_map(|row| row.members).collect(),
             ),
         };
-        match symbols.iter().map(|key| self.symbol(key)).collect() {
-            Ok(symbols) => E::CoverageGraph { defect, symbols },
-            Err(error) => error,
+        let mut unrestored_key_count = 0;
+        let symbols = symbols
+            .iter()
+            .filter_map(|key| {
+                self.symbol(key).map_or_else(
+                    |_| {
+                        unrestored_key_count += 1;
+                        None
+                    },
+                    Some,
+                )
+            })
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        E::CoverageGraph {
+            defect,
+            symbols,
+            unrestored_key_count,
         }
     }
 }

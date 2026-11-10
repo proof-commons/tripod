@@ -35,6 +35,10 @@ fn production_keyed_publication_equals_record_oracle_and_revalidates() {
         let prepared = Prepared::new(&input).expect("preparation");
         let oracle =
             crate::analyzed::analyze_bound_records(&input, limits()).expect("record oracle");
+        assert_eq!(
+            prepared.analyze(limits()).expect("prepared orchestration"),
+            oracle
+        );
         let plan = crate::keyed_plan::plan(&input, limits()).expect("production");
         assert_eq!(
             plan.project(),
@@ -110,8 +114,21 @@ fn production_keyed_source_and_join_refusals_are_owner_typed() {
     ] {
         let mut subject = Prepared::new(&input).expect("fresh");
         mutate(&mut subject.records);
-        assert!(
-            matches!(subject.analyze(limits()), Err(KeyedPlanError::Refused { defect: actual, relations, .. }) if actual == defect && !relations.is_empty())
+        let key = subject.records.sources.tables[0].relation.clone();
+        let relation = subject.relation(&key).unwrap();
+        assert_eq!(
+            subject.analyze(limits()).err(),
+            Some(KeyedPlanError::Refused {
+                stage: if defect == Defect::MissingOperand {
+                    Stage::Sources
+                } else {
+                    Stage::Join
+                },
+                defect,
+                relations: vec![relation],
+                operations: vec![relation.operation],
+                unrestored_key_count: 0,
+            })
         );
     }
 }
@@ -152,7 +169,16 @@ fn production_keyed_unknown_and_cyclic_dependencies_refuse() {
         .target
         .subject
         .push(u16::MAX);
-    assert_eq!(prepared.analyze(limits()).err(), Some(missing()));
+    assert_eq!(
+        prepared.analyze(limits()).err(),
+        Some(KeyedPlanError::Refused {
+            stage: Stage::Relations,
+            defect: Defect::UnknownEndpoint,
+            relations: Vec::new(),
+            operations: Vec::new(),
+            unrestored_key_count: 1,
+        })
+    );
 }
 #[test]
 fn production_keyed_local_rejection_remains_local() {
@@ -217,6 +243,14 @@ fn production_keyed_binding_and_limits_are_revalidated_from_retained_source() {
         crate::keyed_plan::revalidate(&merge, limits(), &plan),
         Err(KeyedPlanError::PublicationMismatch)
     );
+    let other_limits = PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(2_000_000).unwrap(),
+        std::num::NonZeroU64::new(200_000).unwrap(),
+    );
+    assert_eq!(
+        crate::keyed_plan::revalidate(&source, other_limits, &plan),
+        Err(KeyedPlanError::PublicationMismatch)
+    );
     let mut subject = plan;
     subject.projection.binding.schema_version ^= 1;
     assert_eq!(
@@ -249,5 +283,54 @@ fn production_keyed_fixed_source_refusal_restores_its_relation() {
     assert_eq!(
         subject.analyze(limits()).err(),
         Some(KeyedPlanError::FixedSource(subject.relation(&key).unwrap()))
+    );
+}
+
+#[test]
+fn keyed_case_records_refuse_a_missing_coverage_source_without_indexing() {
+    let input = bound(&[K::Source]);
+    let mut source = super::super::lower_sources(input.owner());
+    assert!(super::super::case_records(input.owner(), &source).is_ok());
+    let missing = source.tables.remove(0).relation;
+    assert!(matches!(super::super::case_records(input.owner(), &source),
+        Err(super::super::KeyedLoweringError::MissingSourceTable(key)) if key == missing));
+}
+
+#[test]
+fn keyed_evidence_refuses_foreign_vocabulary_with_its_named_defect() {
+    use crate::engine_source::Evidence;
+    let input = bound(&[K::Source]);
+    let prepared = Prepared::new(&input).unwrap();
+    let control = prepared.evidence.keys().next().unwrap();
+    assert!(super::premises(control).is_ok());
+    let operation = prepared.records.relations.scope[0];
+    for offered in [
+        Evidence::Operator { operation },
+        Evidence::ConfidentialValue {
+            operation,
+            asset: 0,
+        },
+        Evidence::SubstrateValue {
+            operation,
+            asset: 0,
+        },
+    ] {
+        assert_eq!(
+            super::premises(&offered),
+            Err(super::fact_refusal(Defect::ForeignEvidence))
+        );
+    }
+    for side in [
+        realization::TransactionSide::Input,
+        realization::TransactionSide::Output,
+    ] {
+        assert_eq!(
+            super::decode_side(crate::engine_identity::side_code(side)),
+            Ok(side)
+        );
+    }
+    assert_eq!(
+        super::decode_side(u16::MAX),
+        Err(super::fact_refusal(Defect::UnsupportedRuntimeScope))
     );
 }

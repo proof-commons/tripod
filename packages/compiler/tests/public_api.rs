@@ -1555,3 +1555,60 @@ fn announcement_requirement_vocabulary_is_public_without_a_validated_plan() {
     assert_eq!(PublicRecoveryRequirement::REQUIRED.source_facts.len(), 7);
     assert_eq!(PublicRecoveryRequirement::REQUIRED.result_facts.len(), 6);
 }
+
+#[cfg(feature = "keyed-experimental")]
+#[test]
+fn keyed_plan_surface_locks_reexports_privacy_and_immutability() {
+    let code = include_str!("../src/keyed_plan.rs")
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let exports = code
+        .lines()
+        .filter(|line| line.starts_with("pub use "))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        exports,
+        vec![
+            "pub use crate::carrier::CarrierQuantification;",
+            "pub use crate::coverage::CoverageBoundary;",
+            "pub use crate::coverage_graph::{CoverageEdge, CoverageEdgeClass, CoverageNodeClass};",
+            "pub use crate::engine_keyed::ShellField as DeclarationField;",
+            "pub use crate::input::ProofSearchLimits;",
+            "pub use crate::placement::{CarrierMultiplicity, PlacementSearchLimits, PlacementSearchReport};",
+            "pub use crate::proof::{LocalProofRejection, ProofSearchReport};",
+        ]
+    );
+    let mut declaration = String::new();
+    for line in code.lines() {
+        if line.trim_start().starts_with("pub") || !declaration.is_empty() {
+            declaration.push_str(line);
+            if line.trim_end().ends_with(['{', ';', ',']) {
+                assert!(
+                    !declaration.contains("engine_")
+                        || declaration
+                            == "pub use crate::engine_keyed::ShellField as DeclarationField;"
+                );
+                declaration.clear();
+            }
+        }
+    }
+    for banned in [
+        "pub fn new(",
+        "Default",
+        "builder",
+        "Builder",
+        "_mut(",
+        "petgraph",
+        "NodeIndex",
+    ] {
+        assert!(
+            !code.contains(banned),
+            "unexpected public surface: {banned}"
+        );
+    }
+    assert!(
+        code.contains("pub struct KeyedPlan {\n    pub(crate) projection: KeyedPlanProjection,\n}")
+    );
+}

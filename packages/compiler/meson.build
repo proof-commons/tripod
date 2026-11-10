@@ -44,6 +44,7 @@ compiler_source_files = files(
   'src/engine_keyed/program/stage_refusal.rs',
   'src/engine_keyed/program/tests.rs',
   'src/engine_keyed/program/negative_tests.rs',
+  'src/engine_keyed/program/refusal_tests.rs',
   'src/keyed_plan.rs',
   'src/engine_lifecycle.rs',
   'src/engine_proof.rs',

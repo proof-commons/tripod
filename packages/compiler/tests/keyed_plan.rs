@@ -53,6 +53,28 @@ fn external_keyed_plans_publish_all_seven_stages_and_universal_clauses() {
             .map(|row| (row.id, row.relation))
             .collect::<std::collections::BTreeMap<_, _>>();
         assert_eq!(published, expected);
+        let runtime = projection
+            .plans
+            .iter()
+            .flat_map(|p| p.operations.values())
+            .flat_map(|o| &o.relations)
+            .filter(|(_, row)| !row.runtime.is_empty())
+            .collect::<Vec<_>>();
+        assert_eq!(runtime.len(), assignments);
+        for (id, row) in runtime {
+            assert!(matches!(
+                id.kind,
+                realization::relation::KeyedRelationKind::BornFirst
+                    | realization::relation::KeyedRelationKind::ContinueFirst
+            ));
+            assert_eq!(
+                row.runtime,
+                vec![RuntimeClause {
+                    side: realization::TransactionSide::Input,
+                    multiplicity: CarrierMultiplicity::EveryMember
+                }]
+            );
+        }
         for obligation in &projection.evidence {
             if let EvidencePremises::MembershipReading {
                 inclusion,
@@ -76,4 +98,47 @@ fn external_keyed_plans_publish_all_seven_stages_and_universal_clauses() {
             assert_eq!(carrier.quantification, CarrierQuantification::PerMember);
         }
     }
+}
+
+#[test]
+fn external_keyed_refusals_revalidate_scope_and_enforce_search_limits() {
+    let bind = |op| {
+        let manifest = KeyedManifest::contract().unwrap();
+        let source = realization::keyed::KeyedRealizationDraft::derive(&manifest)
+            .unwrap()
+            .validate(&manifest)
+            .unwrap();
+        bind_input(
+            &manifest,
+            source,
+            vec![O::Keyed(op)],
+            AnalysisPolicy::strict(ProofSearchLimits::new(
+                std::num::NonZeroU64::new(1_000_000).unwrap(),
+                std::num::NonZeroU64::new(100_000).unwrap(),
+            )),
+        )
+        .unwrap()
+    };
+    let source = bind(K::Source);
+    let merge = bind(K::Merge);
+    let limits = PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(1_000_000).unwrap(),
+        std::num::NonZeroU64::new(100_000).unwrap(),
+    );
+    let control = plan(&source, limits).unwrap();
+    assert!(revalidate(&source, limits, &control).is_ok());
+    assert_eq!(
+        revalidate(&merge, limits, &control),
+        Err(KeyedPlanError::PublicationMismatch)
+    );
+    assert!(plan(&merge, limits).is_ok());
+    let one = std::num::NonZeroU64::new(1).unwrap();
+    assert_eq!(
+        plan(&merge, PlacementSearchLimits::new(one, one)).err(),
+        Some(KeyedPlanError::SearchLimit {
+            stage: Stage::Placement,
+            candidates: false,
+            limit: 1
+        })
+    );
 }
