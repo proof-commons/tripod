@@ -671,14 +671,14 @@ cargo_clippy_stamp = custom_target(
   console: true,
 )
 
-# Compile library bodies in both containment states; all-target Clippy enables
-# dev-dependency features and therefore cannot establish the default surface.
-cargo_owner_features_stamp = custom_target(
-  'cargo-owner-feature-states-check',
-  output: ['cargo-owner-feature-states.ok', 'cargo-owner-feature-states.log'],
+# Check default library bodies and the external typed consumers without a
+# self dev-dependency or an alternate feature state.
+cargo_owner_consumers_stamp = custom_target(
+  'cargo-owner-public-consumers-check',
+  output: ['cargo-owner-public-consumers.ok', 'cargo-owner-public-consumers.log'],
   command: cargo_quiet_stamp_wrap + [
     sh, '-c',
-    '"$1" clippy --manifest-path "$2" -p tripod-architecture -p tripod-realization -p tripod-compiler --lib -- -D warnings && "$1" clippy --manifest-path "$2" -p tripod-compiler --lib --features keyed-experimental -- -D warnings',
+    '"$1" clippy --manifest-path "$2" -p tripod-architecture -p tripod-realization -p tripod-compiler --lib -- -D warnings && "$1" clippy --manifest-path "$2" -p tripod-compiler --test public_api --test keyed_plan -- -D warnings && "$1" test --manifest-path "$2" -p tripod-compiler --profile gate --test public_api --test keyed_plan',
     'sh', cargo, cargo_manifest,
   ],
   build_by_default: false,
@@ -687,10 +687,10 @@ cargo_owner_features_stamp = custom_target(
 )
 
 test(
-  'cargo-owner-feature-states',
+  'cargo-owner-public-consumers',
   sh,
-  args: stamp_probe + [cargo_owner_features_stamp[0].full_path()],
-  depends: cargo_owner_features_stamp,
+  args: stamp_probe + [cargo_owner_consumers_stamp[0].full_path()],
+  depends: cargo_owner_consumers_stamp,
   suite: 'lint',
   timeout: 60,
 )

@@ -1,4 +1,4 @@
-//! Feature-gated keyed plans. Runtime obligations are symbolic: no transaction,
+//! Default-library keyed plans. Runtime obligations are symbolic: no transaction,
 //! evidence witness or target execution is manufactured by this interface.
 use crate::input::{BoundCompilerInput, KeyedOwner};
 use architecture::keyed::KeyedArchitectureBinding;
@@ -220,6 +220,7 @@ pub enum Defect {
     UnnamedSourceTable,
     ProofSource,
     /// Only the private raw-record test oracle can return a lowering wrapper.
+    #[cfg(test)]
     InvalidRecords,
     UnknownExpression,
     NonBoolean,

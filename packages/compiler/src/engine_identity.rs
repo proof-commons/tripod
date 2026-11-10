@@ -6,7 +6,6 @@
 //! remain inside the existing binding and lowering spans.
 
 use architecture::semantic::SemanticProfileId;
-#[cfg(any(test, feature = "keyed-experimental"))]
 use architecture::semantic::{SemanticObjectId, SemanticOperationId};
 use realization::TransactionSide;
 
@@ -16,12 +15,10 @@ pub const fn namespace(profile: SemanticProfileId) -> u16 {
     profile as u16
 }
 
-#[cfg(any(test, feature = "keyed-experimental"))]
 pub const fn operation(id: SemanticOperationId) -> [u16; 2] {
     id.encoding()
 }
 
-#[cfg(any(test, feature = "keyed-experimental"))]
 pub const fn object(id: SemanticObjectId) -> [u16; 2] {
     id.encoding()
 }

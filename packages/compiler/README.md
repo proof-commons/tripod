@@ -139,11 +139,11 @@ assert!(matches!(
 ## Public-API tour
 
 The public modules are `error`, `input`, `live_transfer_plan`,
-`maturity_announcement_plan`, `operation_plan`, and `target`; `keyed_plan` is additionally available with `keyed-experimental`.
+`maturity_announcement_plan`, `operation_plan`, `keyed_plan`, and `target`; all are available in the default library.
 Symbolic announcement requirements are also re-exported at the crate root; the
 internal analysis containers remain crate-private.
 
-### `keyed_plan` — feature-gated owner-typed plans
+### `keyed_plan` — stable owner-typed plans
 
 `keyed_plan::plan(&BoundCompilerInput<KeyedOwner>, PlacementSearchLimits)` returns
 an immutable `KeyedPlan`; `project()` borrows its complete typed publication.
@@ -177,28 +177,31 @@ a documented class-3 publication site. Neither successful
 plans nor errors expose raw engine records. The sealed public API cannot construct
 synthetic stage defects; paired internal controls enter the production preparation
 and analysis path, while `tests/keyed_plan.rs` is the external consumer. The raw
-record entry remains a unit-test oracle. Feature removal remains a later gate.
+record entry remains a unit-test oracle. No feature or self dev-dependency is needed by a keyed consumer. `CarrierMultiplicity` is non-exhaustive; consumers must allow future variants, while the current keyed runtime clauses require `EveryMember`.
 
 ### `input` — the validated input boundary (P2-004)
 
 Owner storage lives in private `src/input/owner.rs`; its public re-export paths
 remain `compiler::input::{AttestationOwner, KeyedOwner}`. Lowering implementations
-stay in private `engine_attestation` and `engine_keyed`. The move preserves the
-following owner/binding public-item inventory in both library feature states:
+stay in private `engine_attestation` and `engine_keyed`. The owner/binding
+public-item inventory in the default library is:
 
-| State | Before and after owner/binding surface |
+| Surface | Default owner/binding inventory |
 |---|---|
-| Default | `AttestationOwner` with one read-only method, `source`; `BoundCompilerInput<AttestationOwner>` and its five existing readers; attestation-only `bind_input`. |
-| `keyed-experimental` | Default owner plus `KeyedOwner` with three read-only methods, `manifest`, `source`, `scope`; sealed `InputBinding` (four associated types and `bind_owned`), generic `bind_input`, and `KeyedBindingError` (four variants). Keyed bound inputs expose `policy`; keyed preparation, publication and independent validation are available through `keyed_plan`. |
-| Both | Zero public owner constructors, mutable owner accessors, engine-record types, lowering callbacks or public generic analysis callbacks. `Clone`/`Debug` remain implemented by both available owner types. |
+| Attestation | `AttestationOwner` with one read-only method, `source`; `BoundCompilerInput<AttestationOwner>` and its five existing readers. |
+| Keyed | `KeyedOwner` with three read-only methods, `manifest`, `source`, `scope`; `KeyedBindingError` (four variants). Keyed bound inputs expose `policy`; preparation, publication and independent validation are available through `keyed_plan`. |
+| Binding | Sealed `InputBinding` (four associated types and `bind_owned`) and generic `bind_input`, statically fixing the owner. |
+| Both owners | Zero public owner constructors, mutable owner accessors, engine-record types, lowering callbacks or public generic analysis callbacks. Both owner types implement `Clone` and `Debug`. |
 
 `tests/public_api.rs` compiles the retained paths and method signatures as an
-external consumer and checks that owner/source types cannot be substituted.
-The self dev-dependency enables the experimental binding for those integration
-tests; resolver 3 keeps that request out of non-test default-library builds.
-The `cargo-owner-feature-states` lint compiles default libraries and the keyed
-compiler library separately. The compiler feature remains until the bite-1.2
-gate. Private `engine_identity` delegates semantic identifier spelling to
+external consumer, checks that owner/source types cannot be substituted, and
+locks the keyed facade without a feature guard. `tests/keyed_plan.rs` compiles all
+three scopes and their public-boundary refusals in the default build. The compiler
+has no feature table and no self dev-dependency. The `cargo-owner-public-consumers`
+lint runs Clippy with warnings denied on architecture, realization and compiler
+default libraries and on compiler's two public consumer test targets, then runs
+those targets with the gate profile.
+Private `engine_identity` delegates semantic identifier spelling to
 architecture, takes `SemanticProfileId` for namespace encoding, and owns the
 single transaction-side encoding (input 0, output 1); both lowerers use it.
 

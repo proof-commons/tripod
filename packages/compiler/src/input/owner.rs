@@ -4,10 +4,8 @@
 //! engine owner modules. Accessors never expose mutable state or engine records.
 
 use architecture::OperationId;
-#[cfg(any(test, feature = "keyed-experimental"))]
 use architecture::{keyed::KeyedManifest, semantic::SemanticOperationId};
 use realization::ScopedRealizationSpec;
-#[cfg(any(test, feature = "keyed-experimental"))]
 use realization::keyed::KeyedScopedRealization;
 
 /// The statically selected attestation owner retained by the input binder.
@@ -47,7 +45,6 @@ impl AttestationOwner {
 }
 
 /// The statically selected keyed owner retained by the input binder.
-#[cfg(any(test, feature = "keyed-experimental"))]
 #[derive(Clone, Debug)]
 pub struct KeyedOwner {
     manifest: KeyedManifest,
@@ -55,7 +52,6 @@ pub struct KeyedOwner {
     scope: Vec<SemanticOperationId>,
 }
 
-#[cfg(any(test, feature = "keyed-experimental"))]
 impl KeyedOwner {
     pub(crate) const fn new(
         manifest: KeyedManifest,

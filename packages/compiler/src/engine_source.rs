@@ -36,7 +36,6 @@ pub enum Evidence {
         operation: OperationKey,
         asset: u16,
     },
-    #[cfg(any(test, feature = "keyed-experimental"))]
     HandleClassification {
         operation: OperationKey,
         object: ObjectKey,
@@ -44,12 +43,10 @@ pub enum Evidence {
         minimum: u16,
         maximum: Option<u16>,
     },
-    #[cfg(any(test, feature = "keyed-experimental"))]
     SourceClassification {
         operation: OperationKey,
         object: ObjectKey,
     },
-    #[cfg(any(test, feature = "keyed-experimental"))]
     MembershipReading {
         operation: OperationKey,
         object: ObjectKey,
@@ -60,7 +57,6 @@ pub enum Evidence {
     },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg(any(test, feature = "keyed-experimental"))]
 pub enum Recurrence {
     Singleton,
     ConsumedUnion,

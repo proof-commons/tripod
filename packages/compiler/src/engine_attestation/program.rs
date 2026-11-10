@@ -125,7 +125,6 @@ impl Prepared {
             #[cfg(test)]
             core::Error::Lowering(error) => match *error {
                 crate::engine_records::LoweringError::Attestation(error) => error,
-                #[cfg(any(test, feature = "keyed-experimental"))]
                 other @ crate::engine_records::LoweringError::Keyed(_) => {
                     self.record_refusal(core::Error::Lowering(Box::new(other)))
                 }

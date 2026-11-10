@@ -91,7 +91,6 @@ fn bound_attestation_owner_keeps_its_public_path_and_read_only_surface() {
     assert_eq!(bound.scope().operations(), &[OperationId::CompactAsh]);
 }
 
-#[cfg(feature = "keyed-experimental")]
 #[test]
 fn bound_keyed_owner_keeps_its_public_path_and_read_only_surface() {
     use architecture::{
@@ -117,7 +116,6 @@ fn bound_keyed_owner_keeps_its_public_path_and_read_only_surface() {
     assert_eq!(bound.policy(), test_policy());
 }
 
-#[cfg(feature = "keyed-experimental")]
 #[test]
 fn external_bound_owner_types_and_binding_sources_cannot_be_substituted() {
     use compiler::input::{AttestationOwner, InputBinding, KeyedOwner};
@@ -1556,7 +1554,6 @@ fn announcement_requirement_vocabulary_is_public_without_a_validated_plan() {
     assert_eq!(PublicRecoveryRequirement::REQUIRED.result_facts.len(), 6);
 }
 
-#[cfg(feature = "keyed-experimental")]
 #[test]
 fn keyed_plan_surface_locks_reexports_privacy_and_immutability() {
     let code = include_str!("../src/keyed_plan.rs")
@@ -1623,4 +1620,81 @@ fn keyed_plan_surface_locks_reexports_privacy_and_immutability() {
     assert!(
         code.contains("pub struct KeyedPlan {\n    pub(crate) projection: KeyedPlanProjection,\n}")
     );
+}
+
+fn default_manifest_is_contained(manifest: &str) -> bool {
+    let mut development = false;
+    for line in manifest.lines() {
+        let line = line.split('#').next().unwrap_or_default().trim();
+        if line == "[features]" || line == "[dev-dependencies.compiler]" {
+            return false;
+        }
+        if line.starts_with('[') {
+            development = line == "[dev-dependencies]";
+        } else if development {
+            let key = line.split('=').next().unwrap_or_default().trim();
+            if key == "compiler" || key.starts_with("compiler.") {
+                return false;
+            }
+        }
+    }
+    !manifest.contains("keyed-experimental")
+}
+
+#[test]
+fn default_library_has_no_experimental_feature_or_self_dev_dependency() {
+    let manifest = include_str!("../Cargo.toml");
+    assert!(default_manifest_is_contained(manifest));
+    assert!(!manifest.contains("[features]"));
+    let self_dependency = manifest.replace(
+        "[dev-dependencies]",
+        "[dev-dependencies]\ncompiler.workspace = true",
+    );
+    assert!(!default_manifest_is_contained(&self_dependency));
+    let feature_table = format!("{manifest}\n[features]\n");
+    assert!(!default_manifest_is_contained(&feature_table));
+    let placement = include_str!("../src/placement.rs");
+    assert!(placement.contains("#[non_exhaustive]\npub enum CarrierMultiplicity"));
+}
+
+#[test]
+fn default_owner_and_input_signatures_keep_construction_and_engines_private() {
+    for (owner, code) in [
+        (true, include_str!("../src/input/owner.rs")),
+        (false, include_str!("../src/input.rs")),
+    ] {
+        let mut signature = String::new();
+        for line in code.lines() {
+            let line = line.trim();
+            if line.starts_with("//") {
+                continue;
+            }
+            if line.starts_with("pub ") || !signature.is_empty() {
+                signature.push_str(line);
+                if line.contains('{')
+                    || (!signature.contains(" fn ") && (line.ends_with(';') || line.ends_with(',')))
+                {
+                    // Input's existing ProofSearchLimits::new constructs limits, not an owner.
+                    let limit_constructor = !owner
+                        && signature
+                            == "pub const fn new(maximum_states: std::num::NonZeroU64,maximum_candidates: std::num::NonZeroU64,) -> Self {";
+                    assert!(
+                        !signature.contains("fn new(") || limit_constructor,
+                        "public constructor: {signature}"
+                    );
+                    assert!(
+                        !signature.contains("_mut("),
+                        "mutable accessor: {signature}"
+                    );
+                    assert!(
+                        !signature.contains("engine_")
+                            || signature == "pub use crate::engine_keyed::KeyedBindingError;",
+                        "engine path in public signature: {signature}"
+                    );
+                    signature.clear();
+                }
+            }
+        }
+        assert!(signature.is_empty(), "unterminated signature");
+    }
 }

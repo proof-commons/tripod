@@ -20,7 +20,6 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Source {
     Attestation(Box<crate::analyzed::AnalyzedSource>),
-    #[cfg(any(test, feature = "keyed-experimental"))]
     Keyed {
         manifest: Box<architecture::keyed::KeyedManifest>,
         realization: realization::keyed::KeyedRealizationDraft,

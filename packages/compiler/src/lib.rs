@@ -21,7 +21,6 @@ mod engine_coverage_graph;
 mod engine_coverage_join;
 mod engine_foundation;
 mod engine_identity;
-#[cfg(any(test, feature = "keyed-experimental"))]
 mod engine_keyed;
 mod engine_lifecycle;
 mod engine_operation;
@@ -37,7 +36,6 @@ mod fold;
 mod foundation;
 pub mod input;
 mod instrumentation;
-#[cfg(any(test, feature = "keyed-experimental"))]
 pub mod keyed_plan;
 mod layout;
 mod lifecycle;

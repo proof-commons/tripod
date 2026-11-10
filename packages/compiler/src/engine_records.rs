@@ -16,7 +16,6 @@ use petgraph::{
 pub enum LoweringError {
     #[error("attestation lowering refused: {0}")]
     Attestation(#[from] crate::CompileError),
-    #[cfg(any(test, feature = "keyed-experimental"))]
     #[error("keyed lowering refused: {0:?}")]
     Keyed(#[from] crate::engine_keyed::KeyedLoweringError),
 }

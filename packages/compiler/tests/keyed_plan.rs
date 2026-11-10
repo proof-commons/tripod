@@ -1,5 +1,4 @@
-//! External consumer of the feature-gated keyed production entry.
-#![cfg(feature = "keyed-experimental")]
+//! External consumer of the default keyed production entry.
 use architecture::{
     keyed::KeyedManifest,
     semantic::{KeyedOperationId as K, SemanticOperationId as O},

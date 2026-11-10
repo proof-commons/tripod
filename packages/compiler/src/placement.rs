@@ -166,6 +166,7 @@ pub enum RelationActivity {
 /// Independent of scope: an every-member obligation is not a weaker
 /// global one, and a single coordinator cannot silently stand in for it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[non_exhaustive]
 pub enum CarrierMultiplicity {
     ExactlyOne,
     EveryMember,
