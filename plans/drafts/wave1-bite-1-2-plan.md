@@ -205,3 +205,109 @@ Reverse restoration currently resides in AttestationRelations (`packages/compile
 The code step changes only compiler tests. Complete eligibility is compared over all four pilot representation combinations, both announcement representation sets and SOURCE/MERGE/joint keyed scopes; canonicalization retains every row, entry and option including duplicates. Equal-length subjects change key, multiplicity, entry/option carrier, entry/option quantification, both alternate empty causes and entry/option layout. Layout controls use real nonempty attestation layout rows; SOURCE's empty eligibility stays exactly empty. The lifecycle control now explicitly names its record mutation, without deleting declaration-level negatives. The ten projection pins and architecture publication baseline are unchanged. The frozen measurement baseline remains `0.7.96-dev`; no harness, measurement, engine refit, new semantic site or claimed adapter reduction is part of this landing.
 
 Step 2 under rulings 174 and 176 moves the two owner declarations and their eight constructor/accessor definitions from the `engine_attestation.rs` and `engine_keyed.rs` rows to `packages/compiler/src/input/owner.rs`; keyed `shells` and both private lowering implementations stay with their owners' lowering modules. The attestation side encoder and namespace constant move to `packages/compiler/src/engine_identity.rs`, which adds a semantic-namespace encoder and two delegates to architecture's operation/object encoding; keyed side casts now use that same side encoder. The before-figure above remains frozen at step 1: these are relocation/encoding ownership changes, not the ruling-172 adapter reduction. Public paths, feature containment, encoded values and engine algorithms remain unchanged; the inventory for both library feature states and external type-separation controls is in `packages/compiler/README.md` and `packages/compiler/tests/public_api.rs`.
+
+## After-inventory of complete engine identities · `sec:w1b12:keys-after`
+
+**Result (Structural acceptance, measured growth)** · `rec:w1b12:keys-result`
+
+The ruling-172 reopening is disposed by (`rec:phase7:wave1-keys-disposition`), which now governs: the key refit is retained for its structural guarantee, not an adapter-reduction claim. The engine's identity positions carry opaque, distinct Rust types with no owner-value accessor; owner encoders and retained reverse registries preserve complete identity and exact legacy publication. All 79 shared-stage function bodies named in the first recount remain byte-identical to the step-2 entry; no owner is selected after binding. The tables below include the newtype constructors, nested-part builders and relocated owner encoders, so neither relocation nor closures are presented as removed work. Ruling 179's runtime/build measurement remains separate; these are source-complexity counts, not performance measurements.
+
+**Method (Frozen envelope and visible additions)** · `fact:w1b12:keys-recount`
+
+Use (`fact:w1b12:inventory-method`): definitions and explicit match arms, including direct-stage oracles but excluding nested test modules; T/V/F/A means type declarations (including aliases), enum variants, function definitions and explicit arms. The frozen before tree is `0.7.96-dev`, the step-2 entry `0.7.98-dev`. Keep exactly the original fifteen files in the first subtotal; the visible extension now comprises `engine_identity.rs`, `input/owner.rs` and the new owner file `engine_attestation/identity.rs`. This last file is attributed to the attestation owner, not shared engine work. The default subset excludes test/feature-only entries and the keyed owner. Classify the moved encoder bodies as I under the same rule as before; a file move does not change their category. After citations name this landing's paths/lines.
+
+**Table (Before and after totals)** · `tab:w1b12:keys-after`
+
+| Envelope and state | Frozen before | Step-2 entry | After fixes |
+|---|---:|---:|---:|
+| Superset, original fifteen files | 25/17/174/359 | 23/17/165/357 | 27/24/176/370 |
+| Superset, visible extension | 0/0/0/0 | 2/0/12/2 | 10/2/41/83 |
+| **Superset, combined** | 25/17/174/359 | 25/17/177/359 | 37/26/217/453 |
+| Default production, original fifteen files | 17/0/125/317 | 16/0/120/315 | 17/0/123/319 |
+| Default production, visible extension | 0/0/0/0 | 1/0/6/2 | 8/2/30/78 |
+| **Default production, combined** | 17/0/125/317 | 17/0/126/317 | 25/2/153/397 |
+
+**Table (Function/arm categories, including the extension)** · `tab:w1b12:keys-categories-after`
+
+| Category | Frozen superset F/A | After superset F/A | Frozen default F/A | After default F/A |
+|---|---:|---:|---:|---:|
+| I — Identity encoding | 25/90 | 61/181 | 23/84 | 48/160 |
+| M — Identity with semantic facts | 3/15 | 3/15 | 3/15 | 3/15 |
+| R — Restoration/refusal/diagnostics | 27/99 | 31/103 | 25/89 | 26/93 |
+| L — Lowering/preparation/validation/accessors | 119/155 | 122/154 | 74/129 | 76/129 |
+
+**Table (After membership by file)** · `tab:w1b12:keys-files-after`
+
+| File | Superset T/V/F/A | Default T/V/F/A |
+|---|---:|---:|
+| `packages/compiler/src/engine_attestation.rs:1` | 3/0/18/45 | 3/0/11/45 |
+| `packages/compiler/src/engine_attestation/case_facts.rs:1` | 0/0/8/17 | 0/0/8/17 |
+| `packages/compiler/src/engine_attestation/cases.rs:1` | 2/0/8/5 | 2/0/6/5 |
+| `packages/compiler/src/engine_attestation/constructibility.rs:1` | 1/0/11/46 | 1/0/10/46 |
+| `packages/compiler/src/engine_attestation/coverage.rs:1` | 0/0/5/6 | 0/0/4/6 |
+| `packages/compiler/src/engine_attestation/coverage_join.rs:1` | 0/0/7/8 | 0/0/3/5 |
+| `packages/compiler/src/engine_attestation/foundation.rs:1` | 1/0/3/5 | 1/0/3/5 |
+| `packages/compiler/src/engine_attestation/lifecycle.rs:1` | 1/0/7/8 | 1/0/7/8 |
+| `packages/compiler/src/engine_attestation/operation.rs:1` | 3/0/13/9 | 3/0/13/9 |
+| `packages/compiler/src/engine_attestation/placement.rs:1` | 1/0/12/21 | 1/0/11/21 |
+| `packages/compiler/src/engine_attestation/program.rs:1` | 1/0/8/45 | 1/0/8/39 |
+| `packages/compiler/src/engine_attestation/proof.rs:1` | 1/0/18/20 | 1/0/16/20 |
+| `packages/compiler/src/engine_attestation/requirement.rs:1` | 3/0/15/17 | 3/0/10/12 |
+| `packages/compiler/src/engine_attestation/source.rs:1` | 0/0/13/81 | 0/0/13/81 |
+| `packages/compiler/src/engine_keyed.rs:1` | 10/24/30/37 | 0/0/0/0 |
+| `packages/compiler/src/engine_attestation/identity.rs:1` | 0/0/16/81 | 0/0/14/76 |
+| `packages/compiler/src/engine_identity.rs:1` | 8/2/17/2 | 7/2/12/2 |
+| `packages/compiler/src/input/owner.rs:1` | 2/0/8/0 | 1/0/4/0 |
+
+**Ledger (Added and relocated work)** · `tab:w1b12:keys-ledger`
+
+The frozen membership list (`tab:w1b12:adapter-functions`) remains the before-figure. Added original-envelope functions are KeyedIdentities::new/case/carrier/purpose, the four keyed encoders, operation::layout_lookup, cases::empty_tables and placement::eligibility_records. The keyed encoders moved from the shared extension; the attestation encoders moved to the owner extension and gained raw-parts helpers for nesting without opening a key. Six per-position newtypes fix their domain in their constructors, with four constructor-only nested-part helpers; these expose no identity accessor. Authorization restoration adds two result arms; operation refusal retains its two graph-restoration result arms. The layout registry is an owner alias, not an engine vocabulary type. CompileError adds one payload-free MissingOwnerIdentity variant and tracing-kind arm outside this envelope; KeyedLoweringError no longer adds a parallel missing-entry variant. No new semantic identity dispatch site is introduced outside the owner seams; the baseline seven sites and specialized ledger six are unchanged.
+
+Plumbing supplement: the first key candidate introduced five registry fields (Payload.layouts, Lowered.layouts and three KeyedIdentities maps) plus one oracle-local layout map. The fixes replace Payload.layouts with Registered.layouts: still five fields plus that oracle-local map, but production preparation now builds one deduplicated layout registry per independent derivation, retained through Prepared.cases, with zero union builds per restore or refusal (previously two per restore and one per refusal). The extra Prepared layout-key set is removed; layout_scopes remains the shared stage's semantic association. Case preparation uses eligibility_records and does not build a throwaway placement registry per row. Standalone placement validation and the direct-stage oracle still build their own local registries because they do not receive Prepared. Producer and validator do not share a registry. There are 15 keyed/map lookup expressions or closures returning MissingOwnerIdentity (operation 5, constructibility 2, placement 2, coverage-join oracle 2, graph refusal 1, keyed registries 3), plus operation's empty-registry guard; lookup/layout_lookup centralize multiple call sites. This count describes expressions, not dynamic invocations or a claim that every older lookup is fallible. The retained invariant-dependent indexes are listed below.
+
+`empty_tables` (L, 0 arms) at `packages/compiler/src/engine_attestation/cases.rs:110`.
+
+`layout_lookup` (R, 0 arms) at `packages/compiler/src/engine_attestation/operation.rs:586`.
+
+`eligibility_records` (L, 0 arms) at `packages/compiler/src/engine_attestation/placement.rs:111`.
+
+`new` (L, 0 arms) at `packages/compiler/src/engine_keyed.rs:193`; `case` (R, 0 arms) at `packages/compiler/src/engine_keyed.rs:255`; `carrier` (R, 0 arms) at `packages/compiler/src/engine_keyed.rs:265`; `purpose` (R, 0 arms) at `packages/compiler/src/engine_keyed.rs:281`; `keyed_case` (I, 0 arms) at `packages/compiler/src/engine_keyed.rs:815`; `keyed_carrier` (I, 0 arms) at `packages/compiler/src/engine_keyed.rs:822`; `keyed_purpose` (I, 4 arms) at `packages/compiler/src/engine_keyed.rs:838`; `source_evidence` (I, 6 arms) at `packages/compiler/src/engine_keyed.rs:852`.
+
+`relation` (I, 0 arms) at `packages/compiler/src/engine_attestation/identity.rs:8`; `attestation_case` (I, 0 arms) at `packages/compiler/src/engine_attestation/identity.rs:18`; `attestation_case_parts` (I, 0 arms) at `packages/compiler/src/engine_attestation/identity.rs:24`; `attestation_carrier` (I, 0 arms) at `packages/compiler/src/engine_attestation/identity.rs:36`; `attestation_carrier_parts` (I, 5 arms) at `packages/compiler/src/engine_attestation/identity.rs:42`; `evidence` (I, 3 arms) at `packages/compiler/src/engine_attestation/identity.rs:54`; `source` (I, 22 arms) at `packages/compiler/src/engine_attestation/identity.rs:66`; `attestation_layout` (I, 0 arms) at `packages/compiler/src/engine_attestation/identity.rs:125`; `attestation_layout_parts` (I, 7 arms) at `packages/compiler/src/engine_attestation/identity.rs:131`; `mutation` (I, 30 arms) at `packages/compiler/src/engine_attestation/identity.rs:196`; `placed` (I, 0 arms) at `packages/compiler/src/engine_attestation/identity.rs:236`; `attestation_purpose` (I, 0 arms) at `packages/compiler/src/engine_attestation/identity.rs:245`; `attestation_purpose_parts` (I, 9 arms) at `packages/compiler/src/engine_attestation/identity.rs:251`; `attestation_symbol` (I, 0 arms) at `packages/compiler/src/engine_attestation/identity.rs:269`; `attestation_symbol_parts` (I, 5 arms) at `packages/compiler/src/engine_attestation/identity.rs:276`; `authorization` (I, 0 arms) at `packages/compiler/src/engine_attestation/identity.rs:317`.
+
+`namespace` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:15`; `operation` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:20`; `object` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:25`; `side_code` (I, 2 arms) at `packages/compiler/src/engine_identity.rs:29`; `word` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:50`; `sequence` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:53`; `identity` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:56`; `new` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:66`; `part` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:69`; `new` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:76`; `part` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:79`; `new` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:86`; `part` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:90`; `new` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:97`; `part` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:101`; `new` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:110`; `new` (I, 0 arms) at `packages/compiler/src/engine_identity.rs:117`.
+
+`new` (L, 0 arms) at `packages/compiler/src/input/owner.rs:22`; `source` (L, 0 arms) at `packages/compiler/src/input/owner.rs:36`; `scope` (L, 0 arms) at `packages/compiler/src/input/owner.rs:40`; `architecture_operations` (L, 0 arms) at `packages/compiler/src/input/owner.rs:44`; `new` (L, 0 arms) at `packages/compiler/src/input/owner.rs:60`; `manifest` (L, 0 arms) at `packages/compiler/src/input/owner.rs:74`; `source` (L, 0 arms) at `packages/compiler/src/input/owner.rs:80`; `scope` (L, 0 arms) at `packages/compiler/src/input/owner.rs:86`.
+
+**Ledger (Keys, retained semantics and registries)** · `tab:w1b12:keys-retention`
+
+CaseKey, CarrierKey, LayoutKey, PurposeKey, AuthorizationKey and test-only SymbolKey are distinct newtypes over the private Identity, not aliases. Namespace/domain/payload remain structurally complete, and each type fixes its domain; constructors only accept new parts, never reveal an existing key's contents. Owner encoders fix their own namespace. The shared module owns only structural construction and architecture namespace/side/code delegation, with no production dependency back to an owner. The identity declaration inventory is now 25 structs/enums and 22 variants (default 24/21), with no placement key aliases; the eight existing namespace-qualified atoms/composites stay unchanged. Flow codes stay owner codes until an engine consumer exists; no unused flow wrapper is promoted to a contract. ExpressionKey, OperandKey, LifecycleNodeKey and graph/case containers retain their neutral composite structure; source Fact payloads retain explicit FactKey namespace qualification. Core Purpose keeps Owner, AcceptedProjection and CarrierExecution; semantic evidence stays explicit beside its identity.
+
+The semantic retention ledger remains 12 types/31 variants in the superset and 11/26 in default: Availability, Edge, Authorization; Evidence, Recurrence, Activation; proof Obligation; case Constructibility, CompilerRequirement, StructuralRequirement, Scope; placement EmptyCause. Availability/independence/permissionless/allowed sets, source activation, evidence and discharge facts are not erased into keys. The two static owner traits and binding/lowering interface enums remain unchanged. Keyed production publication remains step 4, not a claimed result of this internal refit.
+
+**Ledger (Remaining invariant-dependent indexing)** · `tab:w1b12:keys-retained-indexes`
+
+These retained owner reverse/index lookups may panic if their private registry invariant is broken. They are listed, not described as typed refusals. Scope is owner restoration plus the touched graph adapter; ordinary engine graph indexes and test fixture indexing are not reverse-registry claims. All listed maps are populated from the same retained declarations, selected candidate or validated graph that produces the keys; none chooses an owner after binding. Changing those invariants reopens this disposition. Converting their complete legacy APIs is outside this key-position refit.
+
+| Remaining sites | Why retained |
+|---|---|
+| `packages/compiler/src/engine_attestation.rs:202`; `packages/compiler/src/engine_attestation.rs:233` | Relation/declaration/dependency maps cover the validated relation graph and its errors, including offered endpoints. |
+| `packages/compiler/src/engine_attestation/constructibility.rs:116`; `packages/compiler/src/engine_attestation/constructibility.rs:173` | Node/edge/operation/availability indexes cover the same analyzed records; authorization lookups are now fallible in both paths. |
+| `packages/compiler/src/engine_attestation/foundation.rs:56` | Relation/expression/type maps cover every predicate record and its typed error. |
+| `packages/compiler/src/engine_attestation/lifecycle.rs:107` | Operation/object/mode/node maps cover the retained lifecycle records, choices and requirements. |
+| `packages/compiler/src/engine_attestation/proof.rs:227`; `packages/compiler/src/engine_attestation/proof.rs:370`; `packages/compiler/src/engine_attestation/proof.rs:390`; `packages/compiler/src/engine_attestation/proof.rs:468` | Declaration and proof/source/choice/mode/evidence/lifecycle/fact/reason maps are populated before the shared search or disclosure pass; returned keys come from that pass. |
+| `packages/compiler/src/engine_attestation/requirement.rs:76`; `packages/compiler/src/engine_attestation/requirement.rs:127`; `packages/compiler/src/engine_attestation/requirement.rs:183`; `packages/compiler/src/engine_attestation/requirement.rs:302`; `packages/compiler/src/engine_attestation/requirement.rs:424`; `packages/compiler/src/engine_attestation/requirement.rs:455` | Relation/object/exit/lifecycle/evidence/declaration and selected representation maps correspond to prepared tables and validated candidates; derive and owned_* entries are test oracles. |
+| `packages/compiler/src/engine_attestation/source.rs:430` | Operand identities are built from the same source table whose validated rows are restored. |
+| `packages/compiler/src/engine_attestation/placement.rs:193` | Test-only candidate restoration indexes relation-case/carrier maps populated from its plans and eligibility; placement refusal and layout restoration are fallible. |
+| `packages/compiler/src/engine_attestation/operation.rs:141`; `packages/compiler/src/engine_attestation/operation.rs:216` | Coverage prerequisite/case-fact/case-census error keys come from retained successful rows; the publication loop indexes exactly the keys used to build its checked payload map. Generic payload/layout lookups and missing selected rows are fallible. |
+| `packages/compiler/src/engine_attestation/coverage.rs:21`; `packages/compiler/src/engine_attestation/coverage.rs:192` | Positive/negative and requirement/key maps cover the same derived coverage records and their errors. |
+| `packages/compiler/src/engine_attestation/coverage_join.rs:34`; `packages/compiler/src/engine_attestation/coverage_join.rs:236` | Test-only projection/carrier attachment and refusal indexes are built from the same coverage and placement inputs; carrier_alternatives now propagates all three registry lookup failures. |
+| `packages/compiler/src/coverage_graph.rs:689`; `packages/compiler/src/coverage_graph.rs:743`; `packages/compiler/src/coverage_graph.rs:757`; `packages/compiler/src/coverage_graph.rs:764` | The test-oracle graph owns complete case/node/identity maps; graph-symbol refusal itself is now fallible. Earlier definition/dependency assembly indexes use the just-built census maps. |
+
+**Controls and carried work** · `test:w1b12:keys-controls`
+
+identity_positions_are_distinct_rust_types pins six distinct Rust type identities. structural_keys_keep_owner_domain_and_complete_nested_contents_distinct retains nested framing, full-width and namespace controls. structural_layout_keys_preserve_owner_order is renamed to claim only the real order/injectivity check; the tautological reversed-list-to-set assertion is removed. real_case_carrier_and_purpose_encoders_preserve_owner_order adds the same order/injectivity comparison across real pilot and announcement payloads, and real_owner_encoders_separate_matching_local_case_carrier_and_purpose_codes exercises actual owner encoders. Existing lowering/permutation and complete eligibility controls remain; the carrier mutant now asserts the accepted encoded carrier before changing its namespace.
+
+opaque_placement_refusals_restore_exact_owner_values keeps all eleven old expectations and adds one-coordinate siblings in every registry, exercising every sibling so a lookup ignoring its key fails. Its missing-entry companion remains. authorization_publication_and_refusal_require_the_reverse_entry pairs accepted publication and the exact legacy witness refusal with removal of one authorization entry; both affected paths return MissingOwnerIdentity. keyed_reverse_registries_restore_complete_identities_and_refuse_missing_entries now expects that same crate-owned refusal. The joined-layout control removes one key from the single preparation registry after the accepted publication comparison; moved_case_tables_preserve_typed_layout_refusals preserves the real-layout graph refusal and the absent-registry refusal. MissingOwnerIdentity has no free-text payload and is documented as README class 3, an internal registry defect. The ten frozen projection digests/lengths, architecture publication fixture and all existing stage joins remain unchanged.
+
+SourceRow encoder deduplication (review finding 9, second half) is carried. It would replace the nested SourceRequirement encoding with a second structural traversal over SourceRow and needs an order proof across all seventeen OperandRole variants and their payloads, not just the real-subject samples; that is larger and riskier than a local deduplication. The exhaustive source encoder stays in the attestation owner, so the cost and dependency are explicit. The unused flow conversion is removed now. No other review item is carried.
