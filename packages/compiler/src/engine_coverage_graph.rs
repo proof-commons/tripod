@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 // Neutral symbols are consumed by shared coverage assembly.
 pub enum Key {
     #[cfg(test)]
-    Attestation(crate::coverage_graph::CoverageNodeId),
+    Owner(crate::engine_identity::SymbolKey),
     Relation(CaseKey),
     Requirement(Requirement),
     Evidence(Evidence),

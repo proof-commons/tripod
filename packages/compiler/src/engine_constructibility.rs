@@ -52,7 +52,7 @@ pub struct Dependency {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Authorization {
-    pub key: Vec<u16>,
+    pub key: crate::engine_identity::AuthorizationKey,
     pub permissionless: bool,
     pub allowed: BTreeSet<Availability>,
 }

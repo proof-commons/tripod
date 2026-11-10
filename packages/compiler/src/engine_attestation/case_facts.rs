@@ -59,8 +59,7 @@ pub fn lower(
             .collect(),
         layout: layout
             .iter()
-            .cloned()
-            .map(crate::engine_placement::LayoutKey)
+            .map(crate::engine_attestation::identity::attestation_layout)
             .collect(),
     }
 }
@@ -226,8 +225,7 @@ pub fn validate(
         super::operation_key(operation),
         &census
             .iter()
-            .cloned()
-            .map(crate::engine_placement::LayoutKey)
+            .map(crate::engine_attestation::identity::attestation_layout)
             .collect(),
         &lowered,
     )

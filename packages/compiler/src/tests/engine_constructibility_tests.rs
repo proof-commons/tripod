@@ -50,7 +50,11 @@ fn both_bound_owners_reach_constructibility() {
 
 #[test]
 fn unavailable_required_source_is_refused_in_both_namespaces() {
-    for namespace in [1, 2] {
+    for profile in [
+        architecture::semantic::SemanticProfileId::Attestation,
+        architecture::semantic::SemanticProfileId::KeyedProvenance,
+    ] {
+        let namespace = crate::engine_identity::namespace(profile);
         let operation = OperationKey { namespace, code: 1 };
         let availability = core::Availability {
             namespace,
@@ -67,7 +71,10 @@ fn unavailable_required_source_is_refused_in_both_namespaces() {
             independent: false,
         };
         let authorization = core::Authorization {
-            key: vec![0],
+            key: crate::engine_identity::AuthorizationKey::new(
+                profile,
+                vec![crate::engine_identity::word(0u16)],
+            ),
             permissionless: true,
             allowed: BTreeSet::from([availability]),
         };

@@ -384,6 +384,9 @@ rather than a hundred names:
    these are raised by the *independent validators* that re-derive the analysis
    and compare, so seeing one means a corruption-resistance check fired rather
    than that a user did something wrong.
+   `MissingOwnerIdentity` is also class 3: a compiler-internal reverse-registry
+   defect, not a claim that the realization admits no plan. It exposes neither
+   an engine key nor a free-text domain in the public API.
 
 There is no partial-success return anywhere in the crate: every failure is an
 `Err`, and no `Ok` value is a truncated version of a larger one.

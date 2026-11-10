@@ -130,7 +130,9 @@ pub fn requirement(id: &CoverageRequirementId) -> core::Requirement {
     core::Requirement {
         key: super::placement::key(&id.key()),
         boundary: id.boundary,
-        purpose: core::Purpose::Attestation(id.purpose.clone()),
+        purpose: core::Purpose::Owner(crate::engine_attestation::identity::attestation_purpose(
+            &id.purpose,
+        )),
         inactive: id.purpose == CoveragePurpose::InactiveAccept,
     }
 }

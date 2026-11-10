@@ -16,7 +16,7 @@ use std::collections::BTreeSet;
 
 fn placed(value: &PlacedCarrier) -> placement::Placed {
     placement::Placed {
-        carrier: placement::CarrierKey::Attestation(value.carrier.clone()),
+        carrier: crate::engine_attestation::identity::attestation_carrier(&value.carrier),
         quantification: value.quantification,
     }
 }
@@ -26,8 +26,7 @@ pub fn alternative(value: &CarrierAssignmentAlternative) -> core::Alternative {
         layout: value
             .layout
             .iter()
-            .cloned()
-            .map(placement::LayoutKey)
+            .map(crate::engine_attestation::identity::attestation_layout)
             .collect(),
     }
 }
@@ -67,12 +66,7 @@ pub fn attach_requirements(plan: &mut crate::coverage::RelationCoveragePlan) {
                 EvidenceRole::TargetExecution,
                 Vec::new(),
             ),
-            Purpose::Attestation(_) => continue,
-            #[cfg(test)]
-            Purpose::Verified(_)
-            | Purpose::Rejected { .. }
-            | Purpose::ClauseAccepted
-            | Purpose::ClauseRejected => continue,
+            Purpose::Owner(_) => continue,
         };
         plan.positive.push(PositiveCoverageRequirement {
             id: CoverageRequirementId {
@@ -104,12 +98,16 @@ fn entries(eligibility: &[CarrierEligibility]) -> BTreeMap<placement::Key, Vec<p
                     .iter()
                     .map(|entry| placement::Entry {
                         placed: placement::Placed {
-                            carrier: placement::CarrierKey::Attestation(entry.carrier.clone()),
+                            carrier: crate::engine_attestation::identity::attestation_carrier(
+                                &entry.carrier,
+                            ),
                             quantification: entry.quantification,
                         },
                         layout: selected_carrier_requirements(value, entry)
                             .into_iter()
-                            .map(placement::LayoutKey)
+                            .map(|value| {
+                                crate::engine_attestation::identity::attestation_layout(&value)
+                            })
                             .collect(),
                     })
                     .collect(),
@@ -121,7 +119,7 @@ fn entries(eligibility: &[CarrierEligibility]) -> BTreeMap<placement::Key, Vec<p
 pub fn carrier_alternatives(
     eligibility: &[CarrierEligibility],
     placements: &[PlacementCandidate],
-) -> BTreeMap<RelationCaseKey, BTreeSet<CarrierAssignmentAlternative>> {
+) -> Result<BTreeMap<RelationCaseKey, BTreeSet<CarrierAssignmentAlternative>>, CompileError> {
     let keys = placements
         .iter()
         .flat_map(|value| &value.assignments)
@@ -133,6 +131,20 @@ pub fn carrier_alternatives(
         .flat_map(|row| &row.carriers)
         .map(|value| (placed(value), value.clone()))
         .collect::<BTreeMap<_, _>>();
+    let layouts = eligibility
+        .iter()
+        .flat_map(|row| {
+            row.eligible
+                .iter()
+                .flat_map(|entry| crate::layout::selected_carrier_requirements(row, entry))
+        })
+        .map(|value| {
+            (
+                crate::engine_attestation::identity::attestation_layout(&value),
+                value,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     core::alternatives(
         &entries(eligibility),
         placements
@@ -142,20 +154,33 @@ pub fn carrier_alternatives(
     )
     .into_iter()
     .map(|(key, alternatives)| {
-        (
-            keys[&key].clone(),
+        Ok((
+            keys.get(&key)
+                .cloned()
+                .ok_or(CompileError::MissingOwnerIdentity)?,
             alternatives
                 .into_iter()
-                .map(|value| CarrierAssignmentAlternative {
-                    carriers: value
-                        .carriers
-                        .iter()
-                        .map(|key| carriers[key].clone())
-                        .collect(),
-                    layout: value.layout.into_iter().map(|key| key.0).collect(),
+                .map(|value| {
+                    Ok(CarrierAssignmentAlternative {
+                        carriers: value
+                            .carriers
+                            .iter()
+                            .map(|key| {
+                                carriers
+                                    .get(key)
+                                    .cloned()
+                                    .ok_or(CompileError::MissingOwnerIdentity)
+                            })
+                            .collect::<Result<_, _>>()?,
+                        layout: value
+                            .layout
+                            .iter()
+                            .map(|key| super::operation::layout_lookup(&layouts, key))
+                            .collect::<Result<_, _>>()?,
+                    })
                 })
-                .collect(),
-        )
+                .collect::<Result<_, CompileError>>()?,
+        ))
     })
     .collect()
 }
@@ -200,7 +225,10 @@ pub fn validate(
     core::validate(
         &plans,
         &entries.keys().cloned().collect(),
-        &layout.iter().cloned().map(placement::LayoutKey).collect(),
+        &layout
+            .iter()
+            .map(crate::engine_attestation::identity::attestation_layout)
+            .collect(),
         &expected,
     )
     .map_err(|error| refusal(error, &keys))

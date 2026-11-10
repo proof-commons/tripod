@@ -21,7 +21,8 @@ pub struct Lowered {
     nodes: BTreeMap<core::NodeKey, ConstructibilityNodeId>,
     operations: BTreeMap<OperationKey, OperationId>,
     availability: BTreeMap<core::Availability, AvailabilityClass>,
-    authorizations: BTreeMap<Vec<u16>, ConstructibilityAuthorization>,
+    authorizations:
+        BTreeMap<crate::engine_identity::AuthorizationKey, ConstructibilityAuthorization>,
     edges: BTreeMap<core::Edge, ConstructibilityEdge>,
 }
 
@@ -132,32 +133,40 @@ impl Lowered {
             operations: value
                 .operations
                 .into_iter()
-                .map(|operation| OperationConstructibilityAnalysis {
-                    operation: self.operations[&operation.operation],
-                    cases: operation
-                        .cases
-                        .into_iter()
-                        .map(|case| ConstructibilityCaseAnalysis {
-                            authorization: self.authorizations[&case.authorization.key].clone(),
-                            required_nodes: case
-                                .required_nodes
-                                .iter()
-                                .map(|node| self.nodes[node].clone())
-                                .collect(),
-                            optional_nodes: case
-                                .optional_nodes
-                                .iter()
-                                .map(|node| self.nodes[node].clone())
-                                .collect(),
-                            required_availability: case
-                                .required_availability
-                                .iter()
-                                .map(|key| self.availability[key])
-                                .collect(),
-                        })
-                        .collect(),
+                .map(|operation| {
+                    Ok(OperationConstructibilityAnalysis {
+                        operation: self.operations[&operation.operation],
+                        cases: operation
+                            .cases
+                            .into_iter()
+                            .map(|case| {
+                                Ok(ConstructibilityCaseAnalysis {
+                                    authorization: self
+                                        .authorizations
+                                        .get(&case.authorization.key)
+                                        .cloned()
+                                        .ok_or(CompileError::MissingOwnerIdentity)?,
+                                    required_nodes: case
+                                        .required_nodes
+                                        .iter()
+                                        .map(|node| self.nodes[node].clone())
+                                        .collect(),
+                                    optional_nodes: case
+                                        .optional_nodes
+                                        .iter()
+                                        .map(|node| self.nodes[node].clone())
+                                        .collect(),
+                                    required_availability: case
+                                        .required_availability
+                                        .iter()
+                                        .map(|key| self.availability[key])
+                                        .collect(),
+                                })
+                            })
+                            .collect::<Result<_, CompileError>>()?,
+                    })
                 })
-                .collect(),
+                .collect::<Result<_, CompileError>>()?,
         })
     }
 
@@ -202,7 +211,10 @@ impl Lowered {
                 path: keys,
             } => CompileError::ConstructibilityWitnessUnavailable {
                 operation: self.operations[&operation],
-                authorization: self.authorizations[&authorization.key].clone(),
+                authorization: match self.authorizations.get(&authorization.key) {
+                    Some(value) => value.clone(),
+                    None => return CompileError::MissingOwnerIdentity,
+                },
                 node: node(&key),
                 path: path(keys),
             },
@@ -247,7 +259,7 @@ fn authorization(
         A::CadencePermissionless => vec![6],
     };
     core::Authorization {
-        key,
+        key: crate::engine_attestation::identity::authorization(&key),
         permissionless: matches!(case, A::Permissionless | A::CadencePermissionless),
         allowed: values
             .into_iter()
@@ -357,5 +369,42 @@ pub fn fact_key(fact: &FactId) -> Vec<u16> {
         } => vec![9, operation.code(), super::side_code(*side), object.code()],
         FactId::SponsorIsolated { operation } => vec![10, operation.code()],
         FactId::ProtocolSecretUsed { operation } => vec![11, operation.code()],
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn authorization_publication_and_refusal_require_the_reverse_entry() {
+        let input = crate::tests::bound_input(&[OperationId::CompactAsh]);
+        let mut lowered = lower(input.owner()).expect("owner lowering");
+        let analyzed = core::analyze_constructibility(&lowered.records).expect("shared analysis");
+        assert!(lowered.compatibility_view(Ok(analyzed.clone())).is_ok());
+        let operation = &analyzed.operations[0];
+        let case = &operation.cases[0];
+        let node = lowered.records.nodes[0].id.clone();
+        let defect = core::RecordError::ConstructibilityWitnessUnavailable {
+            operation: operation.operation,
+            authorization: case.authorization.clone(),
+            node: node.clone(),
+            path: vec![node.clone()],
+        };
+        assert_eq!(
+            lowered.refusal(defect.clone()),
+            CompileError::ConstructibilityWitnessUnavailable {
+                operation: lowered.operations[&operation.operation],
+                authorization: lowered.authorizations[&case.authorization.key].clone(),
+                node: lowered.nodes[&node].clone(),
+                path: vec![lowered.nodes[&node].clone()]
+            }
+        );
+        lowered.authorizations.remove(&case.authorization.key);
+        assert_eq!(
+            lowered.compatibility_view(Ok(analyzed)).err(),
+            Some(CompileError::MissingOwnerIdentity)
+        );
+        assert_eq!(lowered.refusal(defect), CompileError::MissingOwnerIdentity);
     }
 }

@@ -6,27 +6,9 @@ use std::collections::BTreeSet;
 /// an attestation purpose on a keyed path.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Purpose {
-    Attestation(crate::coverage::CoveragePurpose),
-    #[cfg(test)]
-    Verified(Evidence),
-    #[cfg(test)]
-    Rejected {
-        evidence: Evidence,
-        defect: EvidenceDefect,
-    },
-    #[cfg(test)]
-    ClauseAccepted,
-    #[cfg(test)]
-    ClauseRejected,
+    Owner(crate::engine_identity::PurposeKey),
     AcceptedProjection,
     CarrierExecution(crate::engine_placement::Placed),
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-#[cfg(test)]
-pub enum EvidenceDefect {
-    Missing,
-    Failed,
-    IdentityMismatch,
 }
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Requirement {

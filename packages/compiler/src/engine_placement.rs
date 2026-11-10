@@ -7,27 +7,9 @@ use crate::{
     placement::{CarrierMultiplicity, PlacementSearchLimits, PlacementSearchReport},
     search_counter::{admit_search_state, record_search_event},
 };
-#[cfg(test)]
-use crate::{engine_lifecycle::ObjectKey, engine_records::OperationKey};
 use std::collections::{BTreeMap, BTreeSet};
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum CaseKey {
-    Attestation(crate::case::ExecutionCaseId),
-    #[cfg(test)]
-    Keyed(OperationKey),
-}
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum CarrierKey {
-    Attestation(crate::carrier::CarrierRole),
-    #[cfg(test)]
-    Member {
-        operation: OperationKey,
-        object: ObjectKey,
-    },
-}
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LayoutKey(pub crate::layout::LayoutRequirement);
+pub use crate::engine_identity::{CarrierKey, CaseKey, LayoutKey};
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Key {
     pub relation: RelationKey,

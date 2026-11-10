@@ -936,7 +936,7 @@ pub fn analyze_placed_coverage(
     let mut analysis = analyze_plan_coverage(relations, &placed.relation_case_plans)?;
     let eligibility = relation_case_eligibility(relations, &placed.relation_case_plans)?;
 
-    bind_carrier_coverage(&mut analysis, &eligibility, &placed.feasible_placements);
+    bind_carrier_coverage(&mut analysis, &eligibility, &placed.feasible_placements)?;
     bind_projection_coverage(&mut analysis, &placed.relation_case_plans);
 
     validate_coverage_census(&placed.relation_case_plans, &analysis)?;
@@ -964,9 +964,9 @@ pub fn bind_carrier_coverage(
     analysis: &mut PlanCoverageAnalysis,
     eligibility: &[CarrierEligibility],
     placements: &[PlacementCandidate],
-) {
+) -> Result<(), CompileError> {
     let alternatives =
-        crate::engine_attestation::coverage_join::carrier_alternatives(eligibility, placements);
+        crate::engine_attestation::coverage_join::carrier_alternatives(eligibility, placements)?;
 
     for operation in analysis.operations.values_mut() {
         for (key, plan) in &mut operation.requirements {
@@ -981,6 +981,7 @@ pub fn bind_carrier_coverage(
             crate::engine_attestation::coverage_join::attach_requirements(plan);
         }
     }
+    Ok(())
 }
 
 // --- Tranche G: accepted semantic projections (Guide-6 §10) ---

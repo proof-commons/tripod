@@ -32,6 +32,7 @@ pub mod constructibility;
 pub mod coverage;
 pub mod coverage_join;
 pub mod foundation;
+pub mod identity;
 pub mod lifecycle;
 pub mod operation;
 pub mod placement;

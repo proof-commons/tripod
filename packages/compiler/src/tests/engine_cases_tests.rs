@@ -10,6 +10,63 @@ fn keyed() -> crate::BoundCompilerInput<crate::input::KeyedOwner> {
     keyed_scope(&[KeyedOperationId::Source, KeyedOperationId::Merge])
 }
 
+#[test]
+fn keyed_reverse_registries_restore_complete_identities_and_refuse_missing_entries() {
+    let input = keyed();
+    let mut lowered = input.owner().lower_relations().expect("accepted lowering");
+    let tables = crate::input::KeyedOwner::lower_cases(&input).expect("cases");
+    for case in &tables.cases {
+        let value = lowered.identities.case(&case.id).expect("registered case");
+        assert_eq!(
+            crate::engine_keyed::keyed_case(crate::engine_keyed::operation_key(value)),
+            case.id
+        );
+    }
+    let placements = crate::engine_keyed::lower_placements(input.owner());
+    for plan in crate::engine_keyed::lower_coverage(input.owner()) {
+        for row in plan.positive.iter().chain(&plan.negative) {
+            let crate::engine_coverage::Purpose::Owner(key) = &row.purpose else {
+                panic!("owner purpose before joins")
+            };
+            let value = lowered.identities.purpose(key).expect("registered purpose");
+            assert_eq!(crate::engine_keyed::keyed_purpose(&value), *key);
+        }
+    }
+    for entry in placements.eligibility.iter().flat_map(|row| &row.entries) {
+        let (operation, object) = lowered
+            .identities
+            .carrier(&entry.placed.carrier)
+            .expect("registered carrier");
+        let [namespace, code] = crate::engine_identity::object(object);
+        assert_eq!(
+            crate::engine_keyed::keyed_carrier(
+                crate::engine_keyed::operation_key(operation),
+                crate::engine_lifecycle::ObjectKey { namespace, code }
+            ),
+            entry.placed.carrier
+        );
+    }
+    let case = tables.cases[0].id.clone();
+    let purpose =
+        crate::engine_keyed::keyed_purpose(&crate::engine_keyed::KeyedPurpose::ClauseAccepted);
+    lowered.identities.purposes.remove(&purpose);
+    assert_eq!(
+        lowered.identities.purpose(&purpose),
+        Err(crate::CompileError::MissingOwnerIdentity)
+    );
+    lowered.identities.cases.remove(&case);
+    assert_eq!(
+        lowered.identities.case(&case),
+        Err(crate::CompileError::MissingOwnerIdentity)
+    );
+    let carrier = placements.eligibility[0].entries[0].placed.carrier.clone();
+    lowered.identities.carriers.remove(&carrier);
+    assert_eq!(
+        lowered.identities.carrier(&carrier),
+        Err(crate::CompileError::MissingOwnerIdentity)
+    );
+}
+
 fn keyed_scope(scope: &[KeyedOperationId]) -> crate::BoundCompilerInput<crate::input::KeyedOwner> {
     let manifest = KeyedManifest::contract().expect("manifest");
     let source = realization::keyed::KeyedRealizationDraft::derive(&manifest)
@@ -181,10 +238,15 @@ fn attestation_operation_assembly_preserves_factor_census_and_placements() {
         limits,
     )
     .expect("compatibility");
-    let restored =
-        crate::engine_attestation::operation::restore(&registered.payloads, proof, factor)
-            .expect("lossless factor view");
+    let restored = crate::engine_attestation::operation::restore(
+        &registered.payloads,
+        &registered.layouts,
+        proof,
+        factor,
+    )
+    .expect("lossless factor view");
     assert_eq!(restored, legacy);
+    assert_joined_layouts_restore_from_operation_registry(&registered, proof, factor);
     assert_eq!(factor.bundles.len(), legacy.relation_cases.len());
     assert_eq!(factor.cases.len(), legacy.execution_cases.len());
     assert_eq!(
@@ -211,6 +273,45 @@ fn attestation_operation_assembly_preserves_factor_census_and_placements() {
             .collect()
     );
     assert_eq!(factor.search, placements.search);
+}
+
+fn assert_joined_layouts_restore_from_operation_registry(
+    registered: &crate::engine_attestation::cases::Registered,
+    proof: &crate::engine_proof::Candidate,
+    factor: &crate::engine_operation::Operation,
+) {
+    let borrowed = factor
+        .bundles
+        .iter()
+        .find_map(|(key, bundle)| {
+            let original = registered
+                .tables
+                .rows
+                .iter()
+                .find(|row| {
+                    row.key == *key && row.proof == proof.proofs.get(&key.relation).cloned()
+                })
+                .expect("original row");
+            let local = &original.facts.as_ref().expect("successful row").layout;
+            bundle
+                .facts
+                .layout
+                .iter()
+                .find(|layout| !local.contains(*layout))
+        })
+        .expect("shared join adds a sibling layout");
+    let mut missing = registered.layouts.clone();
+    missing.remove(borrowed);
+    assert_eq!(
+        crate::engine_attestation::operation::restore(
+            &registered.payloads,
+            &missing,
+            proof,
+            factor
+        )
+        .err(),
+        Some(crate::CompileError::MissingOwnerIdentity)
+    );
 }
 #[test]
 fn attestation_tables_match_dynamic_case_discharge_for_each_representation() {
@@ -393,7 +494,7 @@ fn keyed_complete_eligibility_matches_direct_lowering_in_every_scope() {
 #[test]
 fn complete_eligibility_detects_equal_length_coordinate_mutations() {
     use crate::carrier::CarrierQuantification;
-    use crate::engine_placement::{CarrierKey, EmptyCause};
+    use crate::engine_placement::EmptyCause;
     use crate::placement::CarrierMultiplicity;
     let input = keyed();
     let accepted = crate::engine_keyed::lower_placements(input.owner()).eligibility;
@@ -421,10 +522,23 @@ fn complete_eligibility_detects_equal_length_coordinate_mutations() {
                 } else {
                     &mut row.options[0]
                 };
-                let CarrierKey::Member { object, .. } = &mut entry.placed.carrier else {
-                    panic!("keyed carrier")
-                };
-                object.namespace = 1;
+                assert_eq!(
+                    entry.placed.carrier,
+                    crate::engine_keyed::keyed_carrier(
+                        row.key.relation.operation,
+                        crate::engine_lifecycle::ObjectKey {
+                            namespace: 2,
+                            code: 1
+                        }
+                    )
+                );
+                entry.placed.carrier = crate::engine_keyed::keyed_carrier(
+                    row.key.relation.operation,
+                    crate::engine_lifecycle::ObjectKey {
+                        namespace: 1,
+                        code: 1,
+                    },
+                );
             }
             6 => {
                 row.empty_cause = EmptyCause::GlobalOnlyLocal;
@@ -446,12 +560,13 @@ fn complete_eligibility_detects_equal_length_coordinate_mutations() {
 
 #[test]
 fn complete_eligibility_detects_equal_length_layout_mutations() {
-    use crate::engine_placement::LayoutKey;
     // Layout is empty for keyed plans. Use a real attestation layout obligation
     // as the accepted nonempty comparison subject, then change only its side.
     let attestation = super::bound_input(&[OperationId::CompactAsh]);
-    let tables =
-        crate::input::AttestationOwner::lower_cases(&attestation).expect("attestation tables");
+    let registered = crate::engine_attestation::cases::lower_registered(&attestation)
+        .expect("attestation tables");
+    let layouts = registered.layouts.clone();
+    let tables = registered.tables;
     let (proofs, _) =
         crate::engine_records::analyze_bound_proofs(&attestation, &CapabilityView::Unconstrained)
             .expect("proofs");
@@ -472,7 +587,7 @@ fn complete_eligibility_detects_equal_length_layout_mutations() {
             .find(|entry| {
                 entry.layout.iter().any(|key| {
                     matches!(
-                        key.0,
+                        layouts[key],
                         crate::layout::LayoutRequirement::AuthenticateFamilyCensus { .. }
                     )
                 })
@@ -483,15 +598,14 @@ fn complete_eligibility_detects_equal_length_layout_mutations() {
             .iter()
             .find(|key| {
                 matches!(
-                    key.0,
+                    layouts[key],
                     crate::layout::LayoutRequirement::AuthenticateFamilyCensus { .. }
                 )
             })
             .expect("layout")
             .clone();
-        let mut changed = original.clone();
-        let LayoutKey(crate::layout::LayoutRequirement::AuthenticateFamilyCensus { side, .. }) =
-            &mut changed
+        let mut changed = layouts[&original].clone();
+        let crate::layout::LayoutRequirement::AuthenticateFamilyCensus { side, .. } = &mut changed
         else {
             panic!("selected layout")
         };
@@ -501,7 +615,13 @@ fn complete_eligibility_detects_equal_length_layout_mutations() {
         };
         let count = entry.layout.len();
         assert!(entry.layout.remove(&original));
-        assert!(entry.layout.insert(changed));
+        assert!(
+            entry
+                .layout
+                .insert(crate::engine_attestation::identity::attestation_layout(
+                    &changed
+                ))
+        );
         assert_eq!(entry.layout.len(), count);
         assert_eq!(subject.len(), accepted.len());
         assert_ne!(canonical_eligibility(&subject), expected);

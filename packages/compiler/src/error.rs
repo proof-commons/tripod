@@ -88,6 +88,10 @@ pub enum CompileError {
     #[error("realization failed its owner's validation")]
     InvalidRealization,
 
+    /// A binding-fixed owner cannot restore an opaque engine identity.
+    #[error("missing owner reverse-registry entry")]
+    MissingOwnerIdentity,
+
     /// The realization binds an architecture identity other than the
     /// one the compilation was requested against.
     #[error("realization architecture binding does not match the requested architecture")]
@@ -1549,6 +1553,7 @@ impl CompileError {
             Self::FixedProofSource { .. } => "fixed_proof_source",
             Self::UnsupportedRealizationSchema { .. } => "unsupported_realization_schema",
             Self::InvalidRealization => "invalid_realization",
+            Self::MissingOwnerIdentity => "missing_owner_identity",
             Self::ArchitectureBindingMismatch => "architecture_binding_mismatch",
             Self::IncompleteRealizationScope { .. } => "incomplete_realization_scope",
             Self::DuplicateScopeOperation { .. } => "duplicate_scope_operation",

@@ -587,7 +587,10 @@ pub fn operand_key(operand: &OperandId) -> core::OperandKey {
         OperandRole::ExpressionResult { expression } => (
             15,
             match expression {
-                realization::ExprId::Fact(fact) => P::Fact(super::constructibility::fact_key(fact)),
+                realization::ExprId::Fact(fact) => P::Fact(crate::engine_proof::FactKey {
+                    namespace: super::ATTESTATION,
+                    subject: super::constructibility::fact_key(fact),
+                }),
                 realization::ExprId::Relation { relation, role } => P::Expression {
                     relation: super::relation_key(relation),
                     role: *role as u16,

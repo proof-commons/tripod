@@ -19,7 +19,7 @@ pub enum Payload {
     Family { side: u16, object: ObjectKey },
     Object(ObjectKey),
     Bound { namespace: u16, code: u16 },
-    Fact(Vec<u16>),
+    Fact(crate::engine_proof::FactKey),
     Expression { relation: RelationKey, role: u16 },
     Evidence(Evidence),
 }

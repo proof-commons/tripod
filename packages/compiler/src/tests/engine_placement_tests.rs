@@ -187,7 +187,7 @@ fn shared_validator_refuses_reader_runtime_assignment() {
     let mut runtime = subject.assignments[0].clone();
     runtime.key = core::Key {
         relation: reader.relation.clone(),
-        case: core::CaseKey::Keyed(reader.relation.operation),
+        case: crate::engine_keyed::keyed_case(reader.relation.operation),
     };
     let unexpected = runtime.key.clone();
     subject.assignments.push(runtime);

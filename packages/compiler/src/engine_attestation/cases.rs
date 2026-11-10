@@ -9,6 +9,7 @@ pub fn lower(input: &crate::BoundCompilerInput) -> Result<core::Tables, CompileE
 pub struct Registered {
     pub tables: core::Tables,
     pub payloads: super::operation::Rows,
+    pub layouts: super::operation::LayoutRegistry,
 }
 #[cfg(test)]
 pub fn lower_registered(input: &crate::BoundCompilerInput) -> Result<Registered, CompileError> {
@@ -25,32 +26,9 @@ pub fn lower_prepared(
     let span = tracing::debug_span!(target: "compiler::engine_attestation", "lower_cases", scope_count = crate::instrumentation::count(input.scope().operations().len()));
     let _entered = span.enter();
     let obligations = super::proof::classify_obligations(relations)?;
+    let mut layouts = super::operation::LayoutRegistry::new();
     let mut payloads = super::operation::Rows::new();
-    let mut tables = core::Tables {
-        choices: lifecycle
-            .choices
-            .iter()
-            .map(|choice| {
-                (
-                    super::proof::choice_key(&choice.id),
-                    choice
-                        .candidates
-                        .iter()
-                        .copied()
-                        .map(super::proof::mode_key)
-                        .collect(),
-                )
-            })
-            .collect(),
-        relations: relations
-            .graph
-            .node_weights()
-            .map(|row| super::relation_key(&row.source.id))
-            .collect(),
-        cases: Vec::new(),
-        rows: Vec::new(),
-        layout_scopes: BTreeMap::new(),
-    };
+    let mut tables = empty_tables(relations, lifecycle);
     for operation in input.scope().operations() {
         let mut modes = vec![BTreeMap::new()];
         for choice in lifecycle
@@ -77,7 +55,7 @@ pub fn lower_prepared(
                     representations: representations.clone(),
                 };
                 tables.cases.push(core::Case {
-                    id: crate::engine_placement::CaseKey::Attestation(case.clone()),
+                    id: crate::engine_attestation::identity::attestation_case(&case),
                     operation: super::operation_key(*operation),
                     representations: representations
                         .iter()
@@ -105,7 +83,14 @@ pub fn lower_prepared(
                         .ok_or(CompileError::InvalidRealization)?;
                     let alternatives = alternatives(obligation);
                     for (proof, selector) in alternatives {
-                        let (row, payload) = row(relations, &node.source, &case, proof, selector);
+                        let (row, payload) = row(
+                            relations,
+                            &node.source,
+                            &case,
+                            proof,
+                            selector,
+                            &mut layouts,
+                        );
                         if let Some(payload) = payload {
                             payloads.insert((row.key.clone(), row.proof.clone()), payload);
                         }
@@ -115,42 +100,77 @@ pub fn lower_prepared(
             }
         }
     }
-    tables.layout_scopes = layout_scopes(&tables.rows);
-    Ok(Registered { tables, payloads })
+    tables.layout_scopes = layout_scopes(&layouts);
+    Ok(Registered {
+        tables,
+        payloads,
+        layouts,
+    })
 }
+fn empty_tables(
+    relations: &crate::relation::CompilerRelationAnalysis,
+    lifecycle: &crate::lifecycle::CompilerLifecycleAnalysis,
+) -> core::Tables {
+    core::Tables {
+        choices: lifecycle
+            .choices
+            .iter()
+            .map(|choice| {
+                (
+                    super::proof::choice_key(&choice.id),
+                    choice
+                        .candidates
+                        .iter()
+                        .copied()
+                        .map(super::proof::mode_key)
+                        .collect(),
+                )
+            })
+            .collect(),
+        relations: relations
+            .graph
+            .node_weights()
+            .map(|row| super::relation_key(&row.source.id))
+            .collect(),
+        cases: Vec::new(),
+        rows: Vec::new(),
+        layout_scopes: BTreeMap::new(),
+    }
+}
+
 fn layout_scopes(
-    rows: &[core::Row],
+    layouts: &super::operation::LayoutRegistry,
 ) -> BTreeMap<crate::engine_placement::LayoutKey, core::LayoutScope> {
-    let span = tracing::debug_span!(target: "compiler::engine_attestation", "lower_layout_scopes", row_count = crate::instrumentation::count(rows.len()));
+    let span = tracing::debug_span!(target: "compiler::engine_attestation", "lower_layout_scopes", row_count = crate::instrumentation::count(layouts.len()));
     let _entered = span.enter();
-    rows.iter()
-        .filter_map(|row| row.facts.as_ref())
-        .flat_map(|facts| &facts.layout)
-        .map(|key| {
+    layouts
+        .iter()
+        .map(|(key, value)| {
             (
                 key.clone(),
                 core::LayoutScope {
-                    relation: key.0.relation().map(super::relation_key),
-                    case: crate::analyzed_operation::layout_case(&key.0)
-                        .cloned()
-                        .map(crate::engine_placement::CaseKey::Attestation),
+                    relation: value.relation().map(super::relation_key),
+                    case: crate::analyzed_operation::layout_case(value)
+                        .map(crate::engine_attestation::identity::attestation_case),
                 },
             )
         })
         .collect()
 }
+
 fn row(
     relations: &crate::relation::CompilerRelationAnalysis,
     declaration: &realization::RelationDeclaration,
     case: &crate::case::ExecutionCaseId,
     proof: Option<&realization::ProofAlternativeId>,
     selector: Option<crate::engine_proof::AlternativeKey>,
+    layouts: &mut super::operation::LayoutRegistry,
 ) -> (core::Row, Option<super::operation::Payload>) {
     let key = super::placement::key(&crate::placement::RelationCaseKey {
         relation: declaration.id.clone(),
         case: case.clone(),
     });
-    let result = derive(relations, declaration, case, proof);
+    let result = derive(relations, declaration, case, proof, layouts);
     match result {
         Ok(derived) => (
             core::Row {
@@ -196,6 +216,7 @@ fn derive(
     declaration: &realization::RelationDeclaration,
     case: &crate::case::ExecutionCaseId,
     proof: Option<&realization::ProofAlternativeId>,
+    layouts: &mut super::operation::LayoutRegistry,
 ) -> Result<Derived, CompileError> {
     let sources = proof.map_or_else(
         || Ok(Vec::new()),
@@ -212,7 +233,7 @@ fn derive(
     let plan = crate::placement::classify_relation_case(declaration, &execution, role)?;
     let eligible =
         crate::carrier::relation_case_eligibility(relations, std::slice::from_ref(&plan))?;
-    let lowered = super::placement::lower(std::slice::from_ref(&plan), &eligible, None);
+    let lowered = super::placement::eligibility_records(std::slice::from_ref(&plan), &eligible);
     let coverage = super::coverage::derive_relation_coverage(declaration, &plan)?;
     let layout =
         crate::layout::layout_requirements(relations, std::slice::from_ref(&plan), &eligible)?;
@@ -239,6 +260,11 @@ fn derive(
         })
         .map(|row| super::coverage::requirement(&row.id))
         .collect();
+    layouts.extend(
+        layout
+            .iter()
+            .map(|value| (super::identity::attestation_layout(value), value.clone())),
+    );
     Ok(Derived {
         payload: super::operation::Payload::new(
             &plan,
@@ -247,7 +273,7 @@ fn derive(
             &eligible,
         ),
         runtime: !plan.runtime_requirements.is_empty(),
-        eligibility: lowered.records.eligibility,
+        eligibility: lowered,
         coverage: super::coverage::lowered(&coverage),
         facts,
         projections,

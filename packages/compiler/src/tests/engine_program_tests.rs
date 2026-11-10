@@ -409,7 +409,10 @@ fn whole_pipeline_refuses_unavailable_required_source() {
         operations: vec![(
             operation,
             vec![construction::Authorization {
-                key: vec![0],
+                key: crate::engine_identity::AuthorizationKey::new(
+                    architecture::semantic::SemanticProfileId::KeyedProvenance,
+                    vec![crate::engine_identity::word(0u16)],
+                ),
                 permissionless: true,
                 allowed: std::collections::BTreeSet::from([availability]),
             }],

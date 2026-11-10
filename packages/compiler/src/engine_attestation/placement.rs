@@ -24,6 +24,7 @@ pub struct Lowered {
     pub records: core::Records,
     keys: BTreeMap<core::Key, RelationCaseKey>,
     carriers: BTreeMap<core::CarrierKey, CarrierRole>,
+    layouts: BTreeMap<core::LayoutKey, crate::layout::LayoutRequirement>,
 }
 pub fn lower(
     plans: &[RelationCasePlan],
@@ -34,6 +35,20 @@ pub fn lower(
     let _entered = span.enter();
     let mut keys = BTreeMap::new();
     let mut carriers = BTreeMap::new();
+    let mut layouts = eligibility
+        .iter()
+        .flat_map(|row| {
+            row.eligible
+                .iter()
+                .flat_map(|entry| selected_carrier_requirements(row, entry))
+        })
+        .map(|value| {
+            (
+                crate::engine_attestation::identity::attestation_layout(&value),
+                value,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
     for plan in plans {
         let id = RelationCaseKey {
             relation: plan.relation.clone(),
@@ -41,46 +56,32 @@ pub fn lower(
         };
         keys.insert(key(&id), id);
     }
-    let rows = eligibility
-        .iter()
-        .map(|analysis| {
-            let id = RelationCaseKey {
-                relation: analysis.relation.clone(),
-                case: analysis.case.clone(),
-            };
-            keys.insert(key(&id), id.clone());
-            for entry in &analysis.eligible {
-                carriers.insert(
-                    core::CarrierKey::Attestation(entry.carrier.clone()),
-                    entry.carrier.clone(),
-                );
-            }
-            let plan = plans
-                .iter()
-                .find(|plan| plan.relation == analysis.relation && plan.case == analysis.case);
-            let validation_entries = plan.map_or_else(Vec::new, |plan| entries(plan, analysis));
-            let options = plans
-                .iter()
-                .rev()
-                .find(|plan| plan.relation == analysis.relation && plan.case == analysis.case)
-                .map_or_else(Vec::new, |plan| entries(plan, analysis));
-            core::Eligibility {
-                key: key(&id),
-                multiplicity: analysis.multiplicity,
-                entries: validation_entries,
-                options,
-                empty_cause: plan.map_or(core::EmptyCause::NoEligible, |plan| {
-                    empty_cause(plan, analysis)
-                }),
-            }
-        })
-        .collect();
+    for analysis in eligibility {
+        let id = RelationCaseKey {
+            relation: analysis.relation.clone(),
+            case: analysis.case.clone(),
+        };
+        keys.insert(key(&id), id);
+        for entry in &analysis.eligible {
+            carriers.insert(
+                crate::engine_attestation::identity::attestation_carrier(&entry.carrier),
+                entry.carrier.clone(),
+            );
+        }
+    }
+    let rows = eligibility_records(plans, eligibility);
     if let Some(offered) = offered {
+        layouts.extend(offered.layout_requirements.iter().map(|value| {
+            (
+                crate::engine_attestation::identity::attestation_layout(value),
+                value.clone(),
+            )
+        }));
         for assignment in &offered.assignments {
             keys.insert(key(&assignment.key()), assignment.key());
             for placed in &assignment.carriers {
                 carriers.insert(
-                    core::CarrierKey::Attestation(placed.carrier.clone()),
+                    crate::engine_attestation::identity::attestation_carrier(&placed.carrier),
                     placed.carrier.clone(),
                 );
             }
@@ -104,19 +105,53 @@ pub fn lower(
         },
         keys,
         carriers,
+        layouts,
     }
 }
+pub fn eligibility_records(
+    plans: &[RelationCasePlan],
+    eligibility: &[CarrierEligibility],
+) -> Vec<core::Eligibility> {
+    eligibility
+        .iter()
+        .map(|analysis| {
+            let id = RelationCaseKey {
+                relation: analysis.relation.clone(),
+                case: analysis.case.clone(),
+            };
+            let plan = plans
+                .iter()
+                .find(|plan| plan.relation == analysis.relation && plan.case == analysis.case);
+            let validation_entries = plan.map_or_else(Vec::new, |plan| entries(plan, analysis));
+            let options = plans
+                .iter()
+                .rev()
+                .find(|plan| plan.relation == analysis.relation && plan.case == analysis.case)
+                .map_or_else(Vec::new, |plan| entries(plan, analysis));
+            core::Eligibility {
+                key: key(&id),
+                multiplicity: analysis.multiplicity,
+                entries: validation_entries,
+                options,
+                empty_cause: plan.map_or(core::EmptyCause::NoEligible, |plan| {
+                    empty_cause(plan, analysis)
+                }),
+            }
+        })
+        .collect()
+}
+
 fn entries(plan: &RelationCasePlan, analysis: &CarrierEligibility) -> Vec<core::Entry> {
     admissible_carriers(plan, analysis)
         .into_iter()
         .map(|entry| core::Entry {
             placed: core::Placed {
-                carrier: core::CarrierKey::Attestation(entry.carrier.clone()),
+                carrier: crate::engine_attestation::identity::attestation_carrier(&entry.carrier),
                 quantification: entry.quantification,
             },
             layout: selected_carrier_requirements(analysis, entry)
                 .into_iter()
-                .map(core::LayoutKey)
+                .map(|value| crate::engine_attestation::identity::attestation_layout(&value))
                 .collect(),
         })
         .collect()
@@ -124,7 +159,7 @@ fn entries(plan: &RelationCasePlan, analysis: &CarrierEligibility) -> Vec<core::
 pub fn key(id: &RelationCaseKey) -> core::Key {
     core::Key {
         relation: super::relation_key(&id.relation),
-        case: core::CaseKey::Attestation(id.case.clone()),
+        case: crate::engine_attestation::identity::attestation_case(&id.case),
     }
 }
 pub fn candidate(value: &PlacementCandidate) -> core::Candidate {
@@ -138,7 +173,9 @@ pub fn candidate(value: &PlacementCandidate) -> core::Candidate {
                     .carriers
                     .iter()
                     .map(|placed| core::Placed {
-                        carrier: core::CarrierKey::Attestation(placed.carrier.clone()),
+                        carrier: crate::engine_attestation::identity::attestation_carrier(
+                            &placed.carrier,
+                        ),
                         quantification: placed.quantification,
                     })
                     .collect(),
@@ -147,8 +184,7 @@ pub fn candidate(value: &PlacementCandidate) -> core::Candidate {
         layout: value
             .layout_requirements
             .iter()
-            .cloned()
-            .map(core::LayoutKey)
+            .map(crate::engine_attestation::identity::attestation_layout)
             .collect(),
     }
 }
@@ -161,34 +197,39 @@ impl Lowered {
     ) -> Result<Vec<PlacementCandidate>, CompileError> {
         let rows =
             core::enumerate(&self.records, limits, report).map_err(|error| self.refusal(error))?;
-        Ok(rows
-            .into_iter()
-            .map(|row| PlacementCandidate {
-                assignments: row
-                    .assignments
-                    .into_iter()
-                    .map(|assignment| {
-                        let id = &self.keys[&assignment.key];
-                        PlacementAssignment {
-                            relation: id.relation.clone(),
-                            case: id.case.clone(),
-                            carriers: assignment
-                                .carriers
-                                .into_iter()
-                                .map(|placed| PlacedCarrier {
-                                    carrier: self.carriers[&placed.carrier].clone(),
-                                    quantification: placed.quantification,
-                                })
-                                .collect(),
-                        }
-                    })
-                    .collect(),
-                layout_requirements: row.layout.into_iter().map(|key| key.0).collect(),
+        rows.into_iter()
+            .map(|row| {
+                Ok(PlacementCandidate {
+                    assignments: row
+                        .assignments
+                        .into_iter()
+                        .map(|assignment| {
+                            let id = &self.keys[&assignment.key];
+                            PlacementAssignment {
+                                relation: id.relation.clone(),
+                                case: id.case.clone(),
+                                carriers: assignment
+                                    .carriers
+                                    .into_iter()
+                                    .map(|placed| PlacedCarrier {
+                                        carrier: self.carriers[&placed.carrier].clone(),
+                                        quantification: placed.quantification,
+                                    })
+                                    .collect(),
+                            }
+                        })
+                        .collect(),
+                    layout_requirements: row
+                        .layout
+                        .iter()
+                        .map(|key| super::operation::layout_lookup(&self.layouts, key))
+                        .collect::<Result<_, _>>()?,
+                })
             })
-            .collect())
+            .collect()
     }
     pub fn refusal(&self, error: core::Error) -> CompileError {
-        refusal(error, &self.keys, &self.carriers)
+        refusal(error, &self.keys, &self.carriers, &self.layouts)
     }
 }
 
@@ -196,78 +237,98 @@ pub fn refusal(
     error: core::Error,
     keys: &BTreeMap<core::Key, RelationCaseKey>,
     carriers: &BTreeMap<core::CarrierKey, CarrierRole>,
+    layouts: &BTreeMap<core::LayoutKey, crate::layout::LayoutRequirement>,
 ) -> CompileError {
-    match error {
-        core::Error::PlacementCensusMismatch {
-            missing,
-            unexpected,
-        } => CompileError::PlacementCensusMismatch {
-            missing: missing.iter().map(|key| keys[key].clone()).collect(),
-            unexpected: unexpected.iter().map(|key| keys[key].clone()).collect(),
-        },
-        core::Error::NoEligibleCarrier(key) => {
-            let id = &keys[&key];
-            CompileError::NoEligibleCarrier {
-                relation: id.relation.clone(),
-                case: id.case.clone(),
+    let id = |key: &core::Key| keys.get(key).ok_or(CompileError::MissingOwnerIdentity);
+    let carrier_value = |key: &core::CarrierKey| {
+        carriers
+            .get(key)
+            .cloned()
+            .ok_or(CompileError::MissingOwnerIdentity)
+    };
+    let restore = || -> Result<CompileError, CompileError> {
+        Ok(match error {
+            core::Error::PlacementCensusMismatch {
+                missing,
+                unexpected,
+            } => CompileError::PlacementCensusMismatch {
+                missing: missing
+                    .iter()
+                    .map(|key| id(key).cloned())
+                    .collect::<Result<_, _>>()?,
+                unexpected: unexpected
+                    .iter()
+                    .map(|key| id(key).cloned())
+                    .collect::<Result<_, _>>()?,
+            },
+            core::Error::NoEligibleCarrier(key) => {
+                let id = id(&key)?;
+                CompileError::NoEligibleCarrier {
+                    relation: id.relation.clone(),
+                    case: id.case.clone(),
+                }
             }
-        }
-        core::Error::GlobalRelationHasOnlyLocalCarrier(key) => {
-            let id = &keys[&key];
-            CompileError::GlobalRelationHasOnlyLocalCarrier {
-                relation: id.relation.clone(),
-                case: id.case.clone(),
+            core::Error::GlobalRelationHasOnlyLocalCarrier(key) => {
+                let id = id(&key)?;
+                CompileError::GlobalRelationHasOnlyLocalCarrier {
+                    relation: id.relation.clone(),
+                    case: id.case.clone(),
+                }
             }
-        }
-        core::Error::UnconditionalRelationOnOptionalCarrier(key) => {
-            let id = &keys[&key];
-            CompileError::UnconditionalRelationOnOptionalCarrier {
-                relation: id.relation.clone(),
-                case: id.case.clone(),
+            core::Error::UnconditionalRelationOnOptionalCarrier(key) => {
+                let id = id(&key)?;
+                CompileError::UnconditionalRelationOnOptionalCarrier {
+                    relation: id.relation.clone(),
+                    case: id.case.clone(),
+                }
             }
-        }
-        core::Error::DuplicatePlacedCarrier { key, carrier } => {
-            let id = &keys[&key];
-            CompileError::DuplicatePlacedCarrier {
-                relation: id.relation.clone(),
-                case: id.case.clone(),
-                carrier: carriers[&carrier].clone(),
+            core::Error::DuplicatePlacedCarrier { key, carrier } => {
+                let id = id(&key)?;
+                CompileError::DuplicatePlacedCarrier {
+                    relation: id.relation.clone(),
+                    case: id.case.clone(),
+                    carrier: carrier_value(&carrier)?,
+                }
             }
-        }
-        core::Error::NonCanonicalCarrierAssignment(key) => {
-            let id = &keys[&key];
-            CompileError::NonCanonicalCarrierAssignment {
-                relation: id.relation.clone(),
-                case: id.case.clone(),
+            core::Error::NonCanonicalCarrierAssignment(key) => {
+                let id = id(&key)?;
+                CompileError::NonCanonicalCarrierAssignment {
+                    relation: id.relation.clone(),
+                    case: id.case.clone(),
+                }
             }
-        }
-        core::Error::UnpermittedCarrierPlacement { key, carrier } => {
-            let id = &keys[&key];
-            CompileError::UnpermittedCarrierPlacement {
-                relation: id.relation.clone(),
-                case: id.case.clone(),
-                carrier: carriers[&carrier].clone(),
+            core::Error::UnpermittedCarrierPlacement { key, carrier } => {
+                let id = id(&key)?;
+                CompileError::UnpermittedCarrierPlacement {
+                    relation: id.relation.clone(),
+                    case: id.case.clone(),
+                    carrier: carrier_value(&carrier)?,
+                }
             }
-        }
-        core::Error::MissingLayoutRequirement(key) => {
-            let id = &keys[&key];
-            CompileError::MissingLayoutRequirement {
-                relation: id.relation.clone(),
-                case: id.case.clone(),
+            core::Error::MissingLayoutRequirement(key) => {
+                let id = id(&key)?;
+                CompileError::MissingLayoutRequirement {
+                    relation: id.relation.clone(),
+                    case: id.case.clone(),
+                }
             }
-        }
-        core::Error::UnexpectedLayoutRequirement(keys) => {
-            CompileError::UnexpectedLayoutRequirement {
-                unexpected: keys.into_iter().map(|key| key.0).collect(),
+            core::Error::UnexpectedLayoutRequirement(keys) => {
+                CompileError::UnexpectedLayoutRequirement {
+                    unexpected: keys
+                        .iter()
+                        .map(|key| super::operation::layout_lookup(layouts, key))
+                        .collect::<Result<_, _>>()?,
+                }
             }
-        }
-        core::Error::StateLimit(maximum) => {
-            CompileError::PlacementSearchStateLimitExceeded { maximum }
-        }
-        core::Error::CandidateLimit(maximum) => {
-            CompileError::PlacementCandidateLimitExceeded { maximum }
-        }
-    }
+            core::Error::StateLimit(maximum) => {
+                CompileError::PlacementSearchStateLimitExceeded { maximum }
+            }
+            core::Error::CandidateLimit(maximum) => {
+                CompileError::PlacementCandidateLimitExceeded { maximum }
+            }
+        })
+    };
+    restore().unwrap_or_else(|error| error)
 }
 
 fn admissible_carriers<'a>(
@@ -381,4 +442,266 @@ fn empty_cause(plan: &RelationCasePlan, analysis: &CarrierEligibility) -> core::
     }
 
     core::EmptyCause::NoEligible
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    fn fixture() -> (
+        Lowered,
+        RelationCaseKey,
+        CarrierRole,
+        crate::layout::LayoutRequirement,
+    ) {
+        let operation = architecture::OperationId::CompactAsh;
+        let relation = realization::RelationId::new(
+            operation,
+            realization::RelationKind::Recognition,
+            realization::RelationSubject::ObjectFamily {
+                side: TransactionSide::Input,
+                object: architecture::ObjectId::Ash,
+            },
+        );
+        let case = crate::case::ExecutionCaseId {
+            operation,
+            sponsor: crate::case::SponsorCase::Absent,
+            representations: BTreeMap::new(),
+        };
+        let id = RelationCaseKey {
+            relation: relation.clone(),
+            case,
+        };
+        let key = key(&id);
+        let carrier = CarrierRole::EveryInputFamilyMember {
+            object: architecture::ObjectId::Ash,
+        };
+        let carrier_key = crate::engine_attestation::identity::attestation_carrier(&carrier);
+        let layout = crate::layout::LayoutRequirement::AuthenticateFamilyCensus {
+            relation,
+            side: TransactionSide::Input,
+            object: architecture::ObjectId::Ash,
+        };
+        let layout_key = crate::engine_attestation::identity::attestation_layout(&layout);
+        let mut sibling_id = id.clone();
+        sibling_id.case.sponsor = crate::case::SponsorCase::Present;
+        let sibling_key = crate::engine_attestation::placement::key(&sibling_id);
+        let keys = BTreeMap::from([(key, id.clone()), (sibling_key, sibling_id)]);
+        let sibling_carrier = CarrierRole::InputFamilyCoordinator {
+            object: architecture::ObjectId::Ash,
+        };
+        let carriers = BTreeMap::from([
+            (carrier_key, carrier.clone()),
+            (
+                crate::engine_attestation::identity::attestation_carrier(&sibling_carrier),
+                sibling_carrier,
+            ),
+        ]);
+        let mut sibling_layout = layout.clone();
+        if let crate::layout::LayoutRequirement::AuthenticateFamilyCensus { side, .. } =
+            &mut sibling_layout
+        {
+            *side = TransactionSide::Output;
+        }
+        let layouts = BTreeMap::from([
+            (layout_key, layout.clone()),
+            (
+                crate::engine_attestation::identity::attestation_layout(&sibling_layout),
+                sibling_layout,
+            ),
+        ]);
+        (
+            Lowered {
+                records: core::Records {
+                    plans: Vec::new(),
+                    eligibility: Vec::new(),
+                },
+                keys,
+                carriers,
+                layouts,
+            },
+            id,
+            carrier,
+            layout,
+        )
+    }
+
+    #[test]
+    fn opaque_placement_refusals_restore_exact_owner_values() {
+        let (lowered, id, carrier, layout) = fixture();
+        let relation = id.relation.clone();
+        let case = id.case.clone();
+        let key = key(&id);
+        let carrier_key = crate::engine_attestation::identity::attestation_carrier(&carrier);
+        let layout_key = crate::engine_attestation::identity::attestation_layout(&layout);
+        let subjects = [
+            (
+                core::Error::PlacementCensusMismatch {
+                    missing: vec![key.clone()],
+                    unexpected: vec![key.clone()],
+                },
+                CompileError::PlacementCensusMismatch {
+                    missing: vec![id.clone()],
+                    unexpected: vec![id],
+                },
+            ),
+            (
+                core::Error::NoEligibleCarrier(key.clone()),
+                CompileError::NoEligibleCarrier {
+                    relation: relation.clone(),
+                    case: case.clone(),
+                },
+            ),
+            (
+                core::Error::GlobalRelationHasOnlyLocalCarrier(key.clone()),
+                CompileError::GlobalRelationHasOnlyLocalCarrier {
+                    relation: relation.clone(),
+                    case: case.clone(),
+                },
+            ),
+            (
+                core::Error::UnconditionalRelationOnOptionalCarrier(key.clone()),
+                CompileError::UnconditionalRelationOnOptionalCarrier {
+                    relation: relation.clone(),
+                    case: case.clone(),
+                },
+            ),
+            (
+                core::Error::DuplicatePlacedCarrier {
+                    key: key.clone(),
+                    carrier: carrier_key.clone(),
+                },
+                CompileError::DuplicatePlacedCarrier {
+                    relation: relation.clone(),
+                    case: case.clone(),
+                    carrier: carrier.clone(),
+                },
+            ),
+            (
+                core::Error::NonCanonicalCarrierAssignment(key.clone()),
+                CompileError::NonCanonicalCarrierAssignment {
+                    relation: relation.clone(),
+                    case: case.clone(),
+                },
+            ),
+            (
+                core::Error::UnpermittedCarrierPlacement {
+                    key: key.clone(),
+                    carrier: carrier_key,
+                },
+                CompileError::UnpermittedCarrierPlacement {
+                    relation: relation.clone(),
+                    case: case.clone(),
+                    carrier,
+                },
+            ),
+            (
+                core::Error::MissingLayoutRequirement(key),
+                CompileError::MissingLayoutRequirement { relation, case },
+            ),
+            (
+                core::Error::UnexpectedLayoutRequirement(vec![layout_key]),
+                CompileError::UnexpectedLayoutRequirement {
+                    unexpected: vec![layout],
+                },
+            ),
+            (
+                core::Error::StateLimit(17),
+                CompileError::PlacementSearchStateLimitExceeded { maximum: 17 },
+            ),
+            (
+                core::Error::CandidateLimit(19),
+                CompileError::PlacementCandidateLimitExceeded { maximum: 19 },
+            ),
+        ];
+        for (subject, expected) in subjects {
+            assert_eq!(lowered.refusal(subject), expected);
+        }
+        assert_sibling_restoration(&lowered);
+    }
+
+    fn assert_sibling_restoration(lowered: &Lowered) {
+        // Exercise every sibling too: returning the first registered value
+        // regardless of the requested key must not satisfy these controls.
+        for (key, id) in &lowered.keys {
+            assert_eq!(
+                lowered.refusal(core::Error::NoEligibleCarrier(key.clone())),
+                CompileError::NoEligibleCarrier {
+                    relation: id.relation.clone(),
+                    case: id.case.clone()
+                }
+            );
+            for (carrier_key, carrier) in &lowered.carriers {
+                assert_eq!(
+                    lowered.refusal(core::Error::UnpermittedCarrierPlacement {
+                        key: key.clone(),
+                        carrier: carrier_key.clone()
+                    }),
+                    CompileError::UnpermittedCarrierPlacement {
+                        relation: id.relation.clone(),
+                        case: id.case.clone(),
+                        carrier: carrier.clone()
+                    }
+                );
+            }
+        }
+        for (key, layout) in &lowered.layouts {
+            assert_eq!(
+                lowered.refusal(core::Error::UnexpectedLayoutRequirement(vec![key.clone()])),
+                CompileError::UnexpectedLayoutRequirement {
+                    unexpected: vec![layout.clone()]
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn opaque_placement_refusals_refuse_missing_reverse_entries() {
+        let (mut lowered, id, carrier, layout) = fixture();
+        let case_error = core::Error::NoEligibleCarrier(key(&id));
+        let carrier_error = core::Error::UnpermittedCarrierPlacement {
+            key: key(&id),
+            carrier: crate::engine_attestation::identity::attestation_carrier(&carrier),
+        };
+        let layout_error = core::Error::UnexpectedLayoutRequirement(vec![
+            crate::engine_attestation::identity::attestation_layout(&layout),
+        ]);
+        assert_eq!(
+            lowered.refusal(case_error.clone()),
+            CompileError::NoEligibleCarrier {
+                relation: id.relation.clone(),
+                case: id.case.clone()
+            }
+        );
+        assert_eq!(
+            lowered.refusal(carrier_error.clone()),
+            CompileError::UnpermittedCarrierPlacement {
+                relation: id.relation,
+                case: id.case,
+                carrier
+            }
+        );
+        assert_eq!(
+            lowered.refusal(layout_error.clone()),
+            CompileError::UnexpectedLayoutRequirement {
+                unexpected: vec![layout]
+            }
+        );
+        let keys = std::mem::take(&mut lowered.keys);
+        assert_eq!(
+            lowered.refusal(case_error),
+            CompileError::MissingOwnerIdentity
+        );
+        lowered.keys = keys;
+        lowered.carriers.clear();
+        assert_eq!(
+            lowered.refusal(carrier_error),
+            CompileError::MissingOwnerIdentity
+        );
+        lowered.layouts.clear();
+        assert_eq!(
+            lowered.refusal(layout_error),
+            CompileError::MissingOwnerIdentity
+        );
+    }
 }

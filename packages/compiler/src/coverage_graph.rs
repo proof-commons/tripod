@@ -458,8 +458,7 @@ pub fn derive_coverage_dependencies(
                 analysis
                     .cases
                     .iter()
-                    .cloned()
-                    .map(crate::engine_placement::CaseKey::Attestation)
+                    .map(crate::engine_attestation::identity::attestation_case)
                     .collect(),
             )
         })
@@ -482,7 +481,7 @@ pub fn derive_coverage_dependencies(
         .flat_map(|operation| &operation.cases)
         .map(|case| {
             (
-                crate::engine_placement::CaseKey::Attestation(case.clone()),
+                crate::engine_attestation::identity::attestation_case(case),
                 case,
             )
         })
@@ -630,7 +629,9 @@ pub struct CoverageDependencyGraph {
 #[cfg(test)]
 fn lower_node(node: &CoverageNode) -> core::Node {
     core::Node {
-        id: core::Key::Attestation(node.id.clone()),
+        id: core::Key::Owner(crate::engine_attestation::identity::attestation_symbol(
+            &node.id,
+        )),
         operation: crate::engine_attestation::operation_key(node.id.operation()),
         class: node.id.class(),
         relation_case: match &node.id {
@@ -647,8 +648,12 @@ fn lower_node(node: &CoverageNode) -> core::Node {
 #[cfg(test)]
 fn lower_dependency(row: &CoverageDependency) -> core::Dependency {
     core::Dependency {
-        source: core::Key::Attestation(row.source.clone()),
-        target: core::Key::Attestation(row.target.clone()),
+        source: core::Key::Owner(crate::engine_attestation::identity::attestation_symbol(
+            &row.source,
+        )),
+        target: core::Key::Owner(crate::engine_attestation::identity::attestation_symbol(
+            &row.target,
+        )),
         edge: row.edge,
     }
 }
@@ -660,11 +665,15 @@ impl CoverageDependencyGraph {
     ) -> Result<(), CompileError> {
         for row in dependencies {
             self.identities.insert(
-                core::Key::Attestation(row.source.clone()),
+                core::Key::Owner(crate::engine_attestation::identity::attestation_symbol(
+                    &row.source,
+                )),
                 row.source.clone(),
             );
             self.identities.insert(
-                core::Key::Attestation(row.target.clone()),
+                core::Key::Owner(crate::engine_attestation::identity::attestation_symbol(
+                    &row.target,
+                )),
                 row.target.clone(),
             );
         }
@@ -700,9 +709,11 @@ impl CoverageDependencyGraph {
                     .map(|requirement| {
                         (
                             crate::engine_attestation::placement::key(&plan.key()),
-                            core::Key::Attestation(CoverageNodeId::Requirement(
-                                requirement.id.clone(),
-                            )),
+                            core::Key::Owner(
+                                crate::engine_attestation::identity::attestation_symbol(
+                                    &(CoverageNodeId::Requirement(requirement.id.clone())),
+                                ),
+                            ),
                         )
                     })
             })
@@ -774,47 +785,56 @@ pub fn refusal_from_identities(
     error: core::Error,
     identities: &BTreeMap<core::Key, CoverageNodeId>,
 ) -> CompileError {
-    match error {
-        core::Error::UnknownSymbol(key) => CompileError::UnknownCoverageSymbol {
-            symbol: identities[key.as_ref()].clone(),
-        },
-        core::Error::DuplicateSymbol(key) => duplicate_symbol(&identities[key.as_ref()]),
-        core::Error::EndpointClass(row) => CompileError::CoverageDependencyEndpointClass {
-            prerequisite: Box::new(identities[&row.source].clone()),
-            dependent: Box::new(identities[&row.target].clone()),
-            edge: row.edge,
-        },
-        core::Error::CrossOperation(row) => CompileError::CrossOperationCoverageDependency {
-            prerequisite: Box::new(identities[&row.source].clone()),
-            dependent: Box::new(identities[&row.target].clone()),
-        },
-        core::Error::DuplicateDependency(row) => CompileError::DuplicateCoverageDependency {
-            prerequisite: Box::new(identities[&row.source].clone()),
-            dependent: Box::new(identities[&row.target].clone()),
-            edge: row.edge,
-        },
-        core::Error::Cycle(rows) => CompileError::CoverageDependencyCycle {
-            components: rows
-                .iter()
-                .map(|row| CoverageCycleComponent {
-                    members: row
-                        .members
-                        .iter()
-                        .map(|key| identities[key].clone())
-                        .collect(),
-                    internal_edges: row
-                        .internal_edges
-                        .iter()
-                        .map(|edge| CoverageDependency {
-                            source: identities[&edge.source].clone(),
-                            target: identities[&edge.target].clone(),
-                            edge: edge.edge,
+    let id = |key: &core::Key| {
+        identities
+            .get(key)
+            .cloned()
+            .ok_or(CompileError::MissingOwnerIdentity)
+    };
+    let restore = || -> Result<CompileError, CompileError> {
+        Ok(match error {
+            core::Error::UnknownSymbol(key) => CompileError::UnknownCoverageSymbol {
+                symbol: id(key.as_ref())?,
+            },
+            core::Error::DuplicateSymbol(key) => duplicate_symbol(&id(key.as_ref())?),
+            core::Error::EndpointClass(row) => CompileError::CoverageDependencyEndpointClass {
+                prerequisite: Box::new(id(&row.source)?),
+                dependent: Box::new(id(&row.target)?),
+                edge: row.edge,
+            },
+            core::Error::CrossOperation(row) => CompileError::CrossOperationCoverageDependency {
+                prerequisite: Box::new(id(&row.source)?),
+                dependent: Box::new(id(&row.target)?),
+            },
+            core::Error::DuplicateDependency(row) => CompileError::DuplicateCoverageDependency {
+                prerequisite: Box::new(id(&row.source)?),
+                dependent: Box::new(id(&row.target)?),
+                edge: row.edge,
+            },
+            core::Error::Cycle(rows) => CompileError::CoverageDependencyCycle {
+                components: rows
+                    .iter()
+                    .map(|row| {
+                        Ok(CoverageCycleComponent {
+                            members: row.members.iter().map(&id).collect::<Result<_, _>>()?,
+                            internal_edges: row
+                                .internal_edges
+                                .iter()
+                                .map(|edge| {
+                                    Ok(CoverageDependency {
+                                        source: id(&edge.source)?,
+                                        target: id(&edge.target)?,
+                                        edge: edge.edge,
+                                    })
+                                })
+                                .collect::<Result<_, CompileError>>()?,
                         })
-                        .collect(),
-                })
-                .collect(),
-        },
-    }
+                    })
+                    .collect::<Result<_, CompileError>>()?,
+            },
+        })
+    };
+    restore().unwrap_or_else(|error| error)
 }
 
 /// Build the typed coverage dependency graph from a completed census.
@@ -839,7 +859,14 @@ pub fn build_coverage_graph(
     let _entered = span.enter();
     let nodes = census
         .nodes()
-        .map(|node| (core::Key::Attestation(node.id.clone()), node.clone()))
+        .map(|node| {
+            (
+                core::Key::Owner(crate::engine_attestation::identity::attestation_symbol(
+                    &node.id,
+                )),
+                node.clone(),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     let identities = nodes
         .iter()

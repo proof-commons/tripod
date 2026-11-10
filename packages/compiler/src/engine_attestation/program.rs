@@ -9,7 +9,7 @@ use crate::{
     engine_program as core,
     placement::PlacementSearchLimits,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 // Publication still takes expression nodes/edges and the legacy lifecycle
 // analysis from this pass: the predicate records do not encode expression
@@ -26,7 +26,6 @@ struct Prepared {
     proofs: super::proof::Lowered,
     requirements: super::requirement::Prepared,
     cases: super::cases::Registered,
-    layout: BTreeSet<crate::engine_placement::LayoutKey>,
 }
 impl Prepared {
     fn new(
@@ -86,13 +85,6 @@ impl Prepared {
         let mut requirements =
             super::requirement::prepare_from_analyses(&foundation.relations, &legacy_construction)?;
         let mut cases = super::cases::lower_prepared(input, &foundation.relations, &lifecycle)?;
-        let layout = cases
-            .tables
-            .rows
-            .iter()
-            .filter_map(|row| row.facts.as_ref())
-            .flat_map(|facts| facts.layout.iter().cloned())
-            .collect();
         let records = core::Records {
             source: input.owner().source_binding(),
             relations: lowered.records().clone(),
@@ -111,7 +103,6 @@ impl Prepared {
                 proofs,
                 requirements,
                 cases,
-                layout,
             },
             records,
             core::PreparedStages {
@@ -136,7 +127,7 @@ impl Prepared {
             | core::Error::Cases(crate::engine_cases::Error::OwnerRefusal(error)) => *error,
             core::Error::Proof(error) => self.proofs.refusal(error),
             core::Error::Operations(error) => {
-                super::operation::refusal(&self.cases.payloads, &self.layout, *error)
+                super::operation::refusal(&self.cases.payloads, &self.cases.layouts, *error)
             }
             defect => self.record_refusal(defect),
         }
@@ -337,7 +328,12 @@ pub fn derive(
         )?;
         let mut operations = BTreeMap::new();
         for factor in plan.operations.values() {
-            let operation = super::operation::restore(&prepared.cases.payloads, candidate, factor)?;
+            let operation = super::operation::restore(
+                &prepared.cases.payloads,
+                &prepared.cases.layouts,
+                candidate,
+                factor,
+            )?;
             crate::analyzed_operation::validate_analyzed_operation(
                 &prepared.foundation.relations,
                 &legacy,
@@ -461,8 +457,9 @@ mod tests {
         let input = crate::tests::bound_input(&[architecture::OperationId::CompactAsh]);
         let (prepared, _, _) = Prepared::new(&input).expect("prepared control");
         let layout = prepared
-            .layout
-            .iter()
+            .cases
+            .layouts
+            .keys()
             .next()
             .expect("real layout key")
             .clone();
@@ -470,29 +467,29 @@ mod tests {
             crate::engine_coverage_graph::Key::Layout(layout.clone()),
         ));
         // The previous adapter rebuilt this set from the drained tables. Pin
-        // its failure as well as the typed boundary restored below.
-        let old_layout = prepared
-            .cases
-            .tables
-            .rows
-            .iter()
-            .filter_map(|row| row.facts.as_ref())
-            .flat_map(|facts| facts.layout.iter().cloned())
-            .collect();
-        assert!(
-            std::panic::catch_unwind(|| super::super::operation::refusal(
+        // its missing-registry refusal as well as the typed boundary restored below.
+        let old_layout = BTreeMap::new();
+        assert_eq!(
+            super::super::operation::refusal(
                 &prepared.cases.payloads,
                 &old_layout,
                 crate::engine_operation::Error::Graph(graph_error.clone()),
-            ))
-            .is_err()
+            ),
+            CompileError::MissingOwnerIdentity
         );
         assert_eq!(
             prepared.refusal(core::Error::Operations(Box::new(
                 crate::engine_operation::Error::Graph(graph_error),
             ))),
             CompileError::UnknownCoverageSymbol {
-                symbol: crate::coverage_graph::CoverageNodeId::Layout(layout.0),
+                symbol: crate::coverage_graph::CoverageNodeId::Layout(
+                    prepared
+                        .cases
+                        .layouts
+                        .get(&layout)
+                        .expect("registered layout")
+                        .clone()
+                ),
             }
         );
     }

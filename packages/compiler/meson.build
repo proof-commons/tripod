@@ -17,7 +17,7 @@ compiler_source_files = files(
   'src/engine_attestation/cases.rs',
   'src/engine_attestation/operation.rs',
   'src/engine_attestation/program.rs',
-  'src/engine_attestation/case_facts.rs',
+  'src/engine_attestation/identity.rs', 'src/engine_attestation/case_facts.rs',
   'src/engine_attestation/constructibility.rs',
   'src/engine_attestation/coverage.rs',
   'src/engine_attestation/coverage_join.rs',

@@ -61,8 +61,8 @@ impl Payload {
                 };
                 (
                     Placed {
-                        carrier: crate::engine_placement::CarrierKey::Attestation(
-                            value.carrier.clone(),
+                        carrier: crate::engine_attestation::identity::attestation_carrier(
+                            &value.carrier,
                         ),
                         quantification: value.quantification,
                     },
@@ -111,6 +111,9 @@ impl Payload {
     }
 }
 
+pub type LayoutRegistry =
+    BTreeMap<crate::engine_placement::LayoutKey, crate::layout::LayoutRequirement>;
+
 pub type Rows = BTreeMap<(Key, Option<crate::engine_proof::AlternativeKey>), Payload>;
 
 pub fn obligations(
@@ -123,7 +126,7 @@ pub fn obligations(
         .keys()
         .map(|key| {
             rows.get(&(key.clone(), candidate.proofs.get(&key.relation).cloned()))
-                .ok_or(CompileError::InvalidRealization)
+                .ok_or(CompileError::MissingOwnerIdentity)
         })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(crate::analyzed_validate::OperationObligations {
@@ -137,7 +140,7 @@ pub fn obligations(
 
 pub fn refusal(
     rows: &Rows,
-    layout: &BTreeSet<crate::engine_placement::LayoutKey>,
+    layouts: &LayoutRegistry,
     error: crate::engine_operation::Error,
 ) -> CompileError {
     use crate::engine_operation::Error;
@@ -174,12 +177,13 @@ pub fn refusal(
         })
         .collect();
     match error {
-        Error::Placement(error) => super::placement::refusal(*error, &keys, &carriers),
+        Error::Placement(error) => super::placement::refusal(*error, &keys, &carriers, layouts),
         Error::Coverage(error) => super::coverage::refusal(*error, &keys, &ids),
         Error::Join(error) => super::coverage_join::refusal(error, &keys),
-        Error::Graph(error) => {
-            crate::coverage_graph::refusal_from_identities(error, &symbols(&payloads, layout))
-        }
+        Error::Graph(error) => match symbols(&payloads, layouts.keys(), layouts) {
+            Ok(ids) => crate::coverage_graph::refusal_from_identities(error, &ids),
+            Err(error) => error,
+        },
         Error::Prerequisite(pair) => CompileError::CrossOperationCoverageDependency {
             prerequisite: Box::new(CoverageNodeId::RelationCase(keys[&pair.0].clone())),
             dependent: Box::new(CoverageNodeId::RelationCase(keys[&pair.1].clone())),
@@ -203,13 +207,15 @@ pub fn refusal(
 /// result. No obligation, carrier or proof is selected by this compatibility view.
 pub fn restore(
     rows: &Rows,
+    layouts: &LayoutRegistry,
     candidate: &crate::engine_proof::Candidate,
     factor: &crate::engine_operation::Operation,
 ) -> Result<AnalyzedOperation, CompileError> {
-    restore_selected(rows, &candidate.proofs, factor)
+    restore_selected(rows, layouts, &candidate.proofs, factor)
 }
 pub fn restore_selected(
     rows: &Rows,
+    layouts: &LayoutRegistry,
     proofs: &BTreeMap<crate::engine_records::RelationKey, crate::engine_proof::AlternativeKey>,
     factor: &crate::engine_operation::Operation,
 ) -> Result<AnalyzedOperation, CompileError> {
@@ -222,21 +228,21 @@ pub fn restore_selected(
             let proof = proofs.get(&key.relation).cloned();
             rows.get(&(key.clone(), proof))
                 .map(|payload| (key.clone(), payload))
-                .ok_or(CompileError::InvalidRealization)
+                .ok_or(CompileError::MissingOwnerIdentity)
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     let first = payloads
         .values()
         .next()
-        .ok_or(CompileError::InvalidRealization)?;
+        .ok_or(CompileError::MissingOwnerIdentity)?;
     let operation = first.plan.case.operation;
-    let coverage_dependencies = restore_graph(&payloads, factor)?;
+    let coverage_dependencies = restore_graph(&payloads, factor, layouts)?;
     let mut relation_cases = BTreeMap::new();
     let mut requirements = BTreeMap::new();
     for (key, bundle) in &factor.bundles {
         let payload = payloads[key];
-        let coverage = restore_coverage(payload, bundle, factor, &payloads)?;
-        let value = restore_bundle(payload, bundle, &coverage)?;
+        let coverage = restore_coverage(payload, bundle, factor, &payloads, layouts)?;
+        let value = restore_bundle(payload, bundle, &coverage, layouts)?;
         requirements.insert(payload.key(), coverage);
         relation_cases.insert(payload.key(), value);
     }
@@ -254,7 +260,7 @@ pub fn restore_selected(
                 .map(|assignment| {
                     let payload = payloads
                         .get(&assignment.key)
-                        .ok_or(CompileError::InvalidRealization)?;
+                        .ok_or(CompileError::MissingOwnerIdentity)?;
                     Ok(crate::placement::PlacementAssignment {
                         relation: payload.plan.relation.clone(),
                         case: payload.plan.case.clone(),
@@ -268,7 +274,11 @@ pub fn restore_selected(
                 .collect::<Result<Vec<_>, CompileError>>()?;
             Ok(crate::placement::PlacementCandidate {
                 assignments,
-                layout_requirements: placement.layout.iter().map(|row| row.0.clone()).collect(),
+                layout_requirements: placement
+                    .layout
+                    .iter()
+                    .map(|row| layout_lookup(layouts, row))
+                    .collect::<Result<_, _>>()?,
             }
             .project())
         })
@@ -278,7 +288,11 @@ pub fn restore_selected(
         execution_cases: cases.clone(),
         relation_cases,
         feasible_placements: placements,
-        layout_requirements: factor.layout.iter().map(|row| row.0.clone()).collect(),
+        layout_requirements: factor
+            .layout
+            .iter()
+            .map(|row| layout_lookup(layouts, row))
+            .collect::<Result<_, _>>()?,
         coverage: coverage::OperationCoverageProjection {
             operation,
             cases,
@@ -292,13 +306,14 @@ fn lookup<K: Ord, V: Clone>(values: &BTreeMap<K, V>, key: &K) -> Result<V, Compi
     values
         .get(key)
         .cloned()
-        .ok_or(CompileError::InvalidRealization)
+        .ok_or(CompileError::MissingOwnerIdentity)
 }
 
-fn symbols(
+fn symbols<'a>(
     payloads: &BTreeMap<Key, &Payload>,
-    layout: &BTreeSet<crate::engine_placement::LayoutKey>,
-) -> BTreeMap<Symbol, CoverageNodeId> {
+    layout: impl IntoIterator<Item = &'a crate::engine_placement::LayoutKey>,
+    layouts: &LayoutRegistry,
+) -> Result<BTreeMap<Symbol, CoverageNodeId>, CompileError> {
     let mut ids = BTreeMap::new();
     for (key, payload) in payloads {
         ids.insert(
@@ -339,10 +354,10 @@ fn symbols(
     for layout in layout {
         ids.insert(
             Symbol::Layout(layout.clone()),
-            CoverageNodeId::Layout(layout.0.clone()),
+            CoverageNodeId::Layout(layout_lookup(layouts, layout)?),
         );
     }
-    ids
+    Ok(ids)
 }
 
 fn restore_coverage(
@@ -350,7 +365,12 @@ fn restore_coverage(
     bundle: &crate::engine_case_facts::Bundle,
     factor: &crate::engine_operation::Operation,
     payloads: &BTreeMap<Key, &Payload>,
+    layouts: &LayoutRegistry,
 ) -> Result<coverage::RelationCoverageProjection, CompileError> {
+    // Carrier-alternative layouts belong to this row: its layout census
+    // includes every eligible carrier (layout::layout_requirements). The
+    // shared preparation registry also covers sibling obligations added to
+    // bundle facts; no per-row reverse map or per-restore union is needed.
     let joined = &bundle.coverage;
     let mut negative = BTreeSet::new();
     for id in &joined.plan.negative {
@@ -397,7 +417,11 @@ fn restore_coverage(
                         .iter()
                         .map(|row| lookup(&payload.carriers, row))
                         .collect::<Result<_, _>>()?,
-                    layout: row.layout.iter().map(|row| row.0.clone()).collect(),
+                    layout: row
+                        .layout
+                        .iter()
+                        .map(|row| layout_lookup(layouts, row))
+                        .collect::<Result<_, _>>()?,
                 })
             })
             .collect::<Result<_, CompileError>>()?,
@@ -474,8 +498,9 @@ fn positives(
 fn restore_graph(
     payloads: &BTreeMap<Key, &Payload>,
     factor: &crate::engine_operation::Operation,
+    layouts: &LayoutRegistry,
 ) -> Result<CoverageGraphProjection, CompileError> {
-    let ids = symbols(payloads, &factor.layout);
+    let ids = symbols(payloads, &factor.layout, layouts)?;
     let mut nodes = factor
         .coverage
         .nodes
@@ -513,6 +538,7 @@ fn restore_bundle(
     payload: &Payload,
     bundle: &crate::engine_case_facts::Bundle,
     coverage: &coverage::RelationCoverageProjection,
+    layouts: &LayoutRegistry,
 ) -> Result<RelationCaseRequirements, CompileError> {
     Ok(RelationCaseRequirements {
         key: payload.key(),
@@ -542,8 +568,11 @@ fn restore_bundle(
             .facts
             .layout
             .iter()
-            .map(|row| row.0.clone())
-            .collect(),
+            // The shared join deliberately adds case-independent obligations
+            // from sibling cases, including into a vacuous case. Restore from
+            // this operation's complete owner registry, not just this row.
+            .map(|row| layout_lookup(layouts, row))
+            .collect::<Result<_, _>>()?,
         external_evidence: bundle
             .facts
             .evidence
@@ -552,4 +581,113 @@ fn restore_bundle(
             .collect::<Result<_, _>>()?,
         coverage: coverage.clone(),
     })
+}
+
+pub(super) fn layout_lookup(
+    values: &BTreeMap<crate::engine_placement::LayoutKey, crate::layout::LayoutRequirement>,
+    key: &crate::engine_placement::LayoutKey,
+) -> Result<crate::layout::LayoutRequirement, CompileError> {
+    values
+        .get(key)
+        .cloned()
+        .ok_or(CompileError::MissingOwnerIdentity)
+}
+
+#[cfg(test)]
+mod identity_controls {
+    use super::super::identity::{attestation_carrier, attestation_case, attestation_purpose};
+    use super::*;
+
+    fn assert_order<T: Ord, K: Ord>(values: BTreeSet<T>, encode: impl Fn(&T) -> K) {
+        let ordered = values
+            .into_iter()
+            .map(|value| encode(&value))
+            .collect::<Vec<_>>();
+        let encoded = ordered.iter().collect::<BTreeSet<_>>();
+        assert_eq!(ordered.len(), encoded.len());
+        assert!(ordered.iter().eq(encoded));
+    }
+
+    #[test]
+    fn real_case_carrier_and_purpose_encoders_preserve_owner_order() {
+        for input in [
+            crate::tests::bound_input(&[
+                architecture::OperationId::CompactAsh,
+                architecture::OperationId::TransferLive,
+            ]),
+            crate::tests::announcement_input(),
+        ] {
+            let registered = super::super::cases::lower_registered(&input).expect("owner tables");
+            assert_order(
+                registered
+                    .payloads
+                    .values()
+                    .map(|row| row.plan.case.clone())
+                    .collect(),
+                attestation_case,
+            );
+            assert_order(
+                registered
+                    .payloads
+                    .values()
+                    .flat_map(|row| row.carriers.values().map(|row| row.carrier.clone()))
+                    .collect(),
+                attestation_carrier,
+            );
+            assert_order(
+                registered
+                    .payloads
+                    .values()
+                    .flat_map(|row| {
+                        row.positive
+                            .values()
+                            .map(|row| row.id.purpose.clone())
+                            .chain(row.negative.values().map(|row| row.id.purpose.clone()))
+                    })
+                    .collect(),
+                attestation_purpose,
+            );
+        }
+    }
+
+    #[test]
+    fn real_owner_encoders_separate_matching_local_case_carrier_and_purpose_codes() {
+        let operation = architecture::OperationId::CreateRequest;
+        assert_eq!(operation.code(), 1);
+        let keyed = crate::engine_records::OperationKey {
+            namespace: 2,
+            code: 1,
+        };
+        let case = crate::case::ExecutionCaseId {
+            operation,
+            sponsor: crate::case::SponsorCase::Absent,
+            representations: BTreeMap::new(),
+        };
+        assert_ne!(
+            attestation_case(&case),
+            crate::engine_keyed::keyed_case(keyed)
+        );
+        let object = architecture::ObjectId::ALL
+            .iter()
+            .copied()
+            .find(|id| id.code() == 1)
+            .expect("local code one");
+        let carrier = crate::carrier::CarrierRole::EveryInputFamilyMember { object };
+        assert_ne!(
+            attestation_carrier(&carrier),
+            crate::engine_keyed::keyed_carrier(
+                keyed,
+                crate::engine_lifecycle::ObjectKey {
+                    namespace: 2,
+                    code: 1
+                }
+            )
+        );
+        assert_ne!(
+            attestation_purpose(&coverage::CoveragePurpose::ActiveAccept),
+            crate::engine_keyed::keyed_purpose(&crate::engine_keyed::KeyedPurpose::Verified(
+                crate::engine_source::Evidence::Operator { operation: keyed }
+            ))
+        );
+    }
 }

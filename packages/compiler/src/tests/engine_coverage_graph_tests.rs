@@ -2,7 +2,7 @@
 use crate::{
     coverage_graph::{CoverageEdge as E, CoverageNodeClass as C},
     engine_coverage_graph as core,
-    engine_placement::{CaseKey, Key},
+    engine_placement::Key,
     engine_records::{OperationKey, RelationKey},
 };
 
@@ -14,7 +14,7 @@ fn key(namespace: u16, code: u16) -> Key {
             kind: code,
             subject: Vec::new(),
         },
-        case: CaseKey::Keyed(operation),
+        case: crate::engine_keyed::keyed_case(operation),
     }
 }
 fn node(key: Key) -> core::Node {
@@ -49,7 +49,9 @@ fn prerequisite_assembly_and_collateral_join_respect_complete_operation_identity
         let requirement = core::Key::Requirement(crate::engine_coverage::Requirement {
             key: first.clone(),
             boundary: crate::coverage::CoverageBoundary::ExternalEvidence,
-            purpose: crate::engine_coverage::Purpose::ClauseRejected,
+            purpose: crate::engine_coverage::Purpose::Owner(crate::engine_keyed::keyed_purpose(
+                &crate::engine_keyed::KeyedPurpose::ClauseRejected,
+            )),
             inactive: false,
         });
         assert_eq!(
