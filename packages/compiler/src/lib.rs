@@ -20,6 +20,7 @@ mod engine_coverage;
 mod engine_coverage_graph;
 mod engine_coverage_join;
 mod engine_foundation;
+mod engine_identity;
 #[cfg(any(test, feature = "keyed-experimental"))]
 mod engine_keyed;
 mod engine_lifecycle;

@@ -12,9 +12,12 @@ use architecture::{Architecture, OperationId};
 use realization::{ArchitectureBinding, RealizationError, ScopedRealizationSpec};
 
 use crate::CompileError;
-pub use crate::engine_attestation::AttestationOwner;
+mod owner;
 #[cfg(any(test, feature = "keyed-experimental"))]
-pub use crate::engine_keyed::{KeyedBindingError, KeyedOwner};
+pub use crate::engine_keyed::KeyedBindingError;
+pub use owner::AttestationOwner;
+#[cfg(any(test, feature = "keyed-experimental"))]
+pub use owner::KeyedOwner;
 
 /// Explicit, canonical compiler operation scope.
 ///

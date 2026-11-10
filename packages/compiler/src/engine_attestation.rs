@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use architecture::OperationId;
 use realization::{
     RelationDeclaration, RelationDependencyProjection, RelationEdge, RelationId, RelationKind,
-    RelationSubject, ScopedRealizationSpec, TransactionSide,
+    RelationSubject,
 };
 
 use crate::{
@@ -23,7 +23,8 @@ use crate::{
     },
 };
 
-const ATTESTATION: u16 = 1;
+use crate::engine_identity::{ATTESTATION, side_code};
+use crate::input::AttestationOwner;
 
 pub mod case_facts;
 pub mod cases;
@@ -39,48 +40,14 @@ pub mod proof;
 pub mod requirement;
 pub mod source;
 
-#[derive(Clone, Debug)]
-pub struct AttestationOwner {
-    source: ScopedRealizationSpec,
-    scope: crate::input::CompilationScope,
-    architecture_operations: std::collections::BTreeSet<OperationId>,
-}
-
-impl AttestationOwner {
-    pub(crate) const fn new(
-        source: ScopedRealizationSpec,
-        scope: crate::input::CompilationScope,
-        architecture_operations: std::collections::BTreeSet<OperationId>,
-    ) -> Self {
-        Self {
-            source,
-            scope,
-            architecture_operations,
-        }
-    }
-
-    #[must_use]
-    pub const fn source(&self) -> &ScopedRealizationSpec {
-        &self.source
-    }
-
-    pub(crate) const fn scope(&self) -> &crate::input::CompilationScope {
-        &self.scope
-    }
-
-    pub(crate) const fn architecture_operations(&self) -> &std::collections::BTreeSet<OperationId> {
-        &self.architecture_operations
-    }
-}
-
 impl engine_records::RelationOwner for AttestationOwner {
     type Lowered = AttestationRelations;
     type Error = CompileError;
     fn source_binding(&self) -> crate::engine_program::Source {
         crate::engine_program::Source::Attestation(Box::new(crate::analyzed::AnalyzedSource {
-            architecture: self.source.project().architecture,
-            realization: self.source.project(),
-            compilation_scope: self.scope.clone(),
+            architecture: self.source().project().architecture,
+            realization: self.source().project(),
+            compilation_scope: self.scope().clone(),
         }))
     }
     #[cfg(test)]
@@ -119,9 +86,9 @@ impl engine_records::RelationOwner for AttestationOwner {
         Ok(constructibility::lower(self)?.records)
     }
     fn lower_relations(&self) -> Result<Self::Lowered, CompileError> {
-        let source = self.source.project();
+        let source = self.source().project();
         Ok(lower_relations(
-            self.scope.operations(),
+            self.scope().operations(),
             &source.relations.nodes,
             &source.relations.edges,
             &source.lifecycle,
@@ -369,13 +336,6 @@ pub fn relation_key(id: &RelationId) -> RelationKey {
         operation: operation_key(id.operation()),
         kind,
         subject,
-    }
-}
-
-const fn side_code(side: TransactionSide) -> u16 {
-    match side {
-        TransactionSide::Input => 0,
-        TransactionSide::Output => 1,
     }
 }
 

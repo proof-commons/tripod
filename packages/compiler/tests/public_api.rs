@@ -78,6 +78,72 @@ fn phase1_realization() -> realization::ScopedRealizationSpec {
 }
 
 #[test]
+fn bound_attestation_owner_keeps_its_public_path_and_read_only_surface() {
+    use compiler::input::AttestationOwner;
+    let _: fn(&AttestationOwner) -> &realization::ScopedRealizationSpec = AttestationOwner::source;
+    let bound: compiler::BoundCompilerInput<AttestationOwner> = bind_input(
+        &architecture::ARCHITECTURE,
+        phase1_realization(),
+        CompilationScope::from_operations([OperationId::CompactAsh]).expect("scope"),
+        test_policy(),
+    )
+    .expect("attestation control");
+    assert_eq!(bound.scope().operations(), &[OperationId::CompactAsh]);
+}
+
+#[cfg(feature = "keyed-experimental")]
+#[test]
+fn bound_keyed_owner_keeps_its_public_path_and_read_only_surface() {
+    use architecture::{
+        keyed::KeyedManifest,
+        semantic::{KeyedOperationId, SemanticOperationId},
+    };
+    use compiler::input::KeyedOwner;
+    let _: fn(&KeyedOwner) -> &KeyedManifest = KeyedOwner::manifest;
+    let _: fn(&KeyedOwner) -> &realization::keyed::KeyedScopedRealization = KeyedOwner::source;
+    let _: fn(&KeyedOwner) -> &[SemanticOperationId] = KeyedOwner::scope;
+    let manifest = KeyedManifest::contract().expect("manifest");
+    let source = realization::keyed::KeyedRealizationDraft::derive(&manifest)
+        .expect("declarations")
+        .validate(&manifest)
+        .expect("source");
+    let bound: compiler::BoundCompilerInput<KeyedOwner> = bind_input(
+        &manifest,
+        source,
+        vec![SemanticOperationId::Keyed(KeyedOperationId::Source)],
+        test_policy(),
+    )
+    .expect("keyed control");
+    assert_eq!(bound.policy(), test_policy());
+}
+
+#[cfg(feature = "keyed-experimental")]
+#[test]
+fn external_bound_owner_types_and_binding_sources_cannot_be_substituted() {
+    use compiler::input::{AttestationOwner, InputBinding, KeyedOwner};
+    // Accepted explicit owner types compile in the controls above. If either
+    // one-coordinate substitution becomes legal, inference here is ambiguous.
+    trait Distinct<A> {
+        fn assert_distinct() {}
+    }
+    impl<T> Distinct<()> for T {}
+    impl Distinct<u8> for compiler::BoundCompilerInput<AttestationOwner> {}
+    trait AttestationSource<A> {
+        fn assert_distinct() {}
+    }
+    impl<T> AttestationSource<()> for T {}
+    impl AttestationSource<u8> for <architecture::Architecture as InputBinding>::Realization {}
+    trait OtherSource<A> {
+        fn assert_distinct() {}
+    }
+    impl<T> OtherSource<()> for T {}
+    impl OtherSource<u8> for <architecture::keyed::KeyedManifest as InputBinding>::Realization {}
+    <compiler::BoundCompilerInput<KeyedOwner> as Distinct<_>>::assert_distinct();
+    <realization::keyed::KeyedScopedRealization as AttestationSource<_>>::assert_distinct();
+    <realization::ScopedRealizationSpec as OtherSource<_>>::assert_distinct();
+}
+
+#[test]
 fn phase1_realization_binds_with_explicit_scope() {
     let realization = phase1_realization();
     let expected_binding = realization.architecture().clone();

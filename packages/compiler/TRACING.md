@@ -8,6 +8,8 @@
 
 Public entry points include `bind_input`, `target::analyze_target_requirements`, and the compact-ash, live-transfer, and maturity-announcement planners; public validation functions return `Result` and never print errors. Workspace callers in `vectors`, `tapscript`, `transaction` tests, and `linker` tests consume the typed API; `tapscript::upstream` also re-exports compiler plan types. Search exhaustion, infeasible plans, invalid scope, graph cycles, and validation mismatches are typed `CompileError` results; the caller owns any terminal command diagnostic.
 
+`input/owner.rs` stores the immutable bound owners and read-only accessors; `engine_identity.rs` centralizes the pure const namespace/side encoders and delegates semantic identifier encoding to architecture. These moves add no new execution stage or telemetry-only work: construction remains inside the existing `bind_input`/`bind_keyed_input` spans and encoding remains inside the existing lowering spans. Lowering and its completion events stay with the private owner modules; no per-identifier span or measured duration is added.
+
 ## Output inventory · `sec:tracing-compiler:inventory`
 
 This inventory records the design-time baseline before compiler instrumentation: `println!` had two test sites, while `eprintln!`, `print!`, `eprint!`, direct `stdout()`/`stderr()`, and `tracing` calls had zero sites. No production code wrote a standard stream at that baseline, and the two test prints have since been removed.

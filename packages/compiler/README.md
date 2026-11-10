@@ -145,6 +145,27 @@ internal analysis containers remain crate-private.
 
 ### `input` — the validated input boundary (P2-004)
 
+Owner storage lives in private `src/input/owner.rs`; its public re-export paths
+remain `compiler::input::{AttestationOwner, KeyedOwner}`. Lowering implementations
+stay in private `engine_attestation` and `engine_keyed`. The move preserves the
+following owner/binding public-item inventory in both library feature states:
+
+| State | Before and after owner/binding surface |
+|---|---|
+| Default | `AttestationOwner` with one read-only method, `source`; `BoundCompilerInput<AttestationOwner>` and its five existing readers; attestation-only `bind_input`. |
+| `keyed-experimental` | Default owner plus `KeyedOwner` with three read-only methods, `manifest`, `source`, `scope`; sealed `InputBinding` (four associated types and `bind_owned`), generic `bind_input`, and `KeyedBindingError` (four variants). Keyed bound inputs expose `policy`; keyed analysis remains test-only. |
+| Both | Zero public owner constructors, mutable owner accessors, engine-record types, lowering callbacks or new public modules. `Clone`/`Debug` remain implemented by both available owner types. |
+
+`tests/public_api.rs` compiles the retained paths and method signatures as an
+external consumer and checks that owner/source types cannot be substituted.
+The self dev-dependency enables the experimental binding for those integration
+tests; resolver 3 keeps that request out of non-test default-library builds.
+The `cargo-owner-feature-states` lint compiles default libraries and the keyed
+compiler library separately. The compiler feature remains until the bite-1.2
+gate. Private `engine_identity` delegates semantic identifier spelling to
+architecture, takes `SemanticProfileId` for namespace encoding, and owns the
+single transaction-side encoding (input 0, output 1); both lowerers use it.
+
 - `CompilationScope::from_operations(impl IntoIterator<Item = OperationId>) -> Result<Self, CompileError>`
   — sorts into stable architecture-code order. `EmptyCompilationScope` for an
   empty scope; `DuplicateScopeOperation { operation }` for a repeat. A scope is

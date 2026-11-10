@@ -1,9 +1,9 @@
 //! Keyed owner lowering into the same concrete relation-graph record domain.
 //! This module supplies records; it contains no graph algorithm or analyzer.
 
-use architecture::{keyed::KeyedManifest, semantic::SemanticOperationId};
+use architecture::semantic::SemanticOperationId;
 use realization::{
-    keyed::{KeyedRealizationError, KeyedScopedRealization},
+    keyed::KeyedRealizationError,
     relation::{KeyedRelationId, KeyedRelationKind},
 };
 
@@ -11,46 +11,11 @@ use crate::engine_records::{
     LoweredRelations, OperationKey, RelationKey, RelationOwner, RelationRecord, RelationRecords,
 };
 
-/// The statically selected keyed owner retained by the input binder.
-#[derive(Clone, Debug)]
-pub struct KeyedOwner {
-    manifest: KeyedManifest,
-    source: KeyedScopedRealization,
-    scope: Vec<SemanticOperationId>,
-}
+use crate::input::KeyedOwner;
 
 impl KeyedOwner {
     fn shells(&self) -> Result<EmptyShells, KeyedLoweringError> {
-        read_shells(&self.source.draft(), &self.scope)
-    }
-    pub(crate) const fn new(
-        manifest: KeyedManifest,
-        source: KeyedScopedRealization,
-        scope: Vec<SemanticOperationId>,
-    ) -> Self {
-        Self {
-            manifest,
-            source,
-            scope,
-        }
-    }
-
-    /// The declaration owner and paper binding retained at binding.
-    #[must_use]
-    pub const fn manifest(&self) -> &KeyedManifest {
-        &self.manifest
-    }
-
-    /// The validated declaration source, with no mutable accessor.
-    #[must_use]
-    pub const fn source(&self) -> &KeyedScopedRealization {
-        &self.source
-    }
-
-    /// The explicit compiler scope, distinct from the realization scope.
-    #[must_use]
-    pub fn scope(&self) -> &[SemanticOperationId] {
-        &self.scope
+        read_shells(&self.source().draft(), self.scope())
     }
 }
 
@@ -199,9 +164,9 @@ impl RelationOwner for KeyedOwner {
     type Error = KeyedLoweringError;
     fn source_binding(&self) -> crate::engine_program::Source {
         crate::engine_program::Source::Keyed {
-            manifest: Box::new(self.manifest.clone()),
-            realization: self.source.draft(),
-            scope: self.scope.clone(),
+            manifest: Box::new(self.manifest().clone()),
+            realization: self.source().draft(),
+            scope: self.scope().to_vec(),
         }
     }
     #[cfg(test)]
@@ -215,7 +180,7 @@ impl RelationOwner for KeyedOwner {
     fn lower_predicates(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<crate::engine_foundation::Records, KeyedLoweringError> {
-        let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_predicates", scope_count = crate::instrumentation::count(input.owner().scope.len()));
+        let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_predicates", scope_count = crate::instrumentation::count(input.owner().scope().len()));
         let _entered = span.enter();
         Ok(input.owner().shells()?.predicates)
     }
@@ -327,7 +292,7 @@ impl RelationOwner for KeyedOwner {
                 .map(|(key, _)| key.relation)
                 .collect(),
             cases: owner
-                .scope
+                .scope()
                 .iter()
                 .map(|operation| {
                     let operation = operation_key(*operation);
@@ -354,10 +319,10 @@ impl RelationOwner for KeyedOwner {
 
     fn lower_relations(&self) -> Result<Self::Lowered, KeyedLoweringError> {
         let shells = self.shells()?;
-        let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_relations", scope_operation_count = crate::instrumentation::count(self.scope.len()));
+        let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_relations", scope_operation_count = crate::instrumentation::count(self.scope().len()));
         let _entered = span.enter();
         let nodes = self
-            .source
+            .source()
             .project()
             .into_iter()
             .map(|declaration| RelationRecord {
@@ -380,17 +345,17 @@ impl RelationOwner for KeyedOwner {
 fn lower_sources(owner: &KeyedOwner) -> crate::engine_source::SourceRecords {
     use crate::{engine_lifecycle::ObjectKey, engine_source as core};
     use realization::relation::KeyedRelation;
-    let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_sources", scope_count = crate::instrumentation::count(owner.scope.len()));
+    let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_sources", scope_count = crate::instrumentation::count(owner.scope().len()));
     let _entered = span.enter();
     let declarations = owner
-        .source
+        .source()
         .project()
         .into_iter()
-        .filter(|row| owner.scope.contains(&row.id.operation))
+        .filter(|row| owner.scope().contains(&row.id.operation))
         .collect::<Vec<_>>();
     let tables = declarations.iter().map(source_table).collect();
     let regions = owner
-        .scope
+        .scope()
         .iter()
         .map(|operation| core::RegionRecord {
             operation: operation_key(*operation),
@@ -399,7 +364,7 @@ fn lower_sources(owner: &KeyedOwner) -> crate::engine_source::SourceRecords {
                 .filter(|row| row.id.operation == *operation)
                 .filter_map(|row| match row.relation {
                     KeyedRelation::HandleFamily { .. } => {
-                        let [namespace, code] = row.id.object.encoding();
+                        let [namespace, code] = crate::engine_identity::object(row.id.object);
                         Some(ObjectKey { namespace, code })
                     }
                     _ => None,
@@ -416,7 +381,7 @@ fn lower_sources(owner: &KeyedOwner) -> crate::engine_source::SourceRecords {
 }
 
 pub const fn operation_key(operation: SemanticOperationId) -> OperationKey {
-    let [namespace, code] = operation.encoding();
+    let [namespace, code] = crate::engine_identity::operation(operation);
     OperationKey { namespace, code }
 }
 
@@ -481,7 +446,7 @@ pub fn relation_key(id: KeyedRelationId) -> RelationKey {
     RelationKey {
         operation: operation_key(id.operation),
         kind,
-        subject: id.object.encoding().to_vec(),
+        subject: crate::engine_identity::object(id.object).to_vec(),
     }
 }
 
@@ -493,7 +458,7 @@ fn source_table(
         source::RequiredSourceKind,
     };
     use realization::relation::{KeyedCardinality, KeyedRelation, RecordRecurrence};
-    let [namespace, code] = row.id.object.encoding();
+    let [namespace, code] = crate::engine_identity::object(row.id.object);
     let object = ObjectKey { namespace, code };
     let (payload, source) = match row.relation {
         KeyedRelation::HandleFamily { side, cardinality } => {
@@ -506,7 +471,7 @@ fn source_table(
                 core::Payload::Evidence(core::Evidence::HandleClassification {
                     operation: operation_key(row.id.operation),
                     object,
-                    side: side as u16,
+                    side: crate::engine_identity::side_code(side),
                     minimum,
                     maximum,
                 }),
@@ -568,14 +533,14 @@ fn source_table(
 pub fn lower_placements(owner: &KeyedOwner) -> crate::engine_placement::Records {
     use crate::{engine_lifecycle::ObjectKey, engine_placement as core};
     use realization::relation::{KeyedCardinality, KeyedRelation};
-    let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_placements", scope_count = crate::instrumentation::count(owner.scope.len()));
+    let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_placements", scope_count = crate::instrumentation::count(owner.scope().len()));
     let _entered = span.enter();
-    let declarations = owner.source.project();
+    let declarations = owner.source().project();
     let mut plans = Vec::new();
     let mut eligibility = Vec::new();
     for row in declarations
         .iter()
-        .filter(|row| owner.scope.contains(&row.id.operation))
+        .filter(|row| owner.scope().contains(&row.id.operation))
     {
         let relation = relation_key(row.id);
         let operation = operation_key(row.id.operation);
@@ -606,7 +571,7 @@ pub fn lower_placements(owner: &KeyedOwner) -> crate::engine_placement::Records 
                 if family.id.operation != row.id.operation || !mandatory {
                     return None;
                 }
-                let [namespace, code] = family.id.object.encoding();
+                let [namespace, code] = crate::engine_identity::object(family.id.object);
                 Some(core::Entry {
                     placed: core::Placed {
                         carrier: core::CarrierKey::Member {
