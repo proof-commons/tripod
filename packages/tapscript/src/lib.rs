@@ -6,6 +6,7 @@ pub mod bundle;
 pub mod capability;
 pub mod error;
 pub mod instruction;
+pub mod keyed_bundle;
 #[cfg(feature = "keyed-constructor")]
 pub mod keyed_constructor;
 pub mod keyed_pattern;

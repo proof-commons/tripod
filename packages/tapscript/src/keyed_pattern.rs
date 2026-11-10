@@ -15,6 +15,24 @@ use target_elements::{EncodingClass, OpcodeId, ReviewedElementsTapscriptDefiniti
 
 use crate::{StackItem, TapscriptError, TapscriptInstruction, TapscriptProgram};
 
+// Shared composition for the provisional constructor and the plan adapter.
+// Keep the instruction order and bytes identical to the admitted recipe.
+pub(crate) fn compose_keyed_leaf(
+    target: &ReviewedElementsTapscriptDefinition,
+    key: &[u8; 32],
+) -> Result<TapscriptProgram, TapscriptError> {
+    let mut instructions = vec![
+        TapscriptInstruction::Push(StackItem::new(target, key.to_vec())?),
+        TapscriptInstruction::Opcode(OpcodeId::Drop),
+    ];
+    instructions.extend_from_slice(born_first_fragment(target)?.instructions());
+    instructions.extend_from_slice(continue_first_fragment(target)?.instructions());
+    instructions.push(TapscriptInstruction::Push(StackItem::script_number(
+        target, 1,
+    )?));
+    TapscriptProgram::new(instructions)
+}
+
 /// Require that the output spent by the executing input was born at position zero.
 ///
 /// There is no current-input-zero or zero-flags condition.

@@ -8,6 +8,7 @@ tapscript_source_files = files(
   'src/capability.rs',
   'src/error.rs',
   'src/instruction.rs',
+  'src/keyed_bundle.rs',
   'src/keyed_pattern.rs',
   'src/keyed_constructor.rs',
   'src/lib.rs',
@@ -40,6 +41,7 @@ tapscript_source_files = files(
   'src/tests/guide12_reproductions.rs',
   'src/tests/guide13_reproductions.rs',
   'src/tests/keyed_pattern_tests.rs',
+  'src/keyed_bundle/tests.rs',
   'src/tests/live_bundle_tests.rs',
   'src/tests/live_constructor_tests.rs',
   'src/tests/live_pattern_tests.rs',
@@ -77,4 +79,4 @@ tapscript_doc_files = files('README.md', 'TRACING.md')
 # (ADR-014): integration-test sources are cargo test inputs, not label
 # subjects. The census audit accepts the exclusion only because it is
 # declared here.
-tapscript_excluded_files = files('tests/public_api.rs')
+tapscript_excluded_files = files('tests/public_api.rs', 'tests/keyed_bundle.rs')

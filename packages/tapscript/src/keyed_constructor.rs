@@ -5,10 +5,9 @@
 //! Abstract validation cannot establish a concrete spend or key-path closure.
 //! This default-off API does not select a production constructor home.
 
-use target_elements::{OpcodeId, ReviewedElementsTapscriptDefinition};
+use target_elements::ReviewedElementsTapscriptDefinition;
 
-use crate::keyed_pattern::{born_first_fragment, continue_first_fragment};
-use crate::{StackItem, TapscriptError, TapscriptInstruction, TapscriptProgram};
+use crate::{TapscriptError, TapscriptProgram};
 
 /// Opaque fixed-width public semantic identity. Every 32-byte value is admitted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -62,18 +61,7 @@ pub fn keyed_leaf_program(
     key: KeyedSemanticKey,
 ) -> Result<TapscriptProgram, TapscriptError> {
     let _span = tracing::debug_span!("keyed_leaf_program").entered();
-    let result = (|| {
-        let mut instructions = vec![
-            TapscriptInstruction::Push(StackItem::new(target, key.bytes().to_vec())?),
-            TapscriptInstruction::Opcode(OpcodeId::Drop),
-        ];
-        instructions.extend_from_slice(born_first_fragment(target)?.instructions());
-        instructions.extend_from_slice(continue_first_fragment(target)?.instructions());
-        instructions.push(TapscriptInstruction::Push(StackItem::script_number(
-            target, 1,
-        )?));
-        TapscriptProgram::new(instructions)
-    })();
+    let result = crate::keyed_pattern::compose_keyed_leaf(target, key.bytes());
     tracing::debug!(
         completed = result.is_ok(),
         "keyed leaf construction finished"

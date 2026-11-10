@@ -17,6 +17,7 @@ enough to use the public API correctly on its own.
 Three first-party packages and two general-purpose third-party crates:
 
 ```text
+architecture
 compiler
 realization
 target-elements
@@ -24,11 +25,12 @@ sha2
 thiserror
 ```
 
-`architecture` and `model` are deliberately absent. An assessment names
+`model` remains absent. An assessment names
 compiler-owned abstract capabilities and target-owned primitives; the compiler
 already publishes the architecture-owned facts it is willing to project, and
-citing those packages here would reach around that projection rather than
-consume it. The STATE constructor separately consumes the canonical metadata
+the keyed bundle names architecture's public binding and semantic identity types
+only as carried by that projection. It does not derive or validate an architecture
+manifest. The STATE constructor separately consumes the canonical metadata
 encoding owned by `realization`, uses `sha2` for the target's tagged hashes, and
 uses `thiserror` for its closed refusal sum. `linker`, `transaction`, `vectors`,
 `release`, and `artifacts` remain downstream rather than dependencies.
@@ -738,3 +740,10 @@ claim: nothing here reads it, and no type here changes because of it.
 Evidence about the target's actual behavior is produced elsewhere, by
 `tripod-target-elements-conformance`, and nothing in this crate reads
 it.
+## Keyed plan emission
+
+`keyed_bundle::emit_keyed_bundle` consumes the compiler's immutable `KeyedPlan`, an explicit `KeyedBundleSelection` (binding, exact scope, proof index and one placement index per operation), the reviewed target and a `KeyedLeafRecipe` containing public semantic bytes. It performs no planning or owner selection. Its immutable `KeyedEmissionBundle` retains the selected proof's relation/coverage rows, selected placements, evidence premises and selection identity, plus the exact existing birth/continuation fragments. SOURCE has no runtime fragment: its successor leaf is construction material for later spending. Evidence is outstanding, not admitted by emission.
+
+The default-library adapter shares the existing composition through a crate-private helper; the provisional `keyed-constructor` API and its feature remain until the adopted step-3 promotion. The recipe value here selects only the public 32-byte key, with no creator secret or alternate leaf/version policy. It does not construct a committed output or authenticate a control block. Complete stack/resource proofs, constructor closure and concrete per-member binding remain later bite-1.3 steps (`[PLAN-rec:w1b13:adoption]`). No new transaction, native evidence or final realization is claimed.
+
+Adapter refusals distinguish binding/scope, proof/placement selection, copied-relation census/content, runtime-clause shape, evidence moved to runtime and checked fragment construction. They are not target execution verdicts. The synthetic copy-corruption controls stay inside unit tests; external tests use only sealed plans and public selection offers.

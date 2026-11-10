@@ -38,6 +38,7 @@ Every target is an explicit literal using the library crate stem and owning modu
 
 | Span name | Target | Level | Entry fields (type) | Duration measured |
 |---|---|---|---|---|
+| `emit_keyed_bundle` | `tapscript::keyed_bundle` | DEBUG | `operation_count: u64`, `proof_index: u64` | Checked selection, retained relation validation and keyed fragment composition; no proof search or concrete member execution. |
 | `validate_program` | `tapscript::stack` | DEBUG | `instruction_count: u64`, `state_limit: u64`, `stack_limit: u64` | Abstract state exploration and budget checks in `src/stack.rs:539` can branch substantially. |
 | `assess_requirements` | `tapscript::capability` | DEBUG | `requirement_count: u64` | Target requirement and evidence projection in `src/capability.rs:1175` can recur inside larger work. |
 | `assess_operation_plan` | `tapscript::operation_assessment` | DEBUG | `requirement_count: u64` | Plan assessment in `src/operation_assessment.rs:368` visits the published capability, layout, and external-evidence requirement censuses. |
@@ -55,6 +56,7 @@ Each instrumented public operation emits one completion event inside its span wh
 
 | Operation target | Completed event and level | Completed fields (all counts `u64`) | Refused event and fields |
 |---|---|---|---|
+| `tapscript::keyed_bundle` | DEBUG `keyed bundle emitted` | `outcome`, `relation_count`, `runtime_clause_count`, `evidence_count` | DEBUG `keyed bundle refused`: `outcome`, `refusal_kind`; once per adapter return. |
 | `tapscript::stack` | DEBUG `program validation completed` | `outcome`, `visited_state_count`, `success_path_count`, `failure_path_count`, `abort_path_count` | DEBUG `program validation refused`: `outcome`, `refusal_kind`, `visited_state_count`; add no partial result. |
 | `tapscript::capability` | DEBUG `requirements assessed` | `outcome`, `requirement_count`, `supported_count`, `unsupported_count`, `evidence_count` | DEBUG `requirements refused`: `outcome`, `refusal_kind` if the public boundary returns a typed refusal. |
 | `tapscript::operation_assessment` | DEBUG `operation assessed` | `outcome`, `verdict_count` | DEBUG `operation assessment refused`: `outcome`, `refusal_kind`. |
