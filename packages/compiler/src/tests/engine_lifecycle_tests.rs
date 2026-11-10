@@ -75,7 +75,7 @@ fn the_bound_attestation_lifecycle_view_equals_the_existing_entry() {
 }
 
 #[test]
-fn keyed_lifecycle_constraints_cannot_pass_as_an_empty_result() {
+fn keyed_lifecycle_record_mutations_cannot_pass_as_an_empty_result() {
     let operation = OperationKey {
         namespace: 2,
         code: 2,

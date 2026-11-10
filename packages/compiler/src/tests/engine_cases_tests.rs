@@ -7,6 +7,10 @@ use architecture::{
 };
 
 fn keyed() -> crate::BoundCompilerInput<crate::input::KeyedOwner> {
+    keyed_scope(&[KeyedOperationId::Source, KeyedOperationId::Merge])
+}
+
+fn keyed_scope(scope: &[KeyedOperationId]) -> crate::BoundCompilerInput<crate::input::KeyedOwner> {
     let manifest = KeyedManifest::contract().expect("manifest");
     let source = realization::keyed::KeyedRealizationDraft::derive(&manifest)
         .expect("declarations")
@@ -15,10 +19,11 @@ fn keyed() -> crate::BoundCompilerInput<crate::input::KeyedOwner> {
     crate::bind_input(
         &manifest,
         source,
-        vec![
-            SemanticOperationId::Keyed(KeyedOperationId::Source),
-            SemanticOperationId::Keyed(KeyedOperationId::Merge),
-        ],
+        scope
+            .iter()
+            .copied()
+            .map(SemanticOperationId::Keyed)
+            .collect(),
         super::bound_input(&[OperationId::CompactAsh]).policy(),
     )
     .expect("binding")
@@ -210,13 +215,20 @@ fn attestation_operation_assembly_preserves_factor_census_and_placements() {
 #[test]
 fn attestation_tables_match_dynamic_case_discharge_for_each_representation() {
     let input = super::bound_input(&[OperationId::CompactAsh, OperationId::TransferLive]);
-    let tables = crate::input::AttestationOwner::lower_cases(&input).expect("tables before search");
-    assert_eq!(tables.cases.len(), 8);
+    assert_eq!(compare_attestation_eligibility(&input), 4);
+    assert_eq!(
+        compare_attestation_eligibility(&super::announcement_input()),
+        2
+    );
+}
+
+fn compare_attestation_eligibility(input: &crate::BoundCompilerInput) -> usize {
+    let tables = crate::input::AttestationOwner::lower_cases(input).expect("tables before search");
     let (proofs, _) =
-        crate::engine_records::analyze_bound_proofs(&input, &CapabilityView::Unconstrained)
+        crate::engine_records::analyze_bound_proofs(input, &CapabilityView::Unconstrained)
             .expect("proofs");
-    let lowered = crate::engine_attestation::proof::lower(&input).expect("compatibility");
-    let relations = crate::relation::build_relation_analysis(&input).expect("relations");
+    let lowered = crate::engine_attestation::proof::lower(input).expect("compatibility");
+    let relations = crate::relation::build_relation_analysis(input).expect("relations");
     let mut seen = std::collections::BTreeSet::new();
     for proof in proofs {
         if !seen.insert(proof.representations.clone()) {
@@ -242,8 +254,8 @@ fn attestation_tables_match_dynamic_case_discharge_for_each_representation() {
             expected.records.plans.into_iter().collect()
         );
         assert_eq!(
-            selected.placement.eligibility.len(),
-            expected.records.eligibility.len()
+            canonical_eligibility(&selected.placement.eligibility),
+            canonical_eligibility(&expected.records.eligibility)
         );
         let direct = crate::coverage::analyze_plan_coverage(&relations, &plans)
             .expect("compatibility coverage");
@@ -256,7 +268,7 @@ fn attestation_tables_match_dynamic_case_discharge_for_each_representation() {
             assert_eq!(row, rows[&row.key]);
         }
     }
-    assert_eq!(seen.len(), 4);
+    seen.len()
 }
 
 fn compare_case_facts(
@@ -292,4 +304,216 @@ fn compare_case_facts(
             .expect("retained case");
         assert_eq!(actual, &expected);
     }
+}
+
+// Exhaustive field destructuring makes a new eligibility field a compile-time
+// obligation here. Sort vectors, never deduplicate: duplicate rows still matter.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct CanonicalEligibility {
+    key: crate::engine_placement::Key,
+    multiplicity: crate::placement::CarrierMultiplicity,
+    entries: Vec<CanonicalEntry>,
+    options: Vec<CanonicalEntry>,
+    empty_cause: u8,
+}
+type CanonicalEntry = (
+    crate::engine_placement::Placed,
+    std::collections::BTreeSet<crate::engine_placement::LayoutKey>,
+);
+fn canonical_eligibility(
+    rows: &[crate::engine_placement::Eligibility],
+) -> Vec<CanonicalEligibility> {
+    use crate::engine_placement::{Eligibility, EmptyCause, Entry};
+    let entries = |values: &[Entry]| {
+        let mut result = values
+            .iter()
+            .map(|Entry { placed, layout }| (placed.clone(), layout.clone()))
+            .collect::<Vec<_>>();
+        result.sort();
+        result
+    };
+    let mut result = rows
+        .iter()
+        .map(
+            |Eligibility {
+                 key,
+                 multiplicity,
+                 entries: offered,
+                 options,
+                 empty_cause,
+             }| CanonicalEligibility {
+                key: key.clone(),
+                multiplicity: *multiplicity,
+                entries: entries(offered),
+                options: entries(options),
+                empty_cause: match empty_cause {
+                    EmptyCause::NoEligible => 0,
+                    EmptyCause::GlobalOnlyLocal => 1,
+                    EmptyCause::UnconditionalOptional => 2,
+                },
+            },
+        )
+        .collect::<Vec<_>>();
+    result.sort();
+    result
+}
+
+#[test]
+fn keyed_complete_eligibility_matches_direct_lowering_in_every_scope() {
+    for scope in [
+        vec![KeyedOperationId::Source],
+        vec![KeyedOperationId::Merge],
+        vec![KeyedOperationId::Source, KeyedOperationId::Merge],
+    ] {
+        let input = keyed_scope(&scope);
+        let tables = crate::input::KeyedOwner::lower_cases(&input).expect("case tables");
+        let (proofs, _) =
+            crate::engine_records::analyze_bound_proofs(&input, &CapabilityView::Unconstrained)
+                .expect("proofs");
+        assert_ne!(proofs, [] as [crate::engine_proof::Candidate; 0]);
+        let expected = crate::engine_keyed::lower_placements(input.owner());
+        for proof in proofs {
+            let selected = core::select(&tables, &proof).expect("selection");
+            assert_eq!(
+                canonical_eligibility(&selected.placement.eligibility),
+                canonical_eligibility(&expected.eligibility)
+            );
+            assert_eq!(
+                selected.placement.eligibility.len(),
+                if scope.contains(&KeyedOperationId::Merge) {
+                    2
+                } else {
+                    0
+                }
+            );
+        }
+    }
+}
+
+#[test]
+fn complete_eligibility_detects_equal_length_coordinate_mutations() {
+    use crate::carrier::CarrierQuantification;
+    use crate::engine_placement::{CarrierKey, EmptyCause};
+    use crate::placement::CarrierMultiplicity;
+    let input = keyed();
+    let accepted = crate::engine_keyed::lower_placements(input.owner()).eligibility;
+    let expected = canonical_eligibility(&accepted);
+    assert_eq!(canonical_eligibility(&accepted), expected);
+    for coordinate in 0..8 {
+        let mut subject = accepted.clone();
+        let row = &mut subject[0];
+        match coordinate {
+            0 => {
+                row.key.relation.operation.namespace = 1;
+            }
+            1 => {
+                row.multiplicity = CarrierMultiplicity::ExactlyOne;
+            }
+            2 => {
+                row.entries[0].placed.quantification = CarrierQuantification::Single;
+            }
+            3 => {
+                row.options[0].placed.quantification = CarrierQuantification::Single;
+            }
+            4 | 5 => {
+                let entry = if coordinate == 4 {
+                    &mut row.entries[0]
+                } else {
+                    &mut row.options[0]
+                };
+                let CarrierKey::Member { object, .. } = &mut entry.placed.carrier else {
+                    panic!("keyed carrier")
+                };
+                object.namespace = 1;
+            }
+            6 => {
+                row.empty_cause = EmptyCause::GlobalOnlyLocal;
+            }
+            _ => {
+                row.empty_cause = EmptyCause::UnconditionalOptional;
+            }
+        }
+        assert_eq!(subject.len(), accepted.len());
+        assert_eq!(subject[0].entries.len(), accepted[0].entries.len());
+        assert_eq!(subject[0].options.len(), accepted[0].options.len());
+        assert_ne!(
+            canonical_eligibility(&subject),
+            expected,
+            "coordinate {coordinate}"
+        );
+    }
+}
+
+#[test]
+fn complete_eligibility_detects_equal_length_layout_mutations() {
+    use crate::engine_placement::LayoutKey;
+    // Layout is empty for keyed plans. Use a real attestation layout obligation
+    // as the accepted nonempty comparison subject, then change only its side.
+    let attestation = super::bound_input(&[OperationId::CompactAsh]);
+    let tables =
+        crate::input::AttestationOwner::lower_cases(&attestation).expect("attestation tables");
+    let (proofs, _) =
+        crate::engine_records::analyze_bound_proofs(&attestation, &CapabilityView::Unconstrained)
+            .expect("proofs");
+    let selected = core::select(&tables, &proofs[0]).expect("selection");
+    let accepted = selected.placement.eligibility;
+    let expected = canonical_eligibility(&accepted);
+    for option in [false, true] {
+        let mut subject = accepted.clone();
+        let entry = subject
+            .iter_mut()
+            .flat_map(|row| {
+                if option {
+                    &mut row.options
+                } else {
+                    &mut row.entries
+                }
+            })
+            .find(|entry| {
+                entry.layout.iter().any(|key| {
+                    matches!(
+                        key.0,
+                        crate::layout::LayoutRequirement::AuthenticateFamilyCensus { .. }
+                    )
+                })
+            })
+            .expect("family census layout");
+        let original = entry
+            .layout
+            .iter()
+            .find(|key| {
+                matches!(
+                    key.0,
+                    crate::layout::LayoutRequirement::AuthenticateFamilyCensus { .. }
+                )
+            })
+            .expect("layout")
+            .clone();
+        let mut changed = original.clone();
+        let LayoutKey(crate::layout::LayoutRequirement::AuthenticateFamilyCensus { side, .. }) =
+            &mut changed
+        else {
+            panic!("selected layout")
+        };
+        *side = match side {
+            realization::TransactionSide::Input => realization::TransactionSide::Output,
+            realization::TransactionSide::Output => realization::TransactionSide::Input,
+        };
+        let count = entry.layout.len();
+        assert!(entry.layout.remove(&original));
+        assert!(entry.layout.insert(changed));
+        assert_eq!(entry.layout.len(), count);
+        assert_eq!(subject.len(), accepted.len());
+        assert_ne!(canonical_eligibility(&subject), expected);
+    }
+    let mut permuted = accepted.clone();
+    permuted.reverse();
+    for row in &mut permuted {
+        row.entries.reverse();
+        row.options.reverse();
+    }
+    assert_eq!(canonical_eligibility(&permuted), expected);
+    let mut duplicate = accepted;
+    duplicate.push(duplicate[0].clone());
+    assert_ne!(canonical_eligibility(&duplicate), expected);
 }
