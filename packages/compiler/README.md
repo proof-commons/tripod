@@ -139,9 +139,35 @@ assert!(matches!(
 ## Public-API tour
 
 The public modules are `error`, `input`, `live_transfer_plan`,
-`maturity_announcement_plan`, `operation_plan`, and `target`, in that order.
+`maturity_announcement_plan`, `operation_plan`, and `target`; `keyed_plan` is additionally available with `keyed-experimental`.
 Symbolic announcement requirements are also re-exported at the crate root; the
 internal analysis containers remain crate-private.
+
+### `keyed_plan` — feature-gated owner-typed plans
+
+`keyed_plan::plan(&BoundCompilerInput<KeyedOwner>, PlacementSearchLimits)` returns
+an immutable `KeyedPlan`; `project()` borrows its complete typed publication.
+`revalidate(input, limits, &plan)` independently prepares the retained source and
+reruns every shared stage before comparing the complete publication, including
+scope, binding, obligations, coverage and execution reports. `plan` performs this
+independent validation before returning. No producer cache is accepted.
+
+The projection contains factorized proof/operation plans, per-relation declarations,
+carrier alternatives and placement assignments, positive/negative coverage rows,
+the coverage graph, explicit evidence premises, seven stage censuses, and proof
+and placement limits/reports. SOURCE has four evidence rows and no runtime
+carrier; MERGE has three evidence rows and two universally quantified
+per-consumed-handle clauses. Reading retains inclusion, retrieval and finality
+premises; publishing an obligation does not certify its witness or a target script.
+
+`KeyedPlanError` preserves stage and defect distinctions with owner relation or
+operation identities; coverage graph errors carry owner-typed symbols. Missing
+reverse identities use `CompileError::MissingOwnerIdentity` through `Compiler`,
+the same class-3 internal defect as the attestation adapter. Neither successful
+plans nor errors expose raw engine records. The sealed public API cannot construct
+synthetic stage defects; paired internal controls enter the production preparation
+and analysis path, while `tests/keyed_plan.rs` is the external consumer. The raw
+record entry remains a unit-test oracle. Feature removal remains a later gate.
 
 ### `input` — the validated input boundary (P2-004)
 
@@ -153,8 +179,8 @@ following owner/binding public-item inventory in both library feature states:
 | State | Before and after owner/binding surface |
 |---|---|
 | Default | `AttestationOwner` with one read-only method, `source`; `BoundCompilerInput<AttestationOwner>` and its five existing readers; attestation-only `bind_input`. |
-| `keyed-experimental` | Default owner plus `KeyedOwner` with three read-only methods, `manifest`, `source`, `scope`; sealed `InputBinding` (four associated types and `bind_owned`), generic `bind_input`, and `KeyedBindingError` (four variants). Keyed bound inputs expose `policy`; keyed analysis remains test-only. |
-| Both | Zero public owner constructors, mutable owner accessors, engine-record types, lowering callbacks or new public modules. `Clone`/`Debug` remain implemented by both available owner types. |
+| `keyed-experimental` | Default owner plus `KeyedOwner` with three read-only methods, `manifest`, `source`, `scope`; sealed `InputBinding` (four associated types and `bind_owned`), generic `bind_input`, and `KeyedBindingError` (four variants). Keyed bound inputs expose `policy`; keyed preparation, publication and independent validation are available through `keyed_plan`. |
+| Both | Zero public owner constructors, mutable owner accessors, engine-record types, lowering callbacks or public generic analysis callbacks. `Clone`/`Debug` remain implemented by both available owner types. |
 
 `tests/public_api.rs` compiles the retained paths and method signatures as an
 external consumer and checks that owner/source types cannot be substituted.

@@ -37,6 +37,8 @@ mod fold;
 mod foundation;
 pub mod input;
 mod instrumentation;
+#[cfg(any(test, feature = "keyed-experimental"))]
+pub mod keyed_plan;
 mod layout;
 mod lifecycle;
 pub mod live_transfer_plan;

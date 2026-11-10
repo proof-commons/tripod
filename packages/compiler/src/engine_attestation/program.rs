@@ -27,6 +27,15 @@ struct Prepared {
     requirements: super::requirement::Prepared,
     cases: super::cases::Registered,
 }
+
+/// Production preparation exposed only to cross-owner corruption controls.
+#[cfg(test)]
+pub fn test_preparation(
+    input: &BoundCompilerInput,
+) -> Result<(core::Records, core::PreparedStages), CompileError> {
+    let (_, records, stages) = Prepared::new(input)?;
+    Ok((records, stages))
+}
 impl Prepared {
     fn new(
         input: &BoundCompilerInput,

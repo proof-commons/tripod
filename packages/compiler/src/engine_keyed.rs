@@ -1,6 +1,8 @@
 //! Keyed owner lowering into the same concrete relation-graph record domain.
 //! This module supplies records; it contains no graph algorithm or analyzer.
 
+pub mod program;
+
 use architecture::semantic::SemanticOperationId;
 use realization::{
     keyed::KeyedRealizationError,
@@ -40,13 +42,10 @@ pub enum KeyedLoweringError {
         field: ShellField,
         count: usize,
     },
-    #[cfg(test)]
     #[error("missing keyed source table for {0:?}")]
     MissingSourceTable(RelationKey),
-    #[cfg(test)]
     #[error("invalid keyed runtime source payload for {0:?}")]
     RuntimeSourcePayload(RelationKey),
-    #[cfg(test)]
     #[error("keyed proof bundle refused: {0:?}")]
     ProofBundle(crate::engine_requirement::ProofBundleError),
 }
@@ -57,14 +56,12 @@ pub enum KeyedLoweringError {
 #[derive(Debug)]
 pub struct EmptyShells {
     scope: Vec<OperationKey>,
-    #[cfg(test)]
     predicates: crate::engine_foundation::Records,
 }
 impl EmptyShells {
     fn lifecycle(&self) -> crate::engine_lifecycle::LifecycleRecords {
         crate::engine_lifecycle::LifecycleRecords::empty(self.scope.clone())
     }
-    #[cfg(test)]
     fn construction(self) -> crate::engine_constructibility::Records {
         crate::engine_constructibility::Records {
             scope: self.scope,
@@ -120,7 +117,6 @@ pub fn read_shells(
     tracing::debug!(target: "compiler::engine_keyed", outcome = "completed", field_count = 0_u64, "declaration shell read");
     Ok(EmptyShells {
         scope: scope.iter().copied().map(operation_key).collect(),
-        #[cfg(test)]
         predicates: crate::engine_foundation::Records::default(),
     })
 }
@@ -153,9 +149,8 @@ pub struct KeyedRelations {
 }
 
 /// Reverse identities stay with the binding-fixed keyed lowering, never in
-/// the shared engine. The production plan publication consumes these in the
-/// next landing; the existing keyed pipeline is still a test oracle.
-#[cfg(test)]
+/// the shared engine. Production publication and refusal restoration use
+/// only this binding-fixed owner registry.
 pub struct KeyedIdentities {
     pub cases: std::collections::BTreeMap<crate::engine_placement::CaseKey, SemanticOperationId>,
     pub carriers: std::collections::BTreeMap<
@@ -168,7 +163,6 @@ pub struct KeyedIdentities {
     pub purposes: std::collections::BTreeMap<crate::engine_identity::PurposeKey, KeyedPurpose>,
 }
 
-#[cfg(test)]
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum KeyedPurpose {
     Verified(crate::engine_source::Evidence),
@@ -180,7 +174,6 @@ pub enum KeyedPurpose {
     ClauseRejected,
 }
 
-#[cfg(test)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EvidenceDefect {
     Missing,
@@ -188,9 +181,13 @@ pub enum EvidenceDefect {
     IdentityMismatch,
 }
 
-#[cfg(test)]
 impl KeyedIdentities {
+    #[cfg(test)]
     fn new(owner: &KeyedOwner) -> Self {
+        Self::from_source(owner, &lower_sources(owner))
+    }
+
+    fn from_source(owner: &KeyedOwner, sources: &crate::engine_source::SourceRecords) -> Self {
         let cases = owner
             .scope()
             .iter()
@@ -218,14 +215,9 @@ impl KeyedIdentities {
             })
             .collect();
         let mut purposes = vec![KeyedPurpose::ClauseAccepted, KeyedPurpose::ClauseRejected];
-        for declaration in owner
-            .source()
-            .project()
-            .iter()
-            .filter(|row| owner.scope().contains(&row.id.operation))
-        {
-            for row in source_table(declaration).rows {
-                if let crate::engine_source::Payload::Evidence(evidence) = row.operand.payload {
+        for table in &sources.tables {
+            for row in &table.rows {
+                if let crate::engine_source::Payload::Evidence(evidence) = &row.operand.payload {
                     purposes.push(KeyedPurpose::Verified(evidence.clone()));
                     purposes.extend(
                         [
@@ -312,138 +304,25 @@ impl RelationOwner for KeyedOwner {
     fn lower_requirements(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<Vec<crate::engine_requirement::Table>, KeyedLoweringError> {
-        crate::engine_requirement::proof_tables(&Self::lower_proofs(input)?)
-            .map_err(KeyedLoweringError::ProofBundle)
+        Self::lower_requirements(input)
     }
     #[cfg(test)]
     fn lower_predicates(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<crate::engine_foundation::Records, KeyedLoweringError> {
-        let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_predicates", scope_count = crate::instrumentation::count(input.owner().scope().len()));
-        let _entered = span.enter();
-        Ok(input.owner().shells()?.predicates)
+        Self::lower_predicates(input)
     }
     #[cfg(test)]
     fn lower_proofs(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<crate::engine_proof::Records, KeyedLoweringError> {
-        use crate::{engine_proof as core, engine_source::Payload};
-        let source = input.owner().lower_sources()?;
-        // Row validity belongs to the shared source stage. Lowering only
-        // records the owner's source declaration and checked empty shells.
-        input.owner().shells()?;
-        let obligations = source
-            .tables
-            .into_iter()
-            .map(|table| {
-                let evidence = table
-                    .rows
-                    .iter()
-                    .filter_map(|row| match &row.operand.payload {
-                        Payload::Evidence(value) => Some(value.clone()),
-                        _ => None,
-                    })
-                    .collect::<std::collections::BTreeSet<_>>();
-                let external = !evidence.is_empty();
-                let relation = table.relation;
-                let alternative = core::Alternative {
-                    id: core::AlternativeKey {
-                        relation: relation.clone(),
-                        namespace: table.proof_namespace,
-                        kind: table.proof_kind,
-                    },
-                    capabilities: std::collections::BTreeSet::new(),
-                    sources: Ok(table.rows),
-                    constructible: true,
-                    construction: Vec::new(),
-                    evidence,
-                    incompatible: std::collections::BTreeSet::new(),
-                };
-                (
-                    relation,
-                    if external {
-                        core::Obligation::Evidence(alternative)
-                    } else {
-                        core::Obligation::Required(vec![alternative])
-                    },
-                )
-            })
-            .collect();
-        Ok(core::Records {
-            obligations,
-            choices: Vec::new(),
-            lifecycle: Vec::new(),
-            disclosure: core::DisclosureRecords {
-                valid: true,
-                retained: std::collections::BTreeSet::new(),
-                public_effects: std::collections::BTreeMap::new(),
-            },
-        })
+        Self::lower_proofs(input)
     }
     #[cfg(test)]
     fn lower_cases(
         input: &crate::input::BoundCompilerInput<Self>,
     ) -> Result<crate::engine_cases::Tables, KeyedLoweringError> {
-        use crate::engine_cases as core;
-        let owner = input.owner();
-        owner.shells()?;
-        let placement = lower_placements(owner);
-        let sources = lower_sources(owner);
-        let coverage = lower_coverage(owner)
-            .into_iter()
-            .map(|plan| (plan.key.clone(), plan))
-            .collect::<std::collections::BTreeMap<_, _>>();
-        let rows = placement
-            .plans
-            .iter()
-            .map(|(key, runtime)| {
-                Ok(core::Row {
-                    key: key.clone(),
-                    proof: None,
-                    runtime: *runtime,
-                    eligibility: placement
-                        .eligibility
-                        .iter()
-                        .filter(|row| row.key == *key)
-                        .cloned()
-                        .collect(),
-                    coverage: Ok(coverage[key].clone()),
-                    refusal: None,
-                    facts: Some(case_facts(key, *runtime, &coverage[key], &sources)?),
-                    projections: coverage[key].boundaries.clone(),
-                    collateral: coverage[key]
-                        .negative
-                        .iter()
-                        .filter(|row| {
-                            row.boundary == crate::coverage::CoverageBoundary::RuntimeCarrier
-                        })
-                        .cloned()
-                        .collect(),
-                })
-            })
-            .collect::<Result<Vec<_>, KeyedLoweringError>>()?;
-        Ok(core::Tables {
-            layout_scopes: std::collections::BTreeMap::new(),
-            choices: Vec::new(),
-            relations: placement
-                .plans
-                .into_iter()
-                .map(|(key, _)| key.relation)
-                .collect(),
-            cases: owner
-                .scope()
-                .iter()
-                .map(|operation| {
-                    let operation = operation_key(*operation);
-                    core::Case {
-                        id: crate::engine_keyed::keyed_case(operation),
-                        operation,
-                        representations: std::collections::BTreeMap::new(),
-                    }
-                })
-                .collect(),
-            rows,
-        })
+        Self::lower_cases(input)
     }
     fn lower_sources(&self) -> Result<crate::engine_source::SourceRecords, KeyedLoweringError> {
         self.shells()?;
@@ -453,7 +332,7 @@ impl RelationOwner for KeyedOwner {
     fn lower_constructibility(
         &self,
     ) -> Result<crate::engine_constructibility::Records, KeyedLoweringError> {
-        Ok(self.shells()?.construction())
+        Self::lower_constructibility(self)
     }
 
     fn lower_relations(&self) -> Result<Self::Lowered, KeyedLoweringError> {
@@ -526,7 +405,6 @@ pub const fn operation_key(operation: SemanticOperationId) -> OperationKey {
     OperationKey { namespace, code }
 }
 
-#[cfg(test)]
 pub fn case_facts(
     key: &crate::engine_placement::Key,
     runtime: bool,
@@ -670,7 +548,6 @@ fn source_table(
     }
 }
 
-#[cfg(test)]
 pub fn lower_placements(owner: &KeyedOwner) -> crate::engine_placement::Records {
     use crate::{engine_lifecycle::ObjectKey, engine_placement as core};
     use realization::relation::{KeyedCardinality, KeyedRelation};
@@ -738,12 +615,263 @@ pub fn lower_placements(owner: &KeyedOwner) -> crate::engine_placement::Records 
 
 #[cfg(test)]
 pub fn lower_coverage(owner: &KeyedOwner) -> Vec<crate::engine_coverage::Plan> {
+    coverage_records(&lower_sources(owner))
+}
+
+use crate::engine_identity::{CarrierKey, CaseKey, Part, PurposeKey, sequence, word};
+use architecture::semantic::SemanticProfileId;
+pub fn keyed_case(operation: crate::engine_records::OperationKey) -> CaseKey {
+    CaseKey::new(
+        SemanticProfileId::KeyedProvenance,
+        vec![word(operation.namespace), word(operation.code)],
+    )
+}
+pub fn keyed_carrier(
+    operation: crate::engine_records::OperationKey,
+    object: crate::engine_lifecycle::ObjectKey,
+) -> CarrierKey {
+    CarrierKey::new(
+        SemanticProfileId::KeyedProvenance,
+        vec![
+            word(operation.namespace),
+            word(operation.code),
+            word(object.namespace),
+            word(object.code),
+        ],
+    )
+}
+
+pub fn keyed_purpose(value: &crate::engine_keyed::KeyedPurpose) -> PurposeKey {
+    use crate::engine_keyed::KeyedPurpose as P;
+    let payload = match value {
+        P::Verified(value) => vec![word(0u16), source_evidence(value)],
+        P::Rejected { evidence, defect } => {
+            vec![word(1u16), source_evidence(evidence), word(*defect as u16)]
+        }
+        P::ClauseAccepted => vec![word(2u16)],
+        P::ClauseRejected => vec![word(3u16)],
+    };
+    PurposeKey::new(SemanticProfileId::KeyedProvenance, payload)
+}
+
+fn source_evidence(value: &crate::engine_source::Evidence) -> Part {
+    use crate::engine_source::Evidence as E;
+    let operation = |value: &crate::engine_records::OperationKey| {
+        sequence([word(value.namespace), word(value.code)])
+    };
+    let object = |value: &crate::engine_lifecycle::ObjectKey| {
+        sequence([word(value.namespace), word(value.code)])
+    };
+    sequence(match value {
+        E::Operator { operation: op } => vec![word(0u16), operation(op)],
+        E::ConfidentialValue {
+            operation: op,
+            asset,
+        } => vec![word(1u16), operation(op), word(*asset)],
+        E::SubstrateValue {
+            operation: op,
+            asset,
+        } => vec![word(2u16), operation(op), word(*asset)],
+        E::HandleClassification {
+            operation: op,
+            object: obj,
+            side,
+            minimum,
+            maximum,
+        } => vec![
+            word(3u16),
+            operation(op),
+            object(obj),
+            word(*side),
+            word(*minimum),
+            sequence(
+                maximum
+                    .as_ref()
+                    .map_or_else(|| vec![word(0u16)], |value| vec![word(1u16), word(*value)]),
+            ),
+        ],
+        E::SourceClassification {
+            operation: op,
+            object: obj,
+        } => vec![word(4u16), operation(op), object(obj)],
+        E::MembershipReading {
+            operation: op,
+            object: obj,
+            recurrence,
+            inclusion,
+            retrieval,
+            finality_for_final_reading,
+        } => vec![
+            word(5u16),
+            operation(op),
+            object(obj),
+            word(*recurrence as u16),
+            word(*inclusion),
+            word(*retrieval),
+            word(*finality_for_final_reading),
+        ],
+    })
+}
+
+impl KeyedOwner {
+    #[cfg(test)]
+    pub(super) fn lower_requirements(
+        input: &crate::input::BoundCompilerInput<Self>,
+    ) -> Result<Vec<crate::engine_requirement::Table>, KeyedLoweringError> {
+        crate::engine_requirement::proof_tables(&Self::lower_proofs(input)?)
+            .map_err(KeyedLoweringError::ProofBundle)
+    }
+    #[cfg(test)]
+    pub(super) fn lower_predicates(
+        input: &crate::input::BoundCompilerInput<Self>,
+    ) -> Result<crate::engine_foundation::Records, KeyedLoweringError> {
+        let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_predicates", scope_count = crate::instrumentation::count(input.owner().scope().len()));
+        let _entered = span.enter();
+        Ok(input.owner().shells()?.predicates)
+    }
+    #[cfg(test)]
+    pub(super) fn lower_proofs(
+        input: &crate::input::BoundCompilerInput<Self>,
+    ) -> Result<crate::engine_proof::Records, KeyedLoweringError> {
+        input.owner().shells()?;
+        Ok(proof_records(input.owner().lower_sources()?))
+    }
+    #[cfg(test)]
+    pub(super) fn lower_cases(
+        input: &crate::input::BoundCompilerInput<Self>,
+    ) -> Result<crate::engine_cases::Tables, KeyedLoweringError> {
+        input.owner().shells()?;
+        case_records(input.owner(), &lower_sources(input.owner()))
+    }
+    #[cfg(test)]
+    pub(super) fn lower_constructibility(
+        &self,
+    ) -> Result<crate::engine_constructibility::Records, KeyedLoweringError> {
+        Ok(self.shells()?.construction())
+    }
+}
+
+fn proof_records(source: crate::engine_source::SourceRecords) -> crate::engine_proof::Records {
+    use crate::{engine_proof as core, engine_source::Payload};
+    let obligations = source
+        .tables
+        .into_iter()
+        .map(|table| {
+            let evidence = table
+                .rows
+                .iter()
+                .filter_map(|row| match &row.operand.payload {
+                    Payload::Evidence(value) => Some(value.clone()),
+                    _ => None,
+                })
+                .collect::<std::collections::BTreeSet<_>>();
+            let external = !evidence.is_empty();
+            let relation = table.relation;
+            let alternative = core::Alternative {
+                id: core::AlternativeKey {
+                    relation: relation.clone(),
+                    namespace: table.proof_namespace,
+                    kind: table.proof_kind,
+                },
+                capabilities: std::collections::BTreeSet::new(),
+                sources: Ok(table.rows),
+                constructible: true,
+                construction: Vec::new(),
+                evidence,
+                incompatible: std::collections::BTreeSet::new(),
+            };
+            (
+                relation,
+                if external {
+                    core::Obligation::Evidence(alternative)
+                } else {
+                    core::Obligation::Required(vec![alternative])
+                },
+            )
+        })
+        .collect();
+    core::Records {
+        obligations,
+        choices: Vec::new(),
+        lifecycle: Vec::new(),
+        disclosure: core::DisclosureRecords {
+            valid: true,
+            retained: std::collections::BTreeSet::new(),
+            public_effects: std::collections::BTreeMap::new(),
+        },
+    }
+}
+
+fn case_records(
+    owner: &KeyedOwner,
+    sources: &crate::engine_source::SourceRecords,
+) -> Result<crate::engine_cases::Tables, KeyedLoweringError> {
+    use crate::engine_cases as core;
+    let placement = lower_placements(owner);
+    let coverage = coverage_records(sources)
+        .into_iter()
+        .map(|plan| (plan.key.clone(), plan))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let rows = placement
+        .plans
+        .iter()
+        .map(|(key, runtime)| {
+            Ok(core::Row {
+                key: key.clone(),
+                proof: None,
+                runtime: *runtime,
+                eligibility: placement
+                    .eligibility
+                    .iter()
+                    .filter(|row| row.key == *key)
+                    .cloned()
+                    .collect(),
+                coverage: Ok(coverage[key].clone()),
+                refusal: None,
+                facts: Some(case_facts(key, *runtime, &coverage[key], sources)?),
+                projections: coverage[key].boundaries.clone(),
+                collateral: coverage[key]
+                    .negative
+                    .iter()
+                    .filter(|row| row.boundary == crate::coverage::CoverageBoundary::RuntimeCarrier)
+                    .cloned()
+                    .collect(),
+            })
+        })
+        .collect::<Result<Vec<_>, KeyedLoweringError>>()?;
+    Ok(core::Tables {
+        layout_scopes: std::collections::BTreeMap::new(),
+        choices: Vec::new(),
+        relations: placement
+            .plans
+            .into_iter()
+            .map(|(key, _)| key.relation)
+            .collect(),
+        cases: owner
+            .scope()
+            .iter()
+            .map(|operation| {
+                let operation = operation_key(*operation);
+                core::Case {
+                    id: crate::engine_keyed::keyed_case(operation),
+                    operation,
+                    representations: std::collections::BTreeMap::new(),
+                }
+            })
+            .collect(),
+        rows,
+    })
+}
+
+fn coverage_records(
+    source: &crate::engine_source::SourceRecords,
+) -> Vec<crate::engine_coverage::Plan> {
     use crate::{coverage::CoverageBoundary as B, engine_coverage as core, engine_source::Payload};
-    let source = lower_sources(owner);
     let span = tracing::debug_span!(target: "compiler::engine_keyed", "lower_coverage", relation_count = crate::instrumentation::count(source.tables.len()));
     let _entered = span.enter();
     source
         .tables
+        .clone()
         .into_iter()
         .map(|table| {
             let key = crate::engine_placement::Key {
@@ -805,105 +933,4 @@ pub fn lower_coverage(owner: &KeyedOwner) -> Vec<crate::engine_coverage::Plan> {
             })
         })
         .collect()
-}
-
-#[cfg(test)]
-use crate::engine_identity::{CarrierKey, CaseKey, Part, PurposeKey, sequence, word};
-#[cfg(test)]
-use architecture::semantic::SemanticProfileId;
-#[cfg(test)]
-pub fn keyed_case(operation: crate::engine_records::OperationKey) -> CaseKey {
-    CaseKey::new(
-        SemanticProfileId::KeyedProvenance,
-        vec![word(operation.namespace), word(operation.code)],
-    )
-}
-#[cfg(test)]
-pub fn keyed_carrier(
-    operation: crate::engine_records::OperationKey,
-    object: crate::engine_lifecycle::ObjectKey,
-) -> CarrierKey {
-    CarrierKey::new(
-        SemanticProfileId::KeyedProvenance,
-        vec![
-            word(operation.namespace),
-            word(operation.code),
-            word(object.namespace),
-            word(object.code),
-        ],
-    )
-}
-
-#[cfg(test)]
-pub fn keyed_purpose(value: &crate::engine_keyed::KeyedPurpose) -> PurposeKey {
-    use crate::engine_keyed::KeyedPurpose as P;
-    let payload = match value {
-        P::Verified(value) => vec![word(0u16), source_evidence(value)],
-        P::Rejected { evidence, defect } => {
-            vec![word(1u16), source_evidence(evidence), word(*defect as u16)]
-        }
-        P::ClauseAccepted => vec![word(2u16)],
-        P::ClauseRejected => vec![word(3u16)],
-    };
-    PurposeKey::new(SemanticProfileId::KeyedProvenance, payload)
-}
-
-#[cfg(test)]
-fn source_evidence(value: &crate::engine_source::Evidence) -> Part {
-    use crate::engine_source::Evidence as E;
-    let operation = |value: &crate::engine_records::OperationKey| {
-        sequence([word(value.namespace), word(value.code)])
-    };
-    let object = |value: &crate::engine_lifecycle::ObjectKey| {
-        sequence([word(value.namespace), word(value.code)])
-    };
-    sequence(match value {
-        E::Operator { operation: op } => vec![word(0u16), operation(op)],
-        E::ConfidentialValue {
-            operation: op,
-            asset,
-        } => vec![word(1u16), operation(op), word(*asset)],
-        E::SubstrateValue {
-            operation: op,
-            asset,
-        } => vec![word(2u16), operation(op), word(*asset)],
-        E::HandleClassification {
-            operation: op,
-            object: obj,
-            side,
-            minimum,
-            maximum,
-        } => vec![
-            word(3u16),
-            operation(op),
-            object(obj),
-            word(*side),
-            word(*minimum),
-            sequence(
-                maximum
-                    .as_ref()
-                    .map_or_else(|| vec![word(0u16)], |value| vec![word(1u16), word(*value)]),
-            ),
-        ],
-        E::SourceClassification {
-            operation: op,
-            object: obj,
-        } => vec![word(4u16), operation(op), object(obj)],
-        E::MembershipReading {
-            operation: op,
-            object: obj,
-            recurrence,
-            inclusion,
-            retrieval,
-            finality_for_final_reading,
-        } => vec![
-            word(5u16),
-            operation(op),
-            object(obj),
-            word(*recurrence as u16),
-            word(*inclusion),
-            word(*retrieval),
-            word(*finality_for_final_reading),
-        ],
-    })
 }

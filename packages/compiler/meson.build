@@ -38,6 +38,13 @@ compiler_source_files = files(
   'src/engine_foundation.rs',
   'src/engine_identity.rs',
   'src/engine_keyed.rs',
+  'src/engine_keyed/program.rs',
+  'src/engine_keyed/program/restore.rs',
+  'src/engine_keyed/program/refusal.rs',
+  'src/engine_keyed/program/stage_refusal.rs',
+  'src/engine_keyed/program/tests.rs',
+  'src/engine_keyed/program/negative_tests.rs',
+  'src/keyed_plan.rs',
   'src/engine_lifecycle.rs',
   'src/engine_proof.rs',
   'src/engine_placement.rs',
@@ -126,4 +133,4 @@ compiler_doc_files = files('README.md', 'TRACING.md')
 # Integration-test sources are cargo test inputs rather than label
 # graph subjects. The explicit exclusion keeps the tracked-file census
 # welded to that classification.
-compiler_excluded_files = files('tests/public_api.rs', 'tests/fixtures/engine_base/MANIFEST')
+compiler_excluded_files = files('tests/public_api.rs', 'tests/keyed_plan.rs', 'tests/fixtures/engine_base/MANIFEST')

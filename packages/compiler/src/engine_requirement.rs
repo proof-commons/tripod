@@ -53,7 +53,7 @@ pub struct Table {
     pub choices:
         BTreeMap<Option<crate::engine_proof::AlternativeKey>, Result<Bundle, crate::CompileError>>,
 }
-#[cfg(test)]
+#[cfg(any(test, feature = "keyed-experimental"))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ProofBundleError {
     Constructibility(crate::engine_proof::AlternativeKey),
@@ -62,7 +62,7 @@ pub enum ProofBundleError {
         reason: crate::proof::LocalProofRejection,
     },
 }
-#[cfg(test)]
+#[cfg(any(test, feature = "keyed-experimental"))]
 pub fn proof_tables(
     records: &crate::engine_proof::Records,
 ) -> Result<Vec<Table>, ProofBundleError> {
@@ -94,7 +94,7 @@ pub fn proof_tables(
         })
         .collect()
 }
-#[cfg(test)]
+#[cfg(any(test, feature = "keyed-experimental"))]
 fn proof_bundle(
     alternative: &crate::engine_proof::Alternative,
 ) -> Result<Bundle, ProofBundleError> {

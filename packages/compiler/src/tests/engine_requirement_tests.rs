@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 #[test]
 fn proof_bundles_keep_source_and_constructibility_refusals() {
-    use crate::engine_records::RelationOwner;
     let input =
         super::engine_coverage_tests::bound(vec![architecture::semantic::KeyedOperationId::Source]);
     let control = crate::input::KeyedOwner::lower_proofs(&input).expect("proof records");
@@ -39,7 +38,6 @@ fn proof_bundles_keep_source_and_constructibility_refusals() {
 
 #[test]
 fn keyed_requirement_tables_join_selected_proofs_and_retain_every_source() {
-    use crate::engine_records::RelationOwner;
     use architecture::semantic::KeyedOperationId;
     for (scope, count, evidence) in [
         (vec![KeyedOperationId::Source], 4, 4),

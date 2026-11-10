@@ -103,6 +103,10 @@ ADR-010 requires structured result stdout and subscriber-produced JSON stderr (`
 | `lower_sources` | `compiler::engine_attestation` | DEBUG | `scope_count: u64` | Lowers attestation source tables and funding regions. |
 | `analyze_bound_records` | `compiler::analysis` | DEBUG | None | Analyzes records lowered by the bound owner. |
 | `bind_keyed_input` | `compiler::input` | DEBUG | `scope_operation_count: u64` | Validates and binds the keyed manifest, realization and scope. |
+| `plan` | `compiler::keyed_plan` | DEBUG | `scope_count: u64` | Compiles keyed publication and independently rederives it before returning. |
+| `revalidate` | `compiler::keyed_plan` | DEBUG | None | Repeats preparation and all stages from retained bound source, without producer state. |
+| `prepare` | `compiler::engine_keyed` | DEBUG | `scope_count: u64` | Reads all nine shells and builds the source, proof, case and reverse-identity tables for one derivation. |
+| `publish` | `compiler::engine_keyed` | DEBUG | `plan_count: u64` | Restores owner-typed assignments, coverage graph and evidence from shared results. |
 
 All spans use static literal targets and lower-snake-case names, with no per-state or per-candidate span. The three planner entry points share `plan_target_operation`; `family` is exactly `compact`, `live`, or `state`. A subscriber emits one close record for every enabled span with entry fields and `busy_ns: u64` and `idle_ns: u64`, on by default; nested durations are inclusive and must not be summed as a wall total. Compiler never computes a measured duration field or an `Instant` solely for telemetry.
 
@@ -118,6 +122,8 @@ All spans use static literal targets and lower-snake-case names, with no per-sta
 | `compiler::engine_placement` | DEBUG | `placement search completed` | `outcome: &'static str`; `refusal_kind: &'static str` on refusal; `visited_state_count`, `complete_assignment_count`, `feasible_placement_count`, `retained_option_count`: `u64` | Once on every production placement-search return, including census, eligibility, assignment and budget refusals. |
 | `compiler::engine_proof` | DEBUG | `proof search completed` | `outcome: &'static str`; `refusal_kind: &'static str` on refusal; `visited_state_count`, `complete_assignment_count`, `feasible_assignment_count`, `capability_rejection_count`, `source_rejection_count`, `constructibility_rejection_count`, `representation_rejection_count`, `disclosure_rejection_count`: `u64` | Once on every production proof-search exit, including fixed-source refusal, no feasible plan, and state/candidate exhaustion. |
 | `compiler::input` | DEBUG | `keyed input binding completed` | `outcome`, optional `refusal_kind`: static strings | Once per experimental keyed binding return. |
+| `compiler::keyed_plan` | DEBUG | `keyed plan completed` | `outcome: &'static str` | Once on every public plan return, including independent validation failure. |
+| `compiler::keyed_plan` | DEBUG | `keyed plan revalidated` | `outcome: &'static str` | Once on every explicit revalidation return; the planner uses an uninstrumented validation core to avoid duplicate public completion events. |
 | `compiler::engine_attestation` | DEBUG | `relation records lowered` | `outcome: &'static str`, `identity_count: u64` | Successful relation lowering. |
 | `compiler::engine_attestation` | DEBUG | `owner record refusal restored` | `stage: Debug`, `relation_count: u64`, `unknown_relation_count: u64`, `outcome: &'static str` | Owner adapter restores public refusal subjects without exposing private records. |
 | `compiler::engine_keyed` | DEBUG | `relation records lowered` | `outcome: &'static str`, `source_node_count: u64` | Successful keyed relation lowering. |

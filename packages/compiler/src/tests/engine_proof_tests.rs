@@ -2,7 +2,7 @@
 use crate::{
     capability::CapabilityView,
     engine_proof as core,
-    engine_records::{self, RelationOwner},
+    engine_records::{self},
 };
 use architecture::{
     OperationId,

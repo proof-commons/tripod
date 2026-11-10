@@ -288,3 +288,68 @@ fn state_plan_completion_and_proof_limit_refusal() {
         "target operation planned",
     );
 }
+
+#[test]
+fn keyed_production_rederives_every_stage_without_a_producer_cache() {
+    if isolate_capture_test(
+        "tests::tracing_boundary_tests::keyed_production_rederives_every_stage_without_a_producer_cache",
+    ) {
+        return;
+    }
+    let input = super::engine_coverage_tests::bound(vec![
+        architecture::semantic::KeyedOperationId::Source,
+        architecture::semantic::KeyedOperationId::Merge,
+    ]);
+    let (result, events) = capture(|| crate::keyed_plan::plan(&input, limits()));
+    assert!(result.is_ok());
+    for (target, name) in [
+        ("compiler::engine_keyed", "prepare"),
+        ("compiler::engine_records", "analyze_relations"),
+        ("compiler::engine_source", "analyze_sources"),
+        (
+            "compiler::engine_constructibility",
+            "analyze_constructibility",
+        ),
+        ("compiler::engine_lifecycle", "analyze_lifecycle"),
+        ("compiler::engine_proof", "enumerate"),
+    ] {
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.is_span && event.target == target && event.name == name)
+                .count(),
+            2,
+            "{target}::{name}"
+        );
+    }
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.is_span
+                && event.target == "compiler::engine_placement"
+                && event.name == "enumerate")
+            .count(),
+        4
+    );
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.is_span
+                && event.target == "compiler::engine_coverage"
+                && event.name == "validate_census")
+            .count(),
+        4
+    );
+    let plan = result.unwrap();
+    let (result, events) = capture(|| crate::keyed_plan::revalidate(&input, limits(), &plan));
+    assert!(result.is_ok());
+    assert_eq!(
+        events
+            .iter()
+            .filter(|event| event.is_span
+                && event.target == "compiler::engine_keyed"
+                && event.name == "prepare")
+            .count(),
+        1
+    );
+}

@@ -1,6 +1,6 @@
 # Target-Independent Compiler · `pkg:compiler:contract`
 
-> **Status:** Active — typed input, graph, folding, source, constructibility, disclosure, lifecycle, proof-planning, placement, layout and coverage foundations and the public validated target-operation boundary are delivered; `maturity_announcement_plan` projects `AnnounceMaturity` under Guide-14 Wave 2; no public complete-analysis result or compiler identity is exposed
+> **Status:** Active — typed input, graph, folding, source, constructibility, disclosure, lifecycle, proof-planning, placement, layout and coverage foundations and the public validated target-operation boundary are delivered; `maturity_announcement_plan` projects `AnnounceMaturity` under Guide-14 Wave 2; the feature-gated keyed plan surface publishes complete owner-typed obligations; no raw engine record or compiler identity is exposed
 > **Phase:** [Phase 2](../phases/02-compiler.md)
 > **Package:** `tripod-compiler`
 > **Library:** `compiler`
@@ -347,3 +347,7 @@ See [`errors/compiler.md`](errors/compiler.md).
   analysis identity is activated?
 - Does target planning select one canonical plan from the exact feasible set,
   and under which stated objective?
+
+## Keyed production plans · `sec:compiler:keyed-plans`
+
+Under (`step:w1b12:production`) and ruling 175 (`rule:phase7:wave1-home-rulings`), `compiler::keyed_plan` is available behind `keyed-experimental`: `plan` consumes a bound `KeyedOwner` and placement limits, publishes immutable `KeyedPlan`, and independently validates before returning; `revalidate` repeats fresh owner preparation and every shared stage with no producer cache. The projection includes scope/binding, factorized proof and operation plans, per-relation assignments and quantification, positive/negative coverage and its graph, explicit evidence premises, stage censuses and search limits/reports. SOURCE reading and recognition stay evidence obligations; MERGE's two runtime clauses are per consumed handle. No raw engine records or owner-selection callback cross the boundary. Public errors restore keyed identities and stage/defect distinctions; a missing reverse identity is the single class-3 `CompileError::MissingOwnerIdentity`. The raw record entry remains a test oracle, feature removal remains step 6, and no target correctness or concrete evidence admission is claimed.
