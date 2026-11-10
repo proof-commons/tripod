@@ -53,6 +53,9 @@ fn external_keyed_plans_publish_all_seven_stages_and_universal_clauses() {
             .map(|row| (row.id, row.relation))
             .collect::<std::collections::BTreeMap<_, _>>();
         assert_eq!(published, expected);
+        inspect_every_relation(projection);
+        // This public construction above takes only public declarations, scope and limits:
+        // no creator secret or evidence witness is supplied. Premises remain obligations.
         let runtime = projection
             .plans
             .iter()
@@ -141,4 +144,40 @@ fn external_keyed_refusals_revalidate_scope_and_enforce_search_limits() {
             limit: 1
         })
     );
+}
+
+fn inspect_every_relation(projection: &KeyedPlanProjection) {
+    for operation in projection
+        .plans
+        .iter()
+        .flat_map(|plan| plan.operations.values())
+    {
+        let mut evidence_rows = 0;
+        let mut runtime_rows = 0;
+        for (id, row) in &operation.relations {
+            assert!(row.active);
+            assert!(!row.positive.is_empty() && !row.negative.is_empty());
+            if row.runtime.is_empty() {
+                evidence_rows += 1;
+                assert_eq!(row.evidence.len(), 1);
+                assert!(row.alternatives.is_empty());
+                assert!(row.boundaries.contains(&CoverageBoundary::ExternalEvidence));
+            } else {
+                runtime_rows += 1;
+                assert_eq!(id.operation, O::Keyed(K::Merge));
+                assert_eq!(row.runtime.len(), 1);
+                assert!(row.evidence.is_empty());
+                assert!(row.boundaries.contains(&CoverageBoundary::RuntimeCarrier));
+            }
+        }
+        let op = operation.relations.keys().next().unwrap().operation;
+        assert_eq!(
+            (evidence_rows, runtime_rows),
+            if op == O::Keyed(K::Source) {
+                (4, 0)
+            } else {
+                (3, 2)
+            }
+        );
+    }
 }

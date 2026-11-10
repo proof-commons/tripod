@@ -12,6 +12,8 @@ use crate::{
 use std::collections::BTreeMap;
 
 #[cfg(test)]
+mod assignment_tests;
+#[cfg(test)]
 mod negative_tests;
 mod refusal;
 #[cfg(test)]
