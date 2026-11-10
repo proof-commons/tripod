@@ -452,4 +452,4 @@ Both STATE sides carry a public confidentiality baseline; that baseline does not
 
 ## Stable keyed declarations
 
-`keyed::KeyedRealizationDraft` derives and validates SOURCE and MERGE from `architecture::keyed::KeyedManifest::contract()` without a feature flag. The normative nine-row paper weld, evidence obligations and refusal boundaries are in (`[PLAN-sec:realization:keyed-declarations]`). The default compiler library now consumes these declarations through production keyed preparation, publication and independent validation. The discharged bite-1.2 obligations and explicit later-bite handoffs are recorded at [PLAN-rec:w1b12:gate].
+`keyed::KeyedRealizationDraft` derives and validates SOURCE and MERGE from `architecture::keyed::KeyedManifest::contract()` without a feature flag. The normative nine-row paper weld, evidence obligations and refusal boundaries are in (`[PLAN-sec:realization:keyed-declarations]`). The default compiler library now consumes these declarations through production keyed preparation, publication and independent validation. The discharged bite-1.2 obligations and explicit later-bite handoffs are recorded at (`[PLAN-rec:w1b12:gate]`).

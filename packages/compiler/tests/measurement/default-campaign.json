@@ -63,6 +63,7 @@
   "candidate_runtime_harness_features": [
     "cost-keyed"
   ],
+  "candidate_tree_note": "The campaign measured the pre-review runner-landing tree 215cec2355a9df796806fbd41b55cbcc82582aca. The landed feat(tools): measure keyed plans without the feature, tree a0b96796060b85a248ba3c8e8947d18ecc890d20, differs from it only in documentation, blank lines, test sources and the cfg(test) confinement of one unused variant; the measured runtime binary's implementation code is unchanged. This is source provenance, not a claim that rebuilt executable bytes are identical.",
   "conditions": {
     "cache_policy": "isolated per-side targets; dry-run reflink seed only; full builds start empty",
     "cpus": [
