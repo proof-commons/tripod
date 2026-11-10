@@ -193,6 +193,11 @@ public-item inventory in the default library is:
 | Binding | Sealed `InputBinding` (four associated types and `bind_owned`) and generic `bind_input`, statically fixing the owner. |
 | Both owners | Zero public owner constructors, mutable owner accessors, engine-record types, lowering callbacks or public generic analysis callbacks. Both owner types implement `Clone` and `Debug`. |
 
+The owner/input source lock checks explicit public fields, constructors, return
+types, mutable receivers and re-export signatures. It is not a Rust trait-system
+proof: mutation exposed indirectly by a future `DerefMut` or `AsMut` implementation
+requires review of that implementation and is not covered by this text scanner.
+
 `tests/public_api.rs` compiles the retained paths and method signatures as an
 external consumer, checks that owner/source types cannot be substituted, and
 locks the keyed facade without a feature guard. `tests/keyed_plan.rs` compiles all

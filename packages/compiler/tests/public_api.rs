@@ -1626,14 +1626,25 @@ fn default_manifest_is_contained(manifest: &str) -> bool {
     let mut development = false;
     for line in manifest.lines() {
         let line = line.split('#').next().unwrap_or_default().trim();
-        if line == "[features]" || line == "[dev-dependencies.compiler]" {
+        let compact = line.split_whitespace().collect::<String>();
+        if line == "[features]"
+            || line == "[dev-dependencies.compiler]"
+            || line == "[dev-dependencies.tripod-compiler]"
+            || (line.starts_with("[target.") && line.contains(".dev-dependencies"))
+            || compact.contains("package=\"tripod-compiler\"")
+            || compact.contains("package='tripod-compiler'")
+        {
             return false;
         }
         if line.starts_with('[') {
             development = line == "[dev-dependencies]";
         } else if development {
             let key = line.split('=').next().unwrap_or_default().trim();
-            if key == "compiler" || key.starts_with("compiler.") {
+            if key == "compiler"
+                || key.starts_with("compiler.")
+                || key == "tripod-compiler"
+                || key.starts_with("tripod-compiler.")
+            {
                 return false;
             }
         }
@@ -1653,48 +1664,98 @@ fn default_library_has_no_experimental_feature_or_self_dev_dependency() {
     assert!(!default_manifest_is_contained(&self_dependency));
     let feature_table = format!("{manifest}\n[features]\n");
     assert!(!default_manifest_is_contained(&feature_table));
+    for addition in [
+        "tripod-compiler = { path = \".\" }",
+        "alias = { package = \"tripod-compiler\", path = \".\" }",
+    ] {
+        let mutant = manifest.replace(
+            "[dev-dependencies]",
+            &format!("[dev-dependencies]\n{addition}"),
+        );
+        assert!(!default_manifest_is_contained(&mutant), "{addition}");
+    }
+    let target_table = format!("{manifest}\n[target.'cfg(unix)'.dev-dependencies]\n");
+    assert!(!default_manifest_is_contained(&target_table));
     let placement = include_str!("../src/placement.rs");
     assert!(placement.contains("#[non_exhaustive]\npub enum CarrierMultiplicity"));
 }
 
-#[test]
-fn default_owner_and_input_signatures_keep_construction_and_engines_private() {
-    for (owner, code) in [
-        (true, include_str!("../src/input/owner.rs")),
-        (false, include_str!("../src/input.rs")),
-    ] {
-        let mut signature = String::new();
-        for line in code.lines() {
-            let line = line.trim();
-            if line.starts_with("//") {
-                continue;
-            }
-            if line.starts_with("pub ") || !signature.is_empty() {
-                signature.push_str(line);
-                if line.contains('{')
+fn owner_surface_is_contained(owner: bool, code: &str) -> bool {
+    let mut signature = String::new();
+    let mut owner_fields = false;
+    for line in code.lines() {
+        if owner && line.starts_with("pub struct ") {
+            owner_fields = true;
+        } else if owner_fields && line == "}" {
+            owner_fields = false;
+        } else if owner_fields && line.trim_start().starts_with("pub ") {
+            return false;
+        }
+        let line = line.trim();
+        if line.starts_with("//") {
+            continue;
+        }
+        if line.starts_with("pub ") || !signature.is_empty() {
+            signature.push_str(line);
+            let complete = if signature.starts_with("pub use ") {
+                line.ends_with(';')
+            } else {
+                line.contains('{')
                     || (!signature.contains(" fn ") && (line.ends_with(';') || line.ends_with(',')))
+            };
+            if complete {
+                // Input's existing ProofSearchLimits::new constructs limits, not an owner.
+                let limit_constructor = !owner
+                    && signature
+                        == "pub const fn new(maximum_states: std::num::NonZeroU64,maximum_candidates: std::num::NonZeroU64,) -> Self {";
+                let returns_self = owner
+                    && signature.split_once("->").is_some_and(|(_, result)| {
+                        result
+                            .split(|c: char| !c.is_alphanumeric() && c != '_')
+                            .any(|word| word == "Self")
+                    });
+                if (signature.contains("fn new(") && !limit_constructor)
+                    || returns_self
+                    || signature.contains("_mut(")
+                    || signature.contains("&mut self")
+                    || (signature.contains("engine_")
+                        && signature != "pub use crate::engine_keyed::KeyedBindingError;")
                 {
-                    // Input's existing ProofSearchLimits::new constructs limits, not an owner.
-                    let limit_constructor = !owner
-                        && signature
-                            == "pub const fn new(maximum_states: std::num::NonZeroU64,maximum_candidates: std::num::NonZeroU64,) -> Self {";
-                    assert!(
-                        !signature.contains("fn new(") || limit_constructor,
-                        "public constructor: {signature}"
-                    );
-                    assert!(
-                        !signature.contains("_mut("),
-                        "mutable accessor: {signature}"
-                    );
-                    assert!(
-                        !signature.contains("engine_")
-                            || signature == "pub use crate::engine_keyed::KeyedBindingError;",
-                        "engine path in public signature: {signature}"
-                    );
-                    signature.clear();
+                    return false;
                 }
+                signature.clear();
             }
         }
-        assert!(signature.is_empty(), "unterminated signature");
+    }
+    signature.is_empty() && !owner_fields
+}
+
+#[test]
+fn default_owner_and_input_signatures_keep_construction_and_engines_private() {
+    let owner = include_str!("../src/input/owner.rs");
+    let input = include_str!("../src/input.rs");
+    assert!(owner_surface_is_contained(true, owner));
+    assert!(owner_surface_is_contained(false, input));
+    for mutant in [
+        owner.replacen("pub(crate) const fn new", "pub const fn new", 1),
+        owner.replacen(
+            "    source: ScopedRealizationSpec,",
+            "    pub source: ScopedRealizationSpec,",
+            1,
+        ),
+        owner.replacen(
+            "pub const fn source(&self) -> &ScopedRealizationSpec",
+            "pub const fn copy(&self) -> Self",
+            1,
+        ),
+        owner.replacen(
+            "pub const fn source(&self)",
+            "pub const fn source(&mut self)",
+            1,
+        ),
+        format!("{owner}\npub use crate::{{\n    engine_records::RelationKey,\n}};\n"),
+    ] {
+        assert_ne!(mutant, owner);
+        assert!(!owner_surface_is_contained(true, &mutant));
     }
 }
