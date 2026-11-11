@@ -34,6 +34,132 @@ use crate::evidence::TargetEvidenceRequirementId;
 use crate::resource::{ResourceContract, ResourceDimension};
 
 census_enum! {
+    /// Target-layer conditions for the keyed form, not additional leaf predicates.
+    #[non_exhaustive]
+    pub enum KeyedFormTerm {
+        ValueBalance,
+        ScriptPathCommitment,
+        SelectedLeafExecution,
+        RelayFee,
+        OutputDust,
+        PositiveExplicitSpendableValue,
+        ExplicitHandleValue,
+        FeeOutputPresence,
+        ConfidentialOutputs,
+        InputZeroPosition,
+        OutputCount,
+        EqualHandleAmounts,
+        EqualHandleAssets,
+        StateMetadata,
+        CreatorSignature,
+    }
+}
+
+census_enum! {
+    /// Project construction preferences under ruling 162, not target constraints.
+    #[non_exhaustive]
+    pub enum KeyedConstructionChoice {
+        PositiveExplicitPolicyAssetFunding,
+        ExplicitFeeOutput,
+        NoConfidentialOutputs,
+    }
+}
+
+/// Static source review, not an observed node admission.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct KeyedFormReview {
+    constraints: BTreeMap<KeyedFormTerm, FormConstraint>,
+    construction_choices: BTreeSet<KeyedConstructionChoice>,
+    consensus: FormAdmission,
+    relay: FormAdmission,
+    relay_conditions: BTreeSet<RelayCondition>,
+    fee: FeeOutputContract,
+    explicit_zero: BTreeSet<ExplicitZeroValueRule>,
+}
+impl KeyedFormReview {
+    #[must_use]
+    pub const fn constraints(&self) -> &BTreeMap<KeyedFormTerm, FormConstraint> {
+        &self.constraints
+    }
+    #[must_use]
+    pub const fn construction_choices(&self) -> &BTreeSet<KeyedConstructionChoice> {
+        &self.construction_choices
+    }
+    #[must_use]
+    pub const fn consensus(&self) -> FormAdmission {
+        self.consensus
+    }
+    #[must_use]
+    pub const fn relay(&self) -> FormAdmission {
+        self.relay
+    }
+    /// Dust is carried in the constraint map; this existing enum has no dust
+    /// variant. The set is not an exhaustive list of all relay validity checks.
+    #[must_use]
+    pub const fn relay_conditions(&self) -> &BTreeSet<RelayCondition> {
+        &self.relay_conditions
+    }
+    #[must_use]
+    pub const fn fee(&self) -> &FeeOutputContract {
+        &self.fee
+    }
+    #[must_use]
+    pub const fn explicit_zero(&self) -> &BTreeSet<ExplicitZeroValueRule> {
+        &self.explicit_zero
+    }
+}
+
+/// Review the explicit funded keyed form without importing ASH equalities.
+///
+/// Consensus admits the form, just as it admits Sponsored and Sponsorless forms;
+/// every instance must still satisfy balance, commitment and execution. An
+/// explicit spendable output must be positive under the explicit-zero rule.
+/// Relay adds fee and output dust policy, including dust on a successor handle.
+/// Explicitness, policy-asset selection, an explicit fee and excluding confidential
+/// outputs are project construction choices, not target interface conventions.
+/// Confidential outputs are outside the chosen construction route, not forbidden
+/// by a new covenant. The leaf's output-zero equality is already
+/// part of selected execution and is not an output-count restriction.
+///
+/// Sources: the existing fee and zero-value reviews in this module, target
+/// introspection/commitment contracts, and the admitted funding observations
+/// (`[PLAN-rec:state-constructor:keyed-funding]`). No numeric threshold is fixed.
+#[must_use]
+pub fn reviewed_keyed_form() -> KeyedFormReview {
+    use FormConstraint::{ConsensusEnforced as C, PolicyEnforced as P, Unconstrained as U};
+    use KeyedFormTerm as T;
+    let constraints = [
+        (T::ValueBalance, C),
+        (T::ScriptPathCommitment, C),
+        (T::SelectedLeafExecution, C),
+        (T::RelayFee, P),
+        (T::OutputDust, P),
+        (T::PositiveExplicitSpendableValue, C),
+        (T::ExplicitHandleValue, U),
+        (T::FeeOutputPresence, U),
+        (T::ConfidentialOutputs, U),
+        (T::InputZeroPosition, U),
+        (T::OutputCount, U),
+        (T::EqualHandleAmounts, U),
+        (T::EqualHandleAssets, U),
+        (T::StateMetadata, U),
+        (T::CreatorSignature, U),
+    ]
+    .into_iter()
+    .collect();
+    KeyedFormReview {
+        constraints,
+        construction_choices: KeyedConstructionChoice::ALL.iter().copied().collect(),
+        consensus: FormAdmission::Admitted,
+        relay: FormAdmission::AdmittedUnderCondition,
+        relay_conditions: std::iter::once(RelayCondition::OwnFeeReachesRelayFloor).collect(),
+        fee: reviewed_fee_output_contract(),
+        explicit_zero: reviewed_explicit_zero_value_rule(),
+    }
+}
+
+census_enum! {
     /// One structural term the target's fee-role test is made of.
     ///
     /// The target recognizes its fee role by the *form* of the output, and

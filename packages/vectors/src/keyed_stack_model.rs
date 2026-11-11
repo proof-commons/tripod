@@ -9,6 +9,8 @@
 //! facts are explicit offline operands; no transaction or scriptPubKey parser,
 //! signature implementation, control-path authentication or hashing is claimed.
 
+mod members;
+
 #[derive(Clone, Debug)]
 enum ProgramFact {
     Witness { version: u8, payload: Vec<u8> },

@@ -38,6 +38,8 @@ Every target is an explicit literal using the library crate stem and owning modu
 
 | Span name | Target | Level | Entry fields (type) | Duration measured |
 |---|---|---|---|---|
+| `assess_keyed_bundle` | `tapscript::keyed_assessment` | DEBUG | none | Derives the leaf's reviewed primitive census, the fixed-grammar resource projection through its untraced core, and the unresolved premises. |
+| `bind_keyed_members` | `tapscript::keyed_members` | DEBUG | `input_count: u64`, `member_count: u64` | Compares supplied roles, identities, offline subjects and selected relation coverage. |
 | `construct_keyed_material` | `tapscript::keyed_constructor` | DEBUG | none | Direct public recipe construction; nested bundle emission uses the untraced material core. |
 | `keyed_resource_projection` | `tapscript::keyed_resources` | DEBUG | none | Fixed grammar resource and stack projection. |
 | `keyed_transaction_weight` | `tapscript::keyed_resources` | DEBUG | `member_count: u64` | Checked serialization arithmetic, no admission. |
@@ -59,6 +61,8 @@ Each instrumented public operation emits one completion event inside its span wh
 
 | Operation target | Completed event and level | Completed fields (all counts `u64`) | Refused event and fields |
 |---|---|---|---|
+| `tapscript::keyed_assessment` | DEBUG `keyed target assessed` | `outcome` | Same event: `outcome`, `refusal_kind`; once per assessment return. |
+| `tapscript::keyed_members` | DEBUG `keyed members bound` | `outcome` | Same event: `outcome`, `refusal_kind`; once per binding return; the typed refusal is returned. |
 | `tapscript::keyed_constructor` | DEBUG `keyed material construction finished` | `outcome` | Same event: `outcome`, `refusal_kind`, once per public construct return; exact typed refusal returned to caller. |
 | `tapscript::keyed_resources` | DEBUG `keyed resources projected` / `keyed weight evaluated` | `outcome`; arithmetic helpers have no independent event | Same message: `outcome`, `refusal_kind`; once per projection or weight return. |
 | `tapscript::keyed_bundle` | DEBUG `keyed bundle emitted` | `outcome`, `relation_count`, `runtime_clause_count`, `evidence_count` | DEBUG `keyed bundle refused`: `outcome`, `refusal_kind`; once per adapter return. |
@@ -93,7 +97,7 @@ The package inherits `tracing-subscriber` as a dev dependency and uses a package
 
 Test an accepted control and a subject one coordinate away that returns a typed refusal at `validate_program`, compact or live bundle emission, and the STATE nonce-search boundary. Each external call emits one owned event; each refused event is DEBUG with `refusal_kind` and no WARN or ERROR. A nested bundle-to-validator case asserts exactly one Tapscript event for the external call. Compare returned values, refusal variants, and produced bytes with and without the capture, and assert that event fields contain no script or witness bytes. Test code writes no process stream; deterministic observations become assertions.
 
-A source-table audit checks every literal returned by the five tracing refusal-name tables against the snake_case field vocabulary and pins standalone `a` segments. `StateConstructorRefusal::name()` remains a separate established hyphenated diagnostic vocabulary; tracing `refusal_kind` uses the snake_case variant name.
+A source-table audit checks every literal returned by the seven tracing refusal-name tables against the snake_case field vocabulary and pins standalone `a` segments. `StateConstructorRefusal::name()` remains a separate established hyphenated diagnostic vocabulary; tracing `refusal_kind` uses the snake_case variant name.
 
 Tapscript has no binary stdout contract to test. Executable owners use subprocesses to verify JSON stdout or explicit assets, empty stdout before failure, control records even with `RUST_LOG=off`, panic and TTY records, and one enabled INFO span close record. The process-global bootstrap, control route, panic hook, and actual stderr writer are not tested by installing a global subscriber in a library test. Ordinary harness tests remain outside ADR-010's executable scope; a harness-free program consumed by another program follows the executable contract.
 

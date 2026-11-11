@@ -85,7 +85,7 @@ pub fn keyed_resource_projection(
     result
 }
 
-fn project(
+pub(crate) fn project(
     target: &ReviewedElementsTapscriptDefinition,
     schedule: KeyedSchedule,
 ) -> Result<KeyedResourceProjection, TapscriptError> {

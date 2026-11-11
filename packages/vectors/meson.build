@@ -32,6 +32,7 @@ vectors_source_files = files(
   'src/keyed_funding_corpus.rs',
   'src/keyed_scaling.rs',
   'src/keyed_stack_model.rs',
+  'src/keyed_stack_model/members.rs',
   'src/keyed_scaling_corpus.rs',
   'src/keyed_continuation_corpus.rs',
   'src/keyed_continuation_native.rs',

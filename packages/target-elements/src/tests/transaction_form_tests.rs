@@ -384,3 +384,53 @@ fn whole_transaction_conservation_remains_the_external_evidence_role() {
         TargetEvidenceSubject::ConfidentialValues
     );
 }
+
+#[test]
+fn keyed_form_keeps_target_layers_separate_from_construction_preferences() {
+    use crate::transaction_form::{
+        KeyedConstructionChoice as C, KeyedFormTerm as T, reviewed_keyed_form,
+    };
+    let form = reviewed_keyed_form();
+    for term in [
+        T::ValueBalance,
+        T::ScriptPathCommitment,
+        T::SelectedLeafExecution,
+        T::PositiveExplicitSpendableValue,
+    ] {
+        assert_eq!(form.constraints()[&term], FormConstraint::ConsensusEnforced);
+    }
+    for term in [T::RelayFee, T::OutputDust] {
+        assert_eq!(form.constraints()[&term], FormConstraint::PolicyEnforced);
+    }
+    for term in [
+        T::ExplicitHandleValue,
+        T::FeeOutputPresence,
+        T::ConfidentialOutputs,
+        T::InputZeroPosition,
+        T::OutputCount,
+        T::EqualHandleAmounts,
+        T::EqualHandleAssets,
+        T::StateMetadata,
+        T::CreatorSignature,
+    ] {
+        assert_eq!(form.constraints()[&term], FormConstraint::Unconstrained);
+    }
+    assert_eq!(
+        form.constraints().keys().copied().collect::<BTreeSet<_>>(),
+        T::ALL.iter().copied().collect()
+    );
+    assert_eq!(
+        form.construction_choices(),
+        &[
+            C::PositiveExplicitPolicyAssetFunding,
+            C::ExplicitFeeOutput,
+            C::NoConfidentialOutputs
+        ]
+        .into_iter()
+        .collect()
+    );
+    assert_eq!(form.consensus(), FormAdmission::Admitted);
+    assert_eq!(form.relay(), FormAdmission::AdmittedUnderCondition);
+    assert_eq!(form.fee(), &reviewed_fee_output_contract());
+    assert_eq!(form.explicit_zero(), &reviewed_explicit_zero_value_rule());
+}

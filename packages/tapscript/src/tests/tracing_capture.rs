@@ -192,6 +192,16 @@ fn refusal_name_omits_payload() {
 #[test]
 fn all_tracing_refusal_names_are_snake_case_with_single_letter_words() {
     let tables = [
+        (
+            "KeyedMemberRefusal",
+            include_str!("../keyed_members.rs"),
+            14,
+        ),
+        (
+            "KeyedAssessmentRefusal",
+            include_str!("../keyed_assessment.rs"),
+            2,
+        ),
         ("TapscriptError", include_str!("../error.rs"), 21),
         ("BundleRefusal", include_str!("../bundle.rs"), 19),
         ("LiveBundleRefusal", include_str!("../live_bundle.rs"), 11),

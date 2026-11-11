@@ -412,3 +412,81 @@ fn keyed_bundle_and_direct_material_each_report_one_owned_completion() {
         },
     );
 }
+
+#[test]
+fn keyed_assessment_and_member_binding_report_one_owned_completion() {
+    run_isolated(
+        "tests::tracing_tests::keyed_assessment_and_member_binding_report_one_owned_completion",
+        || {
+            use crate::keyed_assessment::assess_keyed_bundle;
+            use crate::keyed_members::{KeyedMemberRefusal, bind_keyed_members};
+            let target = reviewed_target();
+            let (bundle, inputs, members) = crate::keyed_members::tests::context();
+            let baseline = assess_keyed_bundle(&target, &bundle);
+            let (observed, records) = capture(|| assess_keyed_bundle(&target, &bundle));
+            assert_eq!(observed, baseline);
+            assert!(observed.is_ok());
+            assert_eq!(
+                records
+                    .iter()
+                    .filter(|r| r.kind == "event" && r.target.starts_with("tapscript::"))
+                    .count(),
+                1
+            );
+            let events = owned_events(&records, "tapscript::keyed_assessment");
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].fields["outcome"], "completed");
+            assert!(!events[0].fields.contains_key("refusal_kind"));
+            assert_no_high_severity(&records);
+            for (offer, expected) in [
+                (&members[..], None),
+                (&members[..1], Some(KeyedMemberRefusal::MissingMember(2))),
+            ] {
+                let baseline = bind_keyed_members(&bundle, &inputs, offer);
+                let (observed, records) = capture(|| bind_keyed_members(&bundle, &inputs, offer));
+                assert_eq!(observed, baseline);
+                assert_eq!(
+                    records
+                        .iter()
+                        .filter(|r| r.kind == "event" && r.target.starts_with("tapscript::"))
+                        .count(),
+                    1
+                );
+                let events = owned_events(&records, "tapscript::keyed_members");
+                assert_eq!(events.len(), 1);
+                assert_eq!(events[0].level, tracing::Level::DEBUG);
+                assert_eq!(events[0].parent, Some("bind_keyed_members"));
+                if let Some(error) = expected {
+                    assert_eq!(observed, Err(error));
+                    assert_eq!(events[0].fields["outcome"], "refused");
+                    assert_eq!(events[0].fields["refusal_kind"], "missing_member");
+                } else {
+                    assert!(observed.is_ok());
+                    assert_eq!(events[0].fields["outcome"], "completed");
+                    assert!(!events[0].fields.contains_key("refusal_kind"));
+                }
+                assert_no_high_severity(&records);
+            }
+        },
+    );
+}
+
+#[test]
+fn keyed_capability_core_preserves_degraded_statuses() {
+    use crate::keyed_assessment::{KeyedAssessmentRefusal, assess_capabilities};
+    use target_elements::{ElementsCapability as C, StaticCapabilityStatus as S};
+    let target = reviewed_target();
+    let (bundle, _, _) = crate::keyed_members::tests::context();
+    let program = bundle.project().successor.program();
+    assert!(assess_capabilities(target.validated(), program).is_ok());
+    for status in [S::Incomplete, S::Unsupported] {
+        let subject = super::target_with_status(C::InputOutpointInspection, status);
+        assert_eq!(
+            assess_capabilities(&subject, program),
+            Err(KeyedAssessmentRefusal::Capability {
+                capability: C::InputOutpointInspection,
+                status: Some(status)
+            })
+        );
+    }
+}
