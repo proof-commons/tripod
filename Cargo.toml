@@ -46,7 +46,13 @@ vectors = { package = "tripod-vectors", path = "packages/vectors" }
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-# Reference-implementation oracles for testing: agreement with them is
+# Reference-implementation oracles and the production keyed curve adapter:
+# transaction's schema-1 public arithmetic uses the safe wrapper below with
+# std requested here; elements adds its features in a unified build. The
+# adapter takes no secret and uses a verification-only context.
+# Its agreement with the node is not independent evidence. First-party
+# conformance arithmetic remains the independent comparison oracle.
+# Agreement with the reference implementations is
 # conformance-to-target evidence, because they bind the same C library
 # the node vendors (the Wave-5 / Guide-11 independence analysis stands
 # — the first-party oracles keep the independence claim, and these
@@ -60,7 +66,7 @@ clap = { version = "4", features = ["derive"] }
 # (packages/target-elements/src/transaction_form.rs); the default
 # `json-contract` feature is not needed by an oracle role.
 elements = { version = "=0.27.0", default-features = false }
-secp256k1-zkp = "0.11"
+secp256k1-zkp = { version = "=0.11.2", default-features = false, features = ["std"] }
 nix = { version = "0", features = ["process", "signal", "fs", "term"] }
 num-bigint = "0.4"
 num-integer = "0.1"

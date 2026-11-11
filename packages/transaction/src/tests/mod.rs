@@ -65,7 +65,7 @@ mod state_signing_tests;
 mod state_support;
 mod state_view_tests;
 mod taproot_tests;
-mod trace_tests;
+pub mod trace_tests;
 
 use std::num::{NonZeroU8, NonZeroU32, NonZeroU64};
 use std::sync::LazyLock;

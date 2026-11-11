@@ -21,12 +21,12 @@ use crate::request::CompactAshRequest;
 use crate::taproot::{AshInstanceOrigin, OutputKeyParity, PinnedAshInstance};
 
 #[derive(Clone, Debug)]
-pub(super) struct TraceRecord {
-    kind: &'static str,
-    name: &'static str,
-    target: &'static str,
-    level: Level,
-    fields: BTreeMap<String, String>,
+pub struct TraceRecord {
+    pub kind: &'static str,
+    pub name: &'static str,
+    pub target: &'static str,
+    pub level: Level,
+    pub fields: BTreeMap<String, String>,
 }
 
 #[derive(Default)]
@@ -55,7 +55,7 @@ struct Capture(Arc<Mutex<Vec<TraceRecord>>>);
 
 static CAPTURE_INSTALL_LOCK: Mutex<()> = Mutex::new(());
 
-pub(super) fn run_isolated_capture_test(module_path: &str, test_name: &str) -> bool {
+pub fn run_isolated_capture_test(module_path: &str, test_name: &str) -> bool {
     const CHILD_MARKER: &str = "TRIPOD_TRANSACTION_CAPTURE_CHILD";
     if std::env::var_os(CHILD_MARKER).is_some() {
         return false;
@@ -132,7 +132,7 @@ where
     }
 }
 
-pub(super) fn capture<T>(run: impl FnOnce() -> T) -> (T, Vec<TraceRecord>) {
+pub fn capture<T>(run: impl FnOnce() -> T) -> (T, Vec<TraceRecord>) {
     let _install_guard = CAPTURE_INSTALL_LOCK.lock().expect("capture install lock");
     let layer = Capture::default();
     let subscriber = tracing_subscriber::registry().with(layer.clone());
@@ -144,7 +144,7 @@ pub(super) fn capture<T>(run: impl FnOnce() -> T) -> (T, Vec<TraceRecord>) {
     (result, records)
 }
 
-pub(super) fn trace_kind_table(source: &str) -> BTreeMap<String, String> {
+pub fn trace_kind_table(source: &str) -> BTreeMap<String, String> {
     let mut kinds = BTreeMap::new();
     let mut found_table = false;
     for implementation in source

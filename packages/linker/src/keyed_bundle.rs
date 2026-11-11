@@ -14,9 +14,12 @@ use target_elements::{OpcodeId, ReviewedElementsTapscriptDefinition};
 
 /// Immutable link. The only producer checks constructor and occurrence closure.
 ///
-/// ```compile_fail
-/// use linker::keyed_bundle::LinkedKeyedBundle;
-/// fn forge() -> LinkedKeyedBundle { LinkedKeyedBundle {} }
+/// ```compile_fail,E0451
+/// use linker::{keyed_bundle::LinkedKeyedBundle, keyed_reference::KeyedLinkClosure};
+/// use tapscript::keyed_bundle::KeyedEmissionBundle;
+/// fn forge(emission: KeyedEmissionBundle, closure: KeyedLinkClosure) -> LinkedKeyedBundle {
+///     LinkedKeyedBundle { emission, closure, bytes: Vec::new() }
+/// }
 /// ```
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LinkedKeyedBundle {

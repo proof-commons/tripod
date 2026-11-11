@@ -402,6 +402,7 @@ vectors_excluded_files = vectors_fixture_files + files(
   'tests/maturity_native.rs',
   'tests/keyed_birth/mod.rs',
   'tests/keyed_constructor/mod.rs',
+  'tests/keyed_commitment/mod.rs',
   'tests/keyed_native/mod.rs',
   'tests/keyed_cost/mod.rs',
   'tests/keyed_funding/mod.rs',

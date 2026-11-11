@@ -6,6 +6,7 @@
 pub mod common;
 
 mod keyed_birth;
+mod keyed_commitment;
 mod keyed_constructor;
 mod keyed_continuation;
 mod keyed_cost;

@@ -36,6 +36,8 @@ name = "transaction"
 # block carries the merkle path of the committed tree, and those path
 # elements are tagged SHA-256 hashes of the linked programs. Without it
 # this crate could state a witness layout but not a witness.
+# Keyed commitment adds the first production C-backed arithmetic edge here,
+# through the pinned safe wrapper; conformance arithmetic remains a test oracle.
 [dependencies]
 tracing = { workspace = true }
 # Architecture supplies classification identities and each claimed family's asset.
@@ -44,6 +46,10 @@ linker = { workspace = true }
 # Realization owns the membership witness emitted after deployment authorization.
 realization = { workspace = true }
 sha2 = { workspace = true }
+# Public keyed commitment arithmetic only; safe wrapper, no direct raw FFI edge.
+# This edge requests std; elements adds features in a unified workspace build.
+# The adapter accepts no secret and uses a verification-only context.
+secp256k1-zkp = { workspace = true }
 tapscript = { workspace = true }
 target-elements = { workspace = true }
 

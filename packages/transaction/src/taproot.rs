@@ -2,7 +2,7 @@
 //!
 //! # What this discharges, and what it does not
 //!
-//! The linker left `TaprootOutputKeyUndischarged`: it computed neither
+//! The compact-ASH linker left `TaprootOutputKeyUndischarged`: it computed neither
 //! the merkle root, nor the tweak, nor the output key. This module
 //! discharges the first of those three and deliberately not the other
 //! two.
@@ -22,9 +22,9 @@
 //! "exact target asset and program data" rather than asking it to
 //! derive one. A builder that recomputed the output key would not be
 //! obtaining the program — it would be *checking* the program it was
-//! given, and that check needs curve arithmetic this crate does not
-//! own and must not borrow from the independent oracle it is checked
-//! against.
+//! given. That compact-ASH path retains its pin obligation; the separate
+//! keyed path uses the production adapter in [`crate::keyed_curve`] and never
+//! borrows the independent oracle it is checked against.
 //!
 //! So the program is pinned, the pin's own status is a typed
 //! obligation, and the one bit the pin cannot be derived from — the
@@ -62,6 +62,12 @@ pub type Digest32 = [u8; DIGEST_BYTES];
 /// Provenance: `HASHER_TAPLEAF_ELEMENTS = TaggedHash("TapLeaf/elements")`
 /// in `src/script/interpreter.cpp`, consumed by `ComputeTapleafHash`.
 pub const TAP_LEAF_TAG: &str = "TapLeaf/elements";
+
+/// The target's x-only output-key tweak tag.
+///
+/// Provenance: `HASHER_TAPTWEAK_ELEMENTS = TaggedHash("TapTweak/elements")`
+/// in `src/script/interpreter.cpp`.
+pub const TAP_TWEAK_TAG: &str = "TapTweak/elements";
 
 /// The tag the target hashes a branch under.
 ///

@@ -31,6 +31,8 @@ pub mod abi;
 pub mod bytes;
 pub mod construct;
 pub mod error;
+pub mod keyed_curve;
+pub mod keyed_taproot;
 pub mod live_abi;
 pub mod live_accepted;
 pub mod live_census;
