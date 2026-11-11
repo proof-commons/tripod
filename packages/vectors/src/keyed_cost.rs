@@ -280,11 +280,12 @@ pub fn cost_packet() -> Result<KeyedCostPacket, CostRefusal> {
         .to_vec();
     instructions.extend_from_slice(continuation_program.instructions());
     let keyfree = TapscriptProgram::new(instructions).map_err(|_| CostRefusal::Construction)?;
-    let keyed_program = tapscript::keyed_constructor::keyed_leaf_program(
-        &target,
+    let material = tapscript::keyed_constructor::KeyedLeafRecipe::from(
         tapscript::keyed_constructor::KeyedSemanticKey::new(descriptor.semantic_key),
     )
+    .construct(&target)
     .map_err(|_| CostRefusal::Construction)?;
+    let keyed_program = material.program();
     if keyed_program.encode(&target) != descriptor.leaf_bytes {
         return Err(CostRefusal::Construction);
     }
@@ -314,7 +315,7 @@ pub fn cost_packet() -> Result<KeyedCostPacket, CostRefusal> {
         ("birth", &birth_program),
         ("continuation", &continuation_program),
         ("keyfree-composed", &keyfree),
-        ("keyed", &keyed_program),
+        ("keyed", keyed_program),
     ]
     .into_iter()
     .map(|(name, program)| script_path_cost(&target, name, program))
@@ -328,7 +329,7 @@ pub fn cost_packet() -> Result<KeyedCostPacket, CostRefusal> {
         birth: static_cost(&target, &birth_program)?,
         continuation: static_cost(&target, &continuation_program)?,
         keyfree_composed: static_cost(&target, &keyfree)?,
-        keyed: static_cost(&target, &keyed_program)?,
+        keyed: static_cost(&target, keyed_program)?,
         constructor: ConstructorCost {
             key_commitment_script_bytes: 34,
             repeated_leaf_bytes: descriptor.leaf_bytes.len(),

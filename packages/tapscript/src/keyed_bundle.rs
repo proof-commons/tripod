@@ -2,7 +2,7 @@
 //!
 //! No search, member expansion, evidence admission or transaction construction
 //! occurs here. SOURCE's successor leaf is construction material, not a runtime
-//! assignment. Concrete resource and constructor closure are later boundaries.
+//! assignment. Transaction commitment remains a downstream boundary.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -18,26 +18,7 @@ use target_elements::ReviewedElementsTapscriptDefinition;
 
 use crate::{TapscriptError, TapscriptProgram};
 
-/// Public semantic bytes for the fixed key/drop, birth, continuation, true recipe.
-/// This is not a committed output or an admitted control block.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct KeyedLeafRecipe {
-    key: [u8; 32],
-}
-
-impl KeyedLeafRecipe {
-    /// Every 32-byte public semantic key is allowed; no creator secret is needed.
-    #[must_use]
-    pub const fn new(key: [u8; 32]) -> Self {
-        Self { key }
-    }
-
-    /// Exact public bytes committed by the successor leaf.
-    #[must_use]
-    pub const fn key(&self) -> &[u8; 32] {
-        &self.key
-    }
-}
+pub use crate::keyed_constructor::KeyedLeafRecipe;
 
 /// An offer to select existing published candidates, never a new plan.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -62,9 +43,8 @@ pub struct KeyedBundleProjection {
     pub selected: ProofPlan,
     /// Unresolved evidence premises, including SOURCE recognition and reading.
     pub evidence: BTreeSet<EvidenceObligation>,
-    pub recipe: KeyedLeafRecipe,
     /// Construction material even when SOURCE has no runtime assignment.
-    pub successor_leaf: TapscriptProgram,
+    pub successor: crate::keyed_constructor::KeyedConstructionMaterial,
     /// One fragment per runtime relation; member instantiation is deferred.
     pub fragments: BTreeMap<KeyedRelationId, TapscriptProgram>,
 }
@@ -212,15 +192,14 @@ fn emit(
     let selected = restrict_placements(proof, &selection.placements)?;
     let fragments = lower_selected(target, proof, &selected)?;
     let evidence = proof.requirements.values().flatten().cloned().collect();
-    let successor_leaf = crate::keyed_pattern::compose_keyed_leaf(target, recipe.key())
+    let successor = crate::keyed_constructor::construct_material(target, recipe)
         .map_err(KeyedBundleRefusal::Fragment)?;
     Ok(KeyedEmissionBundle {
         projection: KeyedBundleProjection {
             selection,
             selected,
             evidence,
-            recipe,
-            successor_leaf,
+            successor,
             fragments,
         },
     })
@@ -336,10 +315,12 @@ fn lower_rows(
             return Err(KeyedBundleRefusal::RelationMismatch(*id));
         }
         let fragment = match row.declaration {
-            KeyedRelation::BornFirst => Some(crate::keyed_pattern::born_first_fragment(target)),
-            KeyedRelation::ContinueFirst => {
-                Some(crate::keyed_pattern::continue_first_fragment(target))
+            KeyedRelation::BornFirst => {
+                Some(crate::keyed_pattern::born_first_fragment_untraced(target))
             }
+            KeyedRelation::ContinueFirst => Some(
+                crate::keyed_pattern::continue_first_fragment_untraced(target),
+            ),
             KeyedRelation::HandleFamily { .. }
             | KeyedRelation::SourceClassification
             | KeyedRelation::MembershipReading { .. } => None,

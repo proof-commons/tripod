@@ -332,3 +332,83 @@ fn live_bundle_preserves_candidate_bytes_and_reports_one_owned_event() {
         },
     );
 }
+
+#[test]
+fn keyed_bundle_and_direct_material_each_report_one_owned_completion() {
+    run_isolated(
+        "tests::tracing_tests::keyed_bundle_and_direct_material_each_report_one_owned_completion",
+        || {
+            use crate::keyed_bundle::{KeyedBundleSelection, emit_keyed_bundle};
+            use crate::keyed_constructor::KeyedLeafRecipe;
+            use architecture::{
+                keyed::KeyedManifest,
+                semantic::{KeyedOperationId, SemanticOperationId},
+            };
+            use compiler::{
+                AnalysisPolicy, ProofSearchLimits, bind_input,
+                keyed_plan::{PlacementSearchLimits, plan},
+            };
+            let target = reviewed_target();
+            let manifest = KeyedManifest::contract().unwrap();
+            let source = realization::keyed::KeyedRealizationDraft::derive(&manifest)
+                .unwrap()
+                .validate(&manifest)
+                .unwrap();
+            let limit = NonZeroU64::new(1_000_000).unwrap();
+            let input = bind_input(
+                &manifest,
+                source,
+                vec![
+                    SemanticOperationId::Keyed(KeyedOperationId::Source),
+                    SemanticOperationId::Keyed(KeyedOperationId::Merge),
+                ],
+                AnalysisPolicy::strict(ProofSearchLimits::new(limit, limit)),
+            )
+            .unwrap();
+            let plan = plan(&input, PlacementSearchLimits::new(limit, limit)).unwrap();
+            let selection = KeyedBundleSelection {
+                binding: plan.project().binding.clone(),
+                scope: plan.project().scope.clone(),
+                proof: 0,
+                placements: plan.project().plans[0]
+                    .operations
+                    .keys()
+                    .map(|id| (*id, 0))
+                    .collect(),
+            };
+            let recipe = KeyedLeafRecipe::new([42; 32]);
+            let baseline = emit_keyed_bundle(&target, &plan, selection.clone(), recipe);
+            let (observed, records) =
+                capture(|| emit_keyed_bundle(&target, &plan, selection, recipe));
+            assert_eq!(observed, baseline);
+            assert!(observed.is_ok());
+            let events = owned_events(&records, "tapscript::keyed_bundle");
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].fields["outcome"], "completed");
+            assert_eq!(
+                records
+                    .iter()
+                    .filter(|r| r.kind == "event" && r.target.starts_with("tapscript::"))
+                    .count(),
+                1
+            );
+            let baseline = recipe.construct(&target);
+            let (observed, records) = capture(|| recipe.construct(&target));
+            assert_eq!(observed, baseline);
+            assert!(observed.is_ok());
+            let events = owned_events(&records, "tapscript::keyed_constructor");
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].level, tracing::Level::DEBUG);
+            assert_eq!(events[0].parent, Some("construct_keyed_material"));
+            assert_eq!(events[0].fields["outcome"], "completed");
+            assert_eq!(
+                records
+                    .iter()
+                    .filter(|r| r.kind == "event" && r.target.starts_with("tapscript::"))
+                    .count(),
+                1
+            );
+            assert_no_high_severity(&records);
+        },
+    );
+}

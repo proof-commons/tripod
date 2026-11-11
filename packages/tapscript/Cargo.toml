@@ -12,11 +12,6 @@ version.workspace = true
 [lib]
 name = "tapscript"
 
-[features]
-default = []
-# Provisional keyed construction capability; conformance opts in explicitly.
-keyed-constructor = []
-
 # Assessment consumes compiler-carried identifiers. The STATE constructor
 # instead commits canonical bytes that only realization's codec produces;
 # sha2 hashes those bytes with the target's domain-separated tags.

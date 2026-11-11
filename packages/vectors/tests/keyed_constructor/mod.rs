@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::process::Command;
 
 use tapscript::keyed_constructor::{
-    KeyedCurveCapability, KeyedSemanticKey, KeyedTweakOutcome, keyed_leaf_program,
+    KeyedCurveCapability, KeyedLeafRecipe, KeyedSemanticKey, KeyedTweakOutcome,
 };
 use tapscript::{
     AbstractLimits, AbstractStackState, TapscriptProgram, program_stack_profile, validate_program,
@@ -50,7 +50,10 @@ fn predecessor(d: &KeyedConstructorDescriptor) -> TargetTransaction {
 #[test]
 fn canonical_key_literal_is_data_before_both_clauses() {
     let target = reviewed_elements_tapscript().expect("target");
-    let program = keyed_leaf_program(&target, KeyedSemanticKey::new(K)).expect("leaf");
+    let material = KeyedLeafRecipe::from(KeyedSemanticKey::new(K))
+        .construct(&target)
+        .expect("leaf");
+    let program = material.program();
     let bytes = program.encode(&target);
     assert_eq!(bytes[0], 32);
     assert_eq!(&bytes[1..33], K);
@@ -68,7 +71,7 @@ fn canonical_key_literal_is_data_before_both_clauses() {
     let empty = AbstractStackState::from_main(vec![]);
     let result = validate_program(
         &target,
-        &program,
+        program,
         &empty,
         AbstractLimits::for_target(&target),
     )
@@ -94,13 +97,15 @@ fn canonical_key_literal_is_data_before_both_clauses() {
     assert!(result.signature_forms().is_empty());
     let profile = program_stack_profile(
         &target,
-        &program,
+        program,
         &empty,
         AbstractLimits::for_target(&target),
     );
     assert_eq!((profile.peak_main(), profile.peak_alternate()), (4, 0));
     assert!(
-        keyed_leaf_program(&target, KeyedSemanticKey::new([0; 32])).is_ok(),
+        KeyedLeafRecipe::from(KeyedSemanticKey::new([0; 32]))
+            .construct(&target)
+            .is_ok(),
         "no nonzero or signing-key law"
     );
 }
@@ -217,7 +222,17 @@ fn complete_path_census_authenticates_each_synthetic_predecessor() {
         assert_eq!(&d.control.bytes[1..], d.internal_key);
     }
     let k = descriptor(K);
-    let foreign = predecessor(&descriptor(L));
+    let l = descriptor(L);
+    let foreign = predecessor(&l);
+    assert_eq!(
+        authenticate_keyed_predecessor(
+            &target,
+            &l,
+            foreign.outputs()[0].program(),
+            &PublicKeyedCurve
+        ),
+        Ok(())
+    );
     assert_eq!(
         authenticate_keyed_predecessor(
             &target,
@@ -267,10 +282,14 @@ fn altered_descriptor_fields_do_not_pass_public_reconstruction() {
     let mut x = d.clone();
     x.control.siblings.push(d.leaf_hash);
     mutants.push(x);
-    let mut x = d;
+    let mut x = d.clone();
     x.tree = FixtureTapTree::leaf(vec![0x51]);
     mutants.push(x);
     for mutant in mutants {
+        assert_eq!(
+            reconstruct_keyed(&target, &d, &PublicKeyedCurve),
+            Ok(d.clone())
+        );
         assert_eq!(
             reconstruct_keyed(&target, &mutant, &PublicKeyedCurve),
             Err(KeyedConstructorRefusal::DescriptorMismatch)
@@ -305,6 +324,10 @@ fn curve_refusals_are_terminal_without_rekeying_or_nonce_search() {
             KeyedConstructorRefusal::TweakedPointIsIdentity,
         ),
     ] {
+        assert_eq!(
+            construct_keyed(&target, KeyedSemanticKey::new(K), &PublicKeyedCurve),
+            Ok(descriptor(K))
+        );
         assert_eq!(
             construct_keyed(&target, KeyedSemanticKey::new(K), &RefusingCurve(outcome)),
             Err(refusal)
@@ -396,4 +419,92 @@ fn fresh_process_reconstruction_child() {
         reconstruct_keyed(&target, &offered, &PublicKeyedCurve).expect("no creator state");
     let output = std::env::var_os("TRIPOD_KEYED_DESCRIPTOR_OUTPUT").expect("output destination");
     std::fs::write(output, serde_json::to_vec(&rebuilt).expect("public output")).expect("output");
+}
+
+#[test]
+fn stable_material_reconstructs_program_and_control_with_existing_commitment_helpers() {
+    use tapscript::keyed_constructor::KeyedInternalKeyDerivation as Derivation;
+    let target = reviewed_elements_tapscript().expect("target");
+    for key in [K, L] {
+        let material = KeyedLeafRecipe::new(key)
+            .construct(&target)
+            .expect("sole leaf");
+        let d = descriptor(key);
+        assert_eq!(material.recipe().schema(), d.schema);
+        assert_eq!(
+            material.recipe().internal_key_derivation(),
+            Derivation::Sha256UncompressedGenerator
+        );
+        let bytes = material.program().encode(&target);
+        assert_eq!(bytes, d.leaf_bytes);
+        let root = transaction::taproot::leaf_hash(material.leaf_version(), &bytes);
+        assert_eq!(root, d.merkle_root);
+        let internal = sha256(&generator().uncompressed_bytes());
+        let tweak =
+            transaction::taproot::tagged_hash("TapTweak/elements", &[internal, root].concat());
+        assert_eq!(
+            tweak,
+            target_elements_conformance::constructor::tweak(&internal, &root)
+        );
+        let (output, parity) =
+            target_elements_conformance::constructor::tweaked_key(&internal, &tweak)
+                .expect("finite point");
+        let program = transaction::taproot::witness_program_script(&target, 1, &output)
+            .expect("reviewed output form");
+        assert_eq!(program, d.output_program);
+        let mut control = vec![material.leaf_version().get() | parity];
+        control.extend(internal);
+        assert_eq!(material.siblings(), [[0_u8; 32]; 0]);
+        assert_eq!(control, d.control.bytes);
+        assert_eq!(
+            authenticate_keyed_predecessor(&target, &d, &program, &PublicKeyedCurve),
+            Ok(())
+        );
+        assert_eq!(
+            authenticate_keyed_predecessor(&target, &d, &[], &PublicKeyedCurve),
+            Err(KeyedConstructorRefusal::PredecessorCommitment)
+        );
+    }
+}
+
+struct UnliftableCurve;
+impl KeyedCurveCapability for UnliftableCurve {
+    fn internal_key_is_a_point(&self, _: &[u8; 32]) -> bool {
+        false
+    }
+    fn output_key(&self, _: &[u8; 32], _: &[u8; 32]) -> KeyedTweakOutcome {
+        panic!("unliftable internal key must refuse before tweak")
+    }
+}
+
+#[test]
+fn unliftable_internal_key_refuses_before_the_supplied_tweak() {
+    let target = reviewed_elements_tapscript().expect("target");
+    assert_eq!(
+        construct_keyed(&target, KeyedSemanticKey::new(K), &PublicKeyedCurve),
+        Ok(descriptor(K))
+    );
+    assert_eq!(
+        construct_keyed(&target, KeyedSemanticKey::new(K), &UnliftableCurve),
+        Err(KeyedConstructorRefusal::InternalKeyNotAPoint)
+    );
+}
+
+#[test]
+fn foreign_derivation_is_refused_at_descriptor_decoding() {
+    let d = descriptor(K);
+    let control = serde_json::to_value(&d).expect("public descriptor");
+    assert_eq!(
+        serde_json::from_value::<KeyedConstructorDescriptor>(control.clone()).expect("control"),
+        d
+    );
+    let mut subject = control;
+    subject["internal_key_derivation"] = serde_json::Value::String("ForeignDerivation".into());
+    let error =
+        serde_json::from_value::<KeyedConstructorDescriptor>(subject).expect_err("one policy");
+    assert!(
+        error
+            .to_string()
+            .contains("unknown variant `ForeignDerivation`")
+    );
 }

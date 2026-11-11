@@ -15,7 +15,7 @@ use target_elements::{EncodingClass, OpcodeId, ReviewedElementsTapscriptDefiniti
 
 use crate::{StackItem, TapscriptError, TapscriptInstruction, TapscriptProgram};
 
-// Shared composition for the provisional constructor and the plan adapter.
+// Shared composition for the fixed constructor and the plan adapter.
 // Keep the instruction order and bytes identical to the admitted recipe.
 pub(crate) fn compose_keyed_leaf(
     target: &ReviewedElementsTapscriptDefinition,
@@ -25,8 +25,8 @@ pub(crate) fn compose_keyed_leaf(
         TapscriptInstruction::Push(StackItem::new(target, key.to_vec())?),
         TapscriptInstruction::Opcode(OpcodeId::Drop),
     ];
-    instructions.extend_from_slice(born_first_fragment(target)?.instructions());
-    instructions.extend_from_slice(continue_first_fragment(target)?.instructions());
+    instructions.extend_from_slice(born_first_fragment_untraced(target)?.instructions());
+    instructions.extend_from_slice(continue_first_fragment_untraced(target)?.instructions());
     instructions.push(TapscriptInstruction::Push(StackItem::script_number(
         target, 1,
     )?));
@@ -45,17 +45,7 @@ pub fn born_first_fragment(
 ) -> Result<TapscriptProgram, TapscriptError> {
     let span = tracing::debug_span!(target: "tapscript::keyed_pattern", "born_first_fragment");
     let _entered = span.enter();
-    let result =
-        StackItem::encoded(target, EncodingClass::OutPointIndex, vec![0; 4]).and_then(|zero| {
-            TapscriptProgram::new(vec![
-                TapscriptInstruction::Opcode(OpcodeId::PushCurrentInputIndex),
-                TapscriptInstruction::Opcode(OpcodeId::InspectInputOutpoint),
-                TapscriptInstruction::Opcode(OpcodeId::Drop),
-                TapscriptInstruction::Push(zero),
-                TapscriptInstruction::Opcode(OpcodeId::EqualVerify),
-                TapscriptInstruction::Opcode(OpcodeId::Drop),
-            ])
-        });
+    let result = born_first_fragment_untraced(target);
     match &result {
         Ok(_) => tracing::debug!(
             target: "tapscript::keyed_pattern",
@@ -86,7 +76,36 @@ pub fn continue_first_fragment(
 ) -> Result<TapscriptProgram, TapscriptError> {
     let span = tracing::debug_span!(target: "tapscript::keyed_pattern", "continue_first_fragment");
     let _entered = span.enter();
-    let result = StackItem::script_number(target, 0).and_then(|zero| {
+    let result = continue_first_fragment_untraced(target);
+    match &result {
+        Ok(_) => tracing::debug!(target: "tapscript::keyed_pattern", outcome = "completed",
+            instruction_count = 7_u64, "continuation fragment constructed"),
+        Err(error) => tracing::debug!(target: "tapscript::keyed_pattern", outcome = "refused",
+            refusal_kind = error.refusal_kind(), "continuation fragment refused"),
+    }
+    result
+}
+
+// Same-crate composition owns its completion event at the outer boundary.
+pub(crate) fn born_first_fragment_untraced(
+    target: &ReviewedElementsTapscriptDefinition,
+) -> Result<TapscriptProgram, TapscriptError> {
+    StackItem::encoded(target, EncodingClass::OutPointIndex, vec![0; 4]).and_then(|zero| {
+        TapscriptProgram::new(vec![
+            TapscriptInstruction::Opcode(OpcodeId::PushCurrentInputIndex),
+            TapscriptInstruction::Opcode(OpcodeId::InspectInputOutpoint),
+            TapscriptInstruction::Opcode(OpcodeId::Drop),
+            TapscriptInstruction::Push(zero),
+            TapscriptInstruction::Opcode(OpcodeId::EqualVerify),
+            TapscriptInstruction::Opcode(OpcodeId::Drop),
+        ])
+    })
+}
+
+pub(crate) fn continue_first_fragment_untraced(
+    target: &ReviewedElementsTapscriptDefinition,
+) -> Result<TapscriptProgram, TapscriptError> {
+    StackItem::script_number(target, 0).and_then(|zero| {
         TapscriptProgram::new(vec![
             TapscriptInstruction::Opcode(OpcodeId::PushCurrentInputIndex),
             TapscriptInstruction::Opcode(OpcodeId::InspectInputScriptPubKey),
@@ -96,12 +115,5 @@ pub fn continue_first_fragment(
             TapscriptInstruction::Opcode(OpcodeId::EqualVerify),
             TapscriptInstruction::Opcode(OpcodeId::EqualVerify),
         ])
-    });
-    match &result {
-        Ok(_) => tracing::debug!(target: "tapscript::keyed_pattern", outcome = "completed",
-            instruction_count = 7_u64, "continuation fragment constructed"),
-        Err(error) => tracing::debug!(target: "tapscript::keyed_pattern", outcome = "refused",
-            refusal_kind = error.refusal_kind(), "continuation fragment refused"),
-    }
-    result
+    })
 }

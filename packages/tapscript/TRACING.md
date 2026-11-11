@@ -38,6 +38,7 @@ Every target is an explicit literal using the library crate stem and owning modu
 
 | Span name | Target | Level | Entry fields (type) | Duration measured |
 |---|---|---|---|---|
+| `construct_keyed_material` | `tapscript::keyed_constructor` | DEBUG | none | Direct public recipe construction; nested bundle emission uses the untraced material core. |
 | `keyed_resource_projection` | `tapscript::keyed_resources` | DEBUG | none | Fixed grammar resource and stack projection. |
 | `keyed_transaction_weight` | `tapscript::keyed_resources` | DEBUG | `member_count: u64` | Checked serialization arithmetic, no admission. |
 | `emit_keyed_bundle` | `tapscript::keyed_bundle` | DEBUG | `operation_count: u64`, `proof_index: u64` | Checked selection, retained relation validation and keyed fragment composition; no proof search or concrete member execution. |
@@ -58,6 +59,7 @@ Each instrumented public operation emits one completion event inside its span wh
 
 | Operation target | Completed event and level | Completed fields (all counts `u64`) | Refused event and fields |
 |---|---|---|---|
+| `tapscript::keyed_constructor` | DEBUG `keyed material construction finished` | `outcome` | Same event: `outcome`, `refusal_kind`, once per public construct return; exact typed refusal returned to caller. |
 | `tapscript::keyed_resources` | DEBUG `keyed resources projected` / `keyed weight evaluated` | `outcome`; arithmetic helpers have no independent event | Same message: `outcome`, `refusal_kind`; once per projection or weight return. |
 | `tapscript::keyed_bundle` | DEBUG `keyed bundle emitted` | `outcome`, `relation_count`, `runtime_clause_count`, `evidence_count` | DEBUG `keyed bundle refused`: `outcome`, `refusal_kind`; once per adapter return. |
 | `tapscript::stack` | DEBUG `program validation completed` | `outcome`, `visited_state_count`, `success_path_count`, `failure_path_count`, `abort_path_count` | DEBUG `program validation refused`: `outcome`, `refusal_kind`, `visited_state_count`; add no partial result. |

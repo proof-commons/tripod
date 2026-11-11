@@ -78,7 +78,7 @@ fn default_consumer_retains_three_scopes_and_exact_fragment_bytes() {
             0x75, 0xcd, 0xc7, 0x75, 4, 0, 0, 0, 0, 0x88, 0x75, 0xcd, 0xca, 0, 0xd1, 0x7b, 0x88,
             0x88, 0x51,
         ]);
-        assert_eq!(view.successor_leaf.encode(&target), expected);
+        assert_eq!(view.successor.program().encode(&target), expected);
         for (id, fragment) in &view.fragments {
             use realization::relation::KeyedRelationKind;
             let bytes: &[u8] = match id.kind {
@@ -245,4 +245,44 @@ fn sealed_surface(source: &str) -> bool {
         }
     }
     true
+}
+
+#[test]
+fn default_recipe_retains_complete_sole_leaf_construction_material() {
+    use tapscript::keyed_constructor::{KeyedInternalKeyDerivation, KeyedSemanticKey};
+    let target = target_elements::reviewed_elements_tapscript().expect("target");
+    for key in [[0; 32], [42; 32], [43; 32]] {
+        let recipe = KeyedLeafRecipe::new(key);
+        let material = recipe.construct(&target).expect("material");
+        assert_eq!(recipe.schema(), 1);
+        assert_eq!(recipe.key(), KeyedSemanticKey::new(key).bytes());
+        assert_eq!(recipe.semantic_key(), KeyedSemanticKey::new(key));
+        assert_eq!(recipe, KeyedLeafRecipe::from(KeyedSemanticKey::new(key)));
+        assert_eq!(
+            recipe.internal_key_derivation(),
+            KeyedInternalKeyDerivation::Sha256UncompressedGenerator
+        );
+        assert_eq!(material.recipe(), &recipe);
+        assert_eq!(material.leaf_version(), target.definition().leaf_version());
+        assert_eq!(material.siblings(), [[0_u8; 32]; 0]);
+        assert_eq!(
+            material,
+            KeyedLeafRecipe::new(key)
+                .construct(&target)
+                .expect("fresh material")
+        );
+        let source = fixture(vec![K::Source]);
+        let bundle =
+            emit_keyed_bundle(&target, &source, selection(&source), recipe).expect("SOURCE");
+        assert_eq!(bundle.project().successor, material);
+        assert!(bundle.project().fragments.is_empty());
+        assert_eq!(bundle.project().evidence.len(), 4);
+    }
+    assert!(
+        !include_str!("../Cargo.toml")
+            .lines()
+            .filter(|line| !line.trim_start().starts_with('#'))
+            .any(|line| line.trim_start().starts_with("keyed-constructor ="))
+    );
+    assert!(!include_str!("../src/lib.rs").contains("keyed-constructor"));
 }

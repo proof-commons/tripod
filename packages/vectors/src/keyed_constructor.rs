@@ -13,7 +13,7 @@
 
 use serde::{Deserialize, Serialize};
 use tapscript::keyed_constructor::{
-    KeyedCurveCapability, KeyedSemanticKey, KeyedTweakOutcome, keyed_leaf_program,
+    KeyedCurveCapability, KeyedLeafRecipe, KeyedSemanticKey, KeyedTweakOutcome,
 };
 use target_elements::ReviewedElementsTapscriptDefinition;
 use target_elements_conformance::constructor::curve::{generator, lift_x};
@@ -143,16 +143,26 @@ fn construct(
     if !curve.internal_key_is_a_point(&internal_key) {
         return Err(KeyedConstructorRefusal::InternalKeyNotAPoint);
     }
-    let leaf_bytes = keyed_leaf_program(target, key)
-        .map_err(|_| KeyedConstructorRefusal::LeafConstruction)?
-        .encode(target);
-    let version = target.definition().leaf_version();
+    let material = KeyedLeafRecipe::from(key)
+        .construct(target)
+        .map_err(|_| KeyedConstructorRefusal::LeafConstruction)?;
+    let internal_key_derivation = match material.recipe().internal_key_derivation() {
+        tapscript::keyed_constructor::KeyedInternalKeyDerivation::Sha256UncompressedGenerator => {
+            KeyedInternalKeyDerivation::Sha256UncompressedGenerator
+        }
+        _ => return Err(KeyedConstructorRefusal::InternalKeyPolicy),
+    };
+    let leaf_bytes = material.program().encode(target);
+    let version = material.leaf_version();
     let tree = FixtureTapTree::leaf_of_version(version.get(), leaf_bytes.clone());
     let leaf_hash = leaf_hash(version, &leaf_bytes);
     let merkle_root = tree.node_hash();
     let siblings = tree
         .path_to(&leaf_hash)
         .map_err(|_| KeyedConstructorRefusal::LeafCensus)?;
+    if siblings != material.siblings() {
+        return Err(KeyedConstructorRefusal::LeafCensus);
+    }
     let (output_key, parity) = match curve.output_key(&internal_key, &merkle_root) {
         KeyedTweakOutcome::OutputKey { key, parity } => (key, parity),
         KeyedTweakOutcome::InternalKeyNotAPoint => {
@@ -167,11 +177,11 @@ fn construct(
     };
     let bytes = control_block(version, u8::from(parity), &internal_key, &siblings);
     Ok(KeyedConstructorDescriptor {
-        schema: 1,
+        schema: material.recipe().schema(),
         semantic_key: *key.bytes(),
         leaf_bytes,
         leaf_version: version.get(),
-        internal_key_derivation: KeyedInternalKeyDerivation::Sha256UncompressedGenerator,
+        internal_key_derivation,
         internal_key,
         tree,
         leaf_hash,
