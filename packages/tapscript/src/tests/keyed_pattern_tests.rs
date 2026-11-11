@@ -97,6 +97,7 @@ fn every_birth_prefix_has_the_reviewed_stack_and_failure_sets() {
         assert_eq!(result.success(), &success(shape));
         assert_eq!(result.nonaborting_failure(), &BTreeSet::new());
         assert_eq!(result.aborts(), &expected_aborts);
+        assert!(result.signature_forms().is_empty());
     }
 }
 
@@ -281,6 +282,7 @@ fn every_continuation_prefix_has_exact_stack_and_failure_sets() {
         );
         assert_eq!(result.nonaborting_failure(), &BTreeSet::new());
         assert_eq!(result.aborts(), &expected_aborts, "prefix {length}");
+        assert!(result.signature_forms().is_empty());
     }
 }
 
@@ -378,4 +380,82 @@ fn wrong_successor_index_needs_native_subjects_to_decide_continuation() {
     let mutant = TapscriptProgram::new(instructions).expect("mutant");
     assert_ne!(mutant.encode(&target), continuation().encode(&target));
     assert_eq!(execute(&mutant), execute(&continuation()));
+}
+
+#[test]
+fn every_key_committing_leaf_prefix_has_exact_stacks_and_failures() {
+    let target = reviewed_target();
+    let key = [0x42; 32];
+    let program = crate::keyed_pattern::compose_keyed_leaf(&target, &key).expect("leaf");
+    // Independent grammar: push32 key DROP; birth; continuation; TRUE.
+    let mut grammar = vec![32];
+    grammar.extend_from_slice(&key);
+    grammar.extend_from_slice(&[
+        0x75, 0xcd, 0xc7, 0x75, 4, 0, 0, 0, 0, 0x88, 0x75, 0xcd, 0xca, 0, 0xd1, 0x7b, 0x88, 0x88,
+        0x51,
+    ]);
+    assert_eq!(program.encode(&target), grammar);
+    assert_eq!(grammar.len(), 52);
+    for length in 0..=16 {
+        let result = execute(
+            &TapscriptProgram::new(program.instructions()[..length].to_vec()).expect("prefix"),
+        );
+        let expected = match length {
+            0 | 2 => execute(&TapscriptProgram::new(vec![]).expect("empty")),
+            1 => execute(
+                &TapscriptProgram::new(vec![program.instructions()[0].clone()]).expect("key"),
+            ),
+            3..=8 => execute(
+                &TapscriptProgram::new(fragment().instructions()[..length - 2].to_vec())
+                    .expect("birth prefix"),
+            ),
+            9..=15 => {
+                let result = execute(
+                    &TapscriptProgram::new(continuation().instructions()[..length - 8].to_vec())
+                        .expect("continuation prefix"),
+                );
+                assert_eq!(result.success(), &continuation_shapes(length - 8));
+                result
+            }
+            16 => execute(
+                &TapscriptProgram::new(vec![program.instructions()[15].clone()]).expect("truth"),
+            ),
+            _ => unreachable!(),
+        };
+        assert_eq!(result.success(), expected.success(), "prefix {length}");
+        if length == 1 {
+            assert_eq!(result.success(), &success(vec![bytes(32)]));
+        }
+        assert!(
+            result
+                .success()
+                .iter()
+                .all(|state| state.alternate().is_empty())
+        );
+        assert!(result.nonaborting_failure().is_empty());
+        assert!(result.signature_forms().is_empty());
+        let failures = if length == 2 {
+            BTreeSet::from([FailureCause::UnsupportedExecutionDomain])
+        } else if length >= 7 {
+            aborts()
+        } else {
+            expected.aborts().clone()
+        };
+        assert_eq!(result.aborts(), &failures, "prefix {length}");
+    }
+    assert_eq!(
+        execute(
+            &TapscriptProgram::new(program.instructions()[..15].to_vec()).expect("before truth")
+        )
+        .success(),
+        &success(vec![])
+    );
+    assert_eq!(execute(&program).success(), &success(vec![bytes(1)]));
+    let profile = program_stack_profile(
+        &target,
+        &program,
+        &AbstractStackState::from_main(vec![]),
+        AbstractLimits::for_target(&target),
+    );
+    assert_eq!((profile.peak_main(), profile.peak_alternate()), (4, 0));
 }

@@ -38,6 +38,8 @@ Every target is an explicit literal using the library crate stem and owning modu
 
 | Span name | Target | Level | Entry fields (type) | Duration measured |
 |---|---|---|---|---|
+| `keyed_resource_projection` | `tapscript::keyed_resources` | DEBUG | none | Fixed grammar resource and stack projection. |
+| `keyed_transaction_weight` | `tapscript::keyed_resources` | DEBUG | `member_count: u64` | Checked serialization arithmetic, no admission. |
 | `emit_keyed_bundle` | `tapscript::keyed_bundle` | DEBUG | `operation_count: u64`, `proof_index: u64` | Checked selection, retained relation validation and keyed fragment composition; no proof search or concrete member execution. |
 | `validate_program` | `tapscript::stack` | DEBUG | `instruction_count: u64`, `state_limit: u64`, `stack_limit: u64` | Abstract state exploration and budget checks in `src/stack.rs:539` can branch substantially. |
 | `assess_requirements` | `tapscript::capability` | DEBUG | `requirement_count: u64` | Target requirement and evidence projection in `src/capability.rs:1175` can recur inside larger work. |
@@ -56,6 +58,7 @@ Each instrumented public operation emits one completion event inside its span wh
 
 | Operation target | Completed event and level | Completed fields (all counts `u64`) | Refused event and fields |
 |---|---|---|---|
+| `tapscript::keyed_resources` | DEBUG `keyed resources projected` / `keyed weight evaluated` | `outcome`; arithmetic helpers have no independent event | Same message: `outcome`, `refusal_kind`; once per projection or weight return. |
 | `tapscript::keyed_bundle` | DEBUG `keyed bundle emitted` | `outcome`, `relation_count`, `runtime_clause_count`, `evidence_count` | DEBUG `keyed bundle refused`: `outcome`, `refusal_kind`; once per adapter return. |
 | `tapscript::stack` | DEBUG `program validation completed` | `outcome`, `visited_state_count`, `success_path_count`, `failure_path_count`, `abort_path_count` | DEBUG `program validation refused`: `outcome`, `refusal_kind`, `visited_state_count`; add no partial result. |
 | `tapscript::capability` | DEBUG `requirements assessed` | `outcome`, `requirement_count`, `supported_count`, `unsupported_count`, `evidence_count` | DEBUG `requirements refused`: `outcome`, `refusal_kind` if the public boundary returns a typed refusal. |

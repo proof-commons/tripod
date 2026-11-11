@@ -51,6 +51,7 @@ Every standard-error byte of a first-party program comes from the one tracing su
 
 | Operation | Target and span name | Level | Fields (type) | Duration worth measuring |
 |---|---|---|---|---|
+| Test-only `keyed_stack_model::evaluate` | `vectors::keyed_stack_model`, `evaluate_keyed_model` | DEBUG | `script_bytes: usize` | Bounded offline byte evaluation; no native evidence. |
 | Compact `materialize::materialize` and `materialize_sponsored` | `vectors::materialize`, `materialize_subject` | DEBUG | `family: &'static str` (`compact`), `sponsored: bool` | Per-case transaction assembly, serialization and independent checks can be substantial. |
 | `first_party::validate_first_party_negative` | `vectors::validation`, `validate_mutant` | DEBUG | `family: &'static str` (`compact`), `boundary: &'static str` (`compiler_required_dependency`) | The validator runs both the published control and its one-field mutant. |
 | `maturity_corpus::admit_maturity_corpus` | `vectors::corpus`, `admit_run_of_record` | INFO | `family: &'static str` (`state`), `archive_kind: &'static str` (`maturity`) | Digest, grammar and replay checks dominate archive admission. |
@@ -65,6 +66,7 @@ The fixed canonical bundle and evidence-plan constructors have typed error retur
 
 | Operation or milestone | Target | Level | Fixed message | Fields (types) |
 |---|---|---|---|---|
+| Test-only byte model completion | `vectors::keyed_stack_model` | DEBUG | `keyed model evaluated` | `outcome: &str`, `model_only: bool`, `primitive_count: u64` on success, `refusal_kind: &str` on refusal |
 | Subject materialization completion | `vectors::materialize` | DEBUG, including refusal and failure | `subject materialized` | `family: &'static str`, `sponsored: bool`, `outcome: &'static str`, `refusal_kind` or `error_kind` on its respective outcome |
 | Control or mutant validation completion | `vectors::validation` | DEBUG, including refusal and failure | `mutant validated` | `family: &'static str`, `boundary: &'static str`, `outcome: &'static str`; when a subject was observed, `standing: &'static str` and `observed_refusal_kind: &'static str` if its standing is `refused`; `refusal_kind` or `error_kind` only for this operation's own refusal or failure |
 | Archive admission completion | `vectors::corpus` | INFO when completed or failed; DEBUG when refused | `run of record admitted` | `family: &'static str`, `archive_kind: &'static str`, `outcome: &'static str`, `row_count: u64` when returned; `refusal_kind` or `error_kind` on its respective outcome; no `standing` |

@@ -298,4 +298,9 @@ See [`errors/tapscript.md`](errors/tapscript.md).
 
 ## Keyed adapter increment · `rec:tapscript:keyed-bundle`
 
-The default `tapscript::keyed_bundle` adapter implements the first step of (`step:w1b13:adapter`): explicit candidate selection from an immutable compiler plan, no search, retained relation/coverage and evidence rows, and byte-preserving lowering to the existing two fragments. SOURCE's canonical successor leaf is construction material, never a runtime carrier. The public inventory is recorded at (`rec:w1b13:bundle-surface`). Full resources, constructor closure, concrete member coverage and target-form admission remain the subsequent adopted steps; this increment alone does not meet (`gate:wave1:bite-1-3-packet`).
+The default `tapscript::keyed_bundle` adapter implements the first step of (`step:w1b13:adapter`): explicit candidate selection from an immutable compiler plan, no search, retained relation/coverage and evidence rows, and byte-preserving lowering to the existing two fragments. SOURCE's canonical successor leaf is construction material, never a runtime carrier. The public inventory is recorded at (`rec:w1b13:bundle-surface`). Fixed-grammar stack/resource evidence now lives at (`rec:w1b13:resources`); constructor closure, concrete member coverage and target-form admission remain subsequent adopted steps; this increment alone does not meet (`gate:wave1:bite-1-3-packet`).
+
+
+| Keyed resource module | Contract |
+|---|---|
+| `src/keyed_resources.rs` | Always-on typed usage/obligation projection and checked formulas under (`q:w1b13:handoff`), inventoried at (`rec:w1b13:resources`). The 88-byte script stack funds validation budget; the 91-byte input witness enters weight. Scale comes from target; base flag and count framing stay in base bytes. Primitive counts are instruction-derived, width bounds encoding-checked, and vectors cross-check serialization without a tapscript-to-transaction edge. Deployment and package admission remain outstanding. |

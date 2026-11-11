@@ -10,6 +10,7 @@ pub mod keyed_bundle;
 #[cfg(feature = "keyed-constructor")]
 pub mod keyed_constructor;
 pub mod keyed_pattern;
+pub mod keyed_resources;
 pub mod live_bundle;
 pub mod live_constructor;
 pub mod live_pattern;
