@@ -321,3 +321,9 @@ See [`errors/linker.md`](errors/linker.md).
 - What is the canonical bundle archive format?
 - Does calibration remain in release or later move to a dedicated package?
 - Which package owns genesis and issuance ceremony construction?
+
+## Keyed closure · `rule:linker:keyed-closure`
+
+Under (`rec:w1b14:adoption`) and (`step:w1b14:link`), `packages/linker/src/keyed_bundle.rs` accepts only tapscript's sealed keyed emission and the reviewed target, plus a recipe equality assertion and target-version offer. It preserves the full selected publication and unresolved evidence and publishes an immutable linked artifact, including a read-only accessor to its retained sealed emission. `packages/linker/src/keyed_reference.rs` separates two offered fields, four already-emitted literal occurrences and five authenticated introspection/selector occurrences. Every offered field resolves once; accepting the complete sixteen-instruction grammar establishes zero mandatory byte relocations without a relocation list or self-comparison. Current-program introspection is retained rather than replaced by a caller program or self-hash literal. Unknown, missing, duplicate and mismatched offers refuse at linking; `InstructionMismatch` is the sole labelled internal guard.
+
+This introduces no production dependency edge, planner, covenant predicate, funding policy, commitment or predecessor authentication. Echoing emission's recipe asserts nothing; step 3 constructs the offer independently from its request key. Schema 1 of `KeyedLeafRecipe` in `packages/tapscript/src/keyed_constructor.rs` alone specifies commitment; transaction implements and authenticates it in step 2. Existing resource kernels and attestation linkers are unchanged. The link retains evidence obligations without admitting them. The entry's sole completion event and capture control are specified in `packages/linker/TRACING.md` (Events table).

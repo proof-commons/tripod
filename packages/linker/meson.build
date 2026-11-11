@@ -9,6 +9,9 @@ linker_source_files = files(
   'src/deployment.rs',
   'src/error.rs',
   'src/graph.rs',
+  'src/keyed_bundle.rs',
+  'src/keyed_bundle/tests.rs',
+  'src/keyed_reference.rs',
   'src/lib.rs',
   'src/live_backend.rs',
   'src/live_bundle.rs',
@@ -60,6 +63,6 @@ linker_source_files = files(
 linker_doc_files = files('README.md', 'TRACING.md')
 
 # Same-typed files deliberately outside the crate-source census
-# (ADR-014). The crate declares none yet; the empty list keeps the
-# parent's role composition uniform across crates.
-linker_excluded_files = files()
+# (ADR-014). External public-consumer tests are compiled by Cargo but
+# are not crate-source subjects of the label scanner.
+linker_excluded_files = files('tests/keyed_bundle.rs')
