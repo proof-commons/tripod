@@ -178,9 +178,10 @@ impl KeyedCommitment {
 
 /// Sealed borrowed local equality receipt, produced only inside transaction.
 ///
-/// The public equality check returns unit. Step 3 must mint and bind this receipt
-/// only after canonical parent decoding and selected-outpoint checks; callers
-/// cannot supply it as evidence of a real predecessor. No linked bundle is cloned.
+/// The public equality check returns unit. The keyed request path retains this
+/// receipt only inside a parent-bound input after canonical decoding and selected-
+/// outpoint checks; callers cannot supply it as evidence of a real predecessor.
+/// No linked bundle is cloned.
 /// ```compile_fail,E0451
 /// use transaction::keyed_taproot::{AuthenticatedKeyedPredecessor, KeyedCommitment};
 /// fn forge(commitment: &KeyedCommitment) -> AuthenticatedKeyedPredecessor<'_> {
@@ -193,7 +194,7 @@ pub struct AuthenticatedKeyedPredecessor<'a> {
 }
 
 impl AuthenticatedKeyedPredecessor<'_> {
-    /// The locally compared commitment; parent/outpoint provenance is owed by step 3.
+    /// The locally compared commitment; the request input retains parent provenance.
     #[must_use]
     pub const fn commitment(&self) -> &KeyedCommitment {
         self.commitment
@@ -318,8 +319,9 @@ pub fn authenticate_keyed_predecessor(
     result
 }
 
-// Step 3 must call this only after canonical parent decoding and selected-outpoint
-// checks, then retain their provenance with the receipt. Never accept one from callers.
+// The public equality entry discards this receipt. The request path retains it
+// only with canonical parent and selected-outpoint provenance; never accept one
+// from callers.
 pub(crate) fn authenticate_keyed_predecessor_core<'a>(
     commitment: &'a KeyedCommitment,
     predecessor_program: &[u8],

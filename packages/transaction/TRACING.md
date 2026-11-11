@@ -29,6 +29,7 @@ ADR-010 requires execwrap child output to route to explicit files and an unroute
 
 | Operation and code boundary | Span name | Target | Level | Fields (typed) | Duration value |
 |---|---|---|---|---|---|
+| `keyed_source_request`, `keyed_merge_request` (`src/keyed_request.rs`) | Same as entry name | `transaction::keyed_request` | DEBUG | `family: &'static str = "keyed"`, `input_count: u64` | Canonical parent and offer binding, role classification and per-member coverage; no authorization or admission. |
 | `commit_keyed_bundle`, `authenticate_keyed_predecessor`, `authenticate_keyed_path` (`src/keyed_taproot.rs`) | Same as entry name | `transaction::keyed_taproot` | DEBUG | `family: &'static str = "keyed"` | Public commitment arithmetic or local script/control equality; no chain recognition. |
 | `derive_candidate_abi`, `derive_live_transfer_abi`, `derive_maturity_announcement_abi` | `derive_abi` | `transaction::abi`, `transaction::live_abi`, `transaction::state_abi` | INFO | `family: &'static str` | Linked shape and obligation traversal can scale with a bundle. |
 | `construct`, `complete_live_transfer`, `construct_maturity_announcement_with_sponsor` | `construct` | `transaction::construct`, `transaction::live_construct`, `transaction::state_construct` | INFO | `family: &'static str` | Selection, validation, assembly, and witness creation dominate construction. |
@@ -45,6 +46,8 @@ Span close records supply busy and idle time; no package event repeats measured 
 
 | Emission point | Target | Level | Message | Fields (name: type) |
 |---|---|---|---|---|
+| Keyed request success | `transaction::keyed_request` | DEBUG | `keyed source request completed` / `keyed merge request completed` | `family = "keyed"`, `outcome = "completed"`; one per return. |
+| Keyed request refusal | `transaction::keyed_request` | DEBUG | `keyed source request refused` / `keyed merge request refused` | `family = "keyed"`, `outcome = "refused"`, `refusal_kind`; distinct callsites. |
 | Keyed commitment success | `transaction::keyed_taproot` | DEBUG | `keyed commitment completed` | `family = "keyed"`, `outcome = "completed"`, `script_path_count = 1_u64`, `key_path_count = 1_u64`. |
 | Keyed commitment refusal | `transaction::keyed_taproot` | DEBUG | `keyed commitment refused` | `family = "keyed"`, `outcome = "refused"`, `refusal_kind`; no success counts. |
 | Keyed predecessor equality success | `transaction::keyed_taproot` | DEBUG | `keyed predecessor authenticated` | `family = "keyed"`, `outcome = "completed"`; no public receipt. |
@@ -95,3 +98,5 @@ The two `Instant` values and stdout writes in `state_abi_validation_tests.rs` ar
 - A caller may observe a returned refusal, but each public operation records its own one completion event; a same-crate wrapper calls a private core, and a command emits its terminal command record. Neither nested library refusal is WARN nor returned operational failure is library ERROR.
 - Subscriber span close supplies timing; test sweep wall and call counts stay with the harness and assertions. No transaction value or arbitrary error text enters tracing fields, and no report summary is promoted to an event merely for collection.
 - `cli-common` owns filter precedence, early control, panic, and JSON schema. Transaction uses no command subscriber because it is a library; binary callers use the shared bootstrap.
+
+Request parent decoding uses the existing untraced decoder core; parent and commitment checks are untraced. The link and member binder retain their own owner events. `keyed_request_boundaries_trace_one_completion_or_refusal` isolates exactly one child and checks each request boundary’s own terminal event on success and refusal.
