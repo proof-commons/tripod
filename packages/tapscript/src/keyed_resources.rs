@@ -92,8 +92,10 @@ pub(crate) fn project(
     use KeyedResourceTerm as T;
     use ResourceDimension as D;
     let program: TapscriptProgram = match schedule {
-        KeyedSchedule::Birth => crate::keyed_pattern::born_first_fragment(target)?,
-        KeyedSchedule::Continuation => crate::keyed_pattern::continue_first_fragment(target)?,
+        KeyedSchedule::Birth => crate::keyed_pattern::born_first_fragment_untraced(target)?,
+        KeyedSchedule::Continuation => {
+            crate::keyed_pattern::continue_first_fragment_untraced(target)?
+        }
         KeyedSchedule::Leaf => crate::keyed_pattern::compose_keyed_leaf(target, &[0; 32])?,
     };
     let stack = program_stack_profile(

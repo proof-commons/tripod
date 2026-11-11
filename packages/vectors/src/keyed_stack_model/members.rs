@@ -253,6 +253,10 @@ fn successor_script_version_and_position_fail_only_continuation() {
     assert!(control.values().all(Result::is_ok));
     let mut script = facts.clone();
     script.outputs[0] = ProgramFact::Other { sha256: [99; 32] };
+    // Same witness version, different key's canonical payload: only the
+    // program comparison can refuse this successor, for every consumed member.
+    let mut wrong_key_successor = facts.clone();
+    wrong_key_successor.outputs[0] = program(&descriptor(43));
     let mut version = facts.clone();
     if let ProgramFact::Witness { version, .. } = &mut version.outputs[0] {
         *version = 0;
@@ -261,7 +265,7 @@ fn successor_script_version_and_position_fail_only_continuation() {
     displaced
         .outputs
         .insert(0, ProgramFact::Other { sha256: [99; 32] });
-    for subject in [script, version, displaced] {
+    for subject in [script, wrong_key_successor, version, displaced] {
         for ((id, _), outcome) in run(&bundle, &subject, &descriptors) {
             assert_eq!(
                 outcome,

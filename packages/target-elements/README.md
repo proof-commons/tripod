@@ -1,20 +1,8 @@
 # `tripod-target-elements`
 
-`target_elements` states the typed, reviewed Elements tapscript target
-compatibility contract. It states target facts, and one explicitly named
-candidate ceremony vocabulary carried beside them.
+`target_elements` states the typed, reviewed Elements tapscript target compatibility contract. It states target facts, with two explicitly named project-choice vocabularies carried beside them.
 
-That widening is deliberate and is named here rather than left to be discovered.
-Every module except `ceremony` states something a reviewed reading of the target
-established. `ceremony::ReproducibilityContract` states no target fact at all: it
-is first-party candidate vocabulary, and it lives here because the wire record in
-`target-elements-conformance` and the materializer profiles in `transaction` must
-name the same value, those two packages share no library edge in either
-direction, and this is the only package both already depend on. One enum in each
-package, held equal by a census test, would be two authored spellings of one
-closed vocabulary. Nothing else about the attestation contract is stated here,
-and the crate still serializes nothing: a package that speaks the contract on a
-wire owns its own encoding of it.
+That widening is deliberate and is named here rather than left to be discovered. Target facts remain separate from project vocabulary: `ceremony` and the explicitly named keyed `transaction_form::KeyedConstructionChoice` set carry project choices. `ceremony::ReproducibilityContract` states no target fact at all: it is first-party candidate vocabulary, and it lives here because the wire record in `target-elements-conformance` and the materializer profiles in `transaction` must name the same value, those two packages share no library edge in either direction, and this is the only package both already depend on. One enum in each package, held equal by a census test, would be two authored spellings of one closed vocabulary. Nothing else about the attestation contract is stated here, and the crate still serializes nothing: a package that speaks the contract on a wire owns its own encoding of it.
 
 The package contract is
 [plans/packages/target-elements.md](../../plans/packages/target-elements.md).
@@ -765,3 +753,7 @@ Each of these is a design decision, not a gap awaiting an implementation.
 - **It does not read its own review provenance.** The upstream repository,
   revision, source paths, and review date live in a human reference that no
   package parses.
+
+## Keyed form review
+
+`transaction_form::reviewed_keyed_form` returns immutable facts through seven const accessors. Its complete constraint map distinguishes four consensus constraints, two policy constraints (including dust on handles), and nine unconstrained coordinates; three ruling-162 preferences live in the separate `KeyedConstructionChoice` set. Consensus admits the form while relay remains conditional. Neither verdict admits a concrete transaction or adds a covenant predicate. Default external consumer and privacy-lock tests cover the surface; the emission gate disposition and unresolved production/evidence boundaries are at (`[PLAN-rec:w1b13:gate]`).

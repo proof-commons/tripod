@@ -360,3 +360,156 @@ fn a_changed_resource_limit_never_becomes_reviewed() {
     );
     stays_generic(parts);
 }
+
+#[test]
+fn default_consumer_reads_keyed_form_without_mutating_reviewed_facts() {
+    use target_elements::transaction_form::{
+        FormAdmission, FormConstraint, KeyedConstructionChoice, KeyedFormTerm, reviewed_keyed_form,
+    };
+    let form = reviewed_keyed_form();
+    assert_eq!(form.consensus(), FormAdmission::Admitted);
+    assert_eq!(form.relay(), FormAdmission::AdmittedUnderCondition);
+    assert_eq!(
+        form.constraints().keys().copied().collect::<Vec<_>>(),
+        KeyedFormTerm::ALL
+    );
+    assert_eq!(
+        form.constraints()[&KeyedFormTerm::PositiveExplicitSpendableValue],
+        FormConstraint::ConsensusEnforced
+    );
+    assert_eq!(
+        form.constraints()[&KeyedFormTerm::OutputDust],
+        FormConstraint::PolicyEnforced
+    );
+    assert_eq!(
+        form.constraints()[&KeyedFormTerm::EqualHandleAmounts],
+        FormConstraint::Unconstrained
+    );
+    assert_eq!(
+        form.construction_choices()
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        KeyedConstructionChoice::ALL
+    );
+    assert!(!form.relay_conditions().is_empty());
+    assert_eq!(
+        form.fee(),
+        &target_elements::transaction_form::reviewed_fee_output_contract()
+    );
+    assert_eq!(
+        form.explicit_zero(),
+        &target_elements::transaction_form::reviewed_explicit_zero_value_rule()
+    );
+}
+
+// Textual explicit-source guard: no macro expansion or alias resolution.
+// Rust privacy remains the language boundary; this scanner is not a Rust parser.
+fn keyed_form_is_immutable(source: &str) -> bool {
+    let text = source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let flat = text.split_whitespace().collect::<String>();
+    let Some(body) = flat
+        .split("pubstructKeyedFormReview{")
+        .nth(1)
+        .and_then(|s| s.split('}').next())
+    else {
+        return false;
+    };
+    if body.contains("pub") {
+        return false;
+    }
+    let mut own_impl = false;
+    let mut depth = 0_i32;
+    for section in text.split_inclusive(['{', '}']) {
+        let head = section.trim();
+        if head.contains("impl KeyedFormReview") {
+            own_impl = true;
+            depth = 0;
+        }
+        let signature = head.split_whitespace().collect::<String>();
+        if own_impl
+            && signature.contains("pub")
+            && signature.contains("fn")
+            && (signature.contains("&mut")
+                || signature.contains("_mut(")
+                || signature.contains("->Self"))
+        {
+            return false;
+        }
+        if section.ends_with('{') {
+            depth += 1;
+        }
+        if section.ends_with('}') {
+            depth -= 1;
+        }
+        if depth == 0 {
+            own_impl = false;
+        }
+    }
+    for section in flat.split(['{', '}']) {
+        if section.contains("pubfn")
+            && section.contains("->KeyedFormReview")
+            && !section.contains("pubfnreviewed_keyed_form(")
+        {
+            return false;
+        }
+    }
+    if flat.contains("implDefaultforKeyedFormReview")
+        || flat.contains("derive(Default)")
+        || flat
+            .split("#[derive(")
+            .skip(1)
+            .any(|row| row.split(')').next().unwrap_or("").contains("Default"))
+    {
+        return false;
+    }
+    for implementation in flat.split("impl").skip(1) {
+        let header = implementation.split('{').next().unwrap_or(implementation);
+        if header.contains("forKeyedFormReview")
+            && ["From<", "TryFrom<", "DerefMut", "AsMut<", "BorrowMut<"]
+                .iter()
+                .any(|word| header.contains(word))
+        {
+            return false;
+        }
+    }
+    true
+}
+
+#[test]
+fn keyed_form_public_surface_lock_has_private_field_and_mutator_subjects() {
+    let source = include_str!("../src/transaction_form.rs");
+    assert!(keyed_form_is_immutable(source));
+    let public_field = source.replace(
+        "    consensus: FormAdmission,",
+        "    pub consensus: FormAdmission,",
+    );
+    assert!(!keyed_form_is_immutable(&public_field));
+    let derived_default = source.replace(
+        "pub struct KeyedFormReview",
+        "#[derive(Default)]\npub struct KeyedFormReview",
+    );
+    assert!(!keyed_form_is_immutable(&derived_default));
+    for addition in [
+        "impl KeyedFormReview { pub fn new() -> Self { todo!() } }",
+        "impl KeyedFormReview { pub fn change(\n&mut self\n) {} }",
+        "pub fn forge() -> KeyedFormReview { todo!() }",
+        "impl DerefMut for KeyedFormReview {}",
+        "pub fn forge(key: [u8; 32]) -> KeyedFormReview { todo!() }",
+        "impl KeyedFormReview { pub fn from_key(key: [u8; 32]) -> Self { todo!() } }",
+        "impl Default for KeyedFormReview {}",
+        "impl From<()> for KeyedFormReview {}",
+        "impl TryFrom<()> for KeyedFormReview {}",
+        "impl AsMut<Other> for KeyedFormReview {}",
+        "impl BorrowMut<Other> for KeyedFormReview {}",
+    ] {
+        assert!(
+            !keyed_form_is_immutable(&format!("{source}\n{addition}")),
+            "{addition}"
+        );
+    }
+}

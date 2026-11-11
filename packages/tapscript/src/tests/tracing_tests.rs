@@ -334,6 +334,64 @@ fn live_bundle_preserves_candidate_bytes_and_reports_one_owned_event() {
 }
 
 #[test]
+fn keyed_resource_entries_report_one_owned_completion() {
+    run_isolated(
+        "tests::tracing_tests::keyed_resource_entries_report_one_owned_completion",
+        || {
+            use crate::keyed_resources::{
+                KeyedSchedule, keyed_resource_projection, keyed_transaction_weight,
+            };
+            let target = reviewed_target();
+            for schedule in [
+                KeyedSchedule::Birth,
+                KeyedSchedule::Continuation,
+                KeyedSchedule::Leaf,
+            ] {
+                let baseline = keyed_resource_projection(&target, schedule);
+                let (observed, records) = capture(|| keyed_resource_projection(&target, schedule));
+                assert_eq!(observed, baseline);
+                assert!(observed.is_ok());
+                assert_eq!(
+                    records
+                        .iter()
+                        .filter(|r| r.kind == "event" && r.target.starts_with("tapscript::"))
+                        .count(),
+                    1
+                );
+                let events = owned_events(&records, "tapscript::keyed_resources");
+                assert_eq!(events.len(), 1);
+                assert_eq!(events[0].fields["outcome"], "completed");
+                assert_no_high_severity(&records);
+            }
+            for base_bytes in [100, u64::MAX] {
+                let baseline = keyed_transaction_weight(&target, 2, base_bytes, 7);
+                let (observed, records) =
+                    capture(|| keyed_transaction_weight(&target, 2, base_bytes, 7));
+                assert_eq!(observed, baseline);
+                assert_eq!(
+                    records
+                        .iter()
+                        .filter(|r| r.kind == "event" && r.target.starts_with("tapscript::"))
+                        .count(),
+                    1
+                );
+                let events = owned_events(&records, "tapscript::keyed_resources");
+                assert_eq!(events.len(), 1);
+                assert_eq!(
+                    events[0].fields["outcome"],
+                    if observed.is_ok() {
+                        "completed"
+                    } else {
+                        "refused"
+                    }
+                );
+                assert_no_high_severity(&records);
+            }
+        },
+    );
+}
+
+#[test]
 fn keyed_bundle_and_direct_material_each_report_one_owned_completion() {
     run_isolated(
         "tests::tracing_tests::keyed_bundle_and_direct_material_each_report_one_owned_completion",

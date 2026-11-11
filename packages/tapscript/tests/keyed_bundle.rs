@@ -154,6 +154,8 @@ fn default_bundle_surface_is_immutable_and_contains_no_engine_record() {
     for addition in [
         "pub fn reselect(bundle: &mut KeyedEmissionBundle) {}",
         "pub fn forge(p: KeyedBundleProjection) -> KeyedEmissionBundle {}",
+        "pub fn forge(key: [u8; 32]) -> KeyedEmissionBundle { todo!() }",
+        "impl KeyedEmissionBundle { pub fn from_key(key: [u8; 32]) -> Self { todo!() } }",
         "impl KeyedEmissionBundle { pub fn new(p: KeyedBundleProjection) -> Self {} }",
         "impl From<KeyedBundleProjection> for KeyedEmissionBundle {}",
         "impl TryFrom<KeyedBundleProjection> for KeyedEmissionBundle {}",
@@ -214,9 +216,9 @@ fn sealed_surface(source: &str) -> bool {
     }
     let mut bundle_impl = false;
     let mut depth = 0_i32;
-    for section in text.split_inclusive(['{', '}', ';']) {
+    for section in text.split_inclusive(['{', '}']) {
         let head = section.trim();
-        if head.starts_with("impl KeyedEmissionBundle") {
+        if head.contains("impl KeyedEmissionBundle") {
             bundle_impl = true;
             depth = 0;
         }
@@ -285,4 +287,243 @@ fn default_recipe_retains_complete_sole_leaf_construction_material() {
             .any(|line| line.trim_start().starts_with("keyed-constructor ="))
     );
     assert!(!include_str!("../src/lib.rs").contains("keyed-constructor"));
+}
+
+#[test]
+fn default_consumer_assesses_resources_and_binds_members_without_claiming_authentication() {
+    use tapscript::{keyed_assessment::assess_keyed_bundle, keyed_members::*};
+    let target = target_elements::reviewed_elements_tapscript().expect("target");
+    for scope in [vec![K::Source], vec![K::Merge], vec![K::Source, K::Merge]] {
+        let runtime = scope.contains(&K::Merge);
+        let plan = fixture(scope);
+        let recipe = KeyedLeafRecipe::new([42; 32]);
+        let bundle = emit_keyed_bundle(&target, &plan, selection(&plan), recipe).expect("bundle");
+        let assessment = assess_keyed_bundle(&target, &bundle).expect("assessment");
+        assert_eq!(assessment.capabilities().len(), 8);
+        assert_eq!(assessment.recipe(), &recipe);
+        assert_eq!(assessment.evidence(), &bundle.project().evidence);
+        assert_eq!(assessment.resources().primitive_count, 12);
+        let outpoint = InputOutpoint {
+            txid: [1; 32],
+            output_index: 0,
+        };
+        // Deliberately not a witness program: this boundary checks only an assertion.
+        let program = vec![1, 2, 3];
+        let input = KeyedInputContext {
+            input_index: 0,
+            outpoint,
+            role: if runtime {
+                KeyedInputRole::ConsumedHandle
+            } else {
+                KeyedInputRole::Sponsor
+            },
+            predecessor_program: program.clone(),
+        };
+        let members = if runtime {
+            vec![KeyedMemberBinding {
+                input_index: 0,
+                outpoint,
+                recipe,
+                offline_assertion: OfflinePredecessorAssertion {
+                    outpoint,
+                    predecessor_program: program,
+                    recipe,
+                },
+                relations: bundle.project().fragments.keys().copied().collect(),
+            }]
+        } else {
+            vec![]
+        };
+        let receipt = bind_keyed_members(&bundle, &[input], &members).expect("supplied coverage");
+        assert_eq!(receipt.selection(), &bundle.project().selection);
+        assert_eq!(receipt.successor_recipe(), &recipe);
+        assert_eq!(receipt.evidence(), assessment.evidence());
+        assert_eq!(receipt.inputs().len(), 1);
+        assert_eq!(receipt.members().len(), usize::from(runtime));
+        assert_eq!(receipt.coverage().len(), if runtime { 2 } else { 0 });
+        if runtime {
+            assert_eq!(
+                receipt.members()[&0].offline_assertion(),
+                &members[0].offline_assertion
+            );
+            assert_eq!(receipt.members()[&0].relations().len(), 2);
+            assert!(receipt.coverage().values().all(|row| row
+                == &std::collections::BTreeSet::from([BoundMember {
+                    input_index: 0,
+                    outpoint
+                }])));
+            assert_eq!(
+                bind_keyed_members(&bundle, &[], &[]),
+                Err(KeyedMemberRefusal::NoConsumedMembers)
+            );
+        }
+    }
+}
+
+#[test]
+fn default_consumer_reads_complete_resource_terms_and_checked_formulas() {
+    use tapscript::keyed_resources::*;
+    use target_elements::ResourceDimension as D;
+    let target = target_elements::reviewed_elements_tapscript().expect("target");
+    for (schedule, primitives, bytes) in [
+        (KeyedSchedule::Birth, 5, 10),
+        (KeyedSchedule::Continuation, 6, 7),
+        (KeyedSchedule::Leaf, 12, 52),
+    ] {
+        let projection = keyed_resource_projection(&target, schedule).expect("projection");
+        assert_eq!(projection.primitive_count, primitives);
+        assert_eq!(
+            projection.dimensions.keys().copied().collect::<Vec<_>>(),
+            D::ALL
+        );
+        assert_eq!(
+            projection.dimensions[&D::ScriptBytes],
+            KeyedResourceTerm::Exact(bytes)
+        );
+        assert_eq!(
+            projection.dimensions[&D::InitialStackItems],
+            KeyedResourceTerm::Exact(0)
+        );
+        assert_eq!(
+            projection.dimensions[&D::TransactionWeight],
+            KeyedResourceTerm::TransactionContextRequired
+        );
+        assert_eq!(
+            projection.dimensions[&D::PackageLimit],
+            KeyedResourceTerm::DeploymentRequired
+        );
+    }
+    assert_eq!(keyed_witness_bytes(2), Ok(176));
+    assert_eq!(keyed_transaction_weight(&target, 2, 100, 7), Ok(589));
+    assert_eq!(keyed_witness_bytes(u64::MAX), Err(KeyedResourceOverflow));
+    assert_eq!(
+        keyed_transaction_weight(&target, 1, u64::MAX, 0),
+        Err(KeyedResourceOverflow)
+    );
+    let error: &dyn std::error::Error = &KeyedResourceOverflow;
+    assert_ne!(error.to_string(), "");
+    assert_eq!(KeyedResourceOverflow.refusal_kind(), "arithmetic_overflow");
+}
+
+// Textual guard only: it does not expand macros or resolve aliases. Rust privacy
+// and the existing compile-fail tests are the complementary language boundary.
+fn immutable_artifact(source: &str, name: &str, producer: &str) -> bool {
+    let text = source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let flat = text.split_whitespace().collect::<String>();
+    let marker = format!("pubstruct{name}{{");
+    let Some(body) = flat.split(&marker).nth(1).and_then(|s| s.split('}').next()) else {
+        return false;
+    };
+    if body.contains("pub") || flat.contains("engine_") || flat.contains("Default") {
+        return false;
+    }
+    for implementation in flat.split("impl").skip(1) {
+        let head = implementation.split('{').next().unwrap_or(implementation);
+        if head.contains(&format!("for{name}"))
+            && ["From<", "TryFrom<", "DerefMut", "AsMut<", "BorrowMut<"]
+                .iter()
+                .any(|word| head.contains(word))
+        {
+            return false;
+        }
+    }
+    let mut own_impl = false;
+    let mut depth = 0_i32;
+    for section in text.split_inclusive(['{', '}']) {
+        let head = section.trim();
+        if head.contains(&format!("impl {name}")) {
+            own_impl = true;
+            depth = 0;
+        }
+        if let Some(start) = head.find("pub ") {
+            let signature = head[start..].split_whitespace().collect::<String>();
+            if signature.contains("fn") {
+                let returned = signature.split("->").nth(1).unwrap_or("");
+                let creates = (returned.contains(name) && !returned.starts_with('&'))
+                    || (own_impl && returned.contains("Self") && !returned.starts_with('&'));
+                if signature.contains("&mut")
+                    || signature.contains("_mut(")
+                    || (creates && !signature.contains(&format!("fn{producer}(")))
+                {
+                    return false;
+                }
+            }
+        }
+        if section.ends_with('{') {
+            depth += 1;
+        }
+        if section.ends_with('}') {
+            depth -= 1;
+        }
+        if depth == 0 {
+            own_impl = false;
+        }
+    }
+    true
+}
+
+#[test]
+fn default_keyed_artifacts_have_no_public_mutation_or_forging_route() {
+    for (source, name, producer) in [
+        (
+            include_str!("../src/keyed_constructor.rs"),
+            "KeyedConstructionMaterial",
+            "construct",
+        ),
+        (
+            include_str!("../src/keyed_members.rs"),
+            "KeyedMemberReceipt",
+            "bind_keyed_members",
+        ),
+        (
+            include_str!("../src/keyed_members.rs"),
+            "BoundKeyedMember",
+            "no_public_producer",
+        ),
+        (
+            include_str!("../src/keyed_assessment.rs"),
+            "KeyedTargetAssessment",
+            "assess_keyed_bundle",
+        ),
+    ] {
+        assert!(immutable_artifact(source, name, producer), "{name}");
+        for addition in [
+            format!("impl {name} {{ pub fn new() -> Self {{ todo!() }} }}"),
+            format!("impl {name} {{ pub fn change(&mut self) {{}} }}"),
+            format!("impl DerefMut for {name} {{}}"),
+            format!("impl From<()> for {name} {{}}"),
+            format!("pub fn forge() -> {name} {{ todo!() }}"),
+            format!("pub fn forge(key: [u8; 32]) -> {name} {{ todo!() }}"),
+            format!("impl {name} {{ pub fn from_key(key: [u8; 32]) -> Self {{ todo!() }} }}"),
+        ] {
+            assert!(
+                !immutable_artifact(&format!("{source}\n{addition}"), name, producer),
+                "{addition}"
+            );
+        }
+        let mutant = source.replace(
+            &format!("pub struct {name} {{"),
+            &format!("pub struct {name} {{\n    pub forged: bool,"),
+        );
+        assert!(!immutable_artifact(&mutant, name, producer));
+    }
+    let resources = include_str!("../src/keyed_resources.rs");
+    assert!(resources.contains("const fn compact_size_width("));
+    assert!(!resources.contains("pub const fn compact_size_width("));
+    assert!(!resources.contains("pub fn framed_bytes("));
+    assert!(!resources.contains("engine_"));
+    for module in [
+        "keyed_bundle",
+        "keyed_constructor",
+        "keyed_resources",
+        "keyed_members",
+        "keyed_assessment",
+    ] {
+        assert!(include_str!("../src/lib.rs").contains(&format!("pub mod {module};")));
+    }
+    assert!(!include_str!("../Cargo.toml").contains("keyed-constructor"));
 }
