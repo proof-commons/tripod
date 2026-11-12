@@ -1,6 +1,6 @@
 # Linker · `pkg:linker:contract`
 
-> **Status:** Candidate — the compact-ASH `CandidateLinkedBundle`, live-transfer `CandidateLinkedLiveTransferBundle`, and maturity-announcement `CandidateLinkedMaturityBundle` are delivered with candidate status and outstanding obligations; the default keyed construction packet is offered for review at (`rec:w1b14:gate`), not yet closed
+> **Status:** Candidate — the compact-ASH `CandidateLinkedBundle`, live-transfer `CandidateLinkedLiveTransferBundle`, and maturity-announcement `CandidateLinkedMaturityBundle` are delivered with candidate status and outstanding obligations; the default keyed construction packet is closed at (`rec:w1b14:closed`)
 > **Phase:** [Phase 4](../phases/04-compact-ash.md) onward
 > **Package:** `tripod-linker`
 > **Library:** `linker`
@@ -328,4 +328,4 @@ Under (`rec:w1b14:adoption`) and (`step:w1b14:link`), `packages/linker/src/keyed
 
 This introduces no production dependency edge, planner, covenant predicate, funding policy, commitment or predecessor authentication. Echoing emission's recipe asserts nothing; step 3 constructs the offer independently from its request key. Schema 1 of `KeyedLeafRecipe` in `packages/tapscript/src/keyed_constructor.rs` alone specifies commitment; transaction implements and authenticates it in step 2. Existing resource kernels and attestation linkers are unchanged. The link retains evidence obligations without admitting them. The entry's sole completion event and capture control are specified in `packages/linker/TRACING.md` (Events table).
 
-The public construction packet and exact two-offer/four-literal/five-reference, zero-relocation inventory are offered for review at (`rec:w1b14:gate`). Transaction now consumes this material through production commitment and checked requests; linking itself still supplies neither funding nor chain recognition.
+The public construction packet and exact two-offer/four-literal/five-reference, zero-relocation inventory are closed at (`rec:w1b14:closed`). Transaction now consumes this material through production commitment and checked requests; linking itself still supplies neither funding nor chain recognition.

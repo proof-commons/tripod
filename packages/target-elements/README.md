@@ -760,4 +760,4 @@ Each of these is a design decision, not a gap awaiting an implementation.
 
 ## Keyed verification scope
 
-The substrate trigger `InProcessSighash` is met for transaction's verification of the admitted explicit P2WPKH `SIGHASH_ALL` sponsor. `DelegatedCapability::Signing` still delegates signature production and the signer's digest computation; the first-party verification message is the narrow exception recorded at (`[PLAN-rule:target-elements:keyed-verification-scope]`). No target capability, trigger variant or covenant law changes. The construction packet remains offered for review at (`[PLAN-rec:w1b14:gate]`).
+The substrate trigger `InProcessSighash` is met for transaction's verification of the admitted explicit P2WPKH `SIGHASH_ALL` sponsor. `DelegatedCapability::Signing` still delegates signature production and the signer's digest computation; the first-party verification message is the narrow exception recorded at (`[PLAN-rule:target-elements:keyed-verification-scope]`). No target capability, trigger variant or covenant law changes. The construction packet is closed at (`[PLAN-rec:w1b14:closed]`).
