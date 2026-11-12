@@ -9,6 +9,7 @@
 //! facts are explicit offline operands; no transaction or scriptPubKey parser,
 //! signature implementation, control-path authentication or hashing is claimed.
 
+mod constructed;
 mod members;
 
 #[derive(Clone, Debug)]

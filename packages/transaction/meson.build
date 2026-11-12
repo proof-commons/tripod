@@ -84,6 +84,5 @@ transaction_source_files = files(
 transaction_doc_files = files('README.md', 'TRACING.md')
 
 # Same-typed files deliberately outside the crate-source census
-# (ADR-014). The crate declares none yet; the empty list keeps the
-# parent's role composition uniform across crates.
-transaction_excluded_files = files()
+# (ADR-014). External Cargo tests are test inputs, not src/ label owners.
+transaction_excluded_files = files('tests/keyed_surface.rs')

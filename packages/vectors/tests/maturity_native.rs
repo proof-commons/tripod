@@ -13,6 +13,7 @@ mod keyed_cost;
 mod keyed_funding;
 mod keyed_inputs;
 mod keyed_native;
+mod keyed_reproduction;
 mod keyed_scaling;
 
 use std::fmt::Write as _;
