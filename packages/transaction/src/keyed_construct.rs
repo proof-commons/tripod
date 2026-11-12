@@ -101,14 +101,14 @@ pub enum KeyedConstructionError {
     ChangeDestinationMismatch,
     /// Authenticated handle census exceeds the measured policy maximum.
     HandleCountExceedsPolicy {
-        /// Offered fee or authenticated handle count.
+        /// Authenticated handle count offered to the measured policy envelope.
         offered: usize,
         /// Greatest admissible count.
         maximum: usize,
     },
     /// Fee is below the supplied policy rates for the witness-bounded size.
     FeeShortage {
-        /// Offered fee or authenticated handle count.
+        /// Offered explicit fee in policy-asset satoshis.
         offered: u64,
         /// Required fee from supplied rates.
         required: u64,

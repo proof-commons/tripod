@@ -50,8 +50,9 @@ sha2 = { workspace = true }
 # Exact 0.14.101, default features off, no features requested on this edge.
 # Workspace unification also enables alloc, bitcoin-io, io and std.
 bitcoin_hashes = { workspace = true }
-# Public keyed commitment arithmetic only; safe wrapper, no direct raw FFI edge.
-# This edge requests std; elements adds features in a unified workspace build.
+# Public keyed commitment arithmetic and P2WPKH ECDSA verification.
+# Inherits the workspace exact pin and std request; no direct raw FFI edge.
+# Elements adds features in a unified workspace build.
 # The adapter accepts no secret and uses a verification-only context.
 secp256k1-zkp = { workspace = true }
 tapscript = { workspace = true }

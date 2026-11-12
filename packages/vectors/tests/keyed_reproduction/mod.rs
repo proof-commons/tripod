@@ -29,6 +29,7 @@ fn source_and_merge_reproduce_from_public_inputs_in_a_fresh_process() {
             .env("TRIPOD_KEYED_REPRODUCTION_INPUT", &input)
             .env("TRIPOD_KEYED_REPRODUCTION_OUTPUT", &output)
             .args([
+                "--ignored",
                 "--exact",
                 "keyed_reproduction::public_input_reproduction_child",
                 "--nocapture",
@@ -48,8 +49,20 @@ fn source_and_merge_reproduce_from_public_inputs_in_a_fresh_process() {
             "{stdout}\n{}",
             String::from_utf8_lossy(&child.stderr)
         );
-        assert!(stdout.contains("running 1 test"));
-        assert!(stdout.contains("1 passed; 0 failed"));
+        assert_eq!(
+            stdout
+                .lines()
+                .filter(|line| *line == "running 1 test")
+                .count(),
+            1
+        );
+        assert_eq!(
+            stdout
+                .lines()
+                .filter(|line| line.starts_with("test result: ok. 1 passed; 0 failed;"))
+                .count(),
+            1
+        );
         let result: ChildReport = serde_json::from_slice(&std::fs::read(output).unwrap()).unwrap();
         assert_ne!(result.pid, std::process::id());
         assert_eq!(
@@ -68,10 +81,9 @@ fn source_and_merge_reproduce_from_public_inputs_in_a_fresh_process() {
 }
 
 #[test]
+#[ignore = "launched explicitly by the bounded fresh-process parent"]
 fn public_input_reproduction_child() {
-    let Some(input) = std::env::var_os("TRIPOD_KEYED_REPRODUCTION_INPUT") else {
-        return;
-    };
+    let input = std::env::var_os("TRIPOD_KEYED_REPRODUCTION_INPUT").unwrap();
     let packet: Packet = serde_json::from_slice(&std::fs::read(input).unwrap()).unwrap();
     // No fixture::case call and no signing: use the recorded ordinary witness.
     let (snapshot, commitment) = fixture::rebuild(&packet, true);

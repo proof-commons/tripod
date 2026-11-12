@@ -757,3 +757,7 @@ Each of these is a design decision, not a gap awaiting an implementation.
 ## Keyed form review
 
 `transaction_form::reviewed_keyed_form` returns immutable facts through seven const accessors. Its complete constraint map distinguishes four consensus constraints, two policy constraints (including dust on handles), and nine unconstrained coordinates; three ruling-162 preferences live in the separate `KeyedConstructionChoice` set. Consensus admits the form while relay remains conditional. Neither verdict admits a concrete transaction or adds a covenant predicate. Default external consumer and privacy-lock tests cover the surface; the emission gate disposition and unresolved production/evidence boundaries are at (`[PLAN-rec:w1b13:gate]`).
+
+## Keyed verification scope
+
+The substrate trigger `InProcessSighash` is met for transaction's verification of the admitted explicit P2WPKH `SIGHASH_ALL` sponsor. `DelegatedCapability::Signing` still delegates signature production and the signer's digest computation; the first-party verification message is the narrow exception recorded at (`[PLAN-rule:target-elements:keyed-verification-scope]`). No target capability, trigger variant or covenant law changes. The construction packet remains offered for review at (`[PLAN-rec:w1b14:gate]`).

@@ -1,6 +1,6 @@
 # Transaction and Witness ABI · `pkg:transaction:contract`
 
-> **Status:** Candidate — the compact-ASH ABI and the maturity-announcement `CandidateMaturityAnnouncementAbi` with `MaturityConstruction`, finalization and operator-signing states are delivered under Guide-12 §15 and Guide-14 §12
+> **Status:** Candidate — the compact-ASH ABI and the maturity-announcement `CandidateMaturityAnnouncementAbi` with `MaturityConstruction`, finalization and operator-signing states are delivered under Guide-12 §15 and Guide-14 §12; the default keyed construction packet is offered for review at (`rec:w1b14:gate`), not yet closed
 > **Phase:** [Phase 4](../phases/04-compact-ash.md) onward
 > **Package:** `tripod-transaction`
 > **Library:** `transaction`
@@ -393,3 +393,5 @@ The reviewed construction surface and complete layered refusal inventory are (`r
 HASH160 is the workspace-pinned `bitcoin_hashes = 0.14.101` edge, defaults off and no features requested; the resolved forward tree and dated unsafe/advisory review are (`rec:w1b14:construct-review`). HASH160 runs that crate's SHA-256 and RIPEMD-160, an explicitly approved additional implementation distinct from existing signing-message and tagged-hash computation. The generator-key known answer is library-independent. No dependency types or secrets enter the production API.
 
 The external default-library surface controls in `packages/transaction/tests/keyed_surface.rs` lock the explicit `KeyedOutputOffer` field set and sealed result/policy fields, with caller-script, stated-total and public-result-field mutants; they do not analyze macros, aliases or arbitrary trait implementations. Fresh-process SOURCE/MERGE reproduction in vectors consumes public parent/recipe/request inputs, output and policy offers, and the same recorded ordinary sponsor witness. The byte-model evidence on extracted constructed leaves is separate from production admission and does not remove `MemberExecutionAndRelationEvidence`, the four external parent facts or final-byte policy observation. The comparison inventory and declared refusal boundaries are (`rec:w1b14:reproduce`); no production implementation or public type changes in this reproduction step.
+
+The bite-1.4 packet at (`rec:w1b14:gate`) inventories the default construction surface, source preservation, dependency provenance and remaining obligations. It is offered for review, not closed. The target substrate wording now explicitly separates the in-process verification message for the admitted P2WPKH form from delegated signature production; no trigger variant or census changes.

@@ -51,8 +51,8 @@ anyhow = "1"
 # remains sha2. Forward graph and unsafe/advisory review: rec:w1b14:construct.
 bitcoin_hashes = { version = "=0.14.101", default-features = false }
 clap = { version = "4", features = ["derive"] }
-# Reference-implementation oracles and the production keyed curve adapter:
-# transaction's schema-1 public arithmetic uses the safe wrapper below with
+# Reference-implementation oracles and production keyed commitment/ECDSA verification:
+# transaction inherits the exact workspace pin and safe wrapper below with
 # std requested here; elements adds its features in a unified build. The
 # adapter takes no secret and uses a verification-only context.
 # Its agreement with the node is not independent evidence. First-party

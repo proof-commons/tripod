@@ -1,4 +1,6 @@
 //! Model-only execution of extracted constructed bytes. No native acceptance.
+//! The cross-tree fixture include is test-only and is registered as an excluded
+//! test input in vectors/meson.build; moving it must update both consumers.
 use super::*;
 #[path = "../../tests/keyed_reproduction/fixture.rs"]
 mod fixture;
@@ -31,25 +33,34 @@ fn program(bytes: &[u8]) -> ProgramFact {
     }
 }
 
-fn context(packet: &fixture::Packet, tx: &TargetTransaction, current: usize) -> Facts {
-    // Actual constructed input order and outpoints select public parent outputs.
-    // Parent content addresses are recomputed, not taken as trusted model facts.
+type Parents = std::collections::BTreeMap<transaction::Txid, TargetTransaction>;
+
+fn parents(packet: &fixture::Packet) -> Parents {
+    packet
+        .inputs
+        .iter()
+        .map(|row| {
+            (
+                transaction::Txid::from_internal(fixture::txid(&row.parent)),
+                TargetTransaction::decode(&row.parent).unwrap(),
+            )
+        })
+        .collect()
+}
+
+fn context(parents: &Parents, tx: &TargetTransaction) -> Facts {
+    // Rehash and decode each public parent once, then resolve actual outpoints.
     let inputs = tx
         .inputs()
         .iter()
         .map(|input| {
             let outpoint = input.outpoint();
-            let parent = packet
-                .inputs
-                .iter()
-                .find(|row| {
-                    transaction::Txid::from_internal(fixture::txid(&row.parent)) == outpoint.txid()
-                })
-                .unwrap();
-            let decoded = TargetTransaction::decode(&parent.parent).unwrap();
+            let decoded = &parents[&outpoint.txid()];
             InputFact {
-                txid: parent.txid,
+                txid: *outpoint.txid().internal(),
                 index: outpoint.index(),
+                // The canonical decoder rejects issuance/peg-in and Outpoint excludes
+                // flag bits. Zero follows from that domain, not a supplied flag fact.
                 flags: 0,
                 program: program(
                     decoded.outputs()[usize::try_from(outpoint.index()).unwrap()].program(),
@@ -59,7 +70,7 @@ fn context(packet: &fixture::Packet, tx: &TargetTransaction, current: usize) -> 
         .collect();
     Facts {
         enabled: true,
-        current: Some(u32::try_from(current).unwrap()),
+        current: None,
         inputs,
         outputs: tx.outputs().iter().map(|o| program(o.program())).collect(),
     }
@@ -70,6 +81,7 @@ fn run(
     tx: &TargetTransaction,
     commitment: &KeyedCommitment,
     index: usize,
+    facts: &Facts,
 ) -> Result<Result<(), Refusal>, A> {
     let stack = tx.witnesses()[index].stack();
     assert_eq!(
@@ -78,7 +90,9 @@ fn run(
         "no execution arguments or covenant signature"
     );
     authenticate_keyed_path(commitment, &stack[0], &stack[1])?;
-    Ok(leaf(&stack[0], &context(packet, tx, index), &packet.key).map(|_| ()))
+    let mut facts = facts.clone();
+    facts.current = Some(u32::try_from(index).unwrap());
+    Ok(leaf(&stack[0], &facts, &packet.key).map(|_| ()))
 }
 
 fn changed_outputs(tx: &TargetTransaction, outputs: Vec<TargetOutput>) -> TargetTransaction {
@@ -99,6 +113,8 @@ fn constructed_final_leaf_checks_every_member_from_serialized_contexts() {
         let packet = fixture::case(count);
         let (snapshot, commitment) = fixture::rebuild(&packet, true);
         let tx = TargetTransaction::decode(&snapshot.complete).unwrap();
+        let parents = parents(&packet);
+        let facts = context(&parents, &tx);
         assert_eq!(tx.encode(), snapshot.complete);
         let target = target_elements::reviewed_elements_tapscript().unwrap();
         let oracle = construct_keyed(
@@ -111,15 +127,16 @@ fn constructed_final_leaf_checks_every_member_from_serialized_contexts() {
         assert_eq!(commitment.control().as_slice(), oracle.control.bytes);
         assert_eq!(commitment.leaf(), oracle.leaf_bytes);
         for index in 0..count {
-            let parent = TargetTransaction::decode(&packet.inputs[index].parent).unwrap();
+            let outpoint = tx.inputs()[index].outpoint();
+            let parent = &parents[&outpoint.txid()];
             authenticate_keyed_predecessor(
                 &target,
                 &oracle,
-                parent.outputs()[0].program(),
+                parent.outputs()[usize::try_from(outpoint.index()).unwrap()].program(),
                 &PublicKeyedCurve,
             )
             .unwrap();
-            assert_eq!(run(&packet, &tx, &commitment, index), Ok(Ok(())));
+            assert_eq!(run(&packet, &tx, &commitment, index, &facts), Ok(Ok(())));
         }
         assert!(
             snapshot
@@ -134,6 +151,8 @@ fn constructed_successor_mutants_refuse_at_continuation() {
     let packet = fixture::case(2);
     let (snapshot, commitment) = fixture::rebuild(&packet, true);
     let tx = TargetTransaction::decode(&snapshot.complete).unwrap();
+    let parents = parents(&packet);
+    let facts = context(&parents, &tx);
     let target = target_elements::reviewed_elements_tapscript().unwrap();
     let other =
         transaction::keyed_taproot::commit_keyed_bundle(&target, &fixture::linked([43; 32], false))
@@ -159,13 +178,15 @@ fn constructed_successor_mutants_refuse_at_continuation() {
     displaced.swap(0, 1);
     for outputs in [key, version, displaced] {
         let subject = changed_outputs(&tx, outputs);
+        let subject_facts = context(&parents, &subject);
         for index in 0..2 {
-            assert_eq!(run(&packet, &tx, &commitment, index), Ok(Ok(())));
+            assert_eq!(run(&packet, &tx, &commitment, index, &facts), Ok(Ok(())));
             assert_eq!(
-                run(&packet, &subject, &commitment, index),
+                run(&packet, &subject, &commitment, index, &subject_facts),
                 Ok(Err(Refusal::Unequal))
             );
-            let facts = context(&packet, &subject, index);
+            let mut facts = subject_facts.clone();
+            facts.current = Some(u32::try_from(index).unwrap());
             assert!(fragment(BIRTH, &facts).is_ok());
             assert_eq!(fragment(CONTINUATION, &facts), Err(Refusal::Unequal));
         }
@@ -177,13 +198,17 @@ fn constructed_path_mutants_refuse_authentication_before_execution() {
     let packet = fixture::case(2);
     let (snapshot, commitment) = fixture::rebuild(&packet, true);
     let tx = TargetTransaction::decode(&snapshot.complete).unwrap();
-    for (coordinate, expected) in [(0, A::WrongParity), (1, A::WrongLeaf)] {
+    let parents = parents(&packet);
+    let facts = context(&parents, &tx);
+    for (coordinate, expected) in [(0, A::WrongParity), (1, A::WrongLeaf), (2, A::WrongVersion)] {
         let mut witnesses = tx.witnesses().to_vec();
         let mut stack = witnesses[1].stack().to_vec();
         if coordinate == 0 {
             stack[1][0] ^= 1;
-        } else {
+        } else if coordinate == 1 {
             stack[0][1] ^= 1;
+        } else {
+            stack[1][0] ^= 2;
         }
         witnesses[1] = transaction::InputWitness::new(stack);
         let subject = TargetTransaction::new(
@@ -194,8 +219,34 @@ fn constructed_path_mutants_refuse_authentication_before_execution() {
             witnesses,
         )
         .unwrap();
-        assert_eq!(run(&packet, &tx, &commitment, 1), Ok(Ok(())));
-        assert_eq!(run(&packet, &subject, &commitment, 0), Ok(Ok(())));
-        assert_eq!(run(&packet, &subject, &commitment, 1), Err(expected));
+        assert_eq!(run(&packet, &tx, &commitment, 1, &facts), Ok(Ok(())));
+        assert_eq!(run(&packet, &subject, &commitment, 0, &facts), Ok(Ok(())));
+        assert_eq!(
+            run(&packet, &subject, &commitment, 1, &facts),
+            Err(expected)
+        );
     }
+}
+
+#[test]
+fn constructed_context_changes_only_the_second_members_birth_coordinate() {
+    let packet = fixture::case(2);
+    let (snapshot, commitment) = fixture::rebuild(&packet, true);
+    let tx = TargetTransaction::decode(&snapshot.complete).unwrap();
+    let parents = parents(&packet);
+    let control = context(&parents, &tx);
+    let mut subject = control.clone();
+    // Synthetic model context, not a forged request or admitted transaction.
+    subject.inputs[1].index = 1;
+    for index in 0..2 {
+        assert_eq!(run(&packet, &tx, &commitment, index, &control), Ok(Ok(())));
+    }
+    assert_eq!(run(&packet, &tx, &commitment, 0, &subject), Ok(Ok(())));
+    assert_eq!(
+        run(&packet, &tx, &commitment, 1, &subject),
+        Ok(Err(Refusal::Unequal))
+    );
+    subject.current = Some(1);
+    assert_eq!(fragment(BIRTH, &subject), Err(Refusal::Unequal));
+    assert!(fragment(CONTINUATION, &subject).is_ok());
 }

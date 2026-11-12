@@ -888,8 +888,9 @@ census_enum! {
         /// Blinded fields must be produced inside this workspace rather
         /// than by a sponsor adapter.
         InProcessBlinding,
-        /// A transaction digest for signing must be computed inside this
-        /// workspace rather than requested from a signer.
+        /// A transaction signing message must be computed inside this workspace.
+        /// Met for verification of the admitted explicit P2WPKH `SIGHASH_ALL`
+        /// sponsor; producing signatures and other profiles remain delegated.
         InProcessSighash,
         /// Issuance or reissuance fields must be constructed inside this
         /// workspace rather than by a target funding interface.
@@ -919,7 +920,9 @@ census_enum! {
     pub enum DelegatedCapability {
         /// Producing blinded fields and their proofs.
         Blinding,
-        /// Computing a signing digest and producing a signature.
+        /// Producing signatures, including the signer's digest computation.
+        /// Transaction independently computes the admitted explicit P2WPKH
+        /// `SIGHASH_ALL` message for verification; it accepts no signing secret.
         Signing,
         /// Creating the disposable test asset the development fixtures
         /// stand on.
@@ -1077,15 +1080,22 @@ impl TransactionSubstrateDecision {
 /// the target vendors in-tree — the same collapse an earlier review
 /// already refused for the confidential-value oracle, where agreement
 /// between a checker and the thing it checks would be a tautology. The
-/// workspace has no native-linked dependency today and every package in
-/// it forbids unsafe code, so admitting one is a change to the build
+/// original substrate review had no native-linked workspace dependency, so
+/// admitting one was a change to the build
 /// story and not only to a manifest. Its licence is a different
 /// instrument from the workspace's own. And most of what it supplies —
-/// confidential fields, issuance, peg-ins, signing digests — is off the
+/// confidential fields, issuance and peg-ins — is off the
 /// candidate pipeline's path, because the fixed Phase-4 representation
 /// is explicit, blinding and signing belong to a sponsor adapter, and
 /// the disposable test asset is created through a target funding
 /// interface.
+/// The later keyed constructor uses a pinned native-linked safe curve wrapper
+/// binding the target's library family for public arithmetic and verification,
+/// admitted under (`[PLAN-q:w1b14:curve]`), and computes
+/// the admitted explicit P2WPKH `SIGHASH_ALL` message for verification only.
+/// This narrow extension meets `InProcessSighash` without delegating production
+/// message encoding to the independent Elements comparison implementation.
+/// The reopened first-party disposition is (`[PLAN-rec:w1b14:construct]`).
 ///
 /// What remains for this workspace to own is therefore narrow: encode
 /// and decode explicit-field transactions, assemble a script-path
@@ -1105,10 +1115,11 @@ impl TransactionSubstrateDecision {
 ///
 /// # What is not claimed
 ///
-/// That the first-party structures exist — they do not yet; that they
-/// are correct — nothing has executed; that the decision is final — it
-/// awaits ratification, and each recorded trigger names a need that
-/// would reopen it.
+/// First-party structures and offline comparisons now exist. Their standing
+/// and retained native evidence are recorded by the consuming packets; this
+/// decision value alone proves neither correctness nor native acceptance. Its
+/// historical ratification status is unchanged. The met verification trigger
+/// is disposed at (`[PLAN-rec:w1b14:construct]`); other triggers remain open.
 #[must_use]
 pub fn reviewed_substrate_decision() -> TransactionSubstrateDecision {
     TransactionSubstrateDecision {
