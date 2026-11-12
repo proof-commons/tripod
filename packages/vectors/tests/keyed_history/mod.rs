@@ -5,6 +5,10 @@ mod model;
 mod reader;
 mod reader_boundary;
 mod reader_review;
+mod reading;
+mod reading_reports;
+mod reading_review;
+mod reading_trace;
 // Let cargo fmt visit the independently compiled harness without linking it.
 #[cfg(any())]
 mod model_checks;
@@ -88,6 +92,11 @@ fn history_family_child() {
         "association",
         "reader-negatives",
         "reader-review",
+        "reading-review",
+        "reading-rules",
+        "reading-premises",
+        "reading-reports",
+        "reading-conditional",
     ] {
         let mut command = child("keyed_history::history_subject_child", "10");
         command.env("TRIPOD_KEYED_HISTORY_SUBJECT", subject);
@@ -102,6 +111,29 @@ fn history_family_child() {
 #[ignore = "bounded subject parent launches this exact child"]
 fn history_subject_child() {
     let subject = std::env::var("TRIPOD_KEYED_HISTORY_SUBJECT").unwrap();
+    match subject.as_str() {
+        "reading-review" => {
+            reading_review::controls();
+            return;
+        }
+        "reading-rules" => {
+            reading::rules();
+            return;
+        }
+        "reading-premises" => {
+            reading::premises();
+            return;
+        }
+        "reading-reports" => {
+            reading_reports::controls();
+            return;
+        }
+        "reading-conditional" => {
+            reading::conditional();
+            return;
+        }
+        _ => (),
+    }
     if subject == "reader-review" {
         reader_review::controls();
         return;

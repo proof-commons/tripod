@@ -336,3 +336,8 @@ See [`errors/vectors.md`](errors/vectors.md).
 - What coverage policy governs duplicated carriers and collateral mutations?
 - How are external observer tools invoked and their independence declared?
 - Which canonical binary vectors are committed versus generated for release?
+
+
+## Keyed reader rule and report boundary · `rule:vectors:keyed-reading`
+
+The conformance-library `keyed_evidence` layer consumes the unchanged byte reader's memberships and missing evidence. Its all-record, fixed immutable and changing rules have report-bound identities; annotation values remain SOURCE provenance with unassigned attribution, never record credit. Complete-handle and whole-supplied-history requests have distinct completeness scopes. All four parent facts and the per-key inclusion limit remain named assumptions. Finality matching has an explicitly hypothetical fixture type and an externally accepted deployment type, with no activation data selected here. Internal schema 1 now separates shared headers and family bodies; only complete outcomes contain sets, and reporting requests can retain incomplete and non-handle outcomes. Required finality accepts only the sealed deployment type, which has no public producer before activation; hypothetical controls never satisfy it. The shape, refusal order and recomputing validator are specified at (`rec:w1b15:reading-review`); the other four family validators remain step-4 work. No report pass bit supplies independent recurrence or native execution evidence.

@@ -27,6 +27,7 @@ pub mod keyed_corpus;
 pub mod keyed_cost;
 pub mod keyed_cost_corpus;
 pub mod keyed_cost_native;
+pub mod keyed_evidence;
 pub mod keyed_funding;
 pub mod keyed_funding_corpus;
 pub mod keyed_history_reader;

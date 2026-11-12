@@ -409,3 +409,191 @@ No timeout was widened. This round's resource deltas are microseconds in its own
 The two review correction gates were `/var/home/tripod/loops/tmp/gate-w20b1-20261112T151034Z.log` (361 seconds, red, exit 1) and `/var/home/tripod/loops/tmp/gate-w20b1-20261112T151828Z.log` (347 seconds, red, exit 1). Both passed the functional reader subjects and failed only the new spelling lock: first it treated a primitive associated path as an external crate; then it treated the local variable `transaction` as a qualified external path. The corrected scanner distinguishes an unqualified identifier from a path before applying the exact allowlist, while still refusing grouped external imports. Its real-source acceptance, all rejecting mutants and the isolated compile pass in the covering green run. Fast checks also applied formatter output and resolved local lint findings; the final code check passed fmt, clippy and rustdoc in 45 seconds. No expected set or byte was regenerated.
 
 The retained green journals show the ten exact projection pins (`tests::engine_base_capture::preserve_engine_base`) and the canonical publication comparison (`tests::keyed_profile_tests::attestation_canonical_bytes_and_publication_equal_the_opening_base`) passing. The model and every source outside vectors are unchanged; the bounded evaluator's opcode-execution body is byte-identical. Existing vector and reproduction tests pass with unchanged expectations. All server rounds used the supplied slot-governed transient unit and a foreground SSH waiter through the recorded end marker, with zero queue wait; none was abandoned or restarted after a lost connection. No native execution was run.
+
+
+## Reader rules, premises and internal report form · `rec:w1b15:reading`
+
+This is the pre-review record. The report shape, finality acceptance and refusal order below are superseded by (`rec:w1b15:reading-review`); its byte/model evidence remains valid.
+
+Step 3 implements (`step:w1b15:reading`) under (`rec:w1b15:adoption`), rulings 164–165 and (`dec:guide15-exec:reader-evidence`). `packages/vectors/src/keyed_evidence/` adds acceptance/premise helpers and report framing. No classification, recurrence, membership, reader outcome, constructor or byte recipe changes. The paper's reconstruction follows the queried handle's reached dependencies (`[A-sec:kpc:interface]`); therefore a requested complete handle reading depends on that closure, while a whole-supplied-history claim also checks every incomplete handle and nonempty unexamined set. An unrelated missing dependency is retained in a closure report, not silently discharged. The controls exercise both scopes without changing the reader.
+
+**Rules and typed annotation** · `tab:w1b15:reading-rules`
+
+| Rule identity | Shared multi-input membership | Accepted set | Growth statement |
+|---|---|---|---|
+| `AllSourceRecords` | SOURCE handles 10 and 11, key 42 | `{10, 11}` | Fixed all-record rule grows only along one valid continuation path. |
+| `Fixed { asset: [3; 32], threshold: 1011 }` | Same set | `{11}` | Predicate reads immutable SOURCE output 0; A and T are part of identity. T is not a funding floor. |
+| `Changing { record: 11, enabled_epoch: 1, disabled_epoch: 2 }` | Same set, observed at epoch 2 | `{10}` | No monotonicity promise. At epoch 1 the same rule identity accepts `{10, 11}`; epoch 2 removes 11. |
+
+`reading::rules` compares the three accepted sets with independently written literals and asserts identical membership. SOURCE annotations are literal values 1010 and 1011 from their creating bytes, not the MERGE's 1020-unit successor. `reading::growth` takes actual prefixes of the once-built `path` fixture: all-record results are `{10}`, `{10}`, `{10,11}`, `{10,11}` at handles 10, 20, 30, 40; the fixed rule gives `{}`, `{}`, `{11}`, `{11}`. This claims nothing across replacement histories, changed premises, changed rule parameters or incomplete readings (`[A-rem:kpc-interface:record-evidence]`), (`[A-cor:kpc-interface:path-reading]`). No general monotonicity checker is exported.
+
+`Amount`, `Asset` and `Epoch` are distinct newtypes; reader `Address`, `Key` and `Handle` stay distinct. `Value::Unknown` is not explicit zero; `AssetValue::Unknown` is not an asset identity. Reasons are `Absent`, `Committed` and `Unsupported`. `Attribution` has only `Unassigned`; no owner is inferred. `Annotation` records the SOURCE handle, creating address and exact creating bytes plus optional explicit value/asset via these enums. It is neither current handle value, record credit nor entitlement. The internal `committed_amount_is_unknown_and_never_explicit_zero_or_an_owner` subject pairs explicit zero accepted by threshold zero with a committed unknown excluded by that predicate, while all-record eligibility remains. It introduces no confidential transaction construction. The internal annotation-guard subjects are deliberately not reader-accepted histories.
+
+**Surface and framing** · `tab:w1b15:reading-surface`
+
+| Part | Inventory / authority |
+|---|---|
+| Public boundaries | `reading_report(&Input, &Request) -> Result<Report, Refusal>` and `validate_report(&Input, &Request, &Report) -> Result<(), Refusal>`. Each calls the existing reader once; its immutable `Reading` is consumed without modifying any set or classification. |
+| Request | Queried handle, `Scope::{HandleClosure, WholeHistory}`, `ReadingFamily::{Reading, Acceptance}`, full `Rule`, separate observed epoch, history/policy `Provenance`, named `PremiseSources`, finality request and optional declaration offer. Policy readings are uninterpreted named caller readings beside the reader, not observations or acceptance parameters. |
+| Provenance types | `Deployment`, `PolicyVersion`, `HistoryAnchor`, `EvidenceSource`; these distinguish identities with similar representations. A history anchor and its truth are externally supplied provenance; matching is not chain authentication. |
+| Shared schema | `SCHEMA = 1`; `Family::{Birth, Continuation, Recurrence, Reading, Acceptance, Resources}`; separate `PaperId` and `RequirementId`, plus `Trace`. Only reading and acceptance reports are generated/validated in this step. The other four family semantics remain step 4. |
+| Subject and references | `Subject` contains handle (including key), creating address and exact complete bytes. `EvidenceReferences` retains all offered event bytes, sorted associations, address-keyed retrieval bytes, assertion presence, boundary names and supplied keys. Witness bytes are retained separately from stripped content identity. |
+| Report claims | Required subject/provenance/trace/rule/evidence/assumptions, offline observation boundary, typed outcome, unchanged membership, accepted set, SOURCE annotations, unexamined missing sets and observed/predicted quantities. Required optional fields allow missing-field subjects; they do not make partial reports valid. |
+| Outcomes | `Outcome::{Complete, Incomplete, Invalid, NotHandle}` is the common framing vocabulary. This complete-reading entry returns only `Complete`, with explicit scope and finality standing; incomplete/invalid/non-handle requests return typed refusals retaining the reader's details. Step 4 can frame those observations, never turn them into sets. |
+| Quantities | `Dimension`, `Quantity`, `Measurement`, `Unit`, `Absence`. Observed record count, accepted-record count and complete subject-byte length have explicit units. Predictions are absent (`NoIndependentPrediction`); operations, stack items, weight, native wall/CPU/stall, validation charge, deployment and package bounds are `NotObservedHere`, never zero. This is framing, not the resources-family proof. |
+
+`validate_report` freshly invokes the reader and re-derives annotations/filter/framing from bytes and request provenance. It trusts no proposed set, total, digest, producer role or other family's verdict. It shares the derivation helper with report generation: the binding comparison is not a second implementation of the acceptance rule. Independently written literal sets, source annotations, paper-label/requirement trace controls and negative subjects guard a common misreading. Tests bind the trace constants to the paper's label definitions and the eight-row trace in (`tab:w1b15:requirements`). Schema 1 and the twelve-dimensional census are pinned literally. No JSON codec, stable descriptor or maintained interchange promise is introduced; test-local transport remains public-input support only.
+
+**Premises and finality** · `tab:w1b15:reading-premises`
+
+| Assumption / requirement | Carrier and control |
+|---|---|
+| Inclusion, unspentness, retrieval, finality | One `Assumption::Parent` for every exact reader obligation, with its named source. `premise_identities` obtains expected event/input/outpoint identities independently through `elements`, and checks all four facts. Assertion presence never discharges them. Historical inputs need not remain unspent forever; the named observation scope matters. |
+| Per-key inclusion limit | `NoUnsuppliedKeyHandle` names the offered keys and inclusion source. The exclusion of a consumed handle of an unsupplied key rests on one valid history, not bytes proving its absence. |
+| Missing own closure | Requested completeness refuses `Incomplete { handle, missing }` at reader evidence. The unchanged two-member and 253-member cut subjects retain exactly two/253 unresolved dependencies; no SOURCE boundary name supplies missing ancestry. |
+| Unrelated incomplete supplied evidence | Closure reports retain `unexamined` and still name every input's obligations. Whole-history requests refuse either an incomplete other handle or a nonempty unexamined set. The ordinary and keyed event-99 subjects pin both cases beside the complete SOURCE. Concealing unexamined evidence in a report refuses. |
+| Finality declaration | `Declaration` names deployment, policy version, history anchor, depth or replacement rule, inclusion and retrieval sources, unspentness-observation scope and the source asserting external acceptance. The library checks matching/nonempty fields, not the truth or prudence of deployment policy. |
+| Finality standing | No offer is `Nonfinal`; requiring one refuses `FinalityMissing`. `HypotheticalDeclaration` and `DeploymentDeclaration` are distinct types, carried through `DeclarationOffer` and `Finality::{Hypothetical, Assumed}` without implicit promotion. A hypothetical match exercises the contract but establishes no deployment premise. The report mutant that promotes it to `Assumed` refuses. |
+| Matching controls | Matching hypothetical replacement-rule declaration passes. One-coordinate deployment, anchor and policy-version changes refuse separately; empty acceptance/inclusion/retrieval sources, unspentness scope or replacement rule also refuse beside it. No confirmation count or actual deployment datum is selected. |
+
+The actual accepted declaration is owed at activation. Its absence is not a Wave-1 deployment claim or a blocker for publishing this form. `Finality::Assumed` remains an explicitly external premise, not a locally authenticated fact. A requested final reading with incomplete membership refuses the missing membership before considering finality; no matching declaration can complete a cut history.
+
+**Refusals by boundary** · `tab:w1b15:reading-refusals`
+
+| Boundary | Variants / reachability | Named controls |
+|---|---|---|
+| `ReaderEvidence` | `Reader` preserves the reader's exact owner refusal; `Query` preserves the non-handle/missing/wrong-key query; `Incomplete`, `Unexamined`, `EmptyProvenance(field)` | `completeness`, `conditional`, `premise_identities`, `reading_reports::provenance`; corrupted underlying bytes refuse through `Reader`. |
+| `ReaderEvidence` finality | `FinalityMissing`, `FinalityDeployment`, `FinalityAnchor`, `FinalityPolicy`, `FinalityAcceptanceSource`, `FinalityInclusionSource`, `FinalityRetrievalSource`, `FinalityUnspentnessScope`, `FinalityRule` | `reading::finality`, one coordinate at a time beside the hypothetical matching declaration. |
+| `ReaderRule` | `SameEpoch`, `UnknownEpoch`, `ToggleRecordMissing` | `rule_refusals` beside the valid two-epoch rule. |
+| `Annotation` | `AnnotationMissing`, `AnnotationDecode` retain annotation identity and decoder error. Defensive after a complete fresh reader result; no invented public malformed-annotation entry. | Internal `annotation_internal_missing_and_decode_guards_preserve_owner_errors`; public annotation corruption is separately `AnnotationsMismatch`. |
+| `ReportFraming` | `MissingField(field)`; `SchemaMismatch`, `FamilyMismatch`, `SubjectBytesMismatch`, `SubjectIdentityMismatch`, `SubjectHandleMismatch`, `ProvenanceMismatch`, `TraceMismatch`, `RuleMismatch`, `EvidenceMismatch`, `AssumptionsMismatch`, `OutcomeMismatch`, `ObservationMismatch`, `MembershipMismatch`, `UnexaminedMismatch`, `AcceptedMismatch`, `AnnotationsMismatch` | `reading_reports::{missing, contradictions}`, `completeness`, finality-promotion mutant. Every proposed mismatch is checked beside its freshly validated control. |
+| `Quantity` | `QuantityMissing`, `QuantityUnit`, `QuantityValue`, `QuantityAvailability`, `QuantityOverflow` | `reading_reports::quantities`; the private wide-integer conversion pairs maximum with maximum-plus-one. On this node, real collection sizes cannot reach the overflow branch; no public gigantic-history subject is claimed. |
+
+`Refusal::boundary()` and `refusal_kind()` are exhaustive. None of these is a covenant-execution refusal. A report cannot add an observation kind outside the singleton offline-reader vocabulary; that is a type invariant, not a dead runtime guard. Its epoch is separately bound and a one-coordinate epoch mismatch refuses. Step-4 semantic validators must not treat this framing pass as their own verdict, and must preserve the reader's precedence at (`rec:w1b15:reader-review`).
+
+**Tracing, deferred documentation and preservation.** Both exported entries are public conformance-library boundaries under the vectors contract, with INFO spans, one distinct completed/refused event and typed refusal kind. Their internal derivation is untraced at this layer; the nested existing reader retains its own boundary event. `reading_and_report_boundaries_have_distinct_single_events` launches exactly one ignored capture child with its own 10-second timeout and checks all four messages and both span names. No per-record span is introduced. The small step-2 item is documented rather than changed: fragment evaluations are computed birth then continuation, but their `Result`s are retained; whole-leaf failure is propagated first, then birth, then continuation. All are the same defensive model-evaluation stage after commitment authentication. No reader source change or new subject is needed.
+
+The realization-owned documentation deferred from step 2 is now (`rule:realization:keyed-reading-premises`); vectors ownership is (`rule:vectors:keyed-reading`). The code/test split uses seven small source modules and three external test modules, rather than hiding the surface, framing and controls in one file; registrations and tracing plus the package records bring the step above the original 8–12-file estimate. It stays entirely within the adopted vectors/tests/contracts scope. The model, reader and all production packages outside vectors remain unchanged, as do every keyed/linked/committed/constructed byte and existing expectation. No native execution or deployment activation occurs.
+
+**Handoff to step 4.** Reading/acceptance report generation, fresh field binding, rule identities, SOURCE annotations, explicit premise/finality standings, complete/incomplete/invalid/non-handle vocabulary, and absent metric dimensions are available. The other family validators must recompute their own claims from bytes and evidence. The two cut reproduction subjects remain incomplete in reports and later native handoff until ancestry evidence exists. Bite 1.6 still owns final-byte policy observations and the final native/member-evidence discharge; local accepted sets establish neither admission nor finality.
+
+
+**Measured controls and verification.** The code gate `/var/home/tripod/loops/tmp/gate-w20b1-20261112T162056Z.log` ran 2026-11-12T16:20:56Z–16:28:42Z: `== green`, exit 0, 466 seconds, zero slot wait. It covered vectors, realization, transaction, target-elements, target-elements-conformance, architecture and compiler, plus lint and plans. Raw journals are retained in `/var/home/tripod/loops/tmp/gate-w20b1-20261112T162056Z.reading-preservation.tar`. The documentation tip receives the same package gate after this transcription.
+
+| New subject | Process wall s | Bound s | Result |
+|---|---:|---:|---|
+| `reading-rules` | 1.269755 | 10 | exit 0 |
+| `reading-premises` | 1.369697 | 10 | exit 0 |
+| `reading-reports` | 1.728189 | 10 | exit 0 |
+| `reading-conditional` | 0.302821 | 10 | exit 0 |
+| Trace capture | 0.356358 | 10 | exit 0 |
+| Whole history family, including existing subjects | 13.700919 | 60 | exit 0 |
+
+These are offline process walls including fixture setup, reader reconstruction, assertions and child startup, not native costs or a speed claim. Each child has its own timeout and prints its wall. The two cut fixtures are each built once in the conditional subject; no bound was widened. Fast-check correction rounds applied the formatter's emitted patches and repaired local lint findings (visibility, constant helpers, documentation, layout and test idioms). The final epoch-identity check passed Clippy and rustdoc in 64 seconds; its formatting patch was applied mechanically before the code gate, whose formatter was clean. No failed functional gate or changed expected byte was hidden.
+
+Both `tests::engine_base_capture::preserve_engine_base` (all ten compiler pins) and `tests::keyed_profile_tests::attestation_canonical_bytes_and_publication_equal_the_opening_base` passed. Existing vector and reproduction controls passed unchanged. The model, reader, architecture, compiler, realization and transaction sources are unchanged; the realization change is its package contract only. There is no regenerated expectation. The 18-file change consists of 14 code/test/registration/tracing files and four documentation files.
+
+The supplied slot-governed systemd unit ran with its original foreground SSH waiter through the end marker; it was neither abandoned nor relaunched. Per-battery deltas below are microseconds in the gate's own `tripod-gate-w20b1-20261112T162056Z.service` cgroup, including containers. They are not node-wide attribution. Raw start/end samples, memory levels and remaining counters are in the retained log; pressure means kernel stall accounting.
+
+| Battery | Wall s | CPU usage / user / system μs | CPU pressure some / full μs | Memory pressure some / full μs | I/O pressure some / full μs |
+|---|---:|---|---|---|---|
+| setup | 1 | +2064807 / +833007 / +1231800 | +55753 / +6225 | +0 / +0 | +462 / +445 |
+| fmt | 6 | +7045672 / +5668811 / +1376862 | +47027 / +7210 | +0 / +0 | +22408 / +22380 |
+| clippy | 24 | +54925328 / +47733028 / +7192300 | +308244 / +100310 | +40730 / +40730 | +79903 / +77522 |
+| package-tests | 356 | +3624811480 / +3533165528 / +91645952 | +55791321 / +20341449 | +125710 / +91295 | +605604 / +527225 |
+| doc | 34 | +43603364 / +30212231 / +13391132 | +12349 / +11041 | +0 / +0 | +18617 / +18213 |
+| lint-suite | 43 | +137996598 / +121499195 / +16497403 | +54567 / +19622 | +0 / +0 | +28754 / +26052 |
+| checks | 2 | +3702499 / +2073975 / +1628524 | +4140 / +3462 | +0 / +0 | +401 / +389 |
+
+
+## Reader-rule review disposition · `rec:w1b15:reading-review`
+
+The review changes only vectors report/premise/acceptance code and controls, registrations and these documents. Reader, model and every existing byte and expected set remain unchanged. The adopted phrase “parent-byte provenance” means the record's **creating** transaction bytes; actual input parents keep their existing meaning. Validation binds offers to the request; it authenticates neither external provenance, sources, declaration, rule, epoch and scope nor the truth of assertions. Shared derivation is not a second semantic implementation.
+
+| Finding | Closure and named control |
+|---|---|
+| 1 | Both bodies retain `incomplete: MissingHandles` beside `unexamined: MissingEvents`. `reading::completeness` pins keyed event 99's literal missing set and refuses concealment as `IncompleteMismatch`. |
+| 2 | `Outcome<T>` contains sets only through `Complete(T)`; incomplete, invalid and non-handle variants have none. `Completeness::Report` produces/validates both unchanged cut subjects and a non-handle. Forged complete standing refuses `OutcomeMismatch`; `Required` keeps its missing-evidence refusal. |
+| 3 | `Report { header, body }` splits common framing from Reading/Acceptance bodies; only Acceptance holds rule and epoch. The other-family body subject refuses `BodyMismatch`. `Body` and `Observation` are non-exhaustive for step 4; no other family implementation or archived observation is invented. |
+| 4 | Required finality refuses `FinalityHypothetical` before coordinate checks. Matching and coordinate controls run under `NotRequested`. In-crate synthetic deployment control alone exercises required acceptance. |
+| 5 | Header trace carries requirement 8 and both interface/limitations anchors. Each body's trace is the union of its own requirement row (6 or 7). `reading_reports::trace` extracts each claimed table row's anchors, compares exact label sets and checks their defining paper files, including `10_limitations.tex`. |
+| 6 | `HistoryAnchor(String)` is an opaque external chain position. Matching binds only caller provenance, never supplied bytes or a chain fact. |
+| 7 | `reading_review::precedence` pins missing closure against absent/mismatched finality, whole-history combined failures against single failures, and a bad rule against missing finality. Required hypothetical precedence is pinned before mismatched deployment. The full order is below. |
+| 8 | Annotation fields are `creating` and `creating_bytes`, matching their existing doc meaning. |
+| 9 | Changing eligibility is total over memberships: an absent named record is not accepted. Two epochs remain. `reading::growth` adds literals for prefix 30 enabled `{10,11}` and prefix 40 disabled `{10}`, and accepts the earlier prefix without record 11. The test asserts the intended record exists when demonstrating removal. |
+| 10 | `DeploymentDeclaration` has a private field and only an in-crate test constructor until an activation route exists. The E0451 privacy doctest and `synthetic_deployment_is_required_and_hypothetical_cannot_promote` cover privacy, required acceptance and promotion refusal. This is synthetic, not deployment data. |
+| 11 | Nonempty declaration inclusion/retrieval sources must equal `PremiseSources`; separate `FinalityInclusionMismatch` and `FinalityRetrievalMismatch` subjects sit beside the match. |
+| 12 | A matching `Depth(0)` form passes: it means a deployment elects finality at inclusion. This library checks form, not prudence, and selects no count. |
+| 13 | `Unknown::Absent` is removed; `Unsupported` documents future target-field variants. SOURCE annotations are creation values, not successor readings or credits; a directly queried SOURCE is the coincident case. |
+| 14 | `premise_identities` now covers multi and both event-99 forms. `reading_review::literals` independently assembles exact SOURCE evidence references (including nonempty boundary names and keys) and the ordered full assumption list. README and this record state validation's limits. |
+| 15 | Defensive queried-subject lookup uses `SubjectMissing`, separate from missing SOURCE annotation. Its synthetic lookup control refuses missing bytes/association. Quantity overflow is unreachable from real sizes on every supported target with at most 64-bit `usize`, though the wide-integer helper has a maximum-plus-one subject. Refused events carry the wrapped reader's `inner_refusal_kind`, pinned by the capture child and TRACING rows. |
+| 16 | The dimension census traverses an exhaustive successor match; a new variant requires a new arm. Quantity interpretation also matches every dimension explicitly. |
+| 17 | `WholeHistory { handles, events }` retains all failures, tested with a keyed event and a separate ordinary missing-parent event, plus their single-fault twins. Further controls query the incomplete handle itself and retain the entire aggregate, including its own missing set. An associated but unsupplied unused event lies outside supplied history, with a control. |
+
+**Final report/request shape.** `Header` contains schema, family, subject, provenance, common trace, evidence, assumptions, observation and observed/predicted quantities. `ReadingBody<CompleteReading>` contains family trace, outcome and missing maps. `CompleteReading` contains scope, finality and membership. `AcceptanceBody` adds rule and observed epoch to `ReadingBody<AcceptedReading>`; `AcceptedReading` contains the complete reading, accepted set and SOURCE annotations. `Outcome<T>` is `Complete(T)`, `Incomplete { handle, missing }`, `Invalid(reader_refusal)` or `NotHandle(handle)`. Noncomplete outcomes have no record-set or annotation field and their record-count quantities are absent, not zero. Reading has no acceptance rule or accepted-record quantity. `Completeness::{Required, Report}` is separate from handle-closure versus whole-history scope. Reporting relaxes the queried-handle completeness demand only when finality is not required; required finality still refuses incomplete evidence first. It does not turn a failing whole-history claim into success. Invalid reader results remain typed refusals even in reporting mode, with a corrupted-content control. `Outcome::Invalid` is shared vocabulary for step 4, not a new report-producing route here. Every produced report therefore retains the successful reader's full parent-obligation list.
+
+**Refusal order.** First validate nonempty request provenance, then invoke the unchanged reader whose own order remains at (`rec:w1b15:reader-review`). A demanding closure request next checks its queried handle's query/completeness. For a whole-history request, missing-evidence maps are aggregated including the queried handle itself if incomplete; missing/wrong-key/non-handle query refusals still precede that whole-history claim. A reporting request frames incomplete/non-handle observations instead; a noncomplete observation cannot confer required finality. Defensive subject lookup precedes body assembly. Complete Acceptance then derives SOURCE annotations, checks the two-epoch rule and applies it; Reading has neither annotation nor rule checks. Finality follows: absent offer under Required; hypothetical offer under Required; acceptance-source presence; deployment, anchor, policy version; inclusion and retrieval presence; inclusion and retrieval equality; unspentness scope; nonempty replacement rule. Zero depth is accepted. Successful declarations match the caller's external anchor, not anything authenticated from transaction bytes. The four two-fault controls preserve this order, with aggregate whole-history evidence replacing the former first-failure choice.
+
+Field validation derives first, then checks header schema/family/subject and required components, observation and quantities, body family, acceptance rule/epoch if any, body trace, incomplete/unexamined maps and outcome. Complete payload comparisons check scope/finality, membership, accepted set and annotations in that order. Refusal-to-boundary mapping is exhaustive. `SubjectMissing` is a defensive report-framing refusal, and `WholeHistory` and finality refusals are reader evidence; neither is covenant execution. Missing annotation retains the documented internal grouping of unavailable creating material; no public invalid fixture is invented for it.
+
+**Step-3 final-tip evidence.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T163100Z.log` ran 2026-11-12T16:31:00Z–16:38:49Z, `== green`, exit 0, 469 seconds, zero queue wait. Its family wall was 16.900047 seconds, distinct from the earlier code gate's 13.700919 seconds. Its preserved journals are the same stem with `.reading-preservation.tar`. New subject walls were rules 1.004042, premises 1.644486, reports 1.991176, conditional 0.260953 and trace 0.275501 seconds; all bounds held. Per-battery start/end/delta counters remain in that gate's own `tripod-gate-w20b1-20261112T163100Z.service` cgroup, containers included. No native result or performance claim follows.
+
+
+**Correction rounds.** Fast checks repaired formatter output, exhaustive refusal mapping, helper placement/size and test lint findings after the type split. Two attempted checks returned `CHECK-BUSY` (exit 3), launched no battery and were retried only after the existing foreground check ended. The named code commit's final fast check passed with clean formatting, Clippy and rustdoc in 47 seconds (4/6/37 seconds). The first full gate, `/var/home/tripod/loops/tmp/gate-w20b1-20261112T171046Z.log`, ran 17:10:46Z–17:17:49Z, 423 seconds, red, exit 1, zero queue wait: all package tests passed, and both failures were the same unstaged formatter hunk in `reading_review.rs` (the dedicated fmt battery and the lint suite's cargo-fmt lane). The emitted formatter hunk had been applied locally but omitted from the named commit; amending it fixes the tree without changing a subject or expectation. This failure is retained rather than counted as green.
+
+
+**Review verification.** The corrected code's covering run `/var/home/tripod/loops/tmp/gate-w20b1-20261112T171851Z.log` ran 2026-11-12T17:18:51Z–17:23:07Z, `== green`, exit 0, reported wall 255 seconds, zero queue wait. It covered vectors, realization, transaction, target-elements, target-elements-conformance, architecture and compiler, plus lint and plans. Journals are retained as `/var/home/tripod/loops/tmp/gate-w20b1-20261112T171851Z.reading-review-preservation.tar`. A final direct family-local trace corruption control is added beside the existing header-trace control; it and this documentation receive the same final package gate. This table is the measured code run, not a prediction of that final run.
+
+| Subject | Process wall s | Bound s | Verdict |
+|---|---:|---:|---|
+| `reading-review` | 0.567608 | 10 | exit 0 |
+| `reading-rules` | 0.658737 | 10 | exit 0 |
+| `reading-premises` | 1.001418 | 10 | exit 0 |
+| `reading-reports` | 1.627795 | 10 | exit 0 |
+| `reading-conditional` | 1.216347 | 10 | exit 0 |
+| Trace capture | 0.303611 | 10 | exit 0 |
+| Whole family, including existing subjects | 10.363905 | 60 | exit 0 |
+
+Each process has its own timeout and prints its duration. These are offline walls including fixture construction, repeated reader calls, report binding and process startup; no causal performance claim or native measurement is made. Both cut fixtures are built once per conditional process, and no bound was widened. The independent literals and exact existing reproduction comparisons pass. `tests::engine_base_capture::preserve_engine_base` reruns all ten pins, and `tests::keyed_profile_tests::attestation_canonical_bytes_and_publication_equal_the_opening_base` reruns canonical publication; both passed. Reader/model and all production packages outside vectors are byte-identical to the step's base; no vector expectation changed.
+
+The supplied gate starts its own slot-governed transient systemd unit; the lane retained the original foreground SSH waiter through its end marker for both rounds, without abandonment or relaunch. The following deltas are microseconds from the gate's own `tripod-gate-w20b1-20261112T171851Z.service` cgroup, including containers, not from node-wide samples. Raw start/end counters, memory levels and remaining fields stay in the log.
+
+| Battery | Wall s | CPU usage / user / system μs | CPU pressure some / full μs | Memory pressure some / full μs | I/O pressure some / full μs |
+|---|---:|---|---|---|---|
+| setup | 0 | +1892403 / +852950 / +1039453 | +2269 / +2160 | +0 / +0 | +1029 / +1029 |
+| fmt | 3 | +4714071 / +3546651 / +1167421 | +3951 / +3164 | +0 / +0 | +91 / +90 |
+| clippy | 2 | +2564588 / +1408481 / +1156106 | +4985 / +3893 | +0 / +0 | +1018 / +1019 |
+| package-tests | 186 | +2605629487 / +2559994437 / +45635051 | +21095899 / +4712743 | +0 / +0 | +2649 / +982 |
+| doc | 34 | +35814120 / +23105214 / +12708906 | +428485 / +413959 | +0 / +0 | +107 / +101 |
+| lint-suite | 26 | +96070873 / +85222276 / +10848597 | +102253 / +48352 | +0 / +0 | +309 / +302 |
+| checks | 2 | +3397174 / +1809887 / +1587286 | +7518 / +4688 | +0 / +0 | +218 / +194 |
+
+
+The source-and-documentation gate `/var/home/tripod/loops/tmp/gate-w20b1-20261112T172558Z.log` ran 17:25:58Z–17:30:54Z, reported wall 296 seconds, red, exit 1, zero queue wait. All package tests, formatting, Clippy, rustdoc and lint suites passed; the final label check refused a malformed citation group in this record. The citation is corrected. Final inspection also removed an unrequested conversion of reader errors into invalid reports: both request modes now preserve `Refusal::Reader`, so every report produced here carries the reader's four facts per input. `Outcome::Invalid` remains shared framing for step 4. A reporting-mode corrupted-byte control pins this limit; reader/model code and all existing bytes remain unchanged.
+
+
+**Final review-tree run.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T174012Z.log` ran 2026-11-12T17:40:12Z–17:45:32Z, wall 320 seconds, zero slot wait, `== green`, exit 0, over the full requested package set plus lint/plans. This run includes the final whole-history aggregate control (also querying the incomplete handle), the reporting-mode reader-refusal control and the family-local trace mutant. The final code fast check passed in 47 seconds and the documentation fast check in 57 seconds. The whole-history test initially exceeded Clippy's function-size bound; removing its redundant intermediate expected map restored the bound without changing its final expected value. No bounds were widened.
+
+Journals are retained at `/var/home/tripod/loops/tmp/gate-w20b1-20261112T174012Z.reading-review-preservation.tar`. The ten-pin capture and canonical publication comparison both passed; reader/model, other production packages and all pre-existing vector expectations remain unchanged. Subject walls below include fixture construction and repeated report validation, not just the reader. Each subject has its own 10-second timeout; the family has 60 seconds. This transcription is the only change after that run and receives final verification before publication.
+
+| Final subject | Wall s | Verdict |
+|---|---:|---|
+| `reading-review` | 0.579759 | exit 0 |
+| `reading-rules` | 0.543122 | exit 0 |
+| `reading-premises` | 1.322257 | exit 0 |
+| `reading-reports` | 1.549225 | exit 0 |
+| `reading-conditional` | 0.659146 | exit 0 |
+| Trace capture | 0.130665 | exit 0 |
+| Whole family | 8.542735 | exit 0 |
+
+The unchanged supplied gate (`#!/bin/bash`, `set -o pipefail`) ran through its slot-governed transient unit with the original foreground SSH waiter held until `== green`. Resource deltas below belong to its own `tripod-gate-w20b1-20261112T174012Z.service` cgroup, containers included; raw start/end samples remain in the log. They are not node-wide costs or native measurements.
+
+| Battery | Wall s | CPU usage / user / system μs | CPU pressure some / full μs | Memory pressure some / full μs | I/O pressure some / full μs |
+|---|---:|---|---|---|---|
+| setup | 1 | +1891458 / +868387 / +1023070 | +3054 / +2514 | +0 / +0 | +76 / +76 |
+| fmt | 3 | +5189411 / +4068709 / +1120702 | +2874 / +2764 | +0 / +0 | +46 / +46 |
+| clippy | 10 | +23676351 / +18208596 / +5467754 | +10134 / +4892 | +0 / +0 | +5304 / +5303 |
+| package-tests | 240 | +2888765667 / +2822475867 / +66289799 | +31502166 / +9093904 | +136695 / +93001 | +15859 / +5389 |
+| doc | 32 | +34718367 / +22998273 / +11720095 | +20385 / +20094 | +86675 / +86676 | +34667 / +34666 |
+| lint-suite | 31 | +107882764 / +93639692 / +14243071 | +39451 / +22204 | +1 / +0 | +20215 / +19153 |
+| checks | 1 | +3361317 / +1926993 / +1434324 | +5424 / +4623 | +0 / +0 | +872 / +871 |
