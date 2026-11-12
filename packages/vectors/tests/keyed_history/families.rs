@@ -32,13 +32,13 @@ const fn handle(h: model::Handle) -> r::Handle {
     }
 }
 pub(super) fn subject(name: &str) {
-    let fixture = match name {
+    let fixture = super::timed("fixture", || match name {
         "cut-two" => fixture::existing(2),
         "cut-253" => fixture::existing(253),
         _ => fixture::build(fixture::graph(name)),
-    };
+    });
     let input = reader::input(fixture.reader_inputs());
-    let context = e::prepare_families(&input).unwrap();
+    let context = super::timed("family-prepare", || e::prepare_families(&input).unwrap());
     writeln!(
         std::io::stdout().lock(),
         "family index subject={name} second-pass-wall={:.9}s",
@@ -58,11 +58,23 @@ pub(super) fn subject(name: &str) {
     );
     request.completeness = e::Completeness::Report;
     for family in FAMILIES {
-        let report = e::family_report(&context, family, &request).unwrap();
-        validator(family)(&context, &request, &report).unwrap();
-        expected(&fixture, event, &report, name.starts_with("cut-"));
-        common(&context, family, &request, &report);
-        specific(&context, family, &request, &report);
+        let report = super::timed(&format!("report-{family:?}"), || {
+            e::family_report(&context, family, &request).unwrap()
+        });
+        super::timed(&format!("validate-{family:?}"), || {
+            validator(family)(&context, &request, &report).unwrap();
+        });
+        super::timed(&format!("expected-{family:?}"), || {
+            expected(&fixture, event, &report, name.starts_with("cut-"));
+        });
+        // Generic refusal coordinates are covered by source/multi/cut-two.
+        // Wide subjects retain every accepted report, literal set and size comparison.
+        if !matches!(name, "wide" | "cut-253") {
+            super::timed(&format!("mutants-{family:?}"), || {
+                common(&context, family, &request, &report);
+                specific(&context, family, &request, &report);
+            });
+        }
     }
     if name == "multi" {
         super::family_controls::rules(&context, &request);

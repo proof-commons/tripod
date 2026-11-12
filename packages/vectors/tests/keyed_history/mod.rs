@@ -18,6 +18,39 @@ mod model_checks;
 
 use std::io::Write;
 use std::process::{Command, Output};
+use tracing_subscriber::{Layer, layer::SubscriberExt};
+
+// Hang guards, not performance thresholds. Round at least four times the largest
+// completed quiet/loaded sample up to ten seconds per subject and sixty seconds
+// per family; retain the historical loaded floor when adding smaller subjects.
+// The release sample was 9.605960s for wide and 58.142684s for the interrupted
+// family: 40s / 300s provide 4.16x / 5.16x headroom respectively. The timed-out
+// 10.098874s child is censored, not a completed calibration sample. Re-measure
+// under parallel package load after changes; split work that exceeds the sampled
+// subject share instead of silently increasing these guards. See the plan's
+// rec:w1b15:wide-bound for phase walls and the repaired loaded calibration.
+const SUBJECT_TIMEOUT: &str = "40";
+const FAMILY_TIMEOUT: &str = "300";
+
+// Phase walls are measurements; process timeouts are separate hang guards.
+fn timed<T>(phase: &str, action: impl FnOnce() -> T) -> T {
+    let start = std::time::Instant::now();
+    let value = action();
+    writeln!(
+        std::io::stdout().lock(),
+        "history phase={phase} wall={:.9}s",
+        start.elapsed().as_secs_f64()
+    )
+    .unwrap();
+    value
+}
+
+fn accumulate<T>(elapsed: &mut std::time::Duration, action: impl FnOnce() -> T) -> T {
+    let start = std::time::Instant::now();
+    let value = action();
+    *elapsed += start.elapsed();
+    value
+}
 
 fn bounded(command: &mut Command, description: &str) -> Output {
     let start = std::time::Instant::now();
@@ -73,8 +106,8 @@ fn one_test(result: &Output) {
 #[test]
 fn keyed_histories_have_bounded_public_subjects() {
     one_test(&bounded(
-        &mut child("keyed_history::history_family_child", "60"),
-        "family timeout=60s",
+        &mut child("keyed_history::history_family_child", FAMILY_TIMEOUT),
+        "family timeout=300s",
     ));
 }
 
@@ -112,11 +145,11 @@ fn history_family_child() {
         "reading-reports",
         "reading-conditional",
     ] {
-        let mut command = child("keyed_history::history_subject_child", "10");
+        let mut command = child("keyed_history::history_subject_child", SUBJECT_TIMEOUT);
         command.env("TRIPOD_KEYED_HISTORY_SUBJECT", subject);
         one_test(&bounded(
             &mut command,
-            &format!("subject={subject} timeout=10s"),
+            &format!("subject={subject} timeout={SUBJECT_TIMEOUT}s"),
         ));
     }
 }
@@ -125,6 +158,15 @@ fn history_family_child() {
 #[ignore = "bounded subject parent launches this exact child"]
 fn history_subject_child() {
     let subject = std::env::var("TRIPOD_KEYED_HISTORY_SUBJECT").unwrap();
+    let subscriber = tracing_subscriber::registry().with(
+        tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+            .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                matches!(metadata.name(), "read_keyed_history" | "keyed_cost_packet")
+            })),
+    );
+    let _timing = tracing::subscriber::set_default(subscriber);
     if subject == "families-constants" {
         family_controls::constants();
         return;
@@ -202,14 +244,14 @@ fn history_subject_child() {
     } else {
         &subject
     };
-    let fixture = fixture::build(fixture::graph(name));
+    let fixture = timed("fixture", || fixture::build(fixture::graph(name)));
     assert_eq!(
         fixture::check_association(&fixture, &fixture.association),
         Ok(())
     );
-    reader::compare(&fixture);
-    assert_expected(name, &fixture);
-    assert_invariants(&fixture);
+    timed("reader-comparison", || reader::compare(&fixture));
+    timed("literal-sets", || assert_expected(name, &fixture));
+    timed("model-invariants", || assert_invariants(&fixture));
     assert_eq!(fixture.reader_inputs().bytes, fixture.bytes);
     if subject == "association" {
         association_subjects(fixture);

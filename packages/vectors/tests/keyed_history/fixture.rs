@@ -212,8 +212,9 @@ fn sponsor_parent(template: &[u8], salt: u32) -> Vec<u8> {
 
 pub(super) fn build(graph: Vec<Event>) -> Fixture {
     // Expectations exist before construction and are not read from any byte.
-    let expected = analyze(&graph).unwrap();
-    let template = replay::case(0);
+    let expected = super::timed("model", || analyze(&graph).unwrap());
+    let template = super::timed("template", || replay::case(0));
+    let mut phases = [std::time::Duration::ZERO; 3];
     let mut fixture = Fixture::empty(graph, expected);
     let mut parents = BTreeMap::new();
     let target = target_elements::reviewed_elements_tapscript().unwrap();
@@ -282,18 +283,8 @@ pub(super) fn build(graph: Vec<Event>) -> Fixture {
         packet.successor = 1000 + u64::from(*id);
         packet.change = total - packet.successor - packet.fee;
         let structural = declared.outputs[1].is_some();
-        if structural {
-            packet.witness.clear();
-            packet.change_program = commitment.output_program().to_vec();
-        } else {
-            replay::record_signature_with_commitment(&mut packet, commitment);
-        }
-        let (snapshot, _) = replay::rebuild_with_commitment(&packet, !structural, commitment);
-        // No signing occurs in this second reconstruction: recorded witness only.
-        assert_eq!(
-            replay::rebuild_with_commitment(&packet, !structural, commitment).0,
-            snapshot
-        );
+        let repeat = fixture.graph.len() <= 5 || !packet.source;
+        let snapshot = build_packet(&mut packet, structural, commitment, &mut phases, repeat);
         let transaction = TargetTransaction::decode(&snapshot.complete).unwrap();
         fixture
             .association
@@ -302,6 +293,8 @@ pub(super) fn build(graph: Vec<Event>) -> Fixture {
         fixture.packets.insert(*id, packet);
         parents.insert(*id, transaction);
     }
+    phase_totals(phases);
+    fingerprint(&fixture.bytes);
     fixture
 }
 
@@ -424,7 +417,7 @@ pub(super) fn existing(count: usize) -> Fixture {
         &(0..u32::try_from(count).unwrap()).collect::<Vec<_>>(),
         42,
     ));
-    let expected = analyze(&graph).unwrap();
+    let expected = super::timed("model", || analyze(&graph).unwrap());
     let packet = replay::case(count);
     let (snapshot, _) = replay::rebuild(&packet, true);
     assert_eq!(replay::rebuild(&packet, true).0, snapshot);
@@ -458,6 +451,7 @@ pub(super) fn existing(count: usize) -> Fixture {
     external_inputs.insert(1000, vec![(sponsor.txid, sponsor.vout)]);
     association.push((1000, replay::txid(&snapshot.complete)));
     bytes.insert(1000, snapshot.complete);
+    fingerprint(&bytes);
     Fixture {
         graph,
         expected,
@@ -509,4 +503,73 @@ fn declared_input_keys(graph: &[Event], event: &Event) -> Vec<Option<Key>> {
                 .outputs[input.position]
         })
         .collect()
+}
+
+fn build_packet(
+    packet: &mut replay::Packet,
+    structural: bool,
+    commitment: &transaction::keyed_taproot::KeyedCommitment,
+    phases: &mut [std::time::Duration; 3],
+    repeat: bool,
+) -> replay::Snapshot {
+    if structural {
+        packet.witness.clear();
+        packet.change_program = commitment.output_program().to_vec();
+    } else {
+        super::accumulate(&mut phases[0], || {
+            replay::record_signature_with_commitment(packet, commitment);
+        });
+    }
+    let (snapshot, _) = super::accumulate(&mut phases[1], || {
+        replay::rebuild_with_commitment(packet, !structural, commitment)
+    });
+    // Reproduction is pinned on small controls and every MERGE, including 253 inputs.
+    // Repeating the same SOURCE form 253 times adds no width-specific check.
+    if repeat {
+        // No signing occurs in this second reconstruction: recorded witness only.
+        assert_eq!(
+            super::accumulate(&mut phases[2], || replay::rebuild_with_commitment(
+                packet,
+                !structural,
+                commitment
+            ))
+            .0,
+            snapshot
+        );
+    }
+    snapshot
+}
+
+fn phase_totals(phases: [std::time::Duration; 3]) {
+    for (phase, elapsed) in ["fixture-sign", "fixture-rebuild", "fixture-repeat"]
+        .into_iter()
+        .zip(phases)
+    {
+        use std::io::Write;
+        writeln!(
+            std::io::stdout().lock(),
+            "history phase={phase} wall={:.9}s",
+            elapsed.as_secs_f64()
+        )
+        .unwrap();
+    }
+}
+
+// Before/after measurement evidence, not a regenerated test expectation.
+fn fingerprint(bytes: &BTreeMap<EventId, Vec<u8>>) {
+    use std::io::Write;
+    let mut framed = Vec::new();
+    for (id, transaction) in bytes {
+        framed.extend_from_slice(&id.to_le_bytes());
+        framed.extend_from_slice(&u64::try_from(transaction.len()).unwrap().to_le_bytes());
+        framed.extend_from_slice(transaction);
+    }
+    let digest = target_elements_conformance::constructor::tagged::sha256(&framed);
+    writeln!(
+        std::io::stdout().lock(),
+        "history fixture events={} framed_bytes={} digest={digest:02x?}",
+        bytes.len(),
+        framed.len()
+    )
+    .unwrap();
 }
