@@ -31,6 +31,8 @@ It owns:
 
 It owns evidence, not semantics.
 
+The keyed finite-history model is conformance-only standard-library code compiled by external tests and an isolated harness. Public construction fixtures and their event/content-address association live in `packages/vectors/tests/keyed_history/`; their expected sets are declared before construction, not taken from builder totals or declaration evaluation. The source/dependency review, refusal boundaries and supplied-parent limits are recorded at (`rec:w1b15:histories`). This adds no production reader or chain-evidence claim; the later byte reader must remain independent of constructor classification.
+
 ## Dependencies · `sec:vectors:dependencies`
 
 Broad direct dependencies are permitted because this package compares assurance

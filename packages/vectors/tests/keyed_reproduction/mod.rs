@@ -1,5 +1,5 @@
 //! External public consumer. Replay is reproducibility, never native acceptance.
-mod fixture;
+pub mod fixture;
 
 use fixture::{Packet, Snapshot};
 use serde::{Deserialize, Serialize};

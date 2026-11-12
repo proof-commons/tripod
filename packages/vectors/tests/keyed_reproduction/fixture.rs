@@ -203,6 +203,19 @@ pub fn rebuild(packet: &Packet, admitted: bool) -> (Snapshot, KeyedCommitment) {
     let target = reviewed_elements_tapscript().unwrap();
     let linked = linked(packet.key, packet.source);
     let commitment = commit_keyed_bundle(&target, &linked).unwrap();
+    rebuild_with_commitment(packet, admitted, &commitment)
+}
+
+/// Reuses only immutable public construction material, never an expectation.
+///
+/// # Panics
+/// Panics if the packet and supplied commitment do not form a supported fixture.
+pub fn rebuild_with_commitment(
+    packet: &Packet,
+    admitted: bool,
+    commitment: &KeyedCommitment,
+) -> (Snapshot, KeyedCommitment) {
+    let target = reviewed_elements_tapscript().unwrap();
     let replay = Replay {
         packet,
         offers: std::cell::Cell::new(0),
@@ -212,13 +225,13 @@ pub fn rebuild(packet: &Packet, admitted: bool) -> (Snapshot, KeyedCommitment) {
     let source;
     let merge;
     let (request, receipt) = if packet.source {
-        source = keyed_source_request(&target, packet.key, &commitment, &inputs).unwrap();
+        source = keyed_source_request(&target, packet.key, commitment, &inputs).unwrap();
         (KeyedConstructionRequest::Source(&source), source.members())
     } else {
-        merge = keyed_merge_request(&target, packet.key, &commitment, &inputs).unwrap();
+        merge = keyed_merge_request(&target, packet.key, commitment, &inputs).unwrap();
         (KeyedConstructionRequest::Merge(&merge), merge.members())
     };
-    finish(packet, admitted, &replay, &commitment, request, receipt)
+    finish(packet, admitted, &replay, commitment, request, receipt)
 }
 
 fn input_offers<'a>(packet: &'a Packet, replay: &'a Replay<'_>) -> Vec<KeyedInputOffer<'a, 'a>> {
@@ -346,9 +359,10 @@ fn finish(
     (snapshot, commitment.clone())
 }
 
-/// Parent-test setup alone signs; replay and the child accept only recorded bytes.
+/// Disposable fixture setup signs, including history-subject setup children;
+/// replay and the fresh reproduction child accept only recorded bytes.
 pub fn case(members: usize) -> Packet {
-    use elements::secp256k1_zkp::{Message, PublicKey, Secp256k1, SecretKey};
+    use elements::secp256k1_zkp::{PublicKey, Secp256k1, SecretKey};
     let secret = SecretKey::from_slice(&[1; 32]).unwrap();
     let secp = Secp256k1::new();
     let public = PublicKey::from_secret_key(&secp, &secret).serialize();
@@ -395,14 +409,42 @@ pub fn case(members: usize) -> Packet {
         signature_bound: 72,
         witness: vec![],
     };
-    let (unsigned, _) = rebuild(&packet, false);
-    let parent = TargetTransaction::decode(&packet.inputs[members].parent).unwrap();
-    let digest = reference_digest(&unsigned.stripped, members, &parent.outputs()[1]);
+    record_signature(&mut packet);
+    packet
+}
+
+/// Disposable funding setup only; reconstruction consumes the resulting public
+/// witness without calling this helper or accepting a secret.
+///
+/// # Panics
+/// Panics if the test packet is not the fixed sponsor's supported explicit form.
+pub fn record_signature(packet: &mut Packet) {
+    let target = reviewed_elements_tapscript().unwrap();
+    let commitment = commit_keyed_bundle(&target, &linked(packet.key, packet.source)).unwrap();
+    record_signature_with_commitment(packet, &commitment);
+}
+
+/// Signs disposable funding using cached public material; no covenant secret.
+///
+/// # Panics
+/// Panics if the explicit packet cannot be constructed with this material.
+pub fn record_signature_with_commitment(packet: &mut Packet, commitment: &KeyedCommitment) {
+    use elements::secp256k1_zkp::{Message, PublicKey, Secp256k1, SecretKey};
+    let secret = SecretKey::from_slice(&[1; 32]).unwrap();
+    let secp = Secp256k1::new();
+    let public = PublicKey::from_secret_key(&secp, &secret).serialize();
+    let (unsigned, _) = rebuild_with_commitment(packet, false, commitment);
+    let index = packet.inputs.len() - 1;
+    let parent = TargetTransaction::decode(&packet.inputs[index].parent).unwrap();
+    let digest = reference_digest(
+        &unsigned.stripped,
+        index,
+        &parent.outputs()[usize::try_from(packet.inputs[index].vout).unwrap()],
+    );
     let mut signature = secp
         .sign_ecdsa(&Message::from_digest(digest), &secret)
         .serialize_der()
         .to_vec();
     signature.push(1);
     packet.witness = vec![signature, public.to_vec()];
-    packet
 }
