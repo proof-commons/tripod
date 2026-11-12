@@ -45,6 +45,11 @@ transaction = { package = "tripod-transaction", path = "packages/transaction" }
 vectors = { package = "tripod-vectors", path = "packages/vectors" }
 
 anyhow = "1"
+# Production HASH160 for the admitted P2WPKH sponsor verification only.
+# Existing Rust Bitcoin dependency, exact pin, no default features requested.
+# HASH160 includes this crate's SHA-256 and RIPEMD-160; signing-message SHA-256
+# remains sha2. Forward graph and unsafe/advisory review: rec:w1b14:construct.
+bitcoin_hashes = { version = "=0.14.101", default-features = false }
 clap = { version = "4", features = ["derive"] }
 # Reference-implementation oracles and the production keyed curve adapter:
 # transaction's schema-1 public arithmetic uses the safe wrapper below with

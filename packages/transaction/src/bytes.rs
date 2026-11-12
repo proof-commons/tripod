@@ -944,7 +944,7 @@ impl InputWitness {
         self.stack.is_empty()
     }
 
-    fn encode(&self, bytes: &mut Vec<u8>) {
+    pub(crate) fn encode(&self, bytes: &mut Vec<u8>) {
         // The two issuance proofs and the peg-in stack are empty for
         // every input this crate builds, and each is still written as
         // its own empty length prefix: the target reads four fields per

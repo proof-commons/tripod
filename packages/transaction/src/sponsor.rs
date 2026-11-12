@@ -59,6 +59,11 @@ pub enum SighashProfile {
 pub enum SignerRole {
     /// A member of the isolated sponsor suffix.
     SponsorSuffixMember,
+    /// A parent-bound keyed construction collateral input at its actual index.
+    /// No suffix assumption is made.
+    /// Carries canonical stripped (`encode_without_witness`) bytes, unlike the
+    /// compact path. The input index is actual, not a sponsor suffix offset.
+    KeyedCollateral,
 }
 
 /// What a sponsor adapter offers a construction.

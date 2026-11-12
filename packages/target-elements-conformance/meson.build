@@ -81,6 +81,7 @@ target_elements_conformance_source_files = files(
   'src/tests/guide11_reproductions.rs',
   'src/tests/guide12_reproductions.rs',
   'src/tests/guide13_reproductions.rs',
+  'src/tests/keyed_sponsor_tests.rs',
   'src/tests/live_receipt_key_tests.rs',
   'src/tests/mod.rs',
   'src/tests/normalization_matrix_tests.rs',

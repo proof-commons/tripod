@@ -16,8 +16,15 @@ pub enum KeyedRequestObligation {
     Finality,
     CollateralAuthorization,
     FundingAndPolicyAdmission,
+    /// Bite 1.6 must repeat policy observations on the final bytes.
+    FinalBytePolicyObservation,
+    /// Member covenant execution and every per-relation evidence premise remain open.
+    MemberExecutionAndRelationEvidence,
 }
 impl KeyedRequestObligation {
+    /// Initial request/unsigned-structure obligations. Admission refines the
+    /// funding-policy entry into final-byte observation and adds the explicit
+    /// member-execution reminder; this is not an enumeration of every variant.
     pub const ALL: [Self; 6] = [
         Self::Inclusion,
         Self::Unspentness,

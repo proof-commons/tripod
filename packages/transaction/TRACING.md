@@ -29,6 +29,8 @@ ADR-010 requires execwrap child output to route to explicit files and an unroute
 
 | Operation and code boundary | Span name | Target | Level | Fields (typed) | Duration value |
 |---|---|---|---|---|---|
+| `keyed_sponsor_digest`, `verify_keyed_sponsor` (`src/keyed_sponsor.rs`) | Same as entry name | `transaction::keyed_sponsor` | DEBUG | `family: &'static str = "keyed"` | Explicit SegWit-v0 message construction or strict P2WPKH verification; no signing. |
+| `construct_keyed`, `admit_keyed` (`src/keyed_construct.rs`) | Same as entry name | `transaction::keyed_construct` | DEBUG | `family: &'static str = "keyed"` | Ordered materialization or measured-envelope admission and ordinary signature verification. |
 | `keyed_source_request`, `keyed_merge_request` (`src/keyed_request.rs`) | Same as entry name | `transaction::keyed_request` | DEBUG | `family: &'static str = "keyed"`, `input_count: u64` | Canonical parent and offer binding, role classification and per-member coverage; no authorization or admission. |
 | `commit_keyed_bundle`, `authenticate_keyed_predecessor`, `authenticate_keyed_path` (`src/keyed_taproot.rs`) | Same as entry name | `transaction::keyed_taproot` | DEBUG | `family: &'static str = "keyed"` | Public commitment arithmetic or local script/control equality; no chain recognition. |
 | `derive_candidate_abi`, `derive_live_transfer_abi`, `derive_maturity_announcement_abi` | `derive_abi` | `transaction::abi`, `transaction::live_abi`, `transaction::state_abi` | INFO | `family: &'static str` | Linked shape and obligation traversal can scale with a bundle. |
@@ -46,6 +48,10 @@ Span close records supply busy and idle time; no package event repeats measured 
 
 | Emission point | Target | Level | Message | Fields (name: type) |
 |---|---|---|---|---|
+| Keyed digest / verification success | `transaction::keyed_sponsor` | DEBUG | `keyed sponsor digest completed` / `keyed sponsor verification completed` | `family = "keyed"`, `outcome = "completed"`; one own event per return. |
+| Keyed digest / verification refusal | `transaction::keyed_sponsor` | DEBUG | `keyed sponsor digest refused` / `keyed sponsor verification refused` | `family = "keyed"`, `outcome = "refused"`, `refusal_kind: &'static str`; distinct callsites. |
+| Keyed construction success | `transaction::keyed_construct` | DEBUG | `keyed construction completed` | `family = "keyed"`, `boundary: &'static str` (`construct` / `admit`), `outcome = "completed"`; one own event per return. |
+| Keyed construction refusal | `transaction::keyed_construct` | DEBUG | `keyed construction refused` | `family = "keyed"`, `boundary`, `outcome = "refused"`, `refusal_kind: &'static str`; separate refusal callsite. |
 | Keyed request success | `transaction::keyed_request` | DEBUG | `keyed source request completed` / `keyed merge request completed` | `family = "keyed"`, `outcome = "completed"`; one per return. |
 | Keyed request refusal | `transaction::keyed_request` | DEBUG | `keyed source request refused` / `keyed merge request refused` | `family = "keyed"`, `outcome = "refused"`, `refusal_kind`; distinct callsites. |
 | Keyed commitment success | `transaction::keyed_taproot` | DEBUG | `keyed commitment completed` | `family = "keyed"`, `outcome = "completed"`, `script_path_count = 1_u64`, `key_path_count = 1_u64`. |
@@ -100,3 +106,9 @@ The two `Instant` values and stdout writes in `state_abi_validation_tests.rs` ar
 - `cli-common` owns filter precedence, early control, panic, and JSON schema. Transaction uses no command subscriber because it is a library; binary callers use the shared bootstrap.
 
 Request parent decoding uses the existing untraced decoder core; parent and commitment checks are untraced. The link and member binder retain their own owner events. `keyed_request_boundaries_trace_one_completion_or_refusal` isolates exactly one child and checks each request boundary’s own terminal event on success and refusal.
+
+The keyed sponsor verifier exposes DEBUG spans `keyed_sponsor_digest` and `verify_keyed_sponsor` with `family: &'static str = "keyed"`. Each emits exactly one own event: `keyed sponsor digest completed` / `keyed sponsor digest refused`, or `keyed sponsor verification completed` / `keyed sponsor verification refused`. Events carry `outcome: &'static str`; refusals also carry `refusal_kind: &'static str`. Both wrap untraced cores and record no keys, amounts, signatures or timers.
+
+`keyed_construction_boundaries_trace_exactly_one_own_terminal_event` and `keyed_sponsor_boundaries_trace_exactly_one_own_terminal_event` use the exactly-one-child capture helper on accepted and refused calls. Admission invokes untraced construction and verification cores; the reused tapscript weight boundary retains its own owner span/event. No measured duration or secret enters these events.
+
+`keyed_construction_refusal_tables_are_snake_case` covers both common `TraceRefusal` implementations. Completion and refusal events include `family = "keyed"`. `KeyedPolicy::new` is an untraced configuration-value constructor; only construction, admission and the diagnostic verifier entries publish transaction-boundary events.

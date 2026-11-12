@@ -46,6 +46,10 @@ linker = { workspace = true }
 # Realization owns the membership witness emitted after deployment authorization.
 realization = { workspace = true }
 sha2 = { workspace = true }
+# HASH160 only: existing workspace resolution through secp256k1/bitcoin.
+# Exact 0.14.101, default features off, no features requested on this edge.
+# Workspace unification also enables alloc, bitcoin-io, io and std.
+bitcoin_hashes = { workspace = true }
 # Public keyed commitment arithmetic only; safe wrapper, no direct raw FFI edge.
 # This edge requests std; elements adds features in a unified workspace build.
 # The adapter accepts no secret and uses a verification-only context.

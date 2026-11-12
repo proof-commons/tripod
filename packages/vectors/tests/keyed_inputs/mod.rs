@@ -7,6 +7,7 @@ use compiler::{
     AnalysisPolicy, ProofSearchLimits, bind_input,
     keyed_plan::{PlacementSearchLimits, plan},
 };
+use elements::bitcoin::hashes::Hash;
 use linker::{
     keyed_bundle::{LinkedKeyedBundle, link_keyed_bundle},
     keyed_reference::keyed_parameter_offers,
@@ -331,4 +332,153 @@ fn members_refuse_capabilities_and_foreign_or_unspendable_collateral_is_not_auth
             }
         );
     }
+}
+
+#[test]
+fn public_keyed_construction_preserves_open_outputs_without_admission_or_secrets() {
+    use transaction::keyed_construct::{
+        KeyedConstructionError, KeyedConstructionRequest, KeyedOutputOffer, KeyedPolicy,
+        admit_keyed, construct_keyed,
+    };
+    let target = reviewed_elements_tapscript().unwrap();
+    let c = commit_keyed_bundle(&target, &linked([42; 32], false)).unwrap();
+    let member = parent(c.output_program(), 4);
+    let collateral = parent(&[0x51], 5);
+    let r = keyed_merge_request(
+        &target,
+        [42; 32],
+        &c,
+        &[
+            offer(&collateral, 0, KeyedInputRole::Collateral),
+            offer(&member, 1, KeyedInputRole::Member),
+        ],
+    )
+    .unwrap();
+    let ordinary = TargetOutput::new(
+        AssetField::Explicit(AssetId::from_internal([3; 32])),
+        ValueField::Explicit(1800),
+        NonceField::Null,
+        vec![0x51],
+    );
+    let offered = KeyedOutputOffer {
+        policy_asset: AssetId::from_internal([3; 32]),
+        successor_value: 100,
+        additional_outputs: vec![ordinary.clone()],
+        fee: Some(100),
+    };
+    let structural = construct_keyed(
+        &target,
+        KeyedConstructionRequest::Merge(&r),
+        offered.clone(),
+    )
+    .unwrap();
+    assert_eq!(structural.transaction().outputs()[1], ordinary);
+    assert_eq!(
+        structural.transaction().outputs()[0].program(),
+        c.output_program()
+    );
+    assert_eq!(
+        structural.transaction().witnesses()[1].stack(),
+        [c.leaf().to_vec(), c.control().to_vec()]
+    );
+    assert!(!structural.policy_admitted());
+    let policy = KeyedPolicy::new(
+        "offline".into(),
+        AssetId::from_internal([3; 32]),
+        [100; 3],
+        vec![0; 4],
+        [400_000; 3],
+        0,
+        72,
+    )
+    .unwrap();
+
+    assert_eq!(
+        admit_keyed(
+            &target,
+            KeyedConstructionRequest::Merge(&r),
+            offered,
+            &policy
+        )
+        .unwrap_err(),
+        KeyedConstructionError::Envelope
+    );
+}
+
+#[test]
+fn constructed_large_merge_digest_matches_elements_with_last_sponsor() {
+    use elements::{EcdsaSighashType, Script, confidential, sighash::SighashCache};
+    use transaction::keyed_construct::{
+        KeyedConstructionRequest, KeyedOutputOffer, construct_keyed,
+    };
+    let target = reviewed_elements_tapscript().unwrap();
+    let commitment = commit_keyed_bundle(&target, &linked([42; 32], false)).unwrap();
+    let sponsor_program: Vec<_> = [0, 20].into_iter().chain([19; 20]).collect();
+    let parents: Vec<_> = (0..254)
+        .map(|index| {
+            parent(
+                if index == 253 {
+                    &sponsor_program
+                } else {
+                    commitment.output_program()
+                },
+                u8::try_from(index).unwrap(),
+            )
+        })
+        .collect();
+    let mut inputs: Vec<_> = parents
+        .iter()
+        .enumerate()
+        .map(|(index, bytes)| {
+            let mut input = offer(
+                bytes,
+                u32::try_from(index).unwrap(),
+                if index == 253 {
+                    KeyedInputRole::Collateral
+                } else {
+                    KeyedInputRole::Member
+                },
+            );
+            input.sequence = 100 + u32::try_from(index).unwrap();
+            input
+        })
+        .collect();
+    inputs[253].outpoint = Outpoint::new(inputs[253].outpoint.txid(), 1).unwrap();
+    let request = keyed_merge_request(&target, [42; 32], &commitment, &inputs).unwrap();
+    let result = construct_keyed(
+        &target,
+        KeyedConstructionRequest::Merge(&request),
+        KeyedOutputOffer {
+            policy_asset: AssetId::from_internal([3; 32]),
+            successor_value: 1000,
+            additional_outputs: vec![TargetOutput::new(
+                AssetField::Explicit(AssetId::from_internal([3; 32])),
+                ValueField::Explicit(252_000),
+                NonceField::Null,
+                sponsor_program.clone(),
+            )],
+            fee: Some(1000),
+        },
+    )
+    .unwrap();
+    let frozen = result.transaction().encode_without_witness();
+    let reference: elements::Transaction = elements::encode::deserialize(&frozen).unwrap();
+    assert_eq!(reference.input.len(), 254);
+    assert_eq!(reference.input[253].previous_output.vout, 1);
+    let script =
+        Script::new_p2pkh(&elements::PubkeyHash::from_slice(&sponsor_program[2..]).unwrap());
+    let expected = SighashCache::new(&reference)
+        .segwitv0_sighash(
+            253,
+            &script,
+            confidential::Value::Explicit(1000),
+            EcdsaSighashType::All,
+        )
+        .to_byte_array();
+    let parent = TargetTransaction::decode(&parents[253]).unwrap();
+    assert_eq!(
+        transaction::keyed_sponsor::keyed_sponsor_digest(&frozen, 253, &parent.outputs()[1])
+            .unwrap(),
+        expected
+    );
 }
