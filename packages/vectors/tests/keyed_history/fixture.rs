@@ -43,10 +43,12 @@ pub(super) struct PolicyReading {
 /// Reader-facing data only: no graph, expected set, packet or classification flag.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct ReaderFixture {
+    /// Hypothetical inclusion/retrieval assertions, not chain observations.
+    pub assertions: vectors::keyed_history_reader::Assertions,
     pub bytes: BTreeMap<EventId, Vec<u8>>,
     pub association: Vec<(EventId, [u8; 32])>,
     pub keys: BTreeSet<Key>,
-    pub sponsor_premises: BTreeMap<EventId, SponsorPremise>,
+    pub retrieved: BTreeMap<[u8; 32], Vec<u8>>,
     pub boundary_premises: BTreeSet<EventId>,
     pub policy_readings: BTreeMap<EventId, PolicyReading>,
 }
@@ -67,11 +69,26 @@ impl Fixture {
 
     /// Projects public evidence without handing the reader construction answers.
     pub(super) fn reader_inputs(&self) -> ReaderFixture {
+        let addresses = self
+            .association
+            .iter()
+            .map(|(_, address)| *address)
+            .chain(self.sponsor_premises.values().map(|premise| premise.txid))
+            .map(vectors::keyed_history_reader::Address)
+            .collect::<BTreeSet<_>>();
         ReaderFixture {
+            assertions: vectors::keyed_history_reader::Assertions {
+                inclusion: addresses.clone(),
+                retrieval: addresses,
+            },
             bytes: self.bytes.clone(),
             association: self.association.clone(),
             keys: self.packets.values().map(|packet| packet.key).collect(),
-            sponsor_premises: self.sponsor_premises.clone(),
+            retrieved: self
+                .sponsor_premises
+                .values()
+                .map(|premise| (premise.txid, premise.parent.clone()))
+                .collect(),
             boundary_premises: self.boundary_premises.clone(),
             policy_readings: self
                 .packets

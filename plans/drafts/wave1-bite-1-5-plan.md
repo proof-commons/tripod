@@ -236,3 +236,176 @@ These are comparison outcomes for the declared subject and its supplied evidence
 
 
 **Review verification.** The corrected code’s covering run `/var/home/tripod/loops/tmp/gate-w20b1-20261112T130201Z.log` finished `== green`, exit 0: 13:02:01Z–13:07:12Z on 2026-11-12, 311 seconds, zero slot wait. It covered vectors, transaction, linker, tapscript, architecture and compiler, 29 package lanes, 17 lint lanes and six checks. Battery walls were setup 0, fmt 3, clippy 7, package tests 239, rustdoc 29, lint 30 and checks 1 seconds. Per-battery start/end/delta counters are retained in that log under its own `tripod-gate-w20b1-20261112T130201Z.service` cgroup, including containers, not attributed from node-wide samples. The supplied slot-governed systemd unit ran with a foreground SSH waiter through its end marker; it was not abandoned or relaunched. The preserved journals confirm all ten projection pins through `tests::engine_base_capture::preserve_engine_base` and canonical publication through `tests::keyed_profile_tests::attestation_canonical_bytes_and_publication_equal_the_opening_base`. Existing reproduction comparisons and vector tests passed; no production source, archive, emitted byte or expected value changed. Fast-check correction rounds applied the formatter’s patches and factored helpers to satisfy the existing line-count and invariant-diagnostic lints; the fourth check passed fmt, clippy and rustdoc in 38 seconds. The documentation commit and final tip are checked after this code run, with their final verdict in the step report.
+
+## Byte-derived history reader · `rec:w1b15:reader`
+
+Step 2 implements (`step:w1b15:reader`) under (`rec:w1b15:adoption`). `packages/vectors/src/keyed_history_reader.rs` and its five helpers reconstruct finite histories from bytes and explicit evidence; the external comparison is in `tests/keyed_history/reader.rs`. The model remains exactly as imported at `0.7.117-dev`. This is a public **conformance-library** boundary, with ADR-026 tracing, not a production chain reader, an admission entry or a new maintained interchange format. No production package depends on it. A complete local membership set establishes neither chain acceptance nor finality.
+
+**Boundary-parent disposition.** The existing two-member and 253-member reproduction subjects remain unchanged. Their supplied member parents spend outputs whose creating transactions are absent. A boundary event name describes a fixture cut; it cannot establish that event as SOURCE. The successor therefore has `Membership::Incomplete`, naming precisely the missing input dependency of each of the two or 253 boundary parents. The harness checks that these missing dependencies belong to exactly the declared boundary events, and no others, and compares each address and vout with the independently decoded parent input. The model's sets are conditional on its SOURCE declarations at those cuts; they are not complete byte-derived answers. Local content addresses, canonical commitment, both member clauses, successor key, input order and the later same-key output's `NotHandle` remain checkable and are checked. The complete 253-SOURCE `wide` history supplies the large complete reconstruction comparison. Step 3's premises and step 4's reports must retain incomplete standing for the two cut subjects; bite 1.6 receives them with completion dependent on their ancestors' evidence. No evidence was invented to make an equality pass.
+
+A sponsor parent's own inputs are outside the history and need not be followed merely to classify the actual output spent by an event. `source` supplies a nonzero-index ordinary sponsor output whose bytes suffice for that classification; `ordinary-edge` spends an earlier event's change output at index 1 and still creates a SOURCE singleton. Neither the fixture's sponsor label nor a graph-local edge determines membership.
+
+**Inputs, surface and permitted calls** · `tab:w1b15:reader-surface`
+
+| Part | Inventory and authority |
+|---|---|
+| Untrusted input | `Input`: `bytes`, `association`, `keys`, `retrieved`, `boundary_premises`, `assertions`. `Fixture::reader_inputs()` supplies these only, with no declared graph, expected set, construction packet or source/member flag. `Assertions` adds explicit hypothetical inclusion/retrieval presence to that projection; it is not evidence of their truth. |
+| Identity and premises | Distinct newtypes `Address` and `Key`, plus `EventId`, `Output`, `Handle`, `Member` and `ByteSource::{Event, Retrieved}`. `retrieved` is bytes by address, with no event label or output selection. Policy readings remain test-local beside the reading for step 3, absent from `Input` and `Reading`. |
+| Entry and result | `read(&Input) -> Result<Reading, Refusal>`; immutable `Reading` exposes `memberships`, `live`, `successors`, `relations`, `leaves`, `unexamined`, `obligations`, `boundary_premises` and `query`. Local live means unconsumed in these supplied bytes, not chain unspentness. |
+| Completeness and queries | `Membership::{Complete, Incomplete}`, `Missing`; `Query::{Handle, NotHandle, MissingEvent, MissingOutput, WrongKey, UnresolvedKey}`. A non-handle has no record set, never an empty set. |
+| Per-relation evidence | `Relation::{BornFirst, ContinueFirst}`, `RelationEvidence`: event/input, content-addressed member and key, exact leaf/control bytes and each fragment's own counters. Two rows per authenticated consumed handle; `LeafEvidence` carries whole-leaf counters once per member through `leaves()`. No producer coverage is accepted. `unexamined()` retains each non-keyed-first-output event's missing set, including empty sets. |
+| Remaining premises | `Obligation` names event/input/outpoint and each `ParentFact::{Inclusion, Unspentness, Retrieval, Finality}`. All four remain per-instance external obligations even when assertion presence is supplied. Finality declaration and acceptance rules belong to step 3. |
+| Invalid evidence | `Boundary` and `Refusal`, inventoried below; no wrapper converts these into target admission or native covenant execution verdicts. |
+
+The identity helper uses transaction's canonical decoder and serialization and the existing first-party conformance SHA-256 for stripped content addresses (the transaction package does not export its internal hash function). Authentication uses the existing public recipe descriptor and first-party conformance curve reconstruction, target field types and reviewed target definition. The bounded opcode evaluator lives in private `keyed_stack_core`; its instruction kernel and previous expectations remain unchanged. Test-oracle wrappers retain tracing, while the reader uses untraced entries. An unavailable input-program fact refuses explicitly instead of being guessed. These operations are **shared substrate, not independent recurrence evidence**. The reader never calls request/construction, member binding, compiler planning or declaration evaluation to classify or obtain sets. `fold.rs` derives the singleton/union, frontier and successors directly from actual parent outputs. The external test additionally compares canonical bytes, txids, outpoints, witness stacks and output script/value fields against pinned `elements`; that comparison is outside the reader.
+
+**Independence limit.** The reader decides from bytes and evidence, while the model decides from the separately declared graph. The fold, topology, grouping and most precedence mirror the model's algorithms and the same author's interpretation of SOURCE/MERGE. A shared misreading of the recurrence would pass every comparison; step 1's independently written literal expectations and source review, rather than import isolation, guard that risk. The comparison checks byte-to-graph translation and evidence outcomes, not an independently discovered recurrence theorem.
+
+**Classification and precedence.** Identity declarations are grouped in sorted event order; duplicate and conflicting identities, alias collisions and unassociated bytes refuse. Canonical decoding precedes available-parent output-domain checks, duplicate consumption and a complete deterministic topological order. Graph checks precede content-address authentication deliberately, so an untrusted cyclic-reference subject can refuse as a graph without claiming a self-consistent cyclic content-address graph. After hashes and public recipe reconstruction, every actual input output is classified: a recognized key program at position zero is a member; the same program at a later position refuses born-first; ordinary output bytes contribute no records; an input program outside all supplied keys contributes no consumed handle for the key being read. Its status as a handle of an unsupplied key cannot be excluded by these bytes: that exclusion rests on inclusion in one valid history, whose continue-first law would forbid spending it to this successor. An unrecognized witness-v1 first output remains `Query::UnresolvedKey`; it no longer creates `Missing::Classification`, which is removed. Every known member must authenticate its exact leaf/control and satisfy both clauses. Only an event with no member and no missing evidence can receive a SOURCE singleton. A complete MERGE unions completed parent sets and creates no record. A missing parent, assertion or membership is retained per handle, or in `unexamined` for an event without a recognized keyed first output; no event silently loses missing evidence.
+
+Each event and supplied parent is decoded/indexed once per derivation; duplicate retrieval premises reuse the indexed canonical parent. Reordering evidence yields the same reading. Recipe material is reconstructed once per key. Separate permutations and negative subjects deliberately invoke fresh derivations; the 253-member fixture itself is built once per family process.
+
+**Outcomes by boundary and reachability** · `tab:w1b15:reader-outcomes`
+
+| Boundary / standing | Variants | Controls / reachability |
+|---|---|---|
+| `EvidenceConsistency` | `DuplicateEvent`, `ConflictingEvent`, `ConflictingAlias`, `UnassociatedBytes`, `MissingOutput`, `DuplicateConsumption`, `Cycle`, `ConflictingParent` | Association, available-output, within/across-event consumption, graph and retrieval-conflict subjects. Retrieval is ordered by address, not arbitrary labels; `SponsorOutput` is retired. |
+| `ContentAddressing` | `MalformedBytes`, `NonCanonical`, `ContentAddress` | Malformed bytes and stale addresses refuse. `ByteSource` names either the event or retrieved address; successful decode/reencode disagreement remains defensive. |
+| `UnsupportedForm` | `UnsupportedForm` | Issuance/peg-in subjects; unsupported proof forms retain the decoder's typed error, not covenant invalidity. |
+| `KeyAuthentication` | `Recipe`, `TargetDefinition` | Defensive public-recipe/target failures retain their owner error; no invented reachable malformed recipe offer. |
+| `BornFirst` | `LaterBirth` | The later same-key output is consumed beside the accepted (incomplete-membership) boundary twin. |
+| `Continuation` | `WrongSuccessor`, `WrongVersion` | Other-key, changed-program, displaced output-zero and version subjects. |
+| `CommitmentAuthentication` | `WitnessShape`, `UncommittedLeaf`, `ControlVersion`, `WrongParity`, `ControlRecipe` | One member's witness coordinate changes beside its accepted twin. |
+| `ModelEvaluation` | `Model` | Defensive bounded-model failure after canonical authentication; preserve the model's kind. |
+| Non-refusal completeness | `Missing::{Parent, Event, Inclusion, Retrieval, Membership}` in `Membership::Incomplete` or `unexamined` | Withheld parent/assertions, retrieval-only known parent, absent associated event and ordinary-first-output missing dependency. No `Classification` remains. |
+| Non-refusal query | `Query::{Handle, NotHandle, MissingEvent, MissingOutput, WrongKey, UnresolvedKey}` | Accepted-subject queries plus the explicit empty-key subject; adding an unused key changes no reading. |
+
+`Boundary::KeyAuthentication` names recipe reconstruction; query wrong-key is separately typed rather than collapsed into `Refusal`. A recognized member's other-key successor is a continuation failure. The model's eight variants map exactly as (`tab:w1b15:history-reader-outcomes`) specifies on the corresponding single-fault byte/evidence subjects: duplicate/conflicting event, absent event, absent position, repeated consumption, cycle, later birth and wrong successor. The pinned cycle-plus-wrong-successor subject agrees on graph precedence, including evidence permutation. Cyclic references are deliberately injected before authentication; the public byte mutation separately pins content addressing. No content-address-consistent cycle or admitted invalid transaction is claimed. The general precedence rule is that the reader never stops at unsupplied evidence: any refusal it can evaluate outranks incompleteness, so the model's `MissingEvent` precedence agrees only on single-fault subjects. `mapped` computes the model result on the matching mixed graph, alongside the reader's decisive supplied-member failure; this is not described as one exceptional combination. Reader precedence, which step 4 must preserve, is: sorted identity grouping and alias checks; event decoding and retrieval-address consistency/decoding; available-output domain; duplicate consumption; minimum-ready complete topology; content authentication; then minimum-ready event and input order. Within one member, later birth precedes continuation, continuation precedes commitment (shape, leaf, version, parity, control), and commitment precedes model evaluation. `precedence` pins a wrong-version plus missing-witness subject and two independently bad events in reverse evidence order. The cycle subject pins graph-before-address/clauses. Neither model nor reader ordering is bent to make a multi-fault equality claim.
+
+**Comparison against the model** · `tab:w1b15:reader-comparison`
+
+All comparison helpers below are in `packages/vectors/tests/keyed_history/reader.rs`, invoked by the bounded `keyed_history::history_subject_child` through `keyed_histories_have_bounded_public_subjects`. They see the model only outside the library reader.
+
+| Subject | Model answer | Byte-reader answer / comparison |
+|---|---|---|
+| `source` | One SOURCE singleton | Equal complete singleton, frontier and queries; ordinary sponsor parent ancestry is not needed. |
+| `single` | Singleton through one MERGE | Equal set, consumed/frontier handles and successor. |
+| `ordinary-edge` | Two live SOURCE singletons despite a graph-local edge | Equal; the actual index-1 change output is ordinary. |
+| `multi` | Two SOURCE records in one MERGE | Equal union, frontier, two successor edges and four local clause rows. |
+| `path` | Growing sets through three continuations | Equal every intermediate set, frontier and successor, not only the final total. |
+| `two-keys` | Separate keyed singleton paths | Equal disjoint sets and key-sensitive queries. |
+| `wide` | Union of 253 explicitly declared SOURCE records | Equal complete union, frontier and all successor edges; 506 member-clause rows. |
+| `later` | Output 0 singleton, output 1 not a handle | Equal, with no set for the later same-key output; structural subject, not three-output policy admission. |
+| `existing-two` | Conditional union under two boundary SOURCE declarations | Incomplete with precisely two boundary-parent missing input dependencies; four local clause rows and all parent output-1 non-handles checked. |
+| `existing-253` | Conditional union under 253 boundary SOURCE declarations | Incomplete with precisely 253 boundary-parent missing input dependencies; 506 local clause rows and all parent output-1 non-handles checked. |
+
+`compare_relation_identities` compares every event, actual input index, keyed member outpoint and clause identity against declared edges joined to the independent decoder, not only a total. `compare` also reverses association offers and requires identical results. The conditional comparison never injects model declarations into reader input. `completeness` proves that a boundary name alone cannot complete a reading. `consistency`, `continuation`, `commitment` and `boundary_subjects` each retain an accepted twin; the negative envelope is test-local, not an alternative constructor format. Missing/duplicate producer assignments and omitted producer clauses remain the earlier sealed-boundary controls, not publicly fabricated request defects.
+
+**Independence and tracing.** `keyed_reader_import_boundary_and_isolated_compile` scans all six reader source files, forbids hidden configurations/modules/path attributes and producer/model spellings, and has rejecting mutants. It compiles those same files with only the recipe/core and explicitly named substrate externs; the external-test model is absent. Exact Cargo dependency fingerprints select the artifacts so different feature-state units cannot be confused. Source/dependency review confirms that `identity` calls canonical decode/serialization/hash; `authentication` calls recipe/curve/model substrate and hashes non-witness programs for the evaluator's `Other` fact; `fold` applies recurrence. The exact extern-path allowlist rejects producer surfaces including `transaction::keyed_inputs`, rather than relying on their names staying in a denylist. This is a spelling/module boundary and isolated-compilation control, not macro expansion, alias/call-graph analysis or a proof of semantic independence; review remains necessary because a permitted substrate crate also exports forbidden higher-level operations. No extra production dependency is added. `keyed_reader_trace_has_one_completion_or_refusal` launches exactly one ignored child under its own timeout, checks the span and exactly one completed or refused event with `refusal_kind`. Only test-oracle wrappers retain the historical `vectors::keyed_stack_model` tracing target; reader member evaluation has no per-member span or event. The capture uses MERGE and asserts their absence. Its model evidence is not native timing.
+
+**Test budget and handoff.** Every new child is bounded at 10 seconds and the existing family process at 60 seconds, with line-anchored exactly-one-test checks and printed duration. The isolated compiler has its own 60-second timeout. No bound is widened. Step 3 receives typed complete/incomplete membership, invalid evidence and exact query non-handle outcomes, per-relation and once-per-leaf local model evidence, non-handle-event missing sets and all four parent premises. Uninterpreted policy readings are supplied separately. It must not turn the two incomplete cut histories into accepted/final readings. Inclusion, unspentness, retrieval and finality are not established by local hashes; relation evidence and native execution remain distinct later discharge requirements.
+
+
+**Measured offline walls** · `tab:w1b15:reader-walls`
+
+These are process walls including fixture construction, comparison and child startup, not native measurements or a performance claim. Raw successful output and preservation results are retained in `/var/home/tripod/loops/tmp/gate-w20b1-20261112T141842Z.reader-preservation.tar`. All subjects exited zero below their unchanged 10-second bound. The family process took 12.293505 seconds under its 60-second cap; the reader-only compilation took 2.984035 seconds under 60 seconds, and the trace child 0.119342 seconds under 10 seconds. No bound was widened.
+
+| Subject | Wall, seconds |
+|---|---:|
+| `source` | 0.642751 |
+| `single` | 0.682742 |
+| `ordinary-edge` | 1.126907 |
+| `multi` | 0.990125 |
+| `path` | 0.552835 |
+| `two-keys` | 0.755915 |
+| `wide` | 1.560471 |
+| `later` | 0.935554 |
+| `existing-two` | 0.472258 |
+| `existing-253` | 0.592051 |
+| `association` | 2.006840 |
+| `reader-negatives` | 1.935363 |
+
+**Verification and corrections.** The code commit's fast check passed fmt (clean), clippy and rustdoc in 82 seconds. Earlier fast rounds applied formatter output and fixed local lint findings; no expectation was regenerated. Three code-gate correction rounds are retained: `/var/home/tripod/loops/tmp/gate-w20b1-20261112T134000Z.log` (626 seconds, red) exposed the isolated compiler's outdated Cargo artifact-directory assumption; `/var/home/tripod/loops/tmp/gate-w20b1-20261112T135935Z.log` (383 seconds, red) then exposed external module-path resolution and split metadata requirements. Exact copied source layout and matching `.rmeta` artifacts fixed those harness failures. `/var/home/tripod/loops/tmp/gate-w20b1-20261112T140851Z.log` (396 seconds, red) passed isolated compilation but found the new mixed-fault subject used an output swap that changed the witness version before its intended program comparison; changing only a program byte fixes the subject, not its expected boundary or the reader. Those failures are not evidence of production defects or native refusals.
+
+The covering code run `/var/home/tripod/loops/tmp/gate-w20b1-20261112T141842Z.log` ran 14:18:42Z–14:26:20Z on 2026-11-12, `== green`, exit 0, 458 seconds with zero slot wait. It covered vectors, transaction, target-elements, target-elements-conformance, architecture and compiler: all 29 package lanes, 17 lint lanes and six checks passed. Battery walls were setup 2, fmt 8, clippy 19, package tests 360, rustdoc 33, lint 34 and checks 2 seconds. The log retains each battery's start/end/delta samples in its own `tripod-gate-w20b1-20261112T141842Z.service` cgroup, including container descendants, not node-wide attribution. All rounds used the supplied slot-governed transient systemd unit with a foreground SSH wait through the end marker; none was abandoned or interpreted as complete after a lost connection.
+
+The retained journals show `tests::engine_base_capture::preserve_engine_base` (all ten exact projection pins) and `tests::keyed_profile_tests::attestation_canonical_bytes_and_publication_equal_the_opening_base` passing. The model source is unchanged. The bounded core's `evaluate`, `fragment` and `leaf` function bodies are byte-identical to the earlier evaluator; the only new fact case explicitly refuses unavailable program evidence. There are no source changes in architecture, realization, compiler, tapscript, linker, transaction or target-elements/conformance, and no existing expected vector or archive changes. Existing vector, reproduction and keyed construction controls passed. The documentation commit is fast-checked and the final tip receives the same full package-set gate; its final-tree verdict is reported with the step.
+
+
+## Reader review disposition · `rec:w1b15:reader-review`
+
+The per-key classification decision follows (`[A-sec:kpc:interface]`), its reconstruction of consumed handles for the key being read, and (`[A-thm:kpc-interface:membership-correctness]`). Supplied parent bytes decide whether their actual spent output equals that key's authenticated first-output program. An unknown taproot input is outside this key's consumed handles; excluding an unsupplied other key's handle relies on the already-carried inclusion premise, not on asserting its absence from bytes. `reader_review::classification` pins three controls: ordinary taproot funding is complete beside the existing SOURCE; a genuine other-key first output also reads complete when that key is omitted, while the model knowing both keys refuses; adding the other key makes the same bytes refuse at continuation. The latter is an explicit inclusion-premise limit, not an admitted invalid history. There is no contradiction with the paper's conditional theorem and no new covenant law.
+
+| Finding | Closure |
+|---|---|
+| 1 | `Reading::unexamined` retains missing sets for all events without recognized keyed output zero; `query_and_unexamined` withholds the actual parent beside its ordinary-first-output twin. |
+| 2 | Per-key rule above; `Missing::Classification` removed, unresolved output queries retained, inclusion limit tested against the model. |
+| 3 | `retrieved: BTreeMap<Address, Vec<u8>>`; `ByteSource::Retrieved` names malformed/misaddressed bytes by address, no label or selected vout. Reader projection and its exclusion lock remain. |
+| 4 | Exhaustive `boundary()` and the eight-boundary inventory above; completeness and queries have separate non-refusal rows. |
+| 5 | Empty keys yield `UnresolvedKey`, empty memberships/frontier and the non-handle carrier; an unused key leaves `multi` unchanged. |
+| 6 | The independence-limit paragraph names the shared algorithms and shared-misreading risk. Package contract wording is narrowed accordingly. |
+| 7 | General refusal-over-incompleteness rule and full local precedence; continuation-before-commitment and minimum-ready-event controls. |
+| 8 | New README paragraphs are single lines. |
+| 9 | Fragment counters are birth (5 operations, peak 3, width 32), continuation (6, 4, 32); whole leaf (12, 4, 32) appears once per member. `counters` compares slices with the public clause encodings. No count is regenerated. |
+| 10 | `successors` documents byte-true edges from an associated but unsupplied event that has no membership; retrieval-only event control remains. |
+| 11 | Policy is absent from `Input` and `Reading`; test-local policy readings travel beside them for step 3. |
+| 12 | Exact substrate-path allowlist plus isolated compilation; `keyed_inputs`, grouped producer imports and an unlisted extern are rejecting mutants. No macro/alias expansion claim. |
+| 13 | `mapped`, `domains_and_consumption`, and `cycles_and_clauses` run matching declared mutants for all eight graph-expressible model refusals; the mixed-fault model result is computed too. |
+| 14 | Untraced evaluator entries in the member loop; test-only historical target documented and absence captured. Instruction kernel and test expectations unchanged. |
+| 15 | Cross-event duplicate consumption, obligation identities from `elements`, address-order retrieval permutation, and the unchanged first member's actual witness are asserted. Label permutation no longer applies: the labels were removed. |
+| 16 | Accepted incomplete twin, both hash call sites and all-event incompleteness stated accurately. The original 18-file step exceeded the 9–14 estimate because of the five reader helpers and shared core extraction; realization-owned documentation is deferred to step 3 or the gate packet, where its reader rule and report premises settle. |
+| 17 | Final successor's unresolved event set is compared literally with `fixture.boundary_premises`, as well as model records and exact independently decoded missing outpoints. |
+| 18 | Distinct `Key` and `Address` newtypes; classification-outpoint expansion is obsolete because the variant is retired. `Parent` carries address and vout; `Membership` carries address and actual input index after position-zero authentication. |
+| 19 | Each derivation prints its event/key counts and wall inside the bounded subject. The measurements below separate measured reader work from fixture/comparison/process remainder and retain final-gate evidence. |
+
+`reader-review` is another bounded 10-second subject; it builds its SOURCE and multi-input fixtures once, plus the focused cut and separate-branch controls. All prior subject bytes and expected model sets remain unchanged. The model file is untouched. No production package outside vectors changes and no native execution occurs.
+
+
+**Previously omitted final-tip evidence.** The pre-review final-tree run was `/var/home/tripod/loops/tmp/gate-w20b1-20261112T142833Z.log`: 2026-11-12 14:28:33Z–14:35:45Z, 432 seconds, zero slot wait, `== green`, exit 0. Its family wall was 10.135061 seconds, distinct from the code-commit run's 12.293505 seconds above. Its preserved journals are `/var/home/tripod/loops/tmp/gate-w20b1-20261112T142833Z.reader-preservation.tar`. These are different observations on the same reader code, not a speed claim. Resource deltas below are microseconds from that gate's own `tripod-gate-w20b1-20261112T142833Z.service` cgroup, including container descendants; “some/full” are the kernel pressure counters, not inferred CPU utilization. Raw start/end samples, memory levels and remaining counters are in the log.
+
+| Battery | Wall s | CPU usage / user / system μs | CPU pressure some / full μs | Memory pressure some / full μs | I/O pressure some / full μs |
+|---|---:|---|---|---|---|
+| setup | 0 | +2202737 / +957277 / +1245460 | +8181 / +3551 | +0 / +0 | +61 / +59 |
+| fmt | 4 | +6104193 / +4639620 / +1464573 | +56794 / +14721 | +0 / +0 | +266 / +264 |
+| clippy | 13 | +31938504 / +25447995 / +6490508 | +237831 / +212708 | +0 / +0 | +7262 / +7019 |
+| package-tests | 344 | +3127376697 / +3065333645 / +62043053 | +77932602 / +36178237 | +195874 / +92467 | +50091 / +36719 |
+| doc | 36 | +40161869 / +26476100 / +13685769 | +18902 / +17030 | +97160 / +97160 | +3836 / +3833 |
+| lint-suite | 32 | +109300063 / +94428620 / +14871442 | +54331 / +30990 | +0 / +0 | +4890 / +3912 |
+| checks | 2 | +3602609 / +2039990 / +1562619 | +10031 / +7948 | +0 / +0 | +343 / +341 |
+
+
+**Review verification and wall attribution.** The final reader-and-record tip's covering run `/var/home/tripod/loops/tmp/gate-w20b1-20261112T153434Z.log` ran 2026-11-12T15:34:34Z–2026-11-12T15:39:51Z, `== green`, exit 0, 317 seconds, with zero slot wait. Its bounded family took 7.701056 seconds. These measurements are transcribed after that run; the amendment changes only this evidence record and receives the same full gate. The code commit also passed `/var/home/tripod/loops/tmp/gate-w20b1-20261112T152719Z.log` in 330 seconds, exit 0, zero queue wait, with family wall 9.273395 seconds. Its separate journals remain retained. Raw journals and exact preservation controls are retained beside the log as `.reader-review-preservation.tar`.
+
+The new instrumentation measures the reader calls inside each subject, rather than attributing the historical wall increase to node load or asserting a speedup. The following table partitions each child wall into the sum of measured derivations and the remainder (fixture construction, literal/model comparisons, process startup and output). The recipe column counts offered keys across calls: successful calls reconstruct each once, but early refusals may stop before reconstruction, so it is an upper bound for negative subjects. Prior step-1 timings lacked this instrumentation; their difference cannot be causally apportioned retrospectively. The table does identify the additional work and its current cost. The two accepted-comparison calls deliberately rebuild recipes for the permutation check. All walls are model/offline measurements, not native execution.
+
+| Subject | Child wall s | Reader calls | Offered recipes | Reader wall sum s | Remainder s |
+|---|---:|---:|---:|---:|---:|
+| `source` | 0.183789 | 2 | 2 | 0.101229 | 0.082560 |
+| `single` | 0.252042 | 2 | 2 | 0.100224 | 0.151818 |
+| `ordinary-edge` | 0.132947 | 2 | 2 | 0.044683 | 0.088264 |
+| `multi` | 0.120314 | 2 | 2 | 0.048263 | 0.072051 |
+| `path` | 0.160511 | 2 | 2 | 0.068492 | 0.092019 |
+| `two-keys` | 0.481164 | 2 | 4 | 0.087130 | 0.394034 |
+| `wide` | 2.105907 | 2 | 2 | 0.158360 | 1.947547 |
+| `later` | 0.267612 | 2 | 2 | 0.097604 | 0.170008 |
+| `existing-two` | 0.326228 | 2 | 2 | 0.068110 | 0.258118 |
+| `existing-253` | 0.549463 | 2 | 2 | 0.259087 | 0.290376 |
+| `association` | 0.553923 | 2 | 2 | 0.091281 | 0.462642 |
+| `reader-negatives` | 1.296804 | 37 | 37 | 1.091275 | 0.205529 |
+| `reader-review` | 1.254849 | 24 | 25 | 1.048261 | 0.206588 |
+
+No timeout was widened. This round's resource deltas are microseconds in its own `tripod-gate-w20b1-20261112T153434Z.service` cgroup, including containers. Raw start/end values, memory levels and all remaining counters are retained in the log; pressure is kernel stall accounting, not utilization.
+
+| Battery | Wall s | CPU usage / user / system μs | CPU pressure some / full μs | Memory pressure some / full μs | I/O pressure some / full μs |
+|---|---:|---|---|---|---|
+| setup | 0 | +1768953 / +790296 / +978657 | +3645 / +2819 | +0 / +0 | +121 / +121 |
+| fmt | 4 | +5064819 / +3998308 / +1066510 | +3478 / +3390 | +0 / +0 | +57 / +57 |
+| clippy | 8 | +23180005 / +17677983 / +5502022 | +13607 / +5528 | +0 / +0 | +26075 / +25438 |
+| package-tests | 227 | +2787340254 / +2722770213 / +64570040 | +24552261 / +4861621 | +200580 / +127995 | +73046 / +60822 |
+| doc | 42 | +44681806 / +30221762 / +14460044 | +650960 / +529411 | +0 / +0 | +10887 / +10876 |
+| lint-suite | 33 | +114651938 / +100938945 / +13712992 | +56734 / +17517 | +0 / +0 | +17188 / +15083 |
+| checks | 2 | +3566998 / +2006064 / +1560934 | +10740 / +4314 | +0 / +0 | +342 / +342 |
+
+The two review correction gates were `/var/home/tripod/loops/tmp/gate-w20b1-20261112T151034Z.log` (361 seconds, red, exit 1) and `/var/home/tripod/loops/tmp/gate-w20b1-20261112T151828Z.log` (347 seconds, red, exit 1). Both passed the functional reader subjects and failed only the new spelling lock: first it treated a primitive associated path as an external crate; then it treated the local variable `transaction` as a qualified external path. The corrected scanner distinguishes an unqualified identifier from a path before applying the exact allowlist, while still refusing grouped external imports. Its real-source acceptance, all rejecting mutants and the isolated compile pass in the covering green run. Fast checks also applied formatter output and resolved local lint findings; the final code check passed fmt, clippy and rustdoc in 45 seconds. No expected set or byte was regenerated.
+
+The retained green journals show the ten exact projection pins (`tests::engine_base_capture::preserve_engine_base`) and the canonical publication comparison (`tests::keyed_profile_tests::attestation_canonical_bytes_and_publication_equal_the_opening_base`) passing. The model and every source outside vectors are unchanged; the bounded evaluator's opcode-execution body is byte-identical. Existing vector and reproduction tests pass with unchanged expectations. All server rounds used the supplied slot-governed transient unit and a foreground SSH waiter through the recorded end marker, with zero queue wait; none was abandoned or restarted after a lost connection. No native execution was run.

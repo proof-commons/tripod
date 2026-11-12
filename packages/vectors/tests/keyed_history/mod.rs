@@ -2,6 +2,9 @@
 mod fixture;
 #[path = "../../src/keyed_history_model.rs"]
 mod model;
+mod reader;
+mod reader_boundary;
+mod reader_review;
 // Let cargo fmt visit the independently compiled harness without linking it.
 #[cfg(any())]
 mod model_checks;
@@ -83,6 +86,8 @@ fn history_family_child() {
         "existing-two",
         "existing-253",
         "association",
+        "reader-negatives",
+        "reader-review",
     ] {
         let mut command = child("keyed_history::history_subject_child", "10");
         command.env("TRIPOD_KEYED_HISTORY_SUBJECT", subject);
@@ -97,6 +102,14 @@ fn history_family_child() {
 #[ignore = "bounded subject parent launches this exact child"]
 fn history_subject_child() {
     let subject = std::env::var("TRIPOD_KEYED_HISTORY_SUBJECT").unwrap();
+    if subject == "reader-review" {
+        reader_review::controls();
+        return;
+    }
+    if subject == "reader-negatives" {
+        reader::negatives();
+        return;
+    }
     if subject.starts_with("existing-") {
         let count = if subject == "existing-two" { 2 } else { 253 };
         let fixture = fixture::existing(count);
@@ -124,6 +137,7 @@ fn history_subject_child() {
                 model::OutputStatus::NotHandle
             );
         }
+        reader::compare(&fixture);
         let reader = fixture.reader_inputs();
         assert_eq!(reader.boundary_premises.len(), count);
         assert_eq!(reader.bytes.len(), count + 1);
@@ -139,6 +153,7 @@ fn history_subject_child() {
         fixture::check_association(&fixture, &fixture.association),
         Ok(())
     );
+    reader::compare(&fixture);
     assert_expected(name, &fixture);
     assert_invariants(&fixture);
     assert_eq!(fixture.reader_inputs().bytes, fixture.bytes);

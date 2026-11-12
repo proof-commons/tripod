@@ -29,10 +29,12 @@ pub mod keyed_cost_corpus;
 pub mod keyed_cost_native;
 pub mod keyed_funding;
 pub mod keyed_funding_corpus;
+pub mod keyed_history_reader;
 pub mod keyed_native;
 pub mod keyed_scaling;
 #[cfg(test)]
 mod keyed_scaling_corpus;
+mod keyed_stack_core;
 #[cfg(test)]
 mod keyed_stack_model;
 pub mod live_capability;

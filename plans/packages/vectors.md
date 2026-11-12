@@ -31,7 +31,7 @@ It owns:
 
 It owns evidence, not semantics.
 
-The keyed finite-history model is conformance-only standard-library code compiled by external tests and an isolated harness. Public construction fixtures and their event/content-address association live in `packages/vectors/tests/keyed_history/`; their expected sets are declared before construction, not taken from builder totals or declaration evaluation. The source/dependency review, refusal boundaries and supplied-parent limits are recorded at (`rec:w1b15:histories`). This adds no production reader or chain-evidence claim; the later byte reader must remain independent of constructor classification.
+The keyed finite-history model is conformance-only standard-library code compiled by external tests and an isolated harness. Public construction fixtures and their event/content-address association live in `packages/vectors/tests/keyed_history/`; their expected sets are declared before construction, not taken from builder totals or declaration evaluation. The source/dependency review, refusal boundaries and supplied-parent limits are recorded at (`rec:w1b15:histories`). The conformance-library byte reader reconstructs classification from actual parent outputs and applies the recurrence, with explicit incomplete, invalid and non-handle outcomes and missing evidence retained for non-handle events too; its permitted substrate calls, public surface, conditional boundary subjects and per-instance external premises are recorded at (`rec:w1b15:reader`). It adds no production reader or chain-evidence claim and never consumes constructor roles or the model.
 
 ## Dependencies · `sec:vectors:dependencies`
 
