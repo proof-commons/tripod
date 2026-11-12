@@ -3,6 +3,10 @@
 //! Membership and classification belong exclusively to the unchanged history reader.
 //! Report validation recomputes from bytes/evidence; no proposed pass bit is trusted.
 mod acceptance;
+mod families;
+mod family_execution;
+mod family_resources;
+mod family_types;
 mod premises;
 mod refusal;
 mod report;
@@ -11,6 +15,15 @@ mod values;
 
 use crate::keyed_history_reader::{Input, Membership, Query, Reading};
 pub use acceptance::{Rule, Scope};
+pub use families::{
+    FamilyContext, family_report, prepare_families, validate_acceptance, validate_birth,
+    validate_continuation, validate_reading, validate_recurrence, validate_resources,
+};
+pub use family_types::{
+    ArchiveDigest, ArchivedObservation, BirthBody, ContinuationBody, FamilyBoundary,
+    FamilyCondition, FamilyObservationBoundary, FamilyRefusal, Recurrence, RecurrenceBody,
+    ResourceComparison, ResourcesBody, Schedule, ScheduleResources,
+};
 pub use premises::{
     Assumption, Declaration, DeclarationOffer, Deployment, DeploymentDeclaration, EvidenceSource,
     Finality, FinalityRequest, FinalityRule, HistoryAnchor, HypotheticalDeclaration, PolicyVersion,
@@ -44,7 +57,7 @@ pub fn reading_report(input: &Input, request: &Request) -> Result<Report, Refusa
 /// Recomputes the reading, annotations, filter and framing from underlying evidence.
 ///
 /// This validates the reading/acceptance reports only; other family semantics are
-/// deliberately left to step 4, which reuses the frame without trusting this verdict.
+/// checked by the family validators, which reuse the frame without trusting this verdict.
 /// # Errors
 /// Returns a typed evidence, rule, framing or quantity refusal.
 pub fn validate_report(input: &Input, request: &Request, proposed: &Report) -> Result<(), Refusal> {
@@ -71,10 +84,20 @@ const fn inner_kind(error: &Refusal) -> Option<&'static str> {
 fn derive(input: &Input, request: &Request) -> Result<Report, Refusal> {
     validation::provenance(request)?;
     let reading = crate::keyed_history_reader::read(input).map_err(Refusal::Reader)?;
-    from_reading(input, &reading, request)
+    from_reading(input, &reading, request, None)
 }
 
-fn from_reading(input: &Input, reading: &Reading, request: &Request) -> Result<Report, Refusal> {
+fn from_reading(
+    input: &Input,
+    reading: &Reading,
+    request: &Request,
+    decoded: Option<
+        &std::collections::BTreeMap<
+            crate::keyed_history_reader::EventId,
+            transaction::TargetTransaction,
+        >,
+    >,
+) -> Result<Report, Refusal> {
     let (incomplete, unexamined) = acceptance::failures(reading);
     let outcome = match reading.query(request.handle) {
         Query::Handle {
@@ -122,7 +145,9 @@ fn from_reading(input: &Input, reading: &Reading, request: &Request) -> Result<R
         }
         other => return Err(Refusal::Query(other)),
     };
-    assemble(input, reading, request, outcome, incomplete, unexamined)
+    assemble(
+        input, reading, request, outcome, incomplete, unexamined, decoded,
+    )
 }
 fn assemble(
     input: &Input,
@@ -131,6 +156,12 @@ fn assemble(
     outcome: Outcome<std::collections::BTreeSet<crate::keyed_history_reader::Handle>>,
     incomplete: MissingHandles,
     unexamined: MissingEvents,
+    decoded: Option<
+        &std::collections::BTreeMap<
+            crate::keyed_history_reader::EventId,
+            transaction::TargetTransaction,
+        >,
+    >,
 ) -> Result<Report, Refusal> {
     let subject = subject(input, request.handle)?;
     let byte_count = subject.bytes.len();
@@ -169,7 +200,7 @@ fn assemble(
         ReadingFamily::Acceptance => {
             let outcome = match outcome {
                 Outcome::Complete(membership) => {
-                    let annotations = acceptance::annotations(input, &membership)?;
+                    let annotations = acceptance::annotations_indexed(input, &membership, decoded)?;
                     let accepted =
                         acceptance::accepted(&request.rule, request.observed_epoch, &annotations)?;
                     records = Some(membership.len());

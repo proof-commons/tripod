@@ -1,4 +1,7 @@
 //! Offline history controls. All child processes are bounded and timed.
+mod families;
+mod family_controls;
+mod family_trace;
 mod fixture;
 #[path = "../../src/keyed_history_model.rs"]
 mod model;
@@ -93,6 +96,17 @@ fn history_family_child() {
         "reader-negatives",
         "reader-review",
         "reading-review",
+        "families-constants",
+        "families-source",
+        "families-single",
+        "families-ordinary-edge",
+        "families-path",
+        "families-two-keys",
+        "families-later",
+        "families-multi",
+        "families-wide",
+        "families-cut-two",
+        "families-cut-253",
         "reading-rules",
         "reading-premises",
         "reading-reports",
@@ -111,6 +125,14 @@ fn history_family_child() {
 #[ignore = "bounded subject parent launches this exact child"]
 fn history_subject_child() {
     let subject = std::env::var("TRIPOD_KEYED_HISTORY_SUBJECT").unwrap();
+    if subject == "families-constants" {
+        family_controls::constants();
+        return;
+    }
+    if let Some(name) = subject.strip_prefix("families-") {
+        families::subject(name);
+        return;
+    }
     match subject.as_str() {
         "reading-review" => {
             reading_review::controls();

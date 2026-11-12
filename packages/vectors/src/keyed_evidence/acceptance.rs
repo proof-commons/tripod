@@ -41,9 +41,17 @@ pub fn failures(reading: &Reading) -> (super::MissingHandles, super::MissingEven
         .collect();
     (handles, events)
 }
+#[cfg(test)]
 pub fn annotations(
     input: &Input,
     records: &BTreeSet<Handle>,
+) -> Result<BTreeMap<Handle, Annotation>, Refusal> {
+    annotations_indexed(input, records, None)
+}
+pub fn annotations_indexed(
+    input: &Input,
+    records: &BTreeSet<Handle>,
+    index: Option<&BTreeMap<crate::keyed_history_reader::EventId, transaction::TargetTransaction>>,
 ) -> Result<BTreeMap<Handle, Annotation>, Refusal> {
     records
         .iter()
@@ -58,8 +66,16 @@ pub fn annotations(
                 .find(|(id, _)| *id == record.output.event)
                 .ok_or(Refusal::AnnotationMissing(*record))?
                 .1;
-            let decoded =
-                transaction::TargetTransaction::decode(bytes).map_err(Refusal::AnnotationDecode)?;
+            let owned;
+            let decoded = if let Some(index) = index {
+                index
+                    .get(&record.output.event)
+                    .ok_or(Refusal::AnnotationMissing(*record))?
+            } else {
+                owned = transaction::TargetTransaction::decode(bytes)
+                    .map_err(Refusal::AnnotationDecode)?;
+                &owned
+            };
             let output = decoded
                 .outputs()
                 .first()

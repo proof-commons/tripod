@@ -119,6 +119,9 @@ pub fn member(
     if successor != recipe.output_program {
         return Err(Refusal::WrongSuccessor { event, input });
     }
+    if !tx.inputs()[input].script_sig().is_empty() {
+        return Err(Refusal::ScriptSig { event, input });
+    }
     let stack = tx
         .witnesses()
         .get(input)

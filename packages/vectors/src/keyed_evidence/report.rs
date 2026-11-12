@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 /// Internal schema version, pinned by the framing controls.
 pub const SCHEMA: u32 = 1;
-/// The six appendix evidence families. Their semantic validators land in step 4.
+/// The six appendix evidence families. Each has a conformance validator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Family {
     Birth,
@@ -18,7 +18,7 @@ pub enum Family {
     Acceptance,
     Resources,
 }
-/// This step implements reading and acceptance reports, not the other families.
+/// Selection for the original reading/acceptance entry; the family entry has its own selector.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReadingFamily {
     Reading,
@@ -88,11 +88,15 @@ impl From<&Input> for EvidenceReferences {
         }
     }
 }
-/// Observation vocabulary is open for the archived observations of later families.
+/// Open observation vocabulary, separating offline reading from bound archive subjects.
 #[non_exhaustive]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Observation {
     OfflineReaderEvidence,
+    /// Exact archive subjects remain separate from this report's constructed subject.
+    OfflineResources {
+        archives: Vec<super::ArchivedObservation>,
+    },
 }
 /// Only a complete reading has a record set.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -134,10 +138,14 @@ pub struct AcceptanceBody {
     pub epoch: super::Epoch,
     pub reading: ReadingBody<AcceptedReading>,
 }
-/// Later families add their own bodies, including relation/member evidence.
+/// One claim body per family, open to additional conformance families.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Body {
+    Birth(super::BirthBody),
+    Continuation(super::ContinuationBody),
+    Recurrence(super::RecurrenceBody),
+    Resources(super::ResourcesBody),
     Reading(ReadingBody),
     Acceptance(AcceptanceBody),
 }
@@ -146,11 +154,13 @@ pub enum Body {
 pub enum Unit {
     Records,
     Bytes,
+    /// Primitive calls, not charged operation budget or native validation charge.
     Operations,
     Items,
     WeightUnits,
     Microseconds,
     Charge,
+    /// Upper bound in bytes (used for maximum element width).
     Bound,
 }
 /// Shared framing dimensions; absent resource observations are not zero.
@@ -188,7 +198,7 @@ pub struct Quantity {
     pub predicted: Measurement,
 }
 /// Untrusted internal report offer. Optional required fields admit missing-field subjects.
-/// Acceptance by the framing validator does not validate the four future families.
+/// Validation must use the validator for the selected family.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Report {
     pub header: Header,

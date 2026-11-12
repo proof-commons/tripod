@@ -38,7 +38,7 @@ pub fn compare(expected: &Report, offered: &Report) -> Result<(), Refusal> {
     header(&expected.header, &offered.header)?;
     body(&expected.body, &offered.body)
 }
-fn header(expected: &Header, offered: &Header) -> Result<(), Refusal> {
+pub(super) fn header(expected: &Header, offered: &Header) -> Result<(), Refusal> {
     if offered.schema != expected.schema {
         return Err(Refusal::SchemaMismatch);
     }

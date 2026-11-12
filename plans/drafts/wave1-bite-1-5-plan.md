@@ -108,16 +108,16 @@ Under (`rec:w1b15:adoption`), step 3 publishes a typed declaration form binding 
 
 These eight rows join (`tab:wave1:requirement-trace`) to (`tab:wave1:family-trace`); resources is a cross-cutting sixth family, not a ninth delivery requirement or a new covenant clause.
 
-| Requirement | Paper anchor | Families and step evidence |
-|---|---|---|
-| 1. Born first and single birth | (`[A-def:kpc-model:first-output]`), (`[A-prop:kpc-model:single-birth]`) | Birth; continuation also checks both clauses. Steps 1–2 output-0/later-non-handle and per-member subjects; step 4 resource accounting binds the same bytes. |
-| 2. Continue first and unique continuation | (`[A-thm:kpc-invariants:unique-successor]`) | Continuation and birth; steps 1–2 unique consumption/successor and each consumed handle's comparisons; resources covers execution subjects. |
-| 3. Fixed-key separation | (`[A-def:kpc-model:keyed-membership]`), (`[A-thm:kpc-invariants:key-isolation]`) | Continuation; steps 1–2 two-key coexistence, mixed/wrong-key boundary and independent reconstruction. |
-| 4. SOURCE record identity | (`[A-op:kpc-operations:source]`), (`[A-thm:kpc-invariants:source-provenance]`) | Record recurrence; steps 1–2 singleton keyed handle and unique provenance; step 4 forged report record refuses. |
-| 5. MERGE recurrence and disjoint growth | (`[A-op:kpc-operations:merge]`), (`[A-def:kpc-operations:classification]`), (`[A-thm:kpc-invariants:set-membership-growth]`) | Record recurrence and reading; steps 1–2 single/multiple union, no new record, live disjointness and path growth. |
-| 6. Faithful membership reconstruction | (`[A-def:kpc-interface:membership-reading]`), (`[A-thm:kpc-interface:membership-correctness]`), (`[A-cor:kpc-interface:path-reading]`) | Reading; step 2 independent model/reader comparison, incomplete/invalid/non-handle cases and complete classification. |
-| 7. Reader-side acceptance | (`[A-rem:kpc-interface:record-evidence]`) | Acceptance; step 3 filters preserve membership, fixed-rule growth and changing-rule counterexample. |
-| 8. Published evidence assumptions | (`[A-sec:kpc:interface]`), (`[A-sec:kpc:limitations]`) | Reading and all report headers; step 3 per-instance premises/finality, step 4 resources' conditional and absent dimensions. Resources compares exact subjects without supplying a paper bound. |
+| Requirement | Paper anchor | Owning family trace | Step evidence |
+|---|---|---|---|
+| 1. Born first and single birth | (`[A-def:kpc-model:first-output]`), (`[A-prop:kpc-model:single-birth]`) | Birth, continuation | Continuation also checks both clauses. Steps 1–2 output-0/later-non-handle and per-member subjects; step 4 resource accounting binds the same bytes. |
+| 2. Continue first and unique continuation | (`[A-thm:kpc-invariants:unique-successor]`) | Continuation, birth | Steps 1–2 unique consumption/successor and each consumed handle's comparisons; resources covers execution subjects. |
+| 3. Fixed-key separation | (`[A-def:kpc-model:keyed-membership]`), (`[A-thm:kpc-invariants:key-isolation]`) | Continuation | Steps 1–2 two-key coexistence, mixed/wrong-key boundary and independent reconstruction. |
+| 4. SOURCE record identity | (`[A-op:kpc-operations:source]`), (`[A-thm:kpc-invariants:source-provenance]`) | Recurrence | Steps 1–2 singleton keyed handle and unique provenance; step 4 forged report record refuses. |
+| 5. MERGE recurrence and disjoint growth | (`[A-op:kpc-operations:merge]`), (`[A-def:kpc-operations:classification]`), (`[A-thm:kpc-invariants:set-membership-growth]`) | Recurrence, reading | Steps 1–2 single/multiple union, no new record, live disjointness and path growth. |
+| 6. Faithful membership reconstruction | (`[A-def:kpc-interface:membership-reading]`), (`[A-thm:kpc-interface:membership-correctness]`), (`[A-cor:kpc-interface:path-reading]`) | Reading | Step 2 independent model/reader comparison, incomplete/invalid/non-handle cases and complete classification. |
+| 7. Reader-side acceptance | (`[A-rem:kpc-interface:record-evidence]`) | Acceptance | Step 3 filters preserve membership, fixed-rule growth and changing-rule counterexample. |
+| 8. Published evidence assumptions | (`[A-sec:kpc:interface]`), (`[A-sec:kpc:limitations]`) | All report headers | Step 3 per-instance premises/finality, step 4 resources' conditional and absent dimensions. Resources compares exact subjects without supplying a paper bound. |
 
 ## Inherited obligations and next boundary · `tab:w1b15:handoff`
 
@@ -597,3 +597,238 @@ The unchanged supplied gate (`#!/bin/bash`, `set -o pipefail`) ran through its s
 | doc | 32 | +34718367 / +22998273 / +11720095 | +20385 / +20094 | +86675 / +86676 | +34667 / +34666 |
 | lint-suite | 31 | +107882764 / +93639692 / +14243071 | +39451 / +22204 | +1 / +0 | +20215 / +19153 |
 | checks | 1 | +3361317 / +1926993 / +1434324 | +5424 / +4623 | +0 / +0 | +872 / +871 |
+
+
+## Six family reports · `rec:w1b15:families`
+
+**Decode disposition.** The once-per-process purpose was bounded test time, not an independence claim. The reader's private decoded index is discarded and its reviewed surface stays unchanged. As settled for this step, each subject permits the reader's own decode/index and one private family-owned canonical transaction/parent index. All six validators, annotations and resource checks reuse the latter; no decoding occurs per member or validator. Canonical decoding is shared substrate. Direct complete size comes from supplied bytes, and the witness-section count comes from their decoded fields and CompactSize widths, not a re-encoded length. Output proof lengths are counted rather than assumed empty. The annotation cache changes no reported value or refusal on the existing route. The 253-member fixture is built once in its process; subject/family caps stay 10/60 seconds.
+
+**Surface and authority.** The immutable `FamilyContext` owns bytes, the successful reader result, the private index and admitted archive bindings; callers cannot supply or mutate a cached result. `prepare_families`, `family_report`, and six `validate_*` entries are public vectors conformance boundaries with ADR-026 capture controls, not production construction or chain-reader APIs. Invalid reader input remains a preserved typed refusal, before family derivation; no invalid report is invented without its parent obligations. The shared `Header` remains subject/provenance/trace/evidence/assumptions/observation/quantities. No revalidating production entry, declaration evaluator, planner or producer receipt is introduced.
+
+| Family/body | Recomputed claims and shared implementation | Independent comparison/control |
+|---|---|---|
+| Birth / `BirthBody` | First-output identities from authenticated reader classification; every member's born-first fragment freshly evaluated from indexed bytes, with event/input/member/relation and exact leaf/control retained. | Declared graph positions/member identities and literal ten-byte grammar; later-position report and serialized cut-member subjects. |
+| Continuation / `ContinuationBody` | Fresh continuation fragment per member and byte-derived successor edges. Authentication/classification is shared with the unchanged reader, not a family-report verdict. | Graph identities, literal seven-byte grammar; one changed member key/relationship beside an unchanged member, and a serialized second-member other-key predecessor. |
+| Recurrence / `ReadingBody<Recurrence>` | Complete SOURCE identity or union of consumed memberships; no added MERGE record. Incomplete outcomes contain no union. Reader membership is shared substrate for this family. | Standard-library model sets, previously pinned literals, SOURCE/spurious-MERGE record mutants. |
+| Reading / `ReadingBody<CompleteReading>` | Reviewed query, scope, missing maps and premise binding, recomputed over the sealed reader result. | Model query/set comparisons and literal assumptions; withheld parent and inclusion premise give incomplete reports. |
+| Acceptance / `AcceptanceBody` | Indexed creating annotations and the reviewed rule/epoch filter, preserving membership. | Model membership and all-record literals on every subject; existing fixed/changing-rule controls, including path removal; a filter offer changing membership refuses. |
+| Resources / `ResourcesBody` | Three schedules per actual member; fresh byte-model counters compared with the unchanged grammar projector, plus exact serialized terms and separately bound archive observations. | Independent grammar literals, pinned `elements` complete weight, literal 88/91/255 figures, CompactSize 252/253, count/unit/subject/archived-byte mutants. |
+
+Generation and validation share family derivation helpers. Equality with a proposed report proves consistency and binding, not correctness of those helpers; graph-only model/literal comparisons remain essential. Resources has additional independent library sources: abstract grammar prediction versus the byte model. Supplied-byte sizes share the canonical decoder; the test harness's `elements` decoding/weight supplies a separate implementation. No validator accepts another report's verdict, a declared total or a report digest. The reader's check order still precedes every family check. Body-specific checks follow header binding; the outer refusal always names family-report validation and retains any inner reader or evidence boundary.
+
+**Controls and reachability.** `families::subject` builds each of SOURCE, single, ordinary-edge, multi, path, two keys, later, wide, cut-two and cut-253 once, compares every accepted report with the model or independent literals, and validates its mutations. `common` changes subject bytes, family, subject identity, premise, required field and evidence reference separately; every cross-family validator refuses. `relation_mutants` changes event, input, member, relation kind, leaf, control and counters separately, and omits a row; each pins its own refusal beside the unmodified report and preserves another member. Non-relation families have no meaningless relation-id field: their trace identity and queried handle are mutated instead. `specific` changes first position, successor map, SOURCE/MERGE records, membership and resource count/unit. `family_controls::observed_refusals` constructs untrusted byte subjects for an uncommitted second-member leaf, another key's valid predecessor and a later-born cut member, preserving the reader's commitment/continuation/born-first boundaries. None is called an admitted artifact. Sealed-producer assignment/clause omissions remain report-level internal corruption controls, not fabricated public constructors. `family_trace::family_boundaries_emit_one_completion_or_refusal` launches exactly one bounded child and checks every boundary.
+
+| Refusal inventory | Boundary and reachability |
+|---|---|
+| `Reader`, `Framing` | Preserve exact owner refusals and the reader's eight observation boundaries or the evidence layer's five boundaries; missing membership/premises are evidence, never covenant execution. Public through preparation/requests/report mutation. |
+| `Body`, `Trace`, `FirstOutputs`, `Relations`, `RelationEvent`, `RelationInput`, `RelationMember`, `RelationKind`, `RelationLeaf`, `RelationControl`, `RelationCounters`, `Successors` | Family-report field/identity/census comparisons. Relation omission is an internal report subject, not a reachable sealed producer defect. |
+| `RecurrenceSource`, `RecurrenceInputs`, `RecurrenceRecords` | Family-report recurrence claims; separate from the internal union-consistency guard `Recurrence`. |
+| `ScheduleIdentity`, `Script`, `Control`, `ExecutionArguments`, `ResourceCount`, `ResourceUnit`, `ResourceAvailability`, `ResourceTerms`, `ProjectionTerms` | Resource-report binding, with each quantity's unit and availability preserved. |
+| `Model`, `PredictionDisagreement`, `Arithmetic`, `Decode`, `MissingSubject`, `Target`, `Projection`, `Archive` | Defensive recomputation/index/projector/archive guards. Valid context preparation prevents inventing a public caller that corrupts its private index. A model refusal carries event/input/schedule and its original kind. |
+
+**Resource comparisons (offline).** `ScheduleResources` carries the complete projector dimension map, so operation/validation charges, initial stack items and widths, depth, witness/transaction formulas and package/deployment obligations are not silently dropped. Concrete width may be smaller than the prediction's full-domain bound. Primitive calls are not opcode budget or validation charge. The exact member control item remains separate from zero execution arguments.
+
+| Term | Grammar prediction | Byte-model observation | Direct supplied-byte count | Unit |
+|---|---:|---:|---:|---|
+| Birth fragment | 10 bytes / 5 primitives / peak 3 | 5 primitives / peak 3 | 10 bytes | bytes, operations, items |
+| Continuation fragment | 7 bytes / 6 primitives / peak 4 | 6 primitives / peak 4 | 7 bytes | bytes, operations, items |
+| Composed leaf | 52 bytes / 12 primitives / peak 4 | 12 primitives / peak 4 | 52 bytes | bytes, operations, items |
+| Element width | birth ≤32, continuation/leaf ≤40 | concrete subject widths bounded above | no serialized-size inference | bytes |
+| Execution arguments / control | 0 arguments; depth zero | empty initial execution stack | 33-byte control, separate from script | items, bytes, hashes |
+| Member script stack | CS(2)+CS(52)+52+CS(33)+33 = 88 | absent (serialization, not execution) | 88 per member | bytes |
+| Complete member witness | 88 + three empty-field prefixes = 91 | absent | 91 per member | bytes |
+| Constructed empty-scriptSig member contribution | 41×target scale +91 =255 | absent | same input/witness fields | weight units |
+| Complete transaction | scale×base + non-member witness +91N | absent | supplied length minus counted witness section, then weighted; independent `elements` cross-check | weight units |
+| CompactSize boundary | width 1 at 252; width 3 at 253 | absent | independent prefix literals and framed witness lengths | bytes |
+
+`family_controls::scriptsig_size` also pins counting of a nonempty raw-evidence scriptSig; that size-only subject makes no admission or native claim. Overflow and dimension controls reuse the existing projector/formulas; no finite MERGE maximum is inferred. `Observation::OfflineResources` retains archive/case/exact submitted bytes/node weight for all sixteen existing admitted carrier rows. A changed archived subject refuses; no row is relabelled as the current constructed transaction. Native elapsed time, CPU, stalls, validation charge, relay policy, deployment and package observations for the final subject remain absent, never zero. Static predicted zero charges are not native measurements. A measured scaling maximum remains a measurement under its envelope, not a script law.
+
+| Delivery row | Family evidence in this step |
+|---|---|
+| 1 | Birth first-position and exact clause/member identities; literal grammar and later-member refusal. |
+| 2 | Continuation edges/member census against declared graph; both clauses remain separate. |
+| 3 | Two-key fixture, authenticated member keys and changed-member/key subjects. |
+| 4 | SOURCE singleton provenance and recurrence-source/record corruption controls. |
+| 5 | Single/multi/path/wide model unions with no added MERGE record; ordinary-edge classification retained. |
+| 6 | Model/reader complete-set equality and incomplete cut reports; missing parent/premise controls. |
+| 7 | Acceptance preserves membership; reviewed immutable/changing-rule controls remain, with forged membership refused. |
+| 8 | Header assumptions and explicit absent quantities in every family; exact trace rows and defining paper labels checked. |
+
+`family_controls::trace_rows` binds each body's requirement labels to (`tab:w1b15:requirements`) and checks their defining paper files; requirement 8 and both anchors live in every header. Resources is cross-cutting, not a ninth requirement. MERGE adds no record because its recurrence is the union of the consumed SOURCE record sets; no amount predicate, carried accumulator, owner-authorization law or covenant clause is added.
+
+**Handoff and limits.** Step 5 receives six internal Rust report bodies, bounded validators, graph expectations and exact public bytes, not a maintained interchange format. The cut-two/cut-253 membership closures remain incomplete and need ancestors' evidence. Per-member relation evidence here is the model side only. `MemberExecutionAndRelationEvidence` still needs native execution on the same final bytes; bite 1.6 records that discharge with the bite 1.5 relation evidence. Inclusion, unspentness, retrieval and finality remain per-instance external facts; the unsupplied-key exclusion rests on valid-history inclusion. Required finality still accepts only the sealed deployment declaration; none of this step's fixture reports is final. Final-subject measurement obligations and existing archives retain the home assigned by (`obl:guide15-exec:measurement-home`), in `plans/research/state-constructor.md`; offline gate/test timings are not target measurements.
+
+**Landing scope.** Nineteen files (fourteen code/test/registration files and five documentation files), one above the plan estimate of 12–18. The added split keeps execution, resource counting, family fields and bounded controls separately reviewable. Reader, model, projector, existing construction paths and archived expectations are unchanged.
+
+**Verification and measured offline time.** The named code landing passed `/var/home/tripod/loops/tmp/gate-w20b1-20261112T183936Z.log`: start 2026-11-12T18:39:36Z, end 2026-11-12T18:44:27Z, `== green`, exit 0, wall 291 seconds, queue wait 0. It ran vectors, tapscript, realization, transaction, target-elements, target-elements-conformance, architecture and compiler plus the lint/plans checks. The unmodified gate begins `#!/bin/bash`, `set -o pipefail` after its explanatory comment; it starts a slot-governed transient user unit with `--wait --pipe`, and its foreground SSH stayed attached through the end marker. No host build/test or native run occurred.
+
+The earlier green `/var/home/tripod/loops/tmp/gate-w20b1-20261112T183145Z.log` completed in 250 seconds, exit 0, zero queue wait. Final inspection then separated the wrong-unit report from the wrong-count mutant so each changes exactly one coordinate; the covering run above includes that correction. The earlier `/var/home/tripod/loops/tmp/gate-w20b1-20261112T182216Z.log` was red, exit 1, 419 seconds (zero queue): the final mutation-test addition needed formatting; both the fmt battery and lint's fmt lane reported it. Its package tests passed in 315 seconds. The formatter patch was applied, then the independent recurrence-input, successor-edge and resource-member assertions were added and passed in the named code run. Development fast checks also exposed const/style lints and an immutable reference-library witness API; those were corrected rather than suppressed. The earlier fast check's 142-second doc phase included a package-cache lock wait whose separate duration was not printed. No subject or process bound was widened.
+
+The following subject walls include fixture construction and all six report comparisons/mutations, not merely the family index. The second-pass column measures only the additional canonical decode/index, not the reader or archive admission. These are offline gate observations, not a performance claim or native resource measurements.
+
+| Subject | Wall s | Family second pass s | Result |
+|---|---:|---:|---|
+| constants | 1.704600 | not separately sampled | exit 0 |
+| source | 0.479311 | 0.000027040 | exit 0 |
+| single | 0.547856 | 0.000025226 | exit 0 |
+| ordinary-edge | 0.576352 | 0.000030657 | exit 0 |
+| path | 0.536703 | 0.000043150 | exit 0 |
+| two-keys | 0.577975 | 0.000041187 | exit 0 |
+| later | 0.563306 | 0.000023393 | exit 0 |
+| multi | 1.460846 | 0.000028793 | exit 0 |
+| wide | 2.288589 | 0.001188280 | exit 0 |
+| cut-two | 0.497973 | 0.000030838 | exit 0 |
+| cut-253 | 1.254440 | 0.000639154 | exit 0 |
+| Trace capture | 0.555469 | not separately sampled | exit 0 |
+| Whole history family, including earlier subjects | 25.555901 | not applicable | exit 0 |
+
+Thus the complete 253-source wide history's second pass was 0.001188280 seconds; the unchanged 253-member cut subject's was 0.000639154 seconds. All subjects remained below 10 seconds and the whole family below 60. The raw test journals are retained at `/var/home/tripod/loops/tmp/gate-w20b1-20261112T183936Z.families-preservation.tar` (compiler, architecture, vectors library and maturity/history target); the package harness log is beside the covering gate log.
+
+**Preservation.** `tests::engine_base_capture::preserve_engine_base` passed all ten pinned lengths/digests unchanged; `tests::keyed_profile_tests::attestation_canonical_bytes_and_publication_equal_the_opening_base` passed its independent opening-base comparison. The full named-package tests passed every existing vector and reproduction control. The change contains no edits to the reader, graph model, byte evaluator, projector, compiler, target, linker, transaction, constructor, archive or fixture-byte expectations. The acceptance helper only gains the private family index path; the pre-existing reading route and its controls remain unchanged.
+
+Resource deltas below belong to this gate's own `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T183936Z.service` cgroup, containers included. The log retains every start/end sample; these are not node-wide costs or native interpreter measurements.
+
+| Battery | Wall s | CPU usage / user / system μs | CPU pressure some / full μs | Memory pressure some / full μs | I/O pressure some / full μs |
+|---|---:|---|---|---|---|
+| setup | 1 | +1937682 / +920024 / +1017658 | +2443 / +2405 | +0 / +0 | +72 / +72 |
+| fmt | 3 | +4915493 / +3757890 / +1157603 | +3076 / +2874 | +0 / +0 | +62 / +62 |
+| clippy | 8 | +22277287 / +16949356 / +5327931 | +8694 / +4618 | +0 / +0 | +18712 / +18529 |
+| package-tests | 217 | +2783665199 / +2721651846 / +62013353 | +26282198 / +4726803 | +84985 / +48378 | +37038 / +30181 |
+| doc | 30 | +34035444 / +22355731 / +11679713 | +21562 / +21081 | +0 / +0 | +2347 / +2347 |
+| lint-suite | 30 | +101631705 / +87939404 / +13692301 | +25197 / +14115 | +1 / +1 | +1178 / +1100 |
+| checks | 1 | +3333763 / +1883400 / +1450363 | +3569 / +3291 | +0 / +0 | +202 / +201 |
+
+### Six-family review closure · `rec:w1b15:families-review`
+
+This record supersedes the comparison and refusal descriptions in (`rec:w1b15:families`); its earlier run remains evidence for that earlier tree. No byte, model expectation, projector, archive or construction recipe changes. The only reader amendment is the expressly adopted member-form check below. All other changes are within the vectors family layer, its controls and these records.
+
+| Finding | Closure and control |
+|---|---|
+| 1 — weight prediction | `member_prediction` derives 36-byte outpoint + empty-scriptSig CompactSize prefix + 4-byte sequence, multiplies by member count and target scale, then adds the projector witness. It checks the decoded member base and uses checked arithmetic. `family_witness_formula_covers_compact_size_transition` pins 41/255, changed base and overflow. Whole weight is explicitly a projector formula on measured non-member terms; pinned `elements` in `families::resources` is its independent source. |
+| 2 — direct sizes | Code and README say decoded-field arithmetic under canonical round trip, with three empty fields fixed by the decoder envelope. `schedules` compares exact birth and continuation bytes with the grammar encodings; `identities` independently pins the byte arrays. Lengths additionally check slice offsets. |
+| 3 — replay | Every fragment replay is compared with the reader's row and each leaf replay with `leaves()`, with `ReplayDisagreement` on mismatch. Reader counters are retained unchanged. The private reader index prevents sharing its fact builder by visibility alone, so the two builders remain explicitly consistency-checked. The harness supplies the independent graph/literal source; recurrence re-applies the reader fold to its own output. |
+| 4 — refusal controls | `common`, `specific`, `relation_mutants`, `more_mutants`, `resource_mutants`, `trace_rows` and `scriptsig_size` assert exact conditions and observation boundaries. Added body-kind, consumed-map, control/script/argument, availability, term and projection mutants. The MERGE record mutant inserts its own handle; member-less continuation pins `Trace`, not a nonexistent successor change. |
+| 5 — distinct defensive conditions | `IndexDisagreement`, `RecurrenceShape` and `ProjectionShape` replace ambiguous uses of report-mismatch variants. `Recurrence` is classified below as a defensive union check. |
+| 6 — header ownership | Resource header weight comes from the body's direct/predicted values; primitive calls sum whole-leaf rows only and stack peak takes their maximum. Birth/continuation no longer claim record counts. `resource_literals`, the header-weight mutant and `overrides` pin agreement and family ownership. |
+| 7 — validity limit | The input-fact table below and vectors README separate local member-form/model checks from native transaction validity. The remaining facts are added to the measurement-home handoff. |
+| 8 — scriptSig | `ScriptSig { event, input }` is a commitment-authentication refusal immediately before `WitnessShape`. `scriptsig_size` changes only member 1, keeps member 0 byte-identical and pins the same refusal with a second witness-shape fault. `prepare_families` preserves it at its distinct preparation boundary. The isolated reader-amendment gate passed all existing accepted history subjects. |
+| 9 — invented missing event | A complete recurrence with absent/incomplete consumed membership now refuses defensively as `MissingConsumedMembership`, never manufactures `Missing::Event`. |
+| 10 — stronger comparisons | Cut subjects compare exact missing identities derived from declared boundary external inputs, not counts. `missing` covers recurrence, reading and acceptance for the absent parent at event 20/input 0 (withheld event-10 bytes), and for event 10's inclusion assertion. Relation/resource peaks and widths, annotation values/assets/bytes and header counts have literal controls. |
+| 11 — archives | `FamilyContext` retains full admitted `CarrierCost` rows once, or the unchanged owner's `CostRefusal`. Resources references relevant rows by archive/case/`ArchiveDigest`; same-member-count archive context is not a current-subject observation. `archive_rows`, the digest mutant and `archive_failure_is_retained_without_refusing_preparation` pin retention and isolation. |
+| 12 — boundary types | `FamilyBoundary::{Preparation, FamilyReportValidation}` replaces the string boundary. Preparation has `family: None`; validators name their family. Only observation/derivation failures carry `FamilyObservationBoundary`; report mismatches and defensive failures have none. Archive and target owner errors are retained. |
+| 13 — CompactSize | `family_witness_formula_covers_compact_size_transition` exercises the family's own witness formula at 252 and 253, beside the unchanged owner formula controls. |
+| 14 — units | Execution arguments derive from witness length minus the two non-argument items. Width prediction is `Unit::Bound` (a byte upper bound); model width is bytes. Member/argument counts are items, base/non-member sizes bytes. `Operations` documents primitive calls, not validation charge. |
+| 15 — requests | The chosen family overrides `Request.family`. Birth/continuation/resources use reporting completeness and ignore a declaration under `NotRequested`; `Required` finality refuses as `FinalityUnsupported`. `overrides` and `more_mutants` pin those choices. Reader preparation precedes request provenance; the standalone reading entry's order is unchanged. |
+| 16 — trace | Continuation now carries rows 1–3 and reading rows 5–6. `trace_rows` checks the table's family column in both directions, then paper anchors and exact trace refusals. Requirement 8 remains in every header. |
+| 17 — hygiene | Explicit family exports, current report comments, and the single-line tracing paragraph describe the actual six-family surface. |
+
+**Reader amendment and model correspondence.** Within a member the refusal order is later birth, successor version, successor program, scriptSig, witness shape, leaf bytes, control version, parity and full control recipe. Recipe reconstruction is earlier authentication substrate. The evaluator computes the two fragment results, then evaluates the whole leaf; a whole-leaf error propagates before stored birth and continuation errors. This defensive evaluation order remains unchanged. ScriptSig is the sole new check, immediately before witness shape. A nonempty-scriptSig subject has the same declared graph and model answer as its accepted twin: the standard-library model has no spend-form coordinate. The reader instead refuses `ScriptSig` at commitment authentication. This is a form check, not a changed membership expectation. The simultaneous scriptSig/witness-shape subject pins scriptSig precedence. No other reader outcome or import-boundary rule changes.
+
+**Comparison sources and resource units.** Replaying the same evaluator on the two private indexes detects divergence between them, not a second semantic opinion. Recurrence's union check is likewise a consistency check. The model's graph-only fold and separately written literal sets remain the second source in the harness. All validators compare proposed fields to a derivation sharing generation helpers; this establishes binding and consistency, not independent proof of those helpers.
+
+| Term | Prediction and source | Model observation | Decoded-field/direct or independent harness comparison | Unit |
+|---|---|---|---|---|
+| Birth / continuation / leaf script | Projector grammar: 10 / 7 / 52 | Not an execution count | Exact clause encodings; supplied leaf length; independently pinned arrays | bytes |
+| Primitive calls | Projector opcode count: 5 / 6 / 12 | Bounded evaluator: 5 / 6 / 12; replay equals reader | Harness literals; not a validation charge | primitive calls (`Operations`) |
+| Combined peak | Projector: 3 / 4 / 4 | Bounded evaluator: 3 / 4 / 4 | Harness literals | items |
+| Element width | Projector domain bound: 32 / 40 / 40 | Concrete fixture maximum: 32 / 32 / 32 | Literal concrete widths, checked below the domain bound | byte bound / bytes |
+| Control / arguments | Depth-zero recipe: 33; reader's two-item form | Arguments derived as witness item count minus two: 0 | Exact authenticated control, unchanged literal length | bytes / items |
+| Script stack per member | Projector 88 | Absent | CompactSize arithmetic over decoded leaf/control fields under canonical round trip | bytes |
+| Input witness per member | Projector 88 plus three decoder-fixed empty-field prefixes: 91 | Absent | Same decoded-field arithmetic; the three empty fields are not independently measured | bytes |
+| Member stripped contribution | Recipe 36 + CompactSize(0) + 4 = 41 | Absent | Decoded outpoint/scriptSig/sequence sizes; nonempty member scriptSig already refuses | bytes |
+| Member weight | Recipe base times target scale + projector witness: 255 | Absent | Decoded 41-byte base and 91-byte witness; literal 255 and changed-base control | weight units |
+| Whole transaction | Projector formula evaluated on measured base and non-member terms | Absent | Decoded-field calculation; pinned `elements::Transaction::weight()` is the independent comparison | weight units |
+| CompactSize transition | Existing encoder widths 1 / 3 at 252 / 253 | Absent | Family witness formula and owner formula each checked against literals | bytes |
+
+Only complete supplied transaction length is read directly as a raw byte length. Witness-section sizes are arithmetic over decoded fields under the reader's canonical round trip, with three empty fields fixed by the supported decoder envelope. The 88-byte script stack and the 41/255 recipe contributions are grammar-versus-decoded-field comparisons; whole-transaction weight is not an independent grammar prediction. Checked arithmetic refuses overflow. Every family header owns subject byte size; reading/recurrence additionally own record counts, acceptance record and accepted counts, and resources weight plus whole-leaf primitive-count sum and stack-peak maximum. Birth/continuation own no record census. No header reports absence for a dimension its body observes.
+
+**Refusal inventory and reachability.** Every public mutant's comparison refusal is at `FamilyReportValidation`, with no observation boundary. `Framing` retains the exact evidence owner's condition but is a report comparison, not an observation. Preparation instead has no family and preserves the reader's real boundary. Request derivation uses `Observation`, preserving its evidence boundary. No report mismatch becomes a covenant refusal.
+
+| Conditions | Control or defensive status |
+|---|---|
+| `Framing(SubjectBytesMismatch, FamilyMismatch, SubjectHandleMismatch, AssumptionsMismatch, MissingField(Subject), EvidenceMismatch)` | `common`, one coordinate per family |
+| `Framing(MembershipMismatch, OutcomeMismatch)` | `specific`, `more_mutants`; complete/incomplete/non-handle type change and forged membership |
+| `Framing(TraceMismatch, ObservationMismatch, QuantityValue(Weight))` | `trace_rows`, archive digest subject, `resource_mutants` header/body subject |
+| `Body`, `Trace`, `FirstOutputs`, `Successors` | Correct-header/wrong-body control; trace mutation including member-less continuation; birth-position and successor-map subjects |
+| `Relations`, `RelationEvent/Input/Member/Kind/Leaf/Control/Counters` | `relation_mutants`, omitted row and seven distinct row-coordinate changes, other member unchanged |
+| `RecurrenceSource/Inputs/Records` | `special_requests`, `more_mutants`, `specific`; includes MERGE's own handle as spurious record |
+| `ScheduleIdentity`, `Control`, `Script`, `ExecutionArguments`, `ResourceCount/Unit/Availability/Terms`, `ProjectionTerms` | `specific`, `resource_mutants`, `constants`; each has an exact one-coordinate report subject |
+| `FinalityUnsupported` | `more_mutants` required-finality request for birth/continuation/resources; no observation boundary |
+| `Reader(UncommittedLeaf, WrongSuccessor, LaterBirth, ScriptSig)` | `observed_refusals`, `scriptsig_size`; preparation preserves commitment, continuation or born-first boundary |
+| `Observation(Query(NotHandle))` | `special_requests`; reader-evidence boundary, not model execution |
+| `ReplayDisagreement`, `MemberFormDisagreement`, `Arithmetic` | Internal helper control beside matching trace/41-byte base, and overflow; no public bad context is minted |
+| `Archive(CostRefusal)` | Internal archive-failure subject preserves the owner error and leaves the prepared reader intact; resources-only consumption |
+| `IndexDisagreement`, `RecurrenceShape`, `MissingConsumedMembership`, `Recurrence`, `ProjectionShape`, `GrammarDisagreement`, `PredictionDisagreement` | Defensive guards on sealed indexes, reviewed reader outputs or projector shape. No public one-coordinate subject can create such a context; they are not claimed as exercised public defects. |
+| `Decode(TransactionRefusal)`, `MissingSubject`, `Target(Vec<TargetError>)`, `Projection(TapscriptError)`, `Model { event, input, schedule, kind }` | Retained owner/derivation guards. The reader normally refuses malformed bytes or unavailable subjects first; reviewed target/projector and successful reader model prevent these on accepted public evidence. No invented public subject. |
+
+The missing-parent and inclusion subjects are valid incomplete reports, not failed validations: each membership family carries the exact missing set and validation accepts that claim. Cut-two and cut-253 likewise retain their precise unresolved boundary dependencies. Full admitted archive rows retain their recorded weight disagreement flags and null native dimensions; resources references select rows by the same keyed witness count solely as archive context. A digest does not authenticate any new measurement or bind an old native observation to a new subject.
+
+| Input fact | Local check and remaining boundary |
+|---|---|
+| Member scriptSig | Empty enforced before witness shape; nonempty is commitment-authentication refusal. |
+| Annex / extra witness items | Conservatively refused by the two-item recipe form; no claim all annex spends are consensus-invalid. |
+| Issuance / peg-in | Decoder-supported-envelope refusal, including witness fields; no widened serialization. |
+| Sequence / lock time | Preserved byte facts; chain-position semantics remain inclusion premises and bite-1.6 native work. |
+| Balance / fee / sponsor signatures / weight limits | Not established by member model evaluation. Final transaction observation is owed to bite 1.6. |
+
+A complete reading authenticates the member recipe and models both clauses, not the containing transaction's native validity. The four parent facts and the per-key inclusion assumption remain named. Bite 1.6 receives the exact subjects, these transaction-validity debts and the still-absent final-subject wall/CPU/stall, interpreter, charge, policy, deployment and package measurements at (`obl:guide15-exec:measurement-home`). Member execution is discharged only with relation evidence and native execution on the same final bytes. No native run or new measurement occurs here.
+
+**Verification ledger.** The final-tip run of step 4, omitted from its earlier record, is `/var/home/tripod/loops/tmp/gate-w20b1-20261112T184603Z.log`: start 2026-11-12T18:46:04Z, end 18:51:32Z, wall 328 seconds, queue 0, `== green`, exit 0. Its history-family wall was 22.540165 seconds; wide took 2.410526 seconds (second pass 0.001839958), cut-253 took 1.235192 seconds (second pass 0.000571940). These are offline process observations, not native costs. Per-battery deltas below belong to `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T184603Z.service`, its own gate cgroup including containers. The cited log retains every start/end sample.
+
+| Battery | Wall s | CPU usage / user / system μs | CPU pressure some / full μs | Memory pressure some / full μs | I/O pressure some / full μs |
+|---|---:|---|---|---|---|
+| setup | 0 | +1978743 / +830724 / +1148019 | +5175 / +2867 | +0 / +0 | +63 / +63 |
+| fmt | 4 | +5185375 / +4050357 / +1135019 | +4636 / +3282 | +0 / +0 | +49 / +49 |
+| clippy | 10 | +24024248 / +18588356 / +5435892 | +9432 / +5449 | +0 / +0 | +1669 / +1668 |
+| package-tests | 235 | +2804959504 / +2742795896 / +62163609 | +27956176 / +5651495 | +0 / +0 | +27229 / +19771 |
+| doc | 40 | +44185567 / +29764853 / +14420715 | +82769 / +82231 | +60547 / +60547 | +63 / +62 |
+| lint-suite | 37 | +121122994 / +105097497 / +16025497 | +120014 / +78486 | +15300 / +15300 | +161881 / +161771 |
+| checks | 2 | +3490963 / +2036049 / +1454915 | +5463 / +4013 | +0 / +0 | +814 / +809 |
+
+The isolated reader amendment passed `/var/home/tripod/loops/tmp/gate-w20b1-20261112T191348Z.log`, 19:13:48Z–19:19:17Z, 329 seconds, queue 0, green, exit 0, including every existing accepted history subject. The first family correction run `/var/home/tripod/loops/tmp/gate-w20b1-20261112T192901Z.log`, 19:29:02Z–19:35:09Z, 367 seconds, queue 0, was RED, exit 1: a new literal header assertion used `Items` for the record census instead of its existing `Records` unit. That assertion was corrected; no production value or existing expectation changed. All existing reader subjects passed before that new assertion failed. Fast checks also caught formatter output, helper-length lints and a test's mistaken comparison of an optional archived weight with a scalar; all were corrected. One fast-check request received `CHECK-BUSY`, launched no work and was retried only after the active check completed.
+
+The next run, `/var/home/tripod/loops/tmp/gate-w20b1-20261112T193655Z.log`, 19:36:55Z–19:41:47Z, 292 seconds, queue 0, was RED, exit 1, on another new harness literal: withholding event 10's bytes yields `Missing::Parent { event: 20, input: 0, address: event-10-address, position: 0 }`, not `Missing::Event(10)`. The harness now pins that input-specific missing evidence in all three membership families. The reader and model were not changed to satisfy the assertion; every earlier accepted reader subject still passed.
+
+The reader outcome table is supplemented by these spend-form rows; the graph model has no scriptSig or witness-shape coordinate, so its accepted answer is conditional on spend form rather than a competing native verdict.
+
+| Subject in `scriptsig_size` | Declared graph/model | Reader and family preparation | Unchanged twin |
+|---|---|---|---|
+| Canonical two-member MERGE | Accepted graph; same record set as imported | Accepted reading | Both members unchanged |
+| Member 1 scriptSig containing one zero byte | Same graph and set | `ScriptSig { event: 20, input: 1 }`, commitment authentication | Member 0's entire input unchanged |
+| Member 1 scriptSig containing one zero byte and wrong witness shape | Same graph and set; two spend-form faults | Same `ScriptSig` refusal precedes `WitnessShape` | Member 0's entire input unchanged |
+
+**Corrected implementation gate.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T194314Z.log` ran 2026-11-12T19:43:14Z–19:49:06Z, wall 352 seconds, slot wait 1 second, `== green`, exit 0. Packages were vectors, tapscript, realization, transaction, target-elements, target-elements-conformance, architecture and compiler, with lint/plans checks. The unmodified gate script begins `#!/bin/bash` and `set -o pipefail` after its explanatory comment. It starts a slot-governed transient user unit with `--wait --pipe`; the lane's time-prefixed foreground SSH remained attached to the end marker. No host build/test or native execution ran. Raw compiler, architecture, vectors library and history journals are retained at `/var/home/tripod/loops/tmp/gate-w20b1-20261112T194314Z.families-review.tar`; the copied Meson package journal is `/var/home/tripod/loops/tmp/gate-w20b1-20261112T194314Z.package-tests.testlog.json`.
+
+| Subject | Wall s | Family-index second pass s | Result |
+|---|---:|---:|---|
+| constants | 3.440156 | not separately sampled | exit 0 |
+| source | 0.731434 | 0.000029525 | exit 0 |
+| single | 1.025131 | 0.000035606 | exit 0 |
+| ordinary-edge | 0.982451 | 0.000024075 | exit 0 |
+| path | 1.126757 | 0.000066033 | exit 0 |
+| two-keys | 2.509589 | 0.000018625 | exit 0 |
+| later | 0.817153 | 0.000028523 | exit 0 |
+| multi | 2.158855 | 0.000031358 | exit 0 |
+| wide | 3.842186 | 0.001254092 | exit 0 |
+| cut-two | 0.753201 | 0.000032801 | exit 0 |
+| cut-253 | 2.651868 | 0.000714182 | exit 0 |
+| Trace capture | 0.802142 | not separately sampled | exit 0 |
+| Whole history family | 34.352141 | not applicable | exit 0 |
+
+All subject processes stayed within 10 seconds, the family within 60; no bound changed. The wide 253-source subject's second pass was 0.001254092 seconds, and cut-253's 0.000714182 seconds. The internal witness/overflow/replay unit control took 0.000005100 seconds and the retained-archive-failure unit control 0.671922219 seconds. These walls include offline model/test work, not native measurement. Relative to the earlier run, added exact mutants cause more derivations; the table attributes the work to subjects without making a performance claim.
+
+Resource deltas below are the gate's own cgroup `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T194314Z.service`, containers included, not node-wide costs. The log retains each battery's start/end samples.
+
+| Battery | Wall s | CPU usage / user / system μs | CPU pressure some / full μs | Memory pressure some / full μs | I/O pressure some / full μs |
+|---|---:|---|---|---|---|
+| setup | 0 | +1792613 / +744481 / +1048132 | +3957 / +2959 | +0 / +0 | +62 / +62 |
+| fmt | 4 | +5165946 / +4054317 / +1111629 | +2471 / +2284 | +0 / +0 | +83 / +83 |
+| clippy | 2 | +2906227 / +1572812 / +1333415 | +2895 / +2600 | +0 / +0 | +421 / +407 |
+| package-tests | 293 | +3123016918 / +3071292584 / +51724333 | +47705992 / +25303488 | +2138 / +1278 | +8484 / +1846 |
+| doc | 29 | +30665775 / +19973599 / +10692176 | +22571 / +22388 | +0 / +0 | +87 / +88 |
+| lint-suite | 23 | +79887475 / +70351251 / +9536224 | +14387 / +10085 | +0 / +1 | +4034 / +3849 |
+| checks | 1 | +3017654 / +1631132 / +1386522 | +4863 / +3639 | +0 / +0 | +445 / +445 |
+
+**Preservation.** `tests::engine_base_capture::preserve_engine_base` passed all ten existing digest/length pins; `tests::keyed_profile_tests::attestation_canonical_bytes_and_publication_equal_the_opening_base` passed the independent opening-base comparison. Every existing vector, archive admission and reproduction control passed the named package tests. Source comparison is exact for compiler, architecture, realization, tapscript, transaction, linker, target-elements, conformance, fixtures, the graph model, byte evaluator and cost archive. Reader changes are confined to the three-line scriptSig check and its refusal enum/mappings; all other reader bytes are unchanged. No expected set, existing vector or emitted/linked/committed/constructed byte was regenerated. The final documented tip is subjected to the same package-set gate; its terminal verdict is reported with the step.
+
+The documented-tree run `/var/home/tripod/loops/tmp/gate-w20b1-20261112T195635Z.log`, 19:56:35Z–20:02:19Z, wall 344 seconds, queue 0, was RED, exit 1, solely because two scriptSig table cells used a bracketed byte spelling that the label checker interpreted as an imported citation. All package tests, rustdoc and lint-suite passed. The cells now say one zero byte; no code or expected value changed. The final documented tip is rerun through the same full gate, with its verdict reported in the step report.

@@ -79,6 +79,8 @@ pub enum Refusal {
     WrongSuccessor { event: EventId, input: usize },
     /// Output zero has a different witness version.
     WrongVersion { event: EventId, input: usize },
+    /// A native witness-program member has a nonempty scriptSig.
+    ScriptSig { event: EventId, input: usize },
     /// Covenant witness is not exactly leaf plus control.
     WitnessShape { event: EventId, input: usize },
     /// Witness leaf differs from the canonical committed leaf.
@@ -108,7 +110,8 @@ impl Refusal {
             Self::Recipe(_) | Self::TargetDefinition => Boundary::KeyAuthentication,
             Self::LaterBirth { .. } => Boundary::BornFirst,
             Self::WrongSuccessor { .. } | Self::WrongVersion { .. } => Boundary::Continuation,
-            Self::WitnessShape { .. }
+            Self::ScriptSig { .. }
+            | Self::WitnessShape { .. }
             | Self::UncommittedLeaf { .. }
             | Self::ControlVersion { .. }
             | Self::WrongParity { .. }
@@ -145,6 +148,7 @@ impl Refusal {
             Self::LaterBirth { .. } => "later_birth",
             Self::WrongSuccessor { .. } => "wrong_successor",
             Self::WrongVersion { .. } => "wrong_version",
+            Self::ScriptSig { .. } => "script_sig",
             Self::WitnessShape { .. } => "witness_shape",
             Self::UncommittedLeaf { .. } => "uncommitted_leaf",
             Self::ControlVersion { .. } => "control_version",
