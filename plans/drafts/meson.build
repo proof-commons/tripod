@@ -13,6 +13,7 @@ plans_drafts_files = files(
   'wave1-bite-1-2-plan.md',
   'wave1-bite-1-3-plan.md',
   'wave1-bite-1-4-plan.md',
+  'wave1-bite-1-5-plan.md',
   'wave1-completion-strategy.md',
   'wave1-engine-study.md',
   'wave1-home-disposition-study.md',
