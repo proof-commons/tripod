@@ -10,6 +10,12 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 WRAPPERS = ROOT / "scripts/keyed-final-capture"
+# Hang guards, not performance thresholds: record-gate load reached 1.793718 s
+# for an ordinary control and censored preparation at 5.087444 s. Preparation
+# starts many stand-in processes; leave it extra cleanup/retention headroom.
+ORDINARY_GUARD = 20
+PREPARATION_GUARD = 90
+FAMILY_GUARD = 300  # Matched by scripts/meson.build.
 IMAGE = "fa98959193e52e93fe9f042e0b5137a79373272ecbdeaa15177a82362857c1ea"
 
 
@@ -18,7 +24,7 @@ def executable(path, text):
     path.chmod(0o755)
 
 
-def run(name, argv, env, expected, guard=5):
+def run(name, argv, env, expected, guard=ORDINARY_GUARD):
     started = time.monotonic()
     process = subprocess.Popen(argv, env=env, cwd=ROOT, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, start_new_session=True)
@@ -57,9 +63,9 @@ def artifact_controls(root, env):
 def selection_controls(root, env):
     env = dict(env, TRIPOD_CAPTURE_STANDIN="1", TRIPOD_CAPTURE_TEST_ROOT=str(root))
     passing = "printf 'running 1 test\\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 filtered out; finished in 0s\\n'\n"
-    cases = [("one-passing", passing, lambda c: c == 0, 5),
-             ("nonzero-test", "exit 7\n", lambda c: c == 7, 5),
-             ("empty-selection", "printf 'running 0 tests\\ntest result: ok. 0 passed; 0 failed; 0 ignored;\\n'\n", lambda c: c != 0, 5),
+    cases = [("one-passing", passing, lambda c: c == 0, ORDINARY_GUARD),
+             ("nonzero-test", "exit 7\n", lambda c: c == 7, ORDINARY_GUARD),
+             ("empty-selection", "printf 'running 0 tests\\ntest result: ok. 0 passed; 0 failed; 0 ignored;\\n'\n", lambda c: c != 0, ORDINARY_GUARD),
              ("test-timeout", "sleep 20\n", lambda c: c == 124, 1)]
     for name, body, expected, guard in cases:
         executable(root / "maturity_native", body)
@@ -192,23 +198,23 @@ else:
 ''')
     podman.chmod(0o755)
     command = [str(WRAPPERS/'capture-prepare.sh'), '1'*40]
-    run('prepare-complete', [*command,'control'], env, lambda c:c==0)
+    run('prepare-complete', [*command,'control'], env, lambda c:c==0, guard=PREPARATION_GUARD)
     measured=json.loads((root/'control/build/prepared.json').read_text())
     assert measured['trust']=='mock' and measured['framework']=='d'*40
     assert (root/'control/build/Cargo.lock').exists()
-    run('prepare-image-drift', [*command,'drift'], dict(env,CAPTURE_IMAGE='wrong'), lambda c:c==65)
-    run('prepare-build-failure', [*command,'failed'], dict(env,CAPTURE_BUILD_FAIL='9'), lambda c:c==9)
+    run('prepare-image-drift', [*command,'drift'], dict(env,CAPTURE_IMAGE='wrong'), lambda c:c==65, guard=PREPARATION_GUARD)
+    run('prepare-build-failure', [*command,'failed'], dict(env,CAPTURE_BUILD_FAIL='9'), lambda c:c==9, guard=PREPARATION_GUARD)
     assert (root/'failed/build/build.exit').read_text().strip()=='9'
     assert 'B16_PREPARE_DONE run=control exit=0' in (root/'control/prepare.log').read_text()
     assert 'B16_PREPARE_DONE run=failed exit=9' in (root/'failed/prepare.log').read_text()
-    run('prepare-build-timeout', [*command,'timeout'], dict(env,CAPTURE_BUILD_FAIL='124'), lambda c:c==124)
+    run('prepare-build-timeout', [*command,'timeout'], dict(env,CAPTURE_BUILD_FAIL='124'), lambda c:c==124, guard=PREPARATION_GUARD)
     assert (root/'timeout/build/build-stop.log').exists()
     assert (root/'timeout/build/build-final-state.json').exists()
     assert 'B16_PREPARE_DONE run=timeout exit=124' in (root/'timeout/prepare.log').read_text()
-    run('prepare-extra-untracked', [*command,'extra'], dict(env,CAPTURE_EXTRA_FILE='1'), lambda c:c!=0)
+    run('prepare-extra-untracked', [*command,'extra'], dict(env,CAPTURE_EXTRA_FILE='1'), lambda c:c!=0, guard=PREPARATION_GUARD)
     assert not (root/'extra/build/prepared.json').exists()
-    run('prepare-dirty-checkout', [*command,'dirty'], dict(env,CAPTURE_DIRTY_SOURCE='1'), lambda c:c!=0)
-    run('prepare-wrong-commit', [command[0], '2'*40, 'wrong'], env, lambda c:c!=0)
+    run('prepare-dirty-checkout', [*command,'dirty'], dict(env,CAPTURE_DIRTY_SOURCE='1'), lambda c:c!=0, guard=PREPARATION_GUARD)
+    run('prepare-wrong-commit', [command[0], '2'*40, 'wrong'], env, lambda c:c!=0, guard=PREPARATION_GUARD)
 
 
 def main():
@@ -222,7 +228,7 @@ def main():
             child = root / name
             child.mkdir()
             test(child, env)
-    print(f"capture-wrapper family wall={time.monotonic()-started:.6f}s guard=60s", flush=True)
+    print(f"capture-wrapper family wall={time.monotonic()-started:.6f}s guard={FAMILY_GUARD}s", flush=True)
 
 
 if __name__ == "__main__":

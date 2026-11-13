@@ -37,7 +37,7 @@ test(
   find_program('python3'),
   args: [files('test-keyed-final-capture-wrappers.py')],
   suite: 'lint',
-  timeout: 60,
+  timeout: 300,
 )
 
 test(
