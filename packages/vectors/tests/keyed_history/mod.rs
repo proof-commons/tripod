@@ -20,15 +20,20 @@ use std::io::Write;
 use std::process::{Command, Output};
 use tracing_subscriber::{Layer, layer::SubscriberExt};
 
-// Hang guards, not performance thresholds. Round at least four times the largest
-// completed quiet/loaded sample up to ten seconds per subject and sixty seconds
-// per family; retain the historical loaded floor when adding smaller subjects.
-// The release sample was 9.605960s for wide and 58.142684s for the interrupted
-// family: 40s / 300s provide 4.16x / 5.16x headroom respectively. The timed-out
-// 10.098874s child is censored, not a completed calibration sample. Re-measure
-// under parallel package load after changes; split work that exceeds the sampled
-// subject share instead of silently increasing these guards. See the plan's
-// rec:w1b15:wide-bound for phase walls and the repaired loaded calibration.
+// Hang guards, not performance thresholds. Retain the completed loaded subject
+// floor 9.605960s: ceil(4 * wall / 10) * 10 = 40s. The old 10.098874s timeout
+// is a lower bound for the pre-repair work, not a completion or an upper bound;
+// repeated work was removed before measuring the repaired subjects.
+// The interrupted family took at least 58.142684s for 23 attempted subjects.
+// Reserve six more at that attempted-subject average: 58.142684 * 29 / 23;
+// ceil(4 * that planning allowance / 60) * 60 = 300s. This extrapolation is
+// a planning reserve, not a measured completion or a statistical upper bound.
+// Re-measure after changes under full parallel gate-of-record load. A completed
+// subject above 40/4 = 10s or family above 300/4 = 75s triggers splitting work
+// or an explicit report for a decision, never an automatic guard increase.
+// Any timeout is a censored lower bound and triggers that same split-or-report
+// action. Historical floors do not decrease when smaller subjects are added.
+// See rec:w1b15:wide-bound and rec:w1b15:gate-review for measured distributions.
 const SUBJECT_TIMEOUT: &str = "40";
 const FAMILY_TIMEOUT: &str = "300";
 

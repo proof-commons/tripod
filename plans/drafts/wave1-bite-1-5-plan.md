@@ -16,7 +16,7 @@ The five-step sequence is adopted for bite 1.5, with the three recommendations a
 
 Independent review follows step 1 for model independence and fixture separation, step 2 for classification completeness and graph validation, step 3 for the reader rule, premise form and report boundary, step 4 for validator independence and resource units, and the gate packet at step 5.
 
-The test-time bounds are adopted: a 10-second subject timeout and a 60-second family-process cap, every new process with its own timeout and printed duration, and the 253-member subject built once per process. Report a breach instead of widening a bound.
+The test-time bounds are adopted: a 10-second subject timeout and a 60-second family-process cap, every new process with its own timeout and printed duration, and the 253-member subject built once per process. Report a breach instead of widening a bound. The reported release breach and the orchestrator-approved supersession are at (`rec:w1b15:wide-bound`) and (`rec:w1b15:gate-review`); the original adoption remains visible as historical process evidence.
 
 ## Ownership and independence · `sec:w1b15:independence`
 
@@ -280,7 +280,7 @@ Each event and supplied parent is decoded/indexed once per derivation; duplicate
 | Non-refusal completeness | `Missing::{Parent, Event, Inclusion, Retrieval, Membership}` in `Membership::Incomplete` or `unexamined` | Withheld parent/assertions, retrieval-only known parent, absent associated event and ordinary-first-output missing dependency. No `Classification` remains. |
 | Non-refusal query | `Query::{Handle, NotHandle, MissingEvent, MissingOutput, WrongKey, UnresolvedKey}` | Accepted-subject queries plus the explicit empty-key subject; adding an unused key changes no reading. |
 
-`Boundary::KeyAuthentication` names recipe reconstruction; query wrong-key is separately typed rather than collapsed into `Refusal`. A recognized member's other-key successor is a continuation failure. The model's eight variants map exactly as (`tab:w1b15:history-reader-outcomes`) specifies on the corresponding single-fault byte/evidence subjects: duplicate/conflicting event, absent event, absent position, repeated consumption, cycle, later birth and wrong successor. The pinned cycle-plus-wrong-successor subject agrees on graph precedence, including evidence permutation. Cyclic references are deliberately injected before authentication; the public byte mutation separately pins content addressing. No content-address-consistent cycle or admitted invalid transaction is claimed. The general precedence rule is that the reader never stops at unsupplied evidence: any refusal it can evaluate outranks incompleteness, so the model's `MissingEvent` precedence agrees only on single-fault subjects. `mapped` computes the model result on the matching mixed graph, alongside the reader's decisive supplied-member failure; this is not described as one exceptional combination. Reader precedence, which step 4 must preserve, is: sorted identity grouping and alias checks; event decoding and retrieval-address consistency/decoding; available-output domain; duplicate consumption; minimum-ready complete topology; content authentication; then minimum-ready event and input order. Within one member, later birth precedes continuation, continuation precedes commitment (shape, leaf, version, parity, control), and commitment precedes model evaluation. `precedence` pins a wrong-version plus missing-witness subject and two independently bad events in reverse evidence order. The cycle subject pins graph-before-address/clauses. Neither model nor reader ordering is bent to make a multi-fault equality claim.
+`Boundary::KeyAuthentication` names recipe reconstruction; query wrong-key is separately typed rather than collapsed into `Refusal`. A recognized member's other-key successor is a continuation failure. The model's eight variants map exactly as (`tab:w1b15:history-reader-outcomes`) specifies on the corresponding single-fault byte/evidence subjects: duplicate/conflicting event, absent event, absent position, repeated consumption, cycle, later birth and wrong successor. The pinned cycle-plus-wrong-successor subject agrees on graph precedence, including evidence permutation. Cyclic references are deliberately injected before authentication; the public byte mutation separately pins content addressing. No content-address-consistent cycle or admitted invalid transaction is claimed. The general precedence rule is that the reader never stops at unsupplied evidence: any refusal it can evaluate outranks incompleteness, so the model's `MissingEvent` precedence agrees only on single-fault subjects. `mapped` computes the model result on the matching mixed graph, alongside the reader's decisive supplied-member failure; this is not described as one exceptional combination. Reader precedence, which step 4 must preserve, is: sorted identity grouping and alias checks; event decoding and retrieval-address consistency/decoding; available-output domain; duplicate consumption; minimum-ready complete topology; content authentication; then minimum-ready event and input order. Within one member, later birth precedes continuation, continuation precedes commitment (scriptSig, shape, leaf, version, parity, control), and commitment precedes model evaluation. `precedence` pins a wrong-version plus missing-witness subject and two independently bad events in reverse evidence order. The cycle subject pins graph-before-address/clauses. Neither model nor reader ordering is bent to make a multi-fault equality claim.
 
 **Comparison against the model** · `tab:w1b15:reader-comparison`
 
@@ -835,7 +835,7 @@ The documented-tree run `/var/home/tripod/loops/tmp/gate-w20b1-20261112T195635Z.
 
 ### Wide-history hang-bound repair · `rec:w1b15:wide-bound`
 
-The import-side release gate for `0.7.120-dev`, `/var/home/tripod/loops/evidence/wave1/record-0.7.120-dev/gate.log`, ended RED at 2026-11-12T20:33:47Z after 1,053 seconds: 112 lanes passed and one failed. Its captured history output (line 611 onward) reports `families-wide` killed at 10.098874 seconds, exit 124, by the adopted 10-second child bound. Plain `wide` completed in 9.605960 seconds; the interrupted family took 58.142684 seconds. No assertion reported a wrong result. The release suite was parallel on a shared node; this is a recorded failure, not evidence that the old bound held. This disposition supersedes the live 10/60-second instruction in the adoption and landing sequence; the earlier dated measurements remain historical facts.
+The import-side release gate for `0.7.120-dev`, `/var/home/tripod/loops/evidence/wave1/record-0.7.120-dev/gate.log`, ended RED at 2026-11-12T20:33:47Z after 1,053 seconds: 112 lanes passed and one failed. Its captured history output (line 611 onward) reports `families-wide` killed at 10.098874 seconds, exit 124, by the adopted 10-second child bound. Plain `wide` completed in 9.605960 seconds; the interrupted family took 58.142684 seconds. No assertion reported a wrong result. The release suite was parallel on a shared node; this is a recorded failure, not evidence that the old bound held. The orchestrator role accepted the reported breach and ruled that a timeout is a hang guard rather than a performance threshold; the independent gate-packet review examined the repair. Under that decision this disposition supersedes the live 10/60-second instruction in the adoption and landing sequence; the earlier dated measurements remain historical facts.
 
 **Measurement and repair.** Test-only timers separate the declared model, fixture template, ordinary signature support, first reconstruction, repeated reconstruction, reader comparison, family preparation, second index pass, each report, validator, literal comparison and mutant battery. Existing reader and archive spans supply their own walls without modifying those libraries. Fixture fingerprints cover event identities and complete bytes in deterministic order; before and after both wide routes retain 254 events/127,014 framed bytes and cut-253 retains 254 events/89,427 framed bytes, with equal fingerprints. These are preservation comparisons against the pre-repair run, not regenerated expectations.
 
@@ -850,18 +850,20 @@ The import-side release gate for `0.7.120-dev`, `/var/home/tripod/loops/evidence
 
 Raw phase transcripts are retained under `/var/home/tripod/loops/tmp/w20b1-b15widebound-*.log`. The node was shared and the after sample's unchanged first-construction and archive phases were slower; these are observations, not a speedup claim. In the initial instrumented sample, generic report mutants alone took approximately 0.467 seconds on families-wide. The source of removable work is test repetition, not a reader/model/projector defect.
 
-The wide fixture no longer reconstructs every one of its 253 SOURCE events twice. It still constructs each through the public entries, and retains the second reconstruction and equality assertion for its 253-input MERGE and every small fixture. The existing cut fixtures' reconstruction comparisons are unchanged. Generic report mutants no longer repeat on wide or cut-253: `families-source`, `families-multi` and `families-cut-two` retain the same condition/boundary assertions, including no-member, per-member and incomplete cases. Every large subject still generates and validates all six reports, compares exact model/literal sets and unresolved identities, checks all relation rows, preserves the CompactSize/253-member and resource comparisons, and prints its second-pass figure. No width-dependent expected value moves.
+The wide fixture no longer reconstructs every one of its 253 SOURCE events twice. It still constructs each through the public entries, and retains the second reconstruction and equality assertion for its 253-input MERGE and every small fixture. The existing cut fixtures' reconstruction comparisons are unchanged. Generic report mutants no longer repeat on wide or cut-253: `families-source`, `families-multi` and `families-cut-two` retain the same condition/boundary assertions, including no-member, per-member and incomplete cases. Every large subject still generates and validates all six reports, compares exact model/literal sets and unresolved identities, checks all relation rows, retains `expected` comparisons of 88/91/255 times member count and pinned Elements weight at the CompactSize/253-member boundary, and prints its second-pass figure. No width-dependent expected value moves.
 
-**Hang guards.** The single rule lives beside `SUBJECT_TIMEOUT` and `FAMILY_TIMEOUT` in `packages/vectors/tests/keyed_history/mod.rs`: at least four times the largest completed quiet/loaded wall, rounded upward to ten seconds for subjects and sixty seconds for the family, retaining the historical loaded floor. Subjects use 40 seconds (4.16 times the completed 9.605960-second loaded wide sample); the family uses 300 seconds (5.16 times the interrupted 58.142684-second family sample, conservatively retained as a floor rather than treated as a completed upper bound). The timed-out child is censored and is not a calibration completion. A new subject must print its wall, be measured alongside the parallel suite, and split work that exceeds the sampled subject share rather than silently raising the guard. Existing isolated compiler and trace-process guards are separate and unchanged. Measured figures remain the performance statement; these guards only bound hangs.
+**Hang guards.** The rule beside the constants is explicit: retain the completed loaded subject floor 9.605960 seconds and round `4 * wall` up to ten seconds, giving 40. The old timed-out child at 10.098874 seconds is a lower bound for pre-repair work, not a completion or upper bound; the repair removed repeated work before obtaining the new samples. For the interrupted family, 58.142684 seconds covered 23 attempted subjects, with six unrun. Reserving six more at the observed attempted-subject average gives `58.142684 * 29 / 23`; multiplying that planning allowance by four and rounding up to sixty seconds gives 300. This is an explicit planning reserve, not a measured completion or a statistical upper bound. After changes, measure under full parallel gate-of-record load. A completed subject above `40 / 4 = 10` seconds or family above `300 / 4 = 75` seconds triggers splitting work or an explicit report for a decision, never automatic widening; a censored timeout triggers the same action. Historical floors never decrease merely because smaller subjects are added. The two constants remain 40 and 300.
 
 The repair changes tests and documentation only. The model, reader, projector, production construction, existing expected values, archives and pins remain unchanged. The packet remains offered for review; no closing disposition follows from this repair.
 ## Evidence-family gate packet · `rec:w1b15:gate`
 
-This packet is offered for independent review, not closed. It assembles the four implemented steps and their review dispositions at (`rec:w1b15:histories-review`), (`rec:w1b15:reader-review`), (`rec:w1b15:reading-review`) and (`rec:w1b15:families-review`). The adopted finality disposition at (`rec:w1b15:adoption`) governs the earlier deployment wording. No closing disposition, deployment activation or full-wave realization claim follows. This packet changes documents only; no new control was needed and no expected value was regenerated.
+This packet is offered for independent review, not closed. It assembles the four implemented steps, the separately reviewed hang-bound repair at `0.7.121-dev`, the protocol repair at `0.7.123-dev`, and their review dispositions at (`rec:w1b15:histories-review`), (`rec:w1b15:reader-review`), (`rec:w1b15:reading-review`) and (`rec:w1b15:families-review`). The adopted finality disposition at (`rec:w1b15:adoption`) governs the earlier deployment wording. No closing disposition, deployment activation or full-wave realization claim follows. This packet changes documents only; no new control was needed and no expected value was regenerated.
 
 **Reachability and premises.** A caller can use the default production declaration, keyed plan, emission, linking, commitment, checked request and construction surfaces delivered by bites 1.1–1.4. Those artifacts retain their external obligations. The exported vectors reader and report entries are internal conformance-library APIs, not a production chain reader, maintained report interchange, signing authority or native admission API. SOURCE produces a singleton record; MERGE unions consumed SOURCE records and creates no record of its own. The two emitted predicates remain born-first and continue-first; the reader's recurrence and filters add no leaf clause, carried accumulator, STATE metadata or owner-authorization law.
 
-A complete member reading authenticates the recipe, empty scriptSig and two-item witness, models the two clauses and reconstructs sets relative to supplied evidence. It does not validate the containing transaction's signatures, balance, fees, sequence/lock-time chain semantics, policy or native execution. Inclusion, unspentness, retrieval and finality remain per-input external assumptions even when assertion presence is checked. Exclusion of a consumed handle of an unsupplied key rests on inclusion in one valid history, not bytes proving that exclusion. The three classification controls and their exact limit are at (`rec:w1b15:reader-review`).
+Cryptographic authentication remains conditional on NUMS/discrete-log, preimage, second-preimage/collision and the reviewed target semantics, inherited from (`rec:w1b14:closed`). These premises are carried, not discharged. Current report headers encode per-instance parent, per-key and finality premises only; they have no cryptographic assumption kind, so those global authentication conditions remain explicit in this record and its closing, with a typed-header follow-up at (`tab:backlog:wave1-followups`).
+
+A complete member reading conditionally authenticates the recipe, empty scriptSig and two-item witness, models the two clauses and reconstructs sets relative to supplied evidence. It does not validate the containing transaction's signatures, balance, fees, sequence/lock-time chain semantics, policy or native execution. Inclusion, unspentness, retrieval and finality remain per-input external assumptions even when assertion presence is checked. Exclusion of a consumed handle of an unsupplied key rests on inclusion in one valid history, not bytes proving that exclusion. The three classification controls and their exact limit are at (`rec:w1b15:reader-review`).
 
 **Finality.** The clause is met by the published declaration form, required-finality refusals and hypothetical-declaration controls, as adopted; no deployment declaration exists or is claimed. The form names deployment, policy version, opaque external history anchor, depth or replacement rule, inclusion/retrieval sources, unspentness scope and acceptance source. Matching binds caller provenance, not an independently verified chain position. Required finality accepts only the sealed deployment type, which has no public producer pending activation. Missing offers refuse `FinalityMissing`; hypothetical offers refuse `FinalityHypothetical` before coordinate checks. Under `NotRequested`, hypothetical matching and one-coordinate deployment/anchor/version/source subjects exercise the form without establishing finality. The crate-internal synthetic deployment control demonstrates the required route and prevents hypothetical promotion; it is not activation data. Depth zero is an allowed declaration choice, not a repository-selected count. Birth, continuation and resources make no finality claim and refuse a required-finality request as `FinalityUnsupported`. All fixture reports here are nonfinal.
 
@@ -873,7 +875,7 @@ A complete member reading authenticates the recipe, empty scriptSig and two-item
 |---|---|---|
 | `packages/vectors/src/keyed_history_model.rs` | Declared finite events; only `std::collections`; compiled by external tests and isolated standard-library harness, not a library module | Topological graph fold, no bytes, hashes, curves, constructor or reader. Conditional compilation/modules/path attributes/string literals are refused by the scan; isolated compilation backs explicit-path checks. Semantic independence remains source review, as (`rec:w1b15:histories-review`) records. |
 | `packages/vectors/src/keyed_history_reader.rs` and its five helpers | Canonical decoder, stripped serialization/hash, target types, first-party conformance curve reconstruction and bounded byte evaluator | Classifies actual parent outputs without model, plans, request roles, builder totals or producer coverage. Shared substrate is no independent recurrence evidence; exact allowlist/isolated compile and source review are (`rec:w1b15:reader-review`). |
-| `packages/vectors/src/keyed_evidence/` | Reader result plus one family-owned decoded index, request provenance, rules, unchanged projector and admitted archive | Six validators rederive their own claims without trusting another report's verdict. Shared generation helpers, replay and recurrence limits are (`rec:w1b15:reading-review`) and (`rec:w1b15:families-review`). No second reader decode per validator/member; standalone reading entry remains separately documented. |
+| `packages/vectors/src/keyed_evidence/` | Reader result plus one family-owned decoded index, request provenance, rules, unchanged projector, admitted archive and `keyed_stack_core` shared with the reader for fragment replay | Six validators rederive their own claims without trusting another report's verdict. Shared generation helpers, replay and recurrence limits are (`rec:w1b15:reading-review`) and (`rec:w1b15:families-review`). No second reader decode per validator/member; standalone reading entry remains separately documented. |
 | `packages/vectors/tests/keyed_history/` | Predeclared graph, public production construction, recorded ordinary-signature replay; association checked only after expected sets exist | Model/literals versus reader/reports; pinned Elements weight/serialization comparison and conformance curve versus production wrapper. Fixture signing is disposable funding support. Reader projection excludes graph/sets/role flags structurally. Existing reproduction comparisons remain intact. |
 
 **Public conformance inventory** · `tab:w1b15:gate-surface`
@@ -924,37 +926,41 @@ The two reused reproduction closures remain incomplete, not empty or conditional
 
 **Clause-by-clause packet** · `tab:w1b15:gate-clauses`
 
-G denotes the latest full ten-package covering log at (`rec:w1b15:protocol-order`), repeated in each row by that key; its documents confirmation covers the subsequent run-record amendment. Earlier covering runs remain at (`rec:w1b15:gate-run`). G is evidence for this packet tree, not retroactive evidence for each earlier landing. Earlier per-step runs and red-round dispositions remain in the four implementation/review records cited above. “Review” rows have no standalone executable absence/process test and say so; none is an invented runtime control. No required executable control is missing. The command-spelling and file-estimate guidance is not an additional executable clause. The adopted two-pass decision supersedes the landing paragraph's original once-decoded wording.
+G denotes the latest full ten-package covering log at (`rec:w1b15:gate-review-verification`), repeated in each row by that key; its documents confirmation covers the subsequent run-record amendment. Earlier covering runs remain at (`rec:w1b15:gate-run`). G is evidence for this packet tree, not retroactive evidence for each earlier landing. Earlier per-step runs and red-round dispositions remain in the four implementation/review records cited above. “Review” rows have no standalone executable absence/process test and say so; none is an invented runtime control. No required executable control is missing. The command-spelling and file-estimate guidance is not an additional executable clause. The adopted two-pass decision supersedes the landing paragraph's original once-decoded wording.
 
 | Clause | Standing | Named control / source evidence | Record | Log |
 |---|---|---|---|---|
 | Landing: attestation paths unchanged | Review | No standalone absence test; source diff from 0.7.115-dev leaves production packages unchanged, plus their regression suites | (`rec:w1b15:gate`) | G |
 | Landing: ten length/digest pins, no regeneration | Supported | `packages/compiler/src/tests/engine_base_capture.rs::preserve_engine_base` | (`rec:w1b12:gate`) | G |
+| Landing: no expectation regenerated anywhere | Review | Source/archive diff across the bite and unchanged frozen references; no generator run substitutes for evidence | (`rec:w1b15:gate-review`) | G |
 | Landing: canonical publication | Supported | `packages/architecture/src/tests/keyed_profile_tests.rs::attestation_canonical_bytes_and_publication_equal_the_opening_base` | (`rec:w1b12:gate`) | G |
-| Landing: existing vectors/archives and all keyed/link/commit/construct bytes | Supported | `packages/vectors/tests/keyed_constructor/mod.rs::repeated_construction_reproduces_every_public_byte`; `packages/vectors/tests/keyed_reproduction/mod.rs::source_and_merge_reproduce_from_public_inputs_in_a_fresh_process`; `packages/vectors/tests/keyed_cost/mod.rs::admitted_weights_match_exact_carriers_without_clause_subtraction` plus unchanged archive files | (`rec:w1b14:closed`) | G |
+| Landing: existing vectors/archives and all keyed/link/commit/construct bytes | Supported | `packages/vectors/tests/keyed_constructor/mod.rs::repeated_construction_reproduces_every_public_byte`; `packages/vectors/tests/keyed_reproduction/mod.rs::source_and_merge_reproduce_from_public_inputs_in_a_fresh_process`; `packages/vectors/tests/keyed_cost/mod.rs::admitted_weights_match_exact_carriers_without_clause_subtraction` plus six frozen admission controls named in (`rec:w1b15:gate-review`) | (`rec:w1b14:closed`) | G |
 | Landing: no engine/grammar/construction/predicate/accumulator/STATE/owner-law changes | Review | No standalone absence test; unchanged production source and the independence inventory above | (`rec:w1b15:gate`) | G |
-| Landing: report production defects before edits | Review | Process condition, no standalone test; boundary-parent and two-pass decisions recorded before implementation | (`rec:w1b15:reader`), (`rec:w1b15:families`) | G |
+| Landing: report production defects before edits | Review | No production defect was discovered and no production source changed in the evidence implementation; the later executor repair is explicitly scoped to the conformance harness, not a production crate | (`rec:w1b15:reader`), (`rec:w1b15:families`) | G |
 | Landing: fmt, warnings-denied Clippy, tests, rustdoc | Supported | G batteries; earlier per-step verification ledgers remain their own evidence | (`rec:w1b15:gate-run`) | G |
+| Landing: explicit step gates supplement the common bar | Supported | Per-landing lane/import run pairing | (`tab:w1b15:landing-runs`) | Import ledger |
 | Landing: registrations/census, labels, plans | Supported | G lint/checks batteries, census-audit, labels-check, plans-check | (`rec:w1b15:gate-run`) | G |
 | Landing: full ten packages plus lint/plans | Supported | Architecture, realization, compiler, model, target-elements, tapscript, linker, transaction, target-elements-conformance, vectors | (`rec:w1b15:gate-run`) | G |
 | Landing: offline only; final execution/policy deferred | Review | No native invocation; ignored native tests remain ignored. No executable proof of a process non-action | (`rec:w1b15:gate`) | G |
 | Landing: bounded exact child, exit and duration | Supported | `packages/vectors/tests/keyed_history/mod.rs::keyed_histories_have_bounded_public_subjects`, `bounded`, `one_test`; trace capture parents | (`rec:w1b15:histories-review`) | G |
-| Landing: hang guards recalibrated after the release timeout | Supported | Same parent; 40/300-second guards, measured-load rule and repair at (rec:w1b15:wide-bound); final subject table at covering run | (`rec:w1b15:gate-run`) | G |
-| Landing: reuse 253 fixture/index; separate queue/build time | Supported | `packages/vectors/tests/keyed_history/families.rs::subject`; sealed `prepare_families`; measured second pass, no per-member decoding | (`rec:w1b15:families-review`) | G |
-| Packet: six families independently validated | Supported, qualified | `packages/vectors/tests/keyed_history/families.rs::subject`, `expected`, `resources`, `common`; independent model/literals and Elements comparison, shared-helper limits above | (`rec:w1b15:families-review`) | G |
+| Landing: adopted 10-second child / 60-second family clause | Breached, reported, superseded | `0.7.120-dev` release timeout; orchestrator ruling and reviewed repair | (`rec:w1b15:wide-bound`), (`rec:w1b15:gate-review`) | Import ledger |
+| Landing: replacement guards enforced | Supported | `mod.rs::bounded` and `one_test`: 40-second subject, 300-second family; Meson parent target timeout 1800 seconds in root `meson.build` | (`rec:w1b15:wide-bound`) | G |
+| Landing: calibration sound | Review | Explicit floor/reserve rule, censored lower bounds and full-suite samples; split-or-report at guard/wall below four | (`rec:w1b15:gate-review`) | Import ledger |
+| Landing: reuse 253 fixture/index; separate queue/build time | Supported / Review | `packages/vectors/tests/keyed_history/families.rs::subject`; sealed `prepare_families`; measured second pass, no per-member decoding; no test asserts decode-once; plain wide and existing-253 deliberately read twice for the evidence-order permutation | (`rec:w1b15:families-review`) | G |
+| Packet: six families independently validated | Model / Review | `packages/vectors/tests/keyed_history/families.rs::subject`, `expected`, `resources`, `common`; independent model/literals and Elements comparison, shared-helper limits above | (`rec:w1b15:families-review`) | G |
 | Packet: every requirement traced to paper | Supported | `packages/vectors/tests/keyed_history/family_controls.rs::trace_rows`, `check_trace`; eight-row join above | (`tab:w1b15:requirements`) | G |
 | Packet: reader/target/construction boundaries | Supported / Review | `reader_boundary.rs::keyed_reader_import_boundary_and_isolated_compile`, `mod.rs::keyed_history_oracle_import_boundary` under `packages/vectors/tests/keyed_history/`; source review still required | (`rec:w1b15:reader-review`) | G |
-| Packet: MERGE adds no record | Supported | `packages/vectors/tests/keyed_history/families.rs::recurrence_expected`, `specific`; model/literal union and spurious own-handle refusal | (`rec:w1b15:families-review`) | G |
-| Packet: no extra covenant clause | Review / Supported | Unchanged emitted grammar; `packages/vectors/tests/keyed_constructor/mod.rs::canonical_key_literal_is_data_before_both_clauses`; source claim has no standalone absence test | (`rec:w1b15:gate`) | G |
-| Packet: no carried accumulator | Review | Graph-derived sets, no new production fields/bytes; no standalone absence test | (`rec:w1b15:gate`) | G |
-| Guide 15: all six validate independently | Supported, qualified | Six validator dispatch in `packages/vectors/tests/keyed_history/families.rs::validator`, `subject`, cross-family `common`; independent second sources above | (`rec:w1b15:families-review`) | G |
+| Packet: MERGE adds no record | Supported | `packages/vectors/tests/keyed_history/families.rs::recurrence_expected`, `specific`; model/literal union and spurious own-handle refusal. Reason: (`[A-def:kpc-operations:classification]`), (`[A-sec:kpc:operations]`), (`[A-rem:kpc-interface:record-evidence]`) and (`rec:w1b15:gate-review`); tests support the fact, not the explanation. | (`rec:w1b15:families-review`) | G |
+| Packet: no extra covenant clause | Review / Supported | Unchanged emitted grammar; `packages/vectors/tests/keyed_constructor/mod.rs::canonical_key_literal_is_data_before_both_clauses`; source claim has no standalone absence test. Reason: (`[A-def:kpc-operations:classification]`), (`[A-sec:kpc:operations]`), (`[A-rem:kpc-interface:record-evidence]`) and (`rec:w1b15:gate-review`); tests support the fact, not the explanation. | (`rec:w1b15:gate`) | G |
+| Packet: no carried accumulator | Review | Graph-derived sets, no new production fields/bytes; no standalone absence test. Reason: (`[A-def:kpc-operations:classification]`), (`[A-sec:kpc:operations]`), (`[A-rem:kpc-interface:record-evidence]`) and (`rec:w1b15:gate-review`); tests support the fact, not the explanation. | (`rec:w1b15:gate`) | G |
+| Guide 15: all six validate independently | Model / Review | Six validator dispatch in `packages/vectors/tests/keyed_history/families.rs::validator`, `subject`, cross-family `common`; independent second sources above | (`rec:w1b15:families-review`) | G |
 | Guide 15: all eight requirements / paper | Supported | `packages/vectors/tests/keyed_history/family_controls.rs::trace_rows`, `check_trace` | (`tab:w1b15:gate-requirements`) | G |
-| Guide 15: positive and focused negatives | Supported | `families.rs::common`, `specific`, `relation_mutants`, `resource_mutants`, `missing` under `packages/vectors/tests/keyed_history/` | (`rec:w1b15:families-review`) | G |
+| Guide 15: positive and focused negatives | Model | `families.rs::common`, `specific`, `relation_mutants`, `resource_mutants`, `missing` under `packages/vectors/tests/keyed_history/` | (`rec:w1b15:families-review`) | G |
 | Guide 15: separately published reader/evidence premises | Supported | `packages/vectors/tests/keyed_history/reading.rs::premise_identities`, `finality`, `completeness`; hypothetical and synthetic deployment controls described above | (`rec:w1b15:reading-review`) | G |
-| Guide 15: documentation excludes extra clause | Review / Supported | Two-clause grammar control above and reachability statement; no standalone prose-semantic test | (`rec:w1b15:gate`) | G |
-| Guide 15: documentation excludes accumulator | Review | Recurrence/source inventory and unchanged serialized fields; no standalone absence test | (`rec:w1b15:gate`) | G |
-| Guide 15: documentation excludes MERGE record | Supported | Literal union and own-handle mutant in `packages/vectors/tests/keyed_history/families.rs::specific` | (`rec:w1b15:gate`) | G |
-| Adopted finality interpretation of published-premise clause | Supported | `packages/vectors/tests/keyed_history/reading.rs::finality`; `packages/vectors/src/keyed_evidence/premises.rs::synthetic_deployment_is_required_and_hypothetical_cannot_promote`; `family_controls.rs::overrides` and `families.rs::more_mutants` under history tests | (`rec:w1b15:adoption`), (`rec:w1b15:reading-review`) | G |
+| Guide 15: documentation excludes extra clause | Review / Supported | Two-clause grammar control above and reachability statement; no standalone prose-semantic test. Reason: (`[A-def:kpc-operations:classification]`), (`[A-sec:kpc:operations]`), (`[A-rem:kpc-interface:record-evidence]`) and (`rec:w1b15:gate-review`); tests support the fact, not the explanation. | (`rec:w1b15:gate`) | G |
+| Guide 15: documentation excludes accumulator | Review | Recurrence/source inventory and unchanged serialized fields; no standalone absence test. Reason: (`[A-def:kpc-operations:classification]`), (`[A-sec:kpc:operations]`), (`[A-rem:kpc-interface:record-evidence]`) and (`rec:w1b15:gate-review`); tests support the fact, not the explanation. | (`rec:w1b15:gate`) | G |
+| Guide 15: documentation excludes MERGE record | Supported | Literal union and own-handle mutant in `packages/vectors/tests/keyed_history/families.rs::specific`. Reason: (`[A-def:kpc-operations:classification]`), (`[A-sec:kpc:operations]`), (`[A-rem:kpc-interface:record-evidence]`) and (`rec:w1b15:gate-review`); tests support the fact, not the explanation. | (`rec:w1b15:gate`) | G |
+| Adopted finality interpretation of published-premise clause | Supported form / Premise finality | `packages/vectors/tests/keyed_history/reading.rs::finality`; `packages/vectors/src/keyed_evidence/premises.rs::synthetic_deployment_is_required_and_hypothetical_cannot_promote`; `family_controls.rs::overrides` and `families.rs::more_mutants` under history tests | (`rec:w1b15:adoption`), (`rec:w1b15:reading-review`) | G |
 
 **Preservation and change census.** This documents-only packet changes no source or test. Across the bite, all production-package source outside vectors is unchanged from 0.7.115-dev. Vectors adds the conformance modules and fixtures, extracts the existing evaluator into `keyed_stack_core` without semantic changes, and exposes shared fixture support while retaining the previous reproduction assertions. The one deliberate amendment to an already reviewed reader behavior is the three-line scriptSig check before witness shape, with `family_controls.rs::scriptsig_size` pinning the single-fault and two-fault refusal and retaining the other member unchanged. It changes no emitted byte or expected accepted set. The ten frozen pins and canonical publication are independent retained references; descriptor reconstruction, archive admissions and existing vectors retain their old expectations. Parent/child or generator/validator agreement alone is not offered as preservation evidence.
 
@@ -962,7 +968,7 @@ G denotes the latest full ten-package covering log at (`rec:w1b15:protocol-order
 
 **Covering verification** · `rec:w1b15:gate-run`
 
-The superseded pre-repair G0 is `/var/home/tripod/loops/tmp/gate-w20b1-20261112T204629Z.log`, covering `docs(plans): record the bite-1.5 gate` on kranich: start 2026-11-12T20:46:29Z, end 20:50:22Z, wall 233 seconds, slot wait 0, exit 0, `== green`. The foreground SSH call took 232.877 seconds (the script reports integer-second boundaries). All ten requested packages plus lint and plans passed. G0 covered the original packet's sources, tests and READMEs; the only subsequent change is this plan's run record, checked by D0 below. No closing disposition is made.
+The superseded pre-repair G0 is `/var/home/tripod/loops/tmp/gate-w20b1-20261112T204629Z.log`, covering the original packet snapshot on kranich: start 2026-11-12T20:46:29Z, end 20:50:22Z, wall 233 seconds, slot wait 0, exit 0, `== green`. The foreground SSH call took 232.877 seconds (the script reports integer-second boundaries). All ten requested packages plus lint and plans passed. G0 covered the original packet's sources, tests and READMEs; the only subsequent change is this plan's run record, checked by D0 below. No closing disposition is made.
 
 The exact foreground command was `time ssh -F "$CODEX_HOME/ssh_config" kranich-worker 'time bash ~/loops/tmp/w20-code-gate.sh w20b1 architecture,realization,compiler,model,target-elements,tapscript,linker,transaction,target-elements-conformance,vectors plans/drafts/wave1-bite-1-5-plan.md plans/packages/vectors.md plans/packages/realization.md plans/phases/07-burn-and-clear.md plans/backlog.md'`. The unmodified runner starts `#!/bin/bash`, its explanatory comment, then `set -o pipefail`. It holds the governor slot and runs a transient user unit with `--wait --pipe`; the lane remained in that one foreground SSH call through the end marker and exit, including the first run's queue. No host build/test or native execution ran. The initial packet fast check passed in 92 seconds; the citation correction's passed in 6 seconds.
 
@@ -1026,14 +1032,14 @@ The first packet run, `/var/home/tripod/loops/tmp/gate-w20b1-20261112T203357Z.lo
 
 D0 is `/var/home/tripod/loops/tmp/gate-w20b1-b15close-doc-20261112T205128Z.log`: start 2026-11-12T20:51:49Z, end 20:52:09Z, wall 20 seconds, no slot queue, exit 0, `== green`. The foreground command was `time ssh -F "$CODEX_HOME/ssh_config" kranich-worker 'time bash ~/loops/tmp/w20b1-b15close-doc-gate.sh w20b1'`. The wrapper preserves the documents runner batteries verbatim and pins the scope to G0’s full-gated parent, permitting only this plan to differ. Its own container-inclusive cgroup is `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T205148Z.service`; the log retains each start/end sample. Setup took 0 seconds, CPU usage/user/system +1202745/+854487/+348257 μs, CPU pressure some/full +558/+514 μs, memory +0/+0, I/O +91/+91. Document checks took 20 seconds, CPU +58772160/+55679360/+3092801 μs, CPU pressure +27250/+3645, memory +0/+0, I/O +7587/+7583. The verification commit’s fast check passed in 7 seconds.
 
-This confirmation changes only the plan record; sources, tests and package READMEs remain G0’s exact tree. The final confirmation is checked through the same foreground wrapper at `/var/home/tripod/loops/tmp/gate-w20b1-b15close-doc-20261112T205220Z.log`; its terminal verdict covers this confirmation tree and is reported with the packet. D0 is a completed documents verdict, not a claim that G0 covered its own later log insertion. This remains an offer for independent review, not closure.
+This confirmation changes only the plan record; sources, tests and package READMEs remain G0’s exact tree. The final confirmation is checked through the same foreground wrapper at `/var/home/tripod/loops/tmp/gate-w20b1-b15close-doc-20261112T205220Z.log`; its terminal verdict is `== green`, exit 0, wall 3 seconds, covering that confirmation tree. D0 is a completed documents verdict, not a claim that G0 covered its own later log insertion. This remains an offer for independent review, not closure.
 
 
 **Repaired-tree covering run (G).** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T210954Z.log` ran 2026-11-12T21:09:55Z–21:15:25Z, wall 330 seconds, slot wait 0, exit 0, `== green`. This was G before the protocol repair; the latest covering run is at (`rec:w1b15:protocol-order`). G0/D0 are historical pre-repair evidence only. The repair's fast check passed in 86 seconds. The full ten-package command and unchanged runner are those stated above. A foreground supervisor invoked that exact runner, retained its output, and waited for its `== green` end marker and exit; the runner used its normal `systemd-run --wait --pipe` slot unit. No gate was abandoned or detached from its foreground waiter. The supervisor's foreground SSH wall was 331.611 seconds. All package tests, formatting, warnings-denied Clippy, rustdoc, lint and checks passed.
 
 **Parallel-suite exercise.** The first extra family started at the package-battery marker, which includes compilation/warm-up; it passed but is not used to claim overlap with active test lanes. The retained preliminary log is `/var/home/tripod/loops/tmp/w20b1-b15widebound-loaded-20261112T210954Z.log`. The qualifying run waited until the current maturity test journal was opened by Meson at 21:10:58.930Z, then ran at 21:10:59.684Z–21:11:19.892Z. Its family wall was 16.365472 seconds, exit 0. It ran beside G's default parallel suite (30 available CPUs): architecture, realization, compiler, model, target-elements, tapscript, linker, transaction, target-elements-conformance and all vectors test lanes. G's package battery ran 21:10:15Z–21:14:09Z; the fresh journal proves this overlap was after warm-up, not merely a queued gate. Load averages at the extra run's start/end were 30.73/34.51 (one minute). No artificial CPU burner or native execution was used.
 
-The extra run used the repair commit's unchanged test tree in the separate check clone/target, avoiding a shared build directory with G. The two later packet commits change documents only. Its command was `time ssh -F "$CODEX_HOME/ssh_config" kranich-worker 'time python3 ~/loops/tmp/w20b1-wide-parallel.py'`; the foreground waiter waited for the journal, ran the bounded family, and returned its exit. Raw output is `/var/home/tripod/loops/tmp/w20b1-b15widebound-parallel.log`. The standalone family, `/var/home/tripod/loops/tmp/w20b1-b15widebound-quiet-family.log`, took 7.588728 seconds. “Standalone” means without this lane's companion suite, not an idle-node claim. G's own history family took 22.001488 seconds. These are test-process observations, not native costs or a throughput promise.
+The extra run used the repair commit's unchanged test tree in the separate check clone/target, avoiding a shared build directory with G. The later imported packet commit change documents only. Its command was `time ssh -F "$CODEX_HOME/ssh_config" kranich-worker 'time python3 ~/loops/tmp/w20b1-wide-parallel.py'`; the foreground waiter waited for the journal, ran the bounded family, and returned its exit. Raw output is `/var/home/tripod/loops/tmp/w20b1-b15widebound-parallel.log`. The standalone family, `/var/home/tripod/loops/tmp/w20b1-b15widebound-quiet-family.log`, took 7.588728 seconds. “Standalone” means without this lane's companion suite, not an idle-node claim. G's own history family took 22.001488 seconds. These are test-process observations, not native costs or a throughput promise.
 
 | Subject | Standalone s | Alongside parallel suite s | G s | Hang bound s | Bound / largest repaired sample |
 |---|---:|---:|---:|---:|---:|
@@ -1068,9 +1074,9 @@ The extra run used the repair commit's unchanged test tree in the separate check
 | reading-conditional | 0.279063 | 0.366268 | 0.611340 | 40 | 65.43× |
 | Whole family | 7.588728 | 16.365472 | 22.001488 | 300 | 13.64× |
 
-Every child exited zero. The subject floor is still calibrated conservatively to the historical completed loaded wide sample (40 / 9.605960 = 4.16), not reduced to the much smaller repaired figures. The family floor retains the interrupted historical 58.142684-second wall (300 / 58.142684 = 5.16); the final completed repaired family sample independently leaves 13.64-fold headroom. The old 10.098874-second child is a censored failure, never evidence of an upper bound. No repaired subject needs splitting: the largest is 1.957847 seconds in G, below the sampled subject share. The 40/300-second rule is written once beside the constants; existing isolated compilation/model/trace guards remain separate.
+Every child exited zero. The subject floor is still calibrated conservatively to the historical completed loaded wide sample (40 / 9.605960 = 4.16), not reduced to the much smaller repaired figures. The interrupted historical 58.142684-second family wall is a lower bound: 300 / 58.142684 = 5.16 is a ratio to that lower bound, not observed completion headroom. The planning reserve for the six unrun subjects is stated beside the constants; the completed repaired family sample in this lane run independently leaves 13.64-fold headroom. The old 10.098874-second child is a censored failure, never evidence of an upper bound. No repaired subject needs splitting: the largest is 1.957847 seconds in G, below the explicit 10-second split-or-report trigger. The 40/300-second rule is written once beside the constants; existing isolated compilation/model/trace guards remain separate.
 
-**Detailed phase comparison.** The before column is the instrumented pre-repair run; after is the final standalone family with the repaired code. Times are seconds, nested phases are not additive: model/signing/rebuild/replay are inside fixture; reader/index/archive are inside preparation. Blank entries mean that phase is absent on that route, not a measured zero. Raw before and initial-after samples remain retained as well; changing shared-node conditions preclude a causal speedup claim.
+**Detailed phase comparison.** The before column is the instrumented pre-repair run; after is the final standalone family with the repaired code; it is a different retained run from the initial-after samples in (`rec:w1b15:wide-bound`), not a replacement or a speedup comparison between those samples. Times are seconds, nested phases are not additive: model/signing/rebuild/replay are inside fixture; reader/index/archive are inside preparation. Blank entries mean that phase is absent on that route, not a measured zero. Raw before and initial-after samples remain retained as well; changing shared-node conditions preclude a causal speedup claim.
 
 | Subject | Phase | Before s | After s |
 |---|---|---:|---:|
@@ -1092,7 +1098,7 @@ Every child exited zero. The subject floor is still calibrated conservatively to
 | families-wide | report | 0.015206 | 0.016432 |
 | families-wide | validate | 0.015931 | 0.017548 |
 | families-wide | expected | 0.000486 | 0.000560 |
-| families-wide | mutants | 0.495400 | 0.000000 |
+| families-wide | mutants | 0.495400 | absent |
 | families-cut-253 | model | 0.000849 | 0.000906 |
 | families-cut-253 | fixture | 0.019026 | 0.020742 |
 | families-cut-253 | family-prepare | 0.211896 | 0.226291 |
@@ -1102,9 +1108,9 @@ Every child exited zero. The subject floor is still calibrated conservatively to
 | families-cut-253 | report | 0.015532 | 0.016508 |
 | families-cut-253 | validate | 0.016177 | 0.017292 |
 | families-cut-253 | expected | 0.000473 | 0.000551 |
-| families-cut-253 | mutants | 0.489778 | 0.000000 |
+| families-cut-253 | mutants | 0.489778 | absent |
 
-The generic large-subject mutant work disappears from those children because the same condition/boundary controls remain on source, multi and cut-two. It is not a removed refusal test. All 253 identities, literal sets, relation rows, CompactSize comparisons, accepted reports and validators remain. The existing cut reconstruction repeats are retained. Before/after complete-byte fingerprints agree; no expected byte was regenerated. The family-owned second pass remains explicitly measured in all three runs.
+On 253-member bodies, `common`, `specific`, `more_mutants`, `resource_mutants` and `resource_literals` no longer run. Thus per-schedule peak/width/argument/unit literals over 759 schedules and header/body weight agreement run on source, multi and cut-two, not on every wide body. Replay still checks counters against reader rows; `expected` retains literal sets, cut identities, every relation identity and 88/91/255 and Elements-weight comparisons. The generic large-subject mutant work disappears from those children because the same condition/boundary controls remain on source, multi and cut-two. It is not a removed refusal test. All 253 identities, literal sets, relation rows, CompactSize comparisons, accepted reports and validators remain. The existing cut reconstruction repeats are retained. Before/after complete-byte fingerprints agree; no expected byte was regenerated. The family-owned second pass remains explicitly measured in all three runs.
 
 **Preservation.** `preserve_engine_base` passed in 59.266620874 seconds and `attestation_canonical_bytes_and_publication_equal_the_opening_base` in 0.006851819 seconds. Every selected old vector/archive/reproduction target passed. The model, reader, projector and all production source files are byte-identical to the repair base; the only Rust changes are three history test files. Raw compiler, architecture, vectors-library and history journals are retained at `/var/home/tripod/loops/tmp/gate-w20b1-20261112T210954Z.b15widebound-journals.tar`, with the Meson package journal beside G. No native test ran. The only later edit is this plan's measured-results record; its documents-scope confirmation follows below.
 
@@ -1126,7 +1132,7 @@ The generic large-subject mutant work disappears from those children because the
 
 **Repaired documents confirmation.** D is `/var/home/tripod/loops/tmp/gate-w20b1-b15widebound-doc-20261112T211736Z.log`: start 2026-11-12T21:17:46Z, end 21:17:50Z, wall 4 seconds, no slot queue, exit 0, `== green`. It used the unchanged documents setup/check batteries and compared against G's retained full-gated snapshot, permitting only this plan's record to differ. The snapshot is retained even though the verification commit is amended to preserve the requested two-commit packet history; no ancestry claim is needed for the exact tree-difference check. The command was `time ssh -F "$CODEX_HOME/ssh_config" kranich-worker 'time bash ~/loops/tmp/w20b1-b15widebound-doc-gate.sh w20b1'`, a transient user unit awaited with `--wait --pipe` through its end marker. The final record fast check passed in 64 seconds. No Rust source differs from G.
 
-D's own container-inclusive resource scope is `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T211746Z.service`. Its full samples remain in the log. The final confirmation is checked by the same foreground wrapper at `/var/home/tripod/loops/tmp/gate-w20b1-b15widebound-doc-20261112T211848Z.log`; that terminal verdict is reported with the published packet. D is a completed verdict, not a claim that a run covered its own later insertion. This remains an offer for independent review, with no closing disposition.
+D's own container-inclusive resource scope is `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T211746Z.service`. Its full samples remain in the log. The final confirmation is checked by the same foreground wrapper at `/var/home/tripod/loops/tmp/gate-w20b1-b15widebound-doc-20261112T211848Z.log`; its terminal verdict is `== green`, exit 0, wall 3 seconds. D is a completed verdict, not a claim that a run covered its own later insertion. This remains an offer for independent review, with no closing disposition.
 
 **Additional gate-of-record evidence for the packet.** The history-bound repair passed its history family at import, but neither subsequent import-side run is a green packet verdict:
 
@@ -1145,7 +1151,7 @@ Each old test wrote a fresh executable shell wrapper, closed its own descriptor,
 
 A real executor start can receive the same OS refusal if its executable or adapter script is still open for writing, including a descriptor inherited by another child. An immutable real executable has no such test-created window. The existing narrow retry remains unchanged for externally staged caller-owned programs whose descriptor lifetime the harness cannot control; its reason is stated beside `spawn_executor`. It is not the test repair and its bound was not widened.
 
-**Reproduction.** The first attempt on the previous day completed 664 release whole-binary runs without an observed failure before the host restart interrupted it; its partially launched batch and abandoned queued gate are not completion evidence. This round ran the whole 30-test `executor_protocol` binary at `--test-threads=30`, two concurrent copies per profile. Each copy had a 90-second outer timeout and printed its wall and exit. The four ordinary copies had unrestricted node affinity. They ran beside the full ten-package parallel gate, `/var/home/tripod/loops/tmp/gate-w20b1-20261113T065258Z.log` (537 s, green), and a supplemental four-copy whole-binary probe pinned to one available CPU. The counted failures were in the unrestricted copies, not the pinned probe. That probe supplied additional scheduler contention, made no semantic changes and was stopped after both profiles reproduced; 408 complete copies per profile passed, and its partially launched batch is excluded. Container stop needed SIGKILL after its five-second grace and its foreground waiter returned 137, explicitly not a passing terminal verdict.
+**Reproduction.** The interrupted 2026-11-12 attempt completed 664 release whole-binary runs without an observed failure before the host restart interrupted it; its partially launched batch and abandoned queued gate are not completion evidence. The retained reproduction ran the whole 30-test `executor_protocol` binary at `--test-threads=30`, two concurrent copies per profile. Each copy had a 90-second outer timeout and printed its wall and exit. The four ordinary copies had unrestricted node affinity. They ran beside the full ten-package parallel gate, `/var/home/tripod/loops/tmp/gate-w20b1-20261113T065258Z.log` (537 s, green), and a supplemental four-copy whole-binary probe pinned to one available CPU. The counted failures were in the unrestricted copies, not the pinned probe. That probe supplied additional scheduler contention, made no semantic changes and was stopped after both profiles reproduced; 408 complete copies per profile passed, and its partially launched batch is excluded. Container stop needed SIGKILL after its five-second grace and its foreground waiter returned 137, explicitly not a passing terminal verdict.
 
 | Profile | First failing whole-binary run | Completed through failing batch | First failing test(s) / cause | One-minute load at batch |
 |---|---:|---:|---|---:|
@@ -1158,7 +1164,7 @@ The adjacent copies also failed at startup with errno 26: gate's nonzero-exit/ra
 
 `wrappers_alias_the_checked_in_script_and_compiled_mock` checks the accepted, unknown-field and raw-stderr alias forms and unchanged fixture bytes. The existing accepted and negative protocol tests still assert their original typed outcomes. `an_executor_that_cannot_be_started_fails_closed` additionally captures exactly one spawn-cause event with NotFound/2 in its isolated child. Ordinary test runs install a narrow test-writer subscriber for this cause event, so a future startup failure retains its OS cause even without a special stress environment. Library callers retain subscriber ownership. The public startup-refusal shape is unchanged; the new DEBUG event records no path or arbitrary child bytes.
 
-**Post-repair protocol.** The prescribed comparison is 5,840 gate and 6,160 release whole-binary runs, ten times every completed copy through the failing batches (slightly more than ten times the first-failure counts). Each now includes the additional alias control. An equal number of CPU-pinned companion runs supplies contention. Completion counts and the covering repaired-tree gate are recorded below only after their foreground waiters finish. This paragraph specifies the run, not a successful verdict.
+**Post-repair protocol.** The completed comparison contains 5,840 gate and 6,160 release whole-binary runs, ten times every completed copy through the failing batches (slightly more than ten times the first-failure counts). Each included the additional alias control. An equal number of CPU-pinned companion runs supplied contention. The completed counts, zero-failure verdict, and covering repaired-tree gate are retained below.
 
 
 **Repaired-tree covering gate (G).** `/var/home/tripod/loops/tmp/gate-w20b1-20261113T070727Z.log` ran 2026-11-13T07:07:27Z–07:15:09Z: `== green`, exit 0, wall 462 seconds, slot wait 0. This supersedes the earlier G for the clause table. The exact command was `time ssh -F "$CODEX_HOME/ssh_config" kranich-worker 'time bash ~/loops/tmp/w20-code-gate.sh w20b1 architecture,realization,compiler,model,target-elements,tapscript,linker,transaction,target-elements-conformance,vectors plans/drafts/wave1-bite-1-5-plan.md plans/packages/vectors.md plans/packages/realization.md plans/phases/07-burn-and-clear.md plans/backlog.md'`. Its supplied wrapper entered the normal slot-governed transient unit, with `systemd-run --wait --pipe` and a foreground SSH waiter through `== green`; no gate was restarted. Additional bounded foreground `tail --pid` waits observed the same unit, with timeout exits meaning only an expired observation window, never a gate failure. No native executor ran.
@@ -1192,4 +1198,424 @@ Sampled one-minute load ranged from 13.30 to 125.73. The raw copies are retained
 
 **Documents confirmation.** D is `/var/home/tripod/loops/tmp/gate-w20b1-b15protoflake2-doc-20261113T073733Z.log`: start 2026-11-13T07:37:46Z, end 07:37:50Z, wall 4 seconds, no slot queue, exit 0, `== green`. Its unchanged documents batteries passed and its scope check proved only this plan differed from G's retained full-gated snapshot. Its own container-inclusive cgroup is `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261113T073746Z.service`; full resource samples are in D. The final record fast check passed in 206 seconds (fmt 4, Clippy 12, rustdoc 189), without a formatter patch. An archive audit independently counted all 24,000 completed binaries, each with 31 passed and zero failed tests.
 
-The final confirmation runs the same foreground `time ssh -F "$CODEX_HOME/ssh_config" kranich-worker 'time bash ~/loops/tmp/w20b1-b15protoflake2-doc-gate.sh w20b1'` wrapper at `/var/home/tripod/loops/tmp/gate-w20b1-b15protoflake2-doc-20261113T074050Z.log`, using `systemd-run --wait --pipe` through its terminal marker. Its verdict is reported with the published tip. D is a completed verdict, not a claim that it checked its own later insertion; G's sources and tests remain exact. This packet remains offered for review, not closed.
+The final confirmation used the same foreground `time ssh -F "$CODEX_HOME/ssh_config" kranich-worker 'time bash ~/loops/tmp/w20b1-b15protoflake2-doc-gate.sh w20b1'` wrapper at `/var/home/tripod/loops/tmp/gate-w20b1-b15protoflake2-doc-20261113T074050Z.log`, using `systemd-run --wait --pipe` through its terminal marker. Its verdict was `== green`, exit 0, wall 3 seconds (07:41:20Z–07:41:23Z). D is a completed verdict, not a claim that it checked its own later insertion; G's sources and tests remain exact. This packet remains offered for review, not closed.
+
+
+## Gate-packet review corrections · `rec:w1b15:gate-review`
+
+The independent gate-packet review found the model, reader, reports and comparisons sound in substance, including the bound repair first reviewed with this packet. The corrections below add no behavior, expectation or byte change; only the timeout-rule comment changes in Rust, with both constants unchanged. The gate-of-record condition is met by `0.7.123-dev`: start 2026-11-13T07:43:09Z, end 08:16:05Z, wall 1976 seconds, queue 0, `== record green`, chain exit 0. This is the first green gate of record containing the `0.7.121-dev` code, including the protocol repair. Finding 3 is closed with a stated gap by the orchestrator role's ruling: two independent gates of record, each in both profiles, supply four complete sets of 29 subject walls and four family walls, all above fivefold headroom. This meets the load-sample purpose. The first run's walls are unavailable because its per-test journals were not copied before the shared build tree was overwritten; no other sample substitutes for them.
+
+**Reasons, not just absence tests.** Under (`[A-def:kpc-operations:classification]`), SOURCE/MERGE classification adds no validity condition: born-first and continue-first already suffice for the invariants. Under (`[A-sec:kpc:operations]`), record sets and successors are reconstructed from history, not carried by handles, so no accumulator is required or admitted. MERGE takes the union of consumed SOURCE identities and creates no new SOURCE identity; reader-side acceptance at (`[A-rem:kpc-interface:record-evidence]`) cannot add a covenant clause or a record. These are the explanations for all six documentation rows; model/literal controls support the stated facts separately.
+
+**Current member order.** (`tab:w1b15:reader-outcomes`) is historical for step 2. Its commitment boundary now also contains `ScriptSig`; the current refusal order at (`rec:w1b15:families-review`) is later birth, successor version, successor program, scriptSig, witness shape, leaf bytes, control version, parity and full control recipe. The same record states the defensive evaluation order: fragment results are computed before whole-leaf evaluation, but a whole-leaf error propagates before the stored fragment errors. `family_controls.rs::scriptsig_size` pins the one-coordinate and scriptSig-plus-shape subjects with the other member unchanged. No other reader outcome changes.
+
+**Archive admissions.** Frozen controls in `packages/vectors/src/` are `keyed_birth_corpus::tests::run_of_record_admits_exact_four_subjects`, `keyed_continuation_corpus::tests::run_of_record_admits_exact_four_subjects`, `keyed_corpus::tests::run_of_record_admits_exact_eight_subjects`, `keyed_cost_corpus::tests::run_of_record_admits_policy_and_two_mined_controls`, `keyed_funding_corpus::tests::run_of_record_admits_exact_subjects_and_boundaries`, and `keyed_scaling_corpus::exact_scaling_admission`. They supplement reproduction, the ten compiler pins and canonical publication; no expectation is regenerated.
+
+**Process and instrumentation.** The adopted 10/60-second bound was breached, reported and superseded by the orchestrator role's explicit hang-guard ruling, which the independent packet review examined. Calibration is review evidence, not a performance gate. Printed history phase walls are a test-harness exception to ADR-026 documented in `packages/vectors/TRACING.md`, so completed phases remain visible when a later phase is killed. The conversion follow-up and typed cryptographic-assumption follow-up are at (`tab:backlog:wave1-followups`). Current headers do not encode the inherited global cryptographic conditions; carrying them in the packet does not discharge them.
+
+
+**Review disposition by finding** · `tab:w1b15:packet-findings`
+
+| Finding | Correction owner and disposition |
+|---|---|
+| 1 | Packet records: per-landing lane/import table, three explicit reds and first repaired-code green at `0.7.123-dev`; no import pass inferred from a lane pass. |
+| 2 | Packet process record: adopted clause retained as breached/reported/superseded, orchestrator role named, enforcement separated from calibration review. |
+| 3 | Closed with a stated gap by the orchestrator role: second 121 and 123 streams in both profiles establish repaired-code load headroom above fivefold. First 121 retains its history pass only; its detailed journals were overwritten and walls are unavailable. The request for that run’s retained walls is unmet and explicitly accepted as such; nothing substitutes for them. Gate-journal retention is a loop-owned follow-up. |
+| 4 | Packet reasons: each of six rows cites classification, history-derived sets and reader acceptance; tests remain supporting fact evidence. |
+| 5 | Packet reachability: inherited cryptographic/target premises carried, never discharged; current header limitation and typed-form follow-up explicit. |
+| 6 | Packet handoff: all nine received rows answered, including per-key premise, annex/extra-item supported-form limit, native third sighash reading and all (a)–(f) obligations. |
+| 7 | Packet verification: full start/end/delta and process CPU rows, log ranges and whole-gate rows; final historical confirmation verdicts read. This step's covering record follows; closing receipt remains contingent on closing. |
+| 8 | Reader record pointer: `ScriptSig` and the actual within-member order at (`rec:w1b15:families-review`) named, including defensive evaluation order. |
+| 9 | Packet scope: exactly which generic mutants and resource literals moved off wide bodies stated; remaining width-specific checks named. |
+| 10 | Comment and plan: explicit 40/300 arithmetic, censored lower bounds, six-subject planning reserve and 10/75-second split-or-report triggers; constants unchanged. |
+| 11 | Tracing contract: test-harness printed-phase exception with timeout-diagnostic reason and conversion follow-up; no conversion here. |
+| 12 | Clause table: general no-regeneration, six archive admissions, explicit step gates, Meson parent bound and actual no-production-defect process fact. |
+| 13 | Clause standings: model/review evidence separated; no decode-once assertion invented, two evidence-order readings disclosed, finality form separated from premise. |
+| 14 | Dependency inventory: shared `keyed_stack_core` replay explicit beside projector and archive. |
+| 15 | Phase table: absent mutant phases are absent, not zero; distinct initial-after and final-after runs named without a speedup claim. |
+| 16 | Packet history: four semantic steps plus bound/protocol repairs, snapshot-based G0 description and imported packet history corrected. |
+
+The protocol record states completed runs and retained evidence rather than narrating pending work. No production behavior, model/reader/projector, expected value, archive, or keyed/linked/committed/constructed byte changes in these corrections. The only Rust edit is a comment; the two guards remain exact.
+
+
+**Received handoff dispositions** · `tab:w1b15:handoff-disposition`
+
+| Received row of (`tab:w1b15:handoff`) | Evidence delivered here | Remaining owner and exact obligation |
+|---|---|---|
+| Bite-1.3 history recognition and evidence | Finite graph model, independent byte reader, complete/incomplete/invalid/non-handle outcomes (`rec:w1b15:histories-review`), (`rec:w1b15:reader-review`) | Bite 1.6 receives finite subjects, not production chain recognition. Inclusion/retrieval/finality remain per-instance premises. |
+| Four parent facts | Headers retain inclusion, unspentness, retrieval and finality per input, with provenance; missing assertions refuse completeness (`rec:w1b15:reading-review`) | These remain external for every artifact. Bite 1.6 observes inclusion/unspentness for its own final subjects only; hypothetical finality controls establish no deployment declaration. The per-key exclusion of an unsupplied key's handle rests on inclusion in one valid history. |
+| SOURCE four/MERGE three evidence rows and member relations | Exact event/input/member/relation and leaf/control binding; independent model-side checks (`rec:w1b15:families-review`) | Byte-bound relation evidence passes to bite 1.6; neither supplied assertion nor producer coverage alone discharges execution. |
+| Multi-member and one-wrong-member | Every supplied member's two clauses, changed-member negative beside unchanged passing member; complete wide history and two cut subjects (`rec:w1b15:reader-review`) | Cut two-/253-member closures remain incomplete, requiring ancestors' evidence. Bite 1.6 repeats final-byte controls. |
+| Later same-key outputs | `NotHandle`, no empty membership set; born-first negative (`rec:w1b15:reader-review`) | Passed to bite 1.6 as exact offline subjects, not native rejection evidence. |
+| Public-input packet and SOURCE/two-/253-member bytes, fee/census | Test-local public-input reproduction and exact subject/resource binding (`rec:w1b15:families-review`) | No stable descriptor. Preserve exact constructed bytes and recorded ordinary signatures for bite 1.6. |
+| Cryptographic and target assumptions | Explicit conditional NUMS/discrete-log, preimage, second-preimage/collision and target premises in reachability and this record | Passed through unchanged from bite 1.4, not discharged; headers currently omit an assumption kind, with typed-form work at (`tab:backlog:wave1-followups`). No unconditional key-path impossibility. |
+| `MemberExecutionAndRelationEvidence`, structural results included | Model relation side only, tied to final subject bytes (`rec:w1b15:families-review`) | Bite 1.6 records discharge only when relation evidence and native execution both hold on the same final bytes. Execution is owed on structural results too. Reader's conservative two-item witness check refuses annex/extra-item forms; bite 1.6 must name that supported-form limit rather than infer a consensus covenant law. |
+| Final-byte policy, (a)–(f), funding/scaling | Exact offline predictions/observations and absent dimensions (`rec:w1b15:families-review`) | Passed through from bite 1.4: all six (a)–(f) repetitions and native third sighash reading, `FinalBytePolicyObservation`, wall/CPU/stalls/validation-charge/relay-policy observations; transaction-validity debts in the input-fact table. Rulings 162/163/180 remain policy under the recorded envelope. Keep the research records at (`obl:guide15-exec:measurement-home`). |
+
+
+**Gate-of-record load samples** · `tab:w1b15:record-load`
+
+Cells are wall seconds / guard divided by wall (headroom factor), not native measurements. The family guard is 300 seconds, each of its 29 subjects has 40 seconds. All available rows exited zero. The second-run streams were recovered from the shared build tree before the current record run replaced them: original mtimes were 2026-11-12T21:49:55.249108Z (gate) and 21:49:50.377300Z (release), within that run. Exact recovered bytes and source metadata are retained at `/var/home/tripod/loops/tmp/w20b1-b15closefix/record-0.7.121-dev-r2-gate.json` and its release peer. The `0.7.123-dev` raw streams and source metadata are retained in the same directory under `record-0.7.123-dev-gate.json` and its release peer. The first run's retained `ci-meson-testlog.json` verifies both history test lanes passed but has empty successful stdout; the detailed raw cargo stream was replaced on rerun by `scripts/cargo-test-json.sh`. No original first-run subject walls have been recovered, and no later sample is substituted for them. The orchestrator role closes finding 3 with this stated gap: the four complete retained profile samples meet its load-evidence purpose, while the first-run transcription condition remains unmet and is accepted as unavailable. This is not a timing pass for missing samples or a justification to widen a guard. The gate-of-record form caused the loss by leaving passing per-test journals in the shared build tree; the loop owns the retention repair at (`tab:backlog:wave1-followups`), under `req:environment:wall-time-reported`.
+
+| Subject | Guard s | First 121 gate / release | Second 121 gate | Second 121 release | 123 gate | 123 release |
+|---|---:|---|---|---|---|---|
+| source | 40 | unavailable / unavailable | 0.791200 / 50.56× | 0.195410 / 204.70× | 0.642335 / 62.27× | 0.700325 / 57.12× |
+| single | 40 | unavailable / unavailable | 0.105239 / 380.09× | 0.211234 / 189.36× | 0.237806 / 168.20× | 0.147009 / 272.09× |
+| ordinary-edge | 40 | unavailable / unavailable | 0.289754 / 138.05× | 0.203942 / 196.13× | 0.297994 / 134.23× | 0.207103 / 193.14× |
+| multi | 40 | unavailable / unavailable | 0.229671 / 174.16× | 0.532457 / 75.12× | 0.162082 / 246.79× | 0.346812 / 115.34× |
+| path | 40 | unavailable / unavailable | 1.871768 / 21.37× | 0.164207 / 243.59× | 1.356464 / 29.49× | 0.706026 / 56.66× |
+| two-keys | 40 | unavailable / unavailable | 1.457214 / 27.45× | 0.695790 / 57.49× | 0.578163 / 69.18× | 1.071149 / 37.34× |
+| wide | 40 | unavailable / unavailable | 3.038650 / 13.16× | 7.419100 / 5.39× | 3.007004 / 13.30× | 2.612892 / 15.31× |
+| later | 40 | unavailable / unavailable | 0.798461 / 50.10× | 0.395514 / 101.13× | 0.294152 / 135.98× | 0.238261 / 167.88× |
+| existing-two | 40 | unavailable / unavailable | 1.205482 / 33.18× | 0.391716 / 102.11× | 0.178690 / 223.85× | 0.271856 / 147.14× |
+| existing-253 | 40 | unavailable / unavailable | 0.465499 / 85.93× | 0.223669 / 178.84× | 0.406533 / 98.39× | 0.185435 / 215.71× |
+| association | 40 | unavailable / unavailable | 0.684180 / 58.46× | 0.522286 / 76.59× | 1.409233 / 28.38× | 0.609049 / 65.68× |
+| reader-negatives | 40 | unavailable / unavailable | 2.454147 / 16.30× | 0.745699 / 53.64× | 2.736613 / 14.62× | 1.691247 / 23.65× |
+| reader-review | 40 | unavailable / unavailable | 3.476719 / 11.51× | 1.250129 / 32.00× | 1.461247 / 27.37× | 1.440891 / 27.76× |
+| reading-review | 40 | unavailable / unavailable | 2.357878 / 16.96× | 1.941515 / 20.60× | 1.502984 / 26.61× | 2.658007 / 15.05× |
+| families-constants | 40 | unavailable / unavailable | 2.937120 / 13.62× | 3.051317 / 13.11× | 4.575161 / 8.74× | 1.265112 / 31.62× |
+| families-source | 40 | unavailable / unavailable | 2.971454 / 13.46× | 2.188409 / 18.28× | 2.721321 / 14.70× | 0.431411 / 92.72× |
+| families-single | 40 | unavailable / unavailable | 2.048494 / 19.53× | 1.069293 / 37.41× | 1.605684 / 24.91× | 0.805264 / 49.67× |
+| families-ordinary-edge | 40 | unavailable / unavailable | 4.007099 / 9.98× | 2.246310 / 17.81× | 1.347232 / 29.69× | 0.699873 / 57.15× |
+| families-path | 40 | unavailable / unavailable | 1.892081 / 21.14× | 1.723040 / 23.21× | 1.948211 / 20.53× | 0.797733 / 50.14× |
+| families-two-keys | 40 | unavailable / unavailable | 0.699511 / 57.18× | 1.198269 / 33.38× | 1.620979 / 24.68× | 0.495829 / 80.67× |
+| families-later | 40 | unavailable / unavailable | 1.799846 / 22.22× | 0.556310 / 71.90× | 1.591326 / 25.14× | 1.106375 / 36.15× |
+| families-multi | 40 | unavailable / unavailable | 3.236216 / 12.36× | 1.864619 / 21.45× | 7.197505 / 5.56× | 5.501282 / 7.27× |
+| families-wide | 40 | unavailable / unavailable | 2.294413 / 17.43× | 1.006775 / 39.73× | 1.395851 / 28.66× | 5.744536 / 6.96× |
+| families-cut-two | 40 | unavailable / unavailable | 1.467298 / 27.26× | 1.030071 / 38.83× | 3.298628 / 12.13× | 1.210257 / 33.05× |
+| families-cut-253 | 40 | unavailable / unavailable | 2.189177 / 18.27× | 0.665431 / 60.11× | 2.196360 / 18.21× | 1.228777 / 32.55× |
+| reading-rules | 40 | unavailable / unavailable | 1.630984 / 24.53× | 1.448872 / 27.61× | 0.601404 / 66.51× | 1.511887 / 26.46× |
+| reading-premises | 40 | unavailable / unavailable | 4.176733 / 9.58× | 0.850510 / 47.03× | 1.909311 / 20.95× | 3.019626 / 13.25× |
+| reading-reports | 40 | unavailable / unavailable | 4.501054 / 8.89× | 1.325613 / 30.17× | 4.028235 / 9.93× | 4.044991 / 9.89× |
+| reading-conditional | 40 | unavailable / unavailable | 0.747336 / 53.52× | 1.544539 / 25.90× | 0.767215 / 52.14× | 0.529140 / 75.59× |
+| family | 300 | unavailable / unavailable | 55.941737 / 5.36× | 37.006030 / 8.11× | 51.105295 / 5.87× | 41.502210 / 7.23× |
+
+121-r2 gate: largest subject reading-reports at 4.501054 seconds (8.89×). No available row reaches the split-or-report trigger.
+
+121-r2 release: largest subject wide at 7.419100 seconds (5.39×). No available row reaches the split-or-report trigger.
+
+123 gate: largest subject families-multi at 7.197505 seconds (5.56×). No available row reaches the split-or-report trigger.
+
+123 release: largest subject families-wide at 5.744536 seconds (6.96×). No available row reaches the split-or-report trigger.
+
+
+**Per-landing lane and import evidence** · `tab:w1b15:landing-runs`
+
+Every metadata cell is read from its named log. Lane G is offline covering evidence, not the release-profile gate of record. All three import reds remain red. The first protocol red lacks its actual errno; (`rec:w1b15:protocol-order`) establishes the second startup failure's cause and reproduces the defect addressed for the first. `0.7.122-dev` had no separate run: it was documents on a red base and is covered by the `0.7.123-dev` run.
+
+| Landing | Lane covering log and verdict | Gate of record and verdict | Disposition |
+|---|---|---|---|
+| `0.7.117-dev` | `/var/home/tripod/loops/tmp/gate-w20b1-20261112T130927Z.log`: 2026-11-12T13:09:27Z → 2026-11-12T13:14:07Z; wall 280 s; queue 0 s; green; exit 0 | `/var/home/tripod/loops/evidence/wave1/record-0.7.117-dev/gate.log`: 2026-11-12T13:16:32Z → 2026-11-12T13:31:24Z; wall 892 s; queue 0 s; green; exit 0 | Review and preservation evidence retained; no native acceptance claim. |
+| `0.7.118-dev` | `/var/home/tripod/loops/tmp/gate-w20b1-20261112T154042Z.log`: 2026-11-12T15:40:42Z → 2026-11-12T15:44:29Z; wall 227 s; queue 0 s; green; exit 0 | `/var/home/tripod/loops/evidence/wave1/record-0.7.118-dev/gate.log`: 2026-11-12T15:48:20Z → 2026-11-12T16:04:52Z; wall 992 s; queue 0 s; green; exit 0 | Review and preservation evidence retained; no native acceptance claim. |
+| `0.7.119-dev` | `/var/home/tripod/loops/tmp/gate-w20b1-20261112T174649Z.log`: 2026-11-12T17:46:49Z → 2026-11-12T17:50:37Z; wall 228 s; queue 0 s; green; exit 0 | `/var/home/tripod/loops/evidence/wave1/record-0.7.119-dev/gate.log`: 2026-11-12T17:53:26Z → 2026-11-12T18:14:50Z; wall 1284 s; queue 0 s; green; exit 0 | Review and preservation evidence retained; no native acceptance claim. |
+| `0.7.120-dev` | `/var/home/tripod/loops/tmp/gate-w20b1-20261112T200504Z.log`: 2026-11-12T20:05:04Z → 2026-11-12T20:12:41Z; wall 457 s; queue 0 s; green; exit 0 | `/var/home/tripod/loops/evidence/wave1/record-0.7.120-dev/gate.log`: 2026-11-12T20:16:14Z → 2026-11-12T20:33:47Z; wall 1053 s; queue 0 s; RED; exit 1 | RED: `keyed_history::history_family_child`, `families-wide` timeout 10.098874 s / exit 124; no wrong result. |
+| `0.7.121-dev` | `/var/home/tripod/loops/tmp/gate-w20b1-20261112T210954Z.log`: 2026-11-12T21:09:55Z → 2026-11-12T21:15:25Z; wall 330 s; queue 0 s; green; exit 0 | `/var/home/tripod/loops/evidence/wave1/record-0.7.121-dev/gate.log`: 2026-11-12T21:22:26Z → 2026-11-12T21:39:04Z; wall 998 s; queue 0 s; RED; exit 1 | RED: release `an_unknown_response_field_fails_closed`; no actual error printed. |
+| `0.7.121-dev` (second run) | `/var/home/tripod/loops/tmp/gate-w20b1-20261112T210954Z.log`: 2026-11-12T21:09:55Z → 2026-11-12T21:15:25Z; wall 330 s; queue 0 s; green; exit 0 | `/var/home/tripod/loops/evidence/wave1/record-0.7.121-dev-r2/gate.log`: 2026-11-12T21:40:15Z → 2026-11-12T21:50:51Z; wall 636 s; queue 0 s; RED; exit 1 | RED: gate `an_accepted_response_naming_a_failure_class_is_not_a_passing_case`, executor startup; history family passed in both runs. |
+| `0.7.122-dev` | `/var/home/tripod/loops/tmp/gate-w20b1-20261112T210954Z.log`: 2026-11-12T21:09:55Z → 2026-11-12T21:15:25Z; wall 330 s; queue 0 s; green; exit 0 | No separate run; covered by `0.7.123-dev`. | No import run; historical final documents confirmation is transcribed below. |
+| `0.7.123-dev` | `/var/home/tripod/loops/tmp/gate-w20b1-20261113T070727Z.log`: 2026-11-13T07:07:27Z → 2026-11-13T07:15:09Z; wall 462 s; queue 0 s; green; exit 0 | `/var/home/tripod/loops/evidence/wave1/record-0.7.123-dev/gate.log`: 2026-11-13T07:43:09Z → 2026-11-13T08:16:05Z; wall 1976 s; queue 0 s; green; exit 0 | Review and preservation evidence retained; no native acceptance claim. |
+
+**Full retained resource transcription** · `tab:w1b15:retained-run-resources`
+
+As in (`tab:w1b14:retained-run-resources`), each row gives wall and separately sampled shell-child process user/system CPU, plus container-inclusive cgroup CPU usage and CPU/memory/I/O some-pressure totals as start → end / delta. Full user/system, some/full PSI and gauge samples remain in the cited line ranges. Units are microseconds except wall/process seconds; a whole-gate row is included wherever logged. Integer script walls are not inferred by subtracting rounded printed stamps. Each run's own cgroup is named; none is attributed from node-wide load (`req:environment:gate-resource-deltas`).
+
+**record-0.7.117-dev.** `/var/home/tripod/loops/evidence/wave1/record-0.7.117-dev/gate.log`: 2026-11-12T13:16:32Z → 2026-11-12T13:31:24Z; wall 892 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-record-gate-20261112T131632Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery ci-setup | 1; 1.0/1.2 | 3132866 → 5428698 / +2295832 | 4441 → 8111 / +3670 | 0 → 0 / +0 | 1114 → 1184 / +70 | 36–39 |
+| battery ci-build-gate | 38; 1.1/1.2 | 5460155 → 245097387 / +239637232 | 8161 → 733427 / +725266 | 0 → 733 / +733 | 1184 → 75902 / +74718 | 124–127 |
+| battery ci-build-release | 397; 1.2/1.5 | 245145609 → 4465368739 / +4220223130 | 733495 → 16428314 / +15694819 | 733 → 136364 / +135631 | 75909 → 90754 / +14845 | 135–138 |
+| battery ci.sh | 444; 1.4/1.5 | 4465409443 → 10558615054 / +6093205611 | 16428383 → 115524780 / +99096397 | 136364 → 212148 / +75784 | 90789 → 185643 / +94854 | 714–717 |
+| battery document-setup | 0; 1.0/1.2 | 10558650879 → 10560920082 / +2269203 | 115524819 → 115528718 / +3899 | 212148 → 212148 / +0 | 185643 → 185692 / +49 | 721–724 |
+| battery document-compile | 3; 1.1/1.3 | 10560963789 → 10565775856 / +4812067 | 115528770 → 115533599 / +4829 | 212148 → 212148 / +0 | 185692 → 185925 / +233 | 1086–1089 |
+| battery document-test | 2; 1.0/1.5 | 10565825481 → 10569263894 / +3438413 | 115533645 → 115542635 / +8990 | 212148 → 212148 / +0 | 185925 → 186010 / +85 | 1236–1239 |
+| battery fmt | 4; 1.0/1.4 | 10569302915 → 10575060568 / +5757653 | 115542680 → 115547103 / +4423 | 212148 → 212148 / +0 | 186010 → 186037 / +27 | 1242–1245 |
+| battery clippy | 1; 1.1/1.3 | 10575097791 → 10577693128 / +2595337 | 115547159 → 115551841 / +4682 | 212148 → 212148 / +0 | 186037 → 186251 / +214 | 1281–1284 |
+| gate | 892; 12.0/15.0 | 33839 → 10580359250 / +10580325411 | 30 → 115557401 / +115557371 | 0 → 212148 / +212148 | 0 → 186338 / +186338 | 1304–1307 |
+
+**record-0.7.118-dev.** `/var/home/tripod/loops/evidence/wave1/record-0.7.118-dev/gate.log`: 2026-11-12T15:48:20Z → 2026-11-12T16:04:52Z; wall 992 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-record-gate-20261112T154818Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery ci-setup | 1; 1.0/1.2 | 3338532 → 5627059 / +2288527 | 4738 → 8459 / +3721 | 0 → 0 / +0 | 6093 → 6186 / +93 | 36–39 |
+| battery ci-build-gate | 77; 1.1/1.2 | 5657062 → 520728191 / +515071129 | 8504 → 2091386 / +2082882 | 0 → 49409 / +49409 | 6186 → 113272 / +107086 | 124–127 |
+| battery ci-build-release | 390; 1.2/1.4 | 520772239 → 4774623906 / +4253851667 | 2092655 → 17068302 / +14975647 | 49409 → 348111 / +298702 | 113295 → 154838 / +41543 | 135–138 |
+| battery ci.sh | 510; 1.3/1.6 | 4774669663 → 11199465852 / +6424796189 | 17068347 → 128762065 / +111693718 | 348111 → 795828 / +447717 | 154851 → 394414 / +239563 | 714–717 |
+| battery document-setup | 1; 0.9/1.3 | 11199499452 → 11201736765 / +2237313 | 128762327 → 128772311 / +9984 | 795828 → 795828 / +0 | 394414 → 394528 / +114 | 721–724 |
+| battery document-compile | 4; 0.9/1.3 | 11201779040 → 11206870013 / +5090973 | 128772397 → 128842876 / +70479 | 795828 → 795828 / +0 | 394528 → 396212 / +1684 | 1086–1089 |
+| battery document-test | 2; 1.1/1.4 | 11206906656 → 11210501537 / +3594881 | 128843020 → 128853219 / +10199 | 795828 → 795828 / +0 | 396212 → 396375 / +163 | 1236–1239 |
+| battery fmt | 4; 1.0/1.4 | 11210535591 → 11216605499 / +6069908 | 128853935 → 128861044 / +7109 | 795828 → 795828 / +0 | 396375 → 396606 / +231 | 1242–1245 |
+| battery clippy | 1; 0.9/1.4 | 11216638102 → 11219188894 / +2550792 | 128861124 → 128868370 / +7246 | 795828 → 795828 / +0 | 396606 → 397397 / +791 | 1281–1284 |
+| gate | 992; 11.8/15.2 | 31345 → 11221904752 / +11221873407 | 21 → 128875628 / +128875607 | 0 → 795828 / +795828 | 12 → 397474 / +397462 | 1304–1307 |
+
+**record-0.7.119-dev.** `/var/home/tripod/loops/evidence/wave1/record-0.7.119-dev/gate.log`: 2026-11-12T17:53:26Z → 2026-11-12T18:14:50Z; wall 1284 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-record-gate-20261112T175326Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery ci-setup | 0; 1.1/1.2 | 3473175 → 5823630 / +2350455 | 7726 → 15410 / +7684 | 0 → 0 / +0 | 5062 → 5126 / +64 | 36–39 |
+| battery ci-build-gate | 116; 1.1/1.4 | 5866938 → 542541818 / +536674880 | 15510 → 20280156 / +20264646 | 0 → 55757 / +55757 | 5126 → 140734 / +135608 | 124–127 |
+| battery ci-build-release | 560; 1.7/1.8 | 542585758 → 5186401487 / +4643815729 | 20280208 → 68639823 / +48359615 | 55757 → 221320 / +165563 | 140757 → 173472 / +32715 | 135–138 |
+| battery ci.sh | 591; 1.6/1.7 | 5186441849 → 11950251469 / +6763809620 | 68639876 → 186946982 / +118307106 | 221320 → 656212 / +434892 | 173513 → 395851 / +222338 | 714–717 |
+| battery document-setup | 1; 0.9/1.3 | 11950295662 → 11952589682 / +2294020 | 186947604 → 187001009 / +53405 | 656212 → 656212 / +0 | 395851 → 396061 / +210 | 721–724 |
+| battery document-compile | 4; 0.9/1.4 | 11952640064 → 11957609806 / +4969742 | 187001261 → 187062586 / +61325 | 656212 → 656213 / +1 | 396061 → 398558 / +2497 | 1086–1089 |
+| battery document-test | 2; 1.0/1.4 | 11957657081 → 11961254140 / +3597059 | 187062752 → 187100523 / +37771 | 656213 → 656213 / +0 | 398558 → 398746 / +188 | 1236–1239 |
+| battery fmt | 6; 1.0/1.4 | 11961295360 → 11969125399 / +7830039 | 187100690 → 187135591 / +34901 | 656213 → 656213 / +0 | 398746 → 398813 / +67 | 1242–1245 |
+| battery clippy | 1; 1.0/1.5 | 11969170956 → 11972019944 / +2848988 | 187135719 → 187168687 / +32968 | 656213 → 656213 / +0 | 398813 → 408714 / +9901 | 1281–1284 |
+| gate | 1284; 12.7/16.2 | 30842 → 11974833438 / +11974802596 | 33 → 187210102 / +187210069 | 0 → 656213 / +656213 | 23 → 408844 / +408821 | 1304–1307 |
+
+**record-0.7.120-dev.** `/var/home/tripod/loops/evidence/wave1/record-0.7.120-dev/gate.log`: 2026-11-12T20:16:14Z → 2026-11-12T20:33:47Z; wall 1053 s; queue 0 s; RED; exit 1. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-record-gate-20261112T201613Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery ci-setup | 1; 1.0/1.2 | 3124436 → 5378245 / +2253809 | 3509 → 6821 / +3312 | 0 → 0 / +0 | 7380 → 7474 / +94 | 36–39 |
+| battery ci-build-gate | 69; 1.1/1.3 | 5416125 → 524128050 / +518711925 | 6853 → 970139 / +963286 | 0 → 0 / +0 | 7474 → 157926 / +150452 | 124–127 |
+| battery ci-build-release | 388; 1.0/1.3 | 524162232 → 4772965766 / +4248803534 | 970232 → 9401466 / +8431234 | 0 → 53578 / +53578 | 157938 → 203003 / +45065 | 135–138 |
+| battery ci.sh | 584; 1.4/1.7 | 4773010226 → 11163196805 / +6390186579 | 9401511 → 165617999 / +156216488 | 53578 → 684177 / +630599 | 203025 → 430588 / +227563 | 823–826 |
+| battery document-setup | 0; 1.0/1.2 | 11163237476 → 11165448191 / +2210715 | 165618040 → 165622814 / +4774 | 684177 → 684177 / +0 | 430588 → 430664 / +76 | 830–833 |
+| battery document-compile | 3; 1.1/1.2 | 11165488735 → 11169964477 / +4475742 | 165622852 → 165627673 / +4821 | 684177 → 684177 / +0 | 430664 → 432929 / +2265 | 1195–1198 |
+| battery document-test | 1; 0.9/1.2 | 11169999108 → 11173093946 / +3094838 | 165627721 → 165633636 / +5915 | 684177 → 684177 / +0 | 432929 → 433095 / +166 | 1345–1348 |
+| battery fmt | 5; 1.0/1.2 | 11173131983 → 11178876784 / +5744801 | 165633694 → 165637753 / +4059 | 684177 → 684177 / +0 | 433095 → 433148 / +53 | 1351–1354 |
+| battery clippy | 0; 1.1/1.3 | 11178909160 → 11181514552 / +2605392 | 165637833 → 165643541 / +5708 | 684177 → 684177 / +0 | 433148 → 445579 / +12431 | 1390–1393 |
+| gate | 1053; 11.7/14.5 | 31648 → 11184002926 / +11183971278 | 38 → 165649280 / +165649242 | 0 → 684177 / +684177 | 6 → 445632 / +445626 | 1413–1416 |
+
+**record-0.7.121-dev.** `/var/home/tripod/loops/evidence/wave1/record-0.7.121-dev/gate.log`: 2026-11-12T21:22:26Z → 2026-11-12T21:39:04Z; wall 998 s; queue 0 s; RED; exit 1. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-record-gate-20261112T212225Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery ci-setup | 1; 0.9/1.2 | 3170549 → 5366533 / +2195984 | 6322 → 13011 / +6689 | 0 → 0 / +0 | 3788 → 3899 / +111 | 36–39 |
+| battery ci-build-gate | 28; 1.1/1.2 | 5398661 → 97125015 / +91726354 | 13061 → 526556 / +513495 | 0 → 0 / +0 | 3899 → 56092 / +52193 | 46–49 |
+| battery ci-build-release | 453; 1.2/1.5 | 97165317 → 4563398313 / +4466232996 | 526643 → 36725581 / +36198938 | 0 → 32216 / +32216 | 56096 → 90303 / +34207 | 57–60 |
+| battery ci.sh | 505; 1.2/1.6 | 4563433753 → 10748137560 / +6184703807 | 36725608 → 141431072 / +104705464 | 32216 → 91128 / +58912 | 90311 → 261223 / +170912 | 740–743 |
+| battery document-setup | 1; 1.1/1.2 | 10748173577 → 10750505250 / +2331673 | 141431110 → 141435075 / +3965 | 91128 → 91128 / +0 | 261229 → 261318 / +89 | 747–750 |
+| battery document-compile | 2; 1.1/1.2 | 10750543622 → 10754921926 / +4378304 | 141435123 → 141439568 / +4445 | 91128 → 91128 / +0 | 261318 → 263021 / +1703 | 1112–1115 |
+| battery document-test | 2; 1.1/1.2 | 10754956235 → 10758142628 / +3186393 | 141439614 → 141444090 / +4476 | 91128 → 91128 / +0 | 263021 → 263201 / +180 | 1262–1265 |
+| battery fmt | 4; 1.0/1.3 | 10758184561 → 10763813118 / +5628557 | 141444146 → 141449217 / +5071 | 91128 → 91128 / +0 | 263201 → 263237 / +36 | 1268–1271 |
+| battery clippy | 0; 1.1/1.2 | 10763861985 → 10766380368 / +2518383 | 141449266 → 141453765 / +4499 | 91128 → 91128 / +0 | 263237 → 263375 / +138 | 1307–1310 |
+| gate | 998; 11.9/14.5 | 31952 → 10768971015 / +10768939063 | 30 → 141458206 / +141458176 | 0 → 91128 / +91128 | 0 → 263594 / +263594 | 1330–1333 |
+
+**record-0.7.121-dev-r2.** `/var/home/tripod/loops/evidence/wave1/record-0.7.121-dev-r2/gate.log`: 2026-11-12T21:40:15Z → 2026-11-12T21:50:51Z; wall 636 s; queue 0 s; RED; exit 1. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-record-gate-20261112T214014Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery ci-setup | 0; 1.1/1.3 | 3703251 → 6103635 / +2400384 | 7253 → 10917 / +3664 | 0 → 0 / +0 | 2866 → 2938 / +72 | 36–39 |
+| battery ci-build-gate | 4; 1.1/1.4 | 6142330 → 11340303 / +5197973 | 10963 → 84036 / +73073 | 0 → 0 / +0 | 2938 → 3418 / +480 | 46–49 |
+| battery ci-build-release | 2; 1.2/1.4 | 11386989 → 15649424 / +4262435 | 84211 → 93351 / +9140 | 0 → 0 / +0 | 3437 → 4017 / +580 | 57–60 |
+| battery ci.sh | 616; 2.0/1.9 | 15706582 → 6660788526 / +6645081944 | 93681 → 106160862 / +106067181 | 0 → 240109 / +240109 | 4045 → 52030 / +47985 | 636–639 |
+| battery document-setup | 1; 1.0/1.3 | 6660828789 → 6663130747 / +2301958 | 106160898 → 106166992 / +6094 | 240109 → 240109 / +0 | 52030 → 52083 / +53 | 643–646 |
+| battery document-compile | 2; 1.0/1.3 | 6663173037 → 6667329708 / +4156671 | 106167038 → 106177952 / +10914 | 240109 → 240109 / +0 | 52083 → 52554 / +471 | 927–930 |
+| battery document-test | 2; 1.0/1.3 | 6667370484 → 6670607565 / +3237081 | 106178008 → 106183755 / +5747 | 240109 → 240109 / +0 | 52554 → 52674 / +120 | 1054–1057 |
+| battery fmt | 4; 1.0/1.3 | 6670652273 → 6676493549 / +5841276 | 106183887 → 106190906 / +7019 | 240109 → 240109 / +0 | 52674 → 52718 / +44 | 1060–1063 |
+| battery clippy | 1; 1.0/1.3 | 6676533704 → 6679028340 / +2494636 | 106190978 → 106199435 / +8457 | 240109 → 240109 / +0 | 52718 → 52932 / +214 | 1099–1102 |
+| gate | 636; 12.6/15.5 | 36142 → 6681592099 / +6681555957 | 47 → 106207363 / +106207316 | 0 → 240109 / +240109 | 25 → 52991 / +52966 | 1122–1125 |
+
+**record-0.7.123-dev.** `/var/home/tripod/loops/evidence/wave1/record-0.7.123-dev/gate.log`: 2026-11-13T07:43:09Z → 2026-11-13T08:16:05Z; wall 1976 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-record-gate-20261113T074309Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery ci-setup | 0; 0.9/1.3 | 3234948 → 5438291 / +2203343 | 4833 → 10582 / +5749 | 0 → 0 / +0 | 738 → 885 / +147 | 36–39 |
+| battery ci-build-gate | 77; 1.1/1.3 | 5468897 → 344166735 / +338697838 | 10613 → 1902534 / +1891921 | 0 → 0 / +0 | 885 → 139388 / +138503 | 124–127 |
+| battery ci-build-release | 1203; 1.7/2.0 | 344205681 → 6822378479 / +6478172798 | 1902635 → 58101946 / +56199311 | 0 → 434086 / +434086 | 139399 → 155742 / +16343 | 135–138 |
+| battery ci.sh | 684; 1.5/1.7 | 6822425750 → 13588366368 / +6765940618 | 58101992 → 164880858 / +106778866 | 434086 → 524664 / +90578 | 155762 → 319527 / +163765 | 715–718 |
+| battery document-setup | 0; 1.0/1.3 | 13588402724 → 13590753592 / +2350868 | 164880921 → 164885266 / +4345 | 524664 → 524664 / +0 | 319527 → 319610 / +83 | 722–725 |
+| battery document-compile | 3; 0.9/1.3 | 13590790725 → 13595115818 / +4325093 | 164885348 → 164890088 / +4740 | 524664 → 524664 / +0 | 319610 → 320842 / +1232 | 1087–1090 |
+| battery document-test | 1; 1.1/1.2 | 13595149704 → 13598355047 / +3205343 | 164890132 → 164894907 / +4775 | 524664 → 524664 / +0 | 320842 → 321046 / +204 | 1237–1240 |
+| battery fmt | 4; 1.0/1.3 | 13598386440 → 13604043789 / +5657349 | 164894950 → 164899206 / +4256 | 524664 → 524664 / +0 | 321046 → 321078 / +32 | 1243–1246 |
+| battery clippy | 1; 1.0/1.2 | 13604083450 → 13606540262 / +2456812 | 164899248 → 164903642 / +4394 | 524664 → 524664 / +0 | 321078 → 321530 / +452 | 1282–1285 |
+| gate | 1976; 12.6/15.3 | 28811 → 13609092606 / +13609063795 | 20 → 164908364 / +164908344 | 0 → 524664 / +524664 | 0 → 321601 / +321601 | 1305–1308 |
+
+**20261112T130201Z.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T130201Z.log`: 2026-11-12T13:02:01Z → 2026-11-12T13:07:12Z; wall 311 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T130201Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery setup | 0; 0.8/1.0 | 151898 → 2027899 / +1876001 | 78 → 2681 / +2603 | 0 → 0 / +0 | 0 → 63 / +63 | 8–11 |
+| battery fmt | 3; 0.7/1.0 | 2064480 → 7081512 / +5017032 | 2718 → 7455 / +4737 | 0 → 0 / +0 | 63 → 97 / +34 | 14–17 |
+| battery clippy | 7; 0.7/1.0 | 7112365 → 15906589 / +8794224 | 7488 → 13654 / +6166 | 0 → 0 / +0 | 97 → 206 / +109 | 53–56 |
+| battery package-tests | 239; 1.0/1.1 | 15949180 → 2825013392 / +2809064212 | 13714 → 47582286 / +47568572 | 0 → 66368 / +66368 | 206 → 2442 / +2236 | 97–100 |
+| battery doc | 29; 0.9/1.0 | 2825073216 → 2855564621 / +30491405 | 47582349 → 47598344 / +15995 | 66368 → 66368 / +0 | 2449 → 16368 / +13919 | 128–131 |
+| battery lint-suite | 30; 0.9/1.0 | 2855598599 → 2948662238 / +93063639 | 47599221 → 47617403 / +18182 | 66368 → 66368 / +0 | 16368 → 54288 / +37920 | 174–177 |
+| battery checks | 1; 0.9/1.0 | 2948690875 → 2952057437 / +3366562 | 47617669 → 47621415 / +3746 | 66368 → 66368 / +0 | 54288 → 54550 / +262 | 210–213 |
+| gate | 311; 5.9/7.3 | 112429 → 2952149558 / +2952037129 | 36 → 47621520 / +47621484 | 0 → 66368 / +66368 | 0 → 54550 / +54550 | 238–241 |
+
+**20261112T153434Z.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T153434Z.log`: 2026-11-12T15:34:34Z → 2026-11-12T15:39:51Z; wall 317 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T153434Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery setup | 0; 0.8/0.9 | 159157 → 1928110 / +1768953 | 103 → 3748 / +3645 | 0 → 0 / +0 | 251 → 372 / +121 | 8–11 |
+| battery fmt | 4; 0.9/1.0 | 1962089 → 7026908 / +5064819 | 3800 → 7278 / +3478 | 0 → 0 / +0 | 372 → 429 / +57 | 14–17 |
+| battery clippy | 8; 0.8/1.1 | 7067622 → 30247627 / +23180005 | 7895 → 21502 / +13607 | 0 → 0 / +0 | 429 → 26504 / +26075 | 54–57 |
+| battery package-tests | 227; 0.8/1.2 | 30289353 → 2817629607 / +2787340254 | 21575 → 24573836 / +24552261 | 0 → 200580 / +200580 | 26504 → 99550 / +73046 | 98–101 |
+| battery doc | 42; 0.8/1.3 | 2817714936 → 2862396742 / +44681806 | 25022582 → 25673542 / +650960 | 200580 → 200580 / +0 | 99550 → 110437 / +10887 | 129–132 |
+| battery lint-suite | 33; 0.9/1.1 | 2862434735 → 2977086673 / +114651938 | 25673752 → 25730486 / +56734 | 200580 → 200580 / +0 | 110437 → 127625 / +17188 | 175–178 |
+| battery checks | 2; 0.8/1.1 | 2977125509 → 2980692507 / +3566998 | 25730523 → 25741263 / +10740 | 200580 → 200580 / +0 | 127625 → 127967 / +342 | 211–214 |
+| gate | 317; 5.8/7.9 | 118898 → 2980791454 / +2980672556 | 55 → 25741521 / +25741466 | 0 → 200580 / +200580 | 216 → 128155 / +127939 | 247–250 |
+
+**20261112T174012Z.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T174012Z.log`: 2026-11-12T17:40:12Z → 2026-11-12T17:45:32Z; wall 320 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T174012Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery setup | 1; 0.9/1.0 | 165825 → 2057283 / +1891458 | 144 → 3198 / +3054 | 0 → 0 / +0 | 0 → 76 / +76 | 8–11 |
+| battery fmt | 3; 0.9/1.0 | 2099028 → 7288439 / +5189411 | 3246 → 6120 / +2874 | 0 → 0 / +0 | 76 → 122 / +46 | 14–17 |
+| battery clippy | 10; 0.8/1.0 | 7320013 → 30996364 / +23676351 | 6175 → 16309 / +10134 | 0 → 0 / +0 | 122 → 5426 / +5304 | 54–57 |
+| battery package-tests | 240; 1.0/1.1 | 31035327 → 2919800994 / +2888765667 | 16351 → 31518517 / +31502166 | 0 → 136695 / +136695 | 5426 → 21285 / +15859 | 99–102 |
+| battery doc | 32; 0.8/1.0 | 2919857622 → 2954575989 / +34718367 | 31518555 → 31538940 / +20385 | 136695 → 223370 / +86675 | 21285 → 55952 / +34667 | 130–133 |
+| battery lint-suite | 31; 0.8/1.0 | 2954612087 → 3062494851 / +107882764 | 31538976 → 31578427 / +39451 | 223370 → 223371 / +1 | 55952 → 76167 / +20215 | 176–179 |
+| battery checks | 1; 0.8/1.0 | 3062525034 → 3065886351 / +3361317 | 31578469 → 31583893 / +5424 | 223371 → 223371 / +0 | 76167 → 77039 / +872 | 212–215 |
+| gate | 320; 6.1/7.3 | 120955 → 3065976820 / +3065855865 | 89 → 31584007 / +31583918 | 0 → 223371 / +223371 | 0 → 77039 / +77039 | 248–251 |
+
+**20261112T194314Z.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T194314Z.log`: 2026-11-12T19:43:14Z → 2026-11-12T19:49:06Z; wall 352 s; queue 1 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T194314Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery setup | 0; 0.7/1.0 | 169699 → 1962312 / +1792613 | 90 → 4047 / +3957 | 0 → 0 / +0 | 0 → 62 / +62 | 8–11 |
+| battery fmt | 4; 0.8/1.0 | 2001561 → 7167507 / +5165946 | 4084 → 6555 / +2471 | 0 → 0 / +0 | 62 → 145 / +83 | 14–17 |
+| battery clippy | 2; 0.8/1.1 | 7215424 → 10121651 / +2906227 | 6779 → 9674 / +2895 | 0 → 0 / +0 | 145 → 566 / +421 | 53–56 |
+| battery package-tests | 293; 1.0/1.2 | 10159471 → 3133176389 / +3123016918 | 9710 → 47715702 / +47705992 | 0 → 2138 / +2138 | 566 → 9050 / +8484 | 99–102 |
+| battery doc | 29; 0.8/1.0 | 3133232250 → 3163898025 / +30665775 | 47715792 → 47738363 / +22571 | 2138 → 2138 / +0 | 9050 → 9137 / +87 | 130–133 |
+| battery lint-suite | 23; 0.8/1.0 | 3163929441 → 3243816916 / +79887475 | 47738398 → 47752785 / +14387 | 2138 → 2138 / +0 | 9137 → 13171 / +4034 | 176–179 |
+| battery checks | 1; 0.6/1.0 | 3243846499 → 3246864153 / +3017654 | 47752818 → 47757681 / +4863 | 2138 → 2138 / +0 | 13171 → 13616 / +445 | 212–215 |
+| gate | 352; 5.8/7.6 | 118085 → 3246960094 / +3246842009 | 43 → 47757769 / +47757726 | 0 → 2138 / +2138 | 0 → 13637 / +13637 | 250–253 |
+
+**20261112T210954Z.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T210954Z.log`: 2026-11-12T21:09:55Z → 2026-11-12T21:15:25Z; wall 330 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T210954Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery setup | 1; 0.9/1.3 | 390070 → 2676944 / +2286874 | 96226 → 244132 / +147906 | 0 → 0 / +0 | 583 → 825 / +242 | 8–11 |
+| battery fmt | 7; 0.9/1.3 | 2732601 → 10322985 / +7590384 | 253146 → 338228 / +85082 | 0 → 0 / +0 | 825 → 2724 / +1899 | 14–17 |
+| battery clippy | 11; 1.1/1.4 | 10383715 → 38885466 / +28501751 | 338727 → 431840 / +93113 | 0 → 0 / +0 | 2724 → 17875 / +15151 | 54–57 |
+| battery package-tests | 234; 0.9/1.3 | 38924699 → 2987607503 / +2948682804 | 431885 → 34191014 / +33759129 | 0 → 1 / +1 | 17875 → 88887 / +71012 | 102–105 |
+| battery doc | 33; 0.9/1.0 | 2987659827 → 3024564471 / +36904644 | 34191061 → 34209337 / +18276 | 1 → 1 / +0 | 88887 → 92338 / +3451 | 133–136 |
+| battery lint-suite | 41; 0.9/1.3 | 3024613613 → 3152626192 / +128012579 | 34211028 → 35405300 / +1194272 | 1 → 1 / +0 | 92338 → 99343 / +7005 | 179–182 |
+| battery checks | 2; 0.9/1.0 | 3152658809 → 3156241045 / +3582236 | 35405350 → 35410149 / +4799 | 1 → 1 / +0 | 99343 → 99727 / +384 | 215–218 |
+| gate | 330; 6.7/8.9 | 302702 → 3156344438 / +3156041736 | 84754 → 35410306 / +35325552 | 0 → 1 / +1 | 576 → 99727 / +99151 | 257–260 |
+
+**20261112T204629Z.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T204629Z.log`: 2026-11-12T20:46:29Z → 2026-11-12T20:50:22Z; wall 233 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T204629Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery setup | 1; 0.9/1.1 | 186848 → 2302161 / +2115313 | 296 → 16464 / +16168 | 0 → 0 / +0 | 5 → 67 / +62 | 8–11 |
+| battery fmt | 4; 0.8/1.0 | 2342206 → 7320077 / +4977871 | 16492 → 19671 / +3179 | 0 → 0 / +0 | 67 → 105 / +38 | 14–17 |
+| battery clippy | 1; 0.8/1.1 | 7365637 → 10198086 / +2832449 | 19754 → 22829 / +3075 | 0 → 0 / +0 | 105 → 1915 / +1810 | 53–56 |
+| battery package-tests | 200; 0.9/1.1 | 10234592 → 2766425611 / +2756191019 | 22862 → 24300727 / +24277865 | 0 → 0 / +0 | 1915 → 3796 / +1881 | 101–104 |
+| battery doc | 1; 0.8/1.0 | 2766474974 → 2768417034 / +1942060 | 24300768 → 24305026 / +4258 | 0 → 0 / +0 | 3796 → 4282 / +486 | 132–135 |
+| battery lint-suite | 24; 0.8/1.1 | 2768454808 → 2852014625 / +83559817 | 24305051 → 24323171 / +18120 | 0 → 0 / +0 | 4282 → 4421 / +139 | 178–181 |
+| battery checks | 2; 0.7/1.0 | 2852050034 → 2855304791 / +3254757 | 24323218 → 24327225 / +4007 | 0 → 0 / +0 | 4421 → 4773 / +352 | 214–217 |
+| gate | 233; 5.7/7.7 | 122282 → 2855411516 / +2855289234 | 211 → 24327302 / +24327091 | 0 → 0 / +0 | 5 → 4773 / +4768 | 238–241 |
+
+**20261113T070727Z.** `/var/home/tripod/loops/tmp/gate-w20b1-20261113T070727Z.log`: 2026-11-13T07:07:27Z → 2026-11-13T07:15:09Z; wall 462 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261113T070727Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery setup | 1; 0.9/1.1 | 242354 → 2215890 / +1973536 | 223 → 3889 / +3666 | 0 → 0 / +0 | 104 → 167 / +63 | 8–11 |
+| battery fmt | 3; 0.8/1.1 | 2248640 → 7547134 / +5298494 | 4042 → 9262 / +5220 | 0 → 0 / +0 | 167 → 348 / +181 | 14–17 |
+| battery clippy | 13; 0.7/0.9 | 7588566 → 33355026 / +25766460 | 10057 → 28561 / +18504 | 0 → 0 / +0 | 348 → 9723 / +9375 | 54–57 |
+| battery package-tests | 259; 0.8/1.2 | 33387112 → 2922715397 / +2889328285 | 28635 → 29260352 / +29231717 | 0 → 43551 / +43551 | 9723 → 68525 / +58802 | 102–105 |
+| battery doc | 151; 0.8/1.2 | 2922779868 → 3083078876 / +160299008 | 29260446 → 29320412 / +59966 | 43551 → 43551 / +0 | 68525 → 69007 / +482 | 133–136 |
+| battery lint-suite | 33; 0.7/1.1 | 3083115233 → 3192869027 / +109753794 | 29320520 → 29380902 / +60382 | 43551 → 43552 / +1 | 69007 → 76379 / +7372 | 179–182 |
+| battery checks | 2; 0.7/1.0 | 3192901729 → 3196153144 / +3251415 | 29380942 → 29386628 / +5686 | 43552 → 43552 / +0 | 76379 → 77033 / +654 | 215–218 |
+| gate | 462; 5.6/7.7 | 185430 → 3196251438 / +3196066008 | 180 → 29386703 / +29386523 | 0 → 43552 / +43552 | 104 → 77033 / +76929 | 261–264 |
+
+**20261112T130927Z.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T130927Z.log`: 2026-11-12T13:09:27Z → 2026-11-12T13:14:07Z; wall 280 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T130927Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery setup | 0; 0.8/1.1 | 160173 → 2073686 / +1913513 | 137 → 4416 / +4279 | 0 → 0 / +0 | 0 → 89 / +89 | 8–11 |
+| battery fmt | 4; 0.8/1.1 | 2113698 → 7318968 / +5205270 | 4461 → 8409 / +3948 | 0 → 0 / +0 | 89 → 130 / +41 | 14–17 |
+| battery clippy | 7; 0.8/1.1 | 7363159 → 24527104 / +17163945 | 8453 → 15390 / +6937 | 0 → 0 / +0 | 130 → 16527 / +16397 | 53–56 |
+| battery package-tests | 208; 0.8/1.0 | 24568401 → 2582582383 / +2558013982 | 15435 → 20479019 / +20463584 | 0 → 58377 / +58377 | 16527 → 91251 / +74724 | 97–100 |
+| battery doc | 29; 0.9/1.0 | 2582640179 → 2615308087 / +32667908 | 20479076 → 20502509 / +23433 | 58377 → 58377 / +0 | 91251 → 91927 / +676 | 128–131 |
+| battery lint-suite | 30; 0.8/1.1 | 2615351689 → 2721236590 / +105884901 | 20502541 → 20528090 / +25549 | 58377 → 58377 / +0 | 91927 → 104745 / +12818 | 174–177 |
+| battery checks | 1; 0.9/1.0 | 2721270303 → 2724667918 / +3397615 | 20528151 → 20532426 / +4275 | 58377 → 58377 / +0 | 104745 → 105153 / +408 | 210–213 |
+| gate | 280; 6.0/7.5 | 118041 → 2724761517 / +2724643476 | 94 → 20532511 / +20532417 | 0 → 58377 / +58377 | 0 → 105153 / +105153 | 238–241 |
+
+**20261112T154042Z.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T154042Z.log`: 2026-11-12T15:40:42Z → 2026-11-12T15:44:29Z; wall 227 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T154042Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery setup | 1; 0.8/1.0 | 164217 → 2008398 / +1844181 | 78 → 2833 / +2755 | 0 → 0 / +0 | 87 → 165 / +78 | 8–11 |
+| battery fmt | 3; 0.9/1.0 | 2044772 → 7217671 / +5172899 | 2864 → 7620 / +4756 | 0 → 0 / +0 | 165 → 429 / +264 | 14–17 |
+| battery clippy | 1; 0.8/1.0 | 7259992 → 9437681 / +2177689 | 7692 → 10441 / +2749 | 0 → 0 / +0 | 429 → 796 / +367 | 52–55 |
+| battery package-tests | 195; 0.9/1.1 | 9473182 → 2704226980 / +2694753798 | 10474 → 25659920 / +25649446 | 0 → 89967 / +89967 | 796 → 15027 / +14231 | 96–99 |
+| battery doc | 0; 0.9/1.1 | 2704275719 → 2706360910 / +2085191 | 25659993 → 25663725 / +3732 | 89967 → 89967 / +0 | 15027 → 15122 / +95 | 127–130 |
+| battery lint-suite | 24; 0.9/1.0 | 2706398132 → 2793986659 / +87588527 | 25663769 → 25689653 / +25884 | 89967 → 89968 / +1 | 15122 → 15760 / +638 | 173–176 |
+| battery checks | 2; 0.9/1.0 | 2794016792 → 2797524057 / +3507265 | 25689980 → 25694572 / +4592 | 89968 → 89968 / +0 | 15760 → 15883 / +123 | 209–212 |
+| gate | 227; 6.2/7.4 | 120895 → 2797630642 / +2797509747 | 41 → 25694743 / +25694702 | 0 → 89968 / +89968 | 87 → 15883 / +15796 | 245–248 |
+
+**20261112T174649Z.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T174649Z.log`: 2026-11-12T17:46:49Z → 2026-11-12T17:50:37Z; wall 228 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T174649Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery setup | 1; 0.9/1.0 | 162987 → 2140740 / +1977753 | 101 → 2840 / +2739 | 0 → 0 / +0 | 0 → 73 / +73 | 8–11 |
+| battery fmt | 3; 0.9/1.0 | 2175445 → 7202378 / +5026933 | 2892 → 5382 / +2490 | 0 → 0 / +0 | 73 → 102 / +29 | 14–17 |
+| battery clippy | 2; 0.9/1.0 | 7246560 → 10009379 / +2762819 | 5426 → 8504 / +3078 | 0 → 0 / +0 | 102 → 1151 / +1049 | 53–56 |
+| battery package-tests | 193; 1.1/1.1 | 10056485 → 2719458413 / +2709401928 | 8607 → 23457633 / +23449026 | 0 → 106477 / +106477 | 1151 → 15022 / +13871 | 98–101 |
+| battery doc | 0; 0.8/1.0 | 2719513377 → 2721537276 / +2023899 | 23457694 → 23461308 / +3614 | 106477 → 106477 / +0 | 15022 → 15462 / +440 | 129–132 |
+| battery lint-suite | 26; 0.8/1.1 | 2721571676 → 2814070252 / +92498576 | 23461392 → 23477006 / +15614 | 106477 → 106477 / +0 | 15462 → 24677 / +9215 | 175–178 |
+| battery checks | 2; 0.8/1.1 | 2814098767 → 2817632285 / +3533518 | 23477290 → 23481551 / +4261 | 106477 → 106477 / +0 | 24677 → 26227 / +1550 | 211–214 |
+| gate | 228; 6.4/7.4 | 117250 → 2817738879 / +2817621629 | 54 → 23481702 / +23481648 | 0 → 106477 / +106477 | 0 → 26345 / +26345 | 247–250 |
+
+**20261112T200504Z.** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T200504Z.log`: 2026-11-12T20:05:04Z → 2026-11-12T20:12:41Z; wall 457 s; queue 0 s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T200504Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery setup | 0; 0.9/1.1 | 185476 → 2244047 / +2058571 | 120 → 5615 / +5495 | 0 → 0 / +0 | 241 → 325 / +84 | 8–11 |
+| battery fmt | 4; 0.9/1.1 | 2281027 → 7758344 / +5477317 | 6115 → 10586 / +4471 | 0 → 0 / +0 | 325 → 357 / +32 | 14–17 |
+| battery clippy | 3; 0.9/1.2 | 7795579 → 11547836 / +3752257 | 10659 → 18267 / +7608 | 0 → 0 / +0 | 357 → 564 / +207 | 53–56 |
+| battery package-tests | 417; 1.4/1.6 | 11600858 → 3428800713 / +3417199855 | 18409 → 48759428 / +48741019 | 0 → 200694 / +200694 | 564 → 27163 / +26599 | 99–102 |
+| battery doc | 1; 1.3/1.5 | 3428888020 → 3431878056 / +2990036 | 48759510 → 48767693 / +8183 | 200694 → 200694 / +0 | 27173 → 30246 / +3073 | 130–133 |
+| battery lint-suite | 30; 1.1/1.4 | 3431924819 → 3540961636 / +109036817 | 48767819 → 48803539 / +35720 | 200694 → 200694 / +0 | 30246 → 45449 / +15203 | 176–179 |
+| battery checks | 2; 0.9/1.1 | 3540998312 → 3544934794 / +3936482 | 48803594 → 48809017 / +5423 | 200694 → 200694 / +0 | 45449 → 45725 / +276 | 212–215 |
+| gate | 457; 7.6/9.3 | 138001 → 3545053056 / +3544915055 | 70 → 48809207 / +48809137 | 0 → 200694 / +200694 | 241 → 45931 / +45690 | 250–253 |
+
+**b15close-doc-20261112T205220Z.** `/var/home/tripod/loops/tmp/gate-w20b1-b15close-doc-20261112T205220Z.log`: 2026-11-12T20:52:54Z → 2026-11-12T20:52:57Z; wall 3 s; queue not logged / no lane queue s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T205254Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery document-setup | 1; 0.2/0.3 | 139142 → 1249487 / +1110345 | 988 → 2005 / +1017 | 0 → 0 / +0 | 0 → 376 / +376 | 20–23 |
+| battery doc-checks | 2; 0.2/0.2 | 1287641 → 3427294 / +2139653 | 2029 → 3640 / +1611 | 0 → 0 / +0 | 376 → 5801 / +5425 | 66–69 |
+| gate | 3; 0.4/0.6 | 114039 → 3499893 / +3385854 | 35 → 3710 / +3675 | 0 → 0 / +0 | 0 → 5801 / +5801 | 76–79 |
+
+**b15widebound-doc-20261112T211848Z.** `/var/home/tripod/loops/tmp/gate-w20b1-b15widebound-doc-20261112T211848Z.log`: 2026-11-12T21:19:17Z → 2026-11-12T21:19:20Z; wall 3 s; queue not logged / no lane queue s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T211916Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery document-setup | 1; 0.1/0.3 | 187574 → 1394157 / +1206583 | 1170 → 2234 / +1064 | 0 → 0 / +0 | 363 → 476 / +113 | 20–23 |
+| battery doc-checks | 2; 0.2/0.2 | 1430414 → 3904730 / +2474316 | 2326 → 4016 / +1690 | 0 → 0 / +0 | 476 → 2315 / +1839 | 66–69 |
+| gate | 3; 0.3/0.6 | 161396 → 3970993 / +3809597 | 577 → 4142 / +3565 | 0 → 0 / +0 | 363 → 2315 / +1952 | 76–79 |
+
+**b15protoflake2-doc-20261113T074050Z.** `/var/home/tripod/loops/tmp/gate-w20b1-b15protoflake2-doc-20261113T074050Z.log`: 2026-11-13T07:41:20Z → 2026-11-13T07:41:23Z; wall 3 s; queue not logged / no lane queue s; green; exit 0. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261113T074120Z.service`.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery document-setup | 1; 0.2/0.3 | 267449 → 1674073 / +1406624 | 275 → 1631 / +1356 | 0 → 0 / +0 | 53 → 215 / +162 | 20–23 |
+| battery doc-checks | 2; 0.2/0.3 | 1715243 → 4349509 / +2634266 | 1676 → 4466 / +2790 | 0 → 0 / +0 | 215 → 1641 / +1426 | 66–69 |
+| gate | 3; 0.4/0.7 | 237898 → 4439711 / +4201813 | 245 → 12334 / +12089 | 0 → 0 / +0 | 53 → 1641 / +1588 | 76–79 |
+
+
+**Correction verification** · `rec:w1b15:gate-review-verification`
+
+The correction fast checks passed in 103 and 68 seconds, the latter on the full-gated correction snapshot. G uses the exact full ten-package command recorded at (`rec:w1b15:gate-run`), including lint and plans. Its foreground SSH waited on the runner's own transient unit through `== green` and exit 0 (transport wall 392.823 seconds); no round was abandoned. The runner begins `#!/bin/bash`, its explanatory comment, then `set -o pipefail`. The subsequent documents confirmation compares only the verification-record amendment against that retained full-gated snapshot, not against a moving base.
+
+The compiler and architecture successful journals are retained at `/var/home/tripod/loops/tmp/w20b1-b15closefix/compiler.json` and `architecture.json`, alongside the vectors library and history journals. They retain the preservation tests and the canonical publication comparison. The five changed files contain records, rustdoc and a timeout-rule comment only; both guards and every executable statement, pin, vector, archive and keyed byte are unchanged. No host build, native execution or deployment observation ran. This verification covers the corrected packet. Finding 3 is closed by the orchestrator role with the first-run timing gap explicitly retained: both later gates of record supply complete loaded samples, and the first contributes its history pass only. No measurement is inferred for an unavailable journal.
+
+
+**G.** `/var/home/tripod/loops/tmp/gate-w20b1-20261113T082136Z.log`: 2026-11-13T08:21:36Z → 2026-11-13T08:28:08Z, wall 392 seconds, exit 0, `== green`. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261113T082136Z.service` (own transient gate cgroup, containers included). Queue 0 seconds.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery setup | 1; 0.9/1.1 | 366505 → 2409929 / +2043424 | 355 → 3742 / +3387 | 0 → 0 / +0 | 459 → 526 / +67 | 8–11 |
+| battery fmt | 4; 0.9/1.1 | 2445768 → 7875111 / +5429343 | 3797 → 6851 / +3054 | 0 → 0 / +0 | 526 → 664 / +138 | 14–17 |
+| battery clippy | 9; 0.8/1.1 | 7910380 → 33412243 / +25501863 | 7012 → 24695 / +17683 | 0 → 0 / +0 | 664 → 12692 / +12028 | 54–57 |
+| battery package-tests | 301; 1.1/1.2 | 33441693 → 3043711014 / +3010269321 | 24746 → 26785229 / +26760483 | 0 → 149444 / +149444 | 12692 → 1540977 / +1528285 | 102–105 |
+| battery doc | 43; 0.8/1.1 | 3043775404 → 3089434398 / +45658994 | 26785414 → 27477349 / +691935 | 149444 → 149444 / +0 | 1540977 → 1621836 / +80859 | 133–136 |
+| battery lint-suite | 32; 0.9/1.2 | 3089461346 → 3207581054 / +118119708 | 27478980 → 27633260 / +154280 | 149444 → 149444 / +0 | 1621836 → 1654180 / +32344 | 179–182 |
+| battery checks | 2; 0.9/1.1 | 3207615975 → 3211140089 / +3524114 | 27633338 → 27640599 / +7261 | 149444 → 149444 / +0 | 1654180 → 1655214 / +1034 | 215–218 |
+| gate | 392; 6.4/7.9 | 304893 → 3211254332 / +3210949439 | 288 → 27640800 / +27640512 | 0 → 149444 / +149444 | 459 → 1655214 / +1654755 | 261–264 |
+
+
+**D.** `/var/home/tripod/loops/tmp/gate-w20b1-b15closefix-doc-20261113T082920Z.log`: 2026-11-13T08:29:22Z → 2026-11-13T08:29:28Z, wall 6 seconds, exit 0, `== green`. Scope `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261113T082922Z.service` (own transient gate cgroup, containers included). Queue not logged; documents runner has no lane queue.
+
+| Battery | Wall s; process user/system s | Cgroup CPU usage μs start → end / delta | CPU-some pressure μs start → end / delta | Memory-some pressure μs start → end / delta | I/O-some pressure μs start → end / delta | Log lines |
+|---|---|---|---|---|---|---|
+| battery document-setup | 2; 0.2/0.4 | 406442 → 2725807 / +2319365 | 39622 → 141582 / +101960 | 0 → 0 / +0 | 822 → 1179 / +357 | 20–23 |
+| battery doc-checks | 3; 0.2/0.3 | 2785618 → 6034583 / +3248965 | 146082 → 214770 / +68688 | 0 → 0 / +0 | 1179 → 3312 / +2133 | 66–69 |
+| gate | 6; 0.5/0.8 | 363327 → 6097369 / +5734042 | 26979 → 214818 / +187839 | 0 → 0 / +0 | 822 → 3312 / +2490 | 76–79 |
