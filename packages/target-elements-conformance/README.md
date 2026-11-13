@@ -482,7 +482,7 @@ and `is_empty`.
 
 ### `provenance` — what the operator meant to run
 
-The native adapter's implementation version is 2.1.1; its wire protocol remains revision 8. `scripts/elements-native-executor.py` sends every RPC argument through `elements-cli -stdin`, one UTF-8 argument per line, instead of placing transaction hex on argv. Method and routing options remain on argv. Empty arguments and trailing spaces are preserved; a literal line feed is refused before launching the client because it would split an argument (JSON-escaped line feeds remain ordinary bytes). There is no size-dependent transport branch. The existing request/response limits, timeout/retry rules, diagnostic quarantine and policy settings are unchanged. `scripts/test-executor-boundaries.py` exercises the production call path with a node-free stand-in client, including a 512 KiB argument. Exact adapter-source pins and the emitted request-comparison fixture are maintained separately in `packages/vectors/src/maturity_adapter.rs`, `scripts/test-executor-request-comparisons.py` and the backlog's adapter-comparison record; historical native archives retain their original adapter identities.
+The native adapter's implementation version is 2.1.2; its live wire protocol is revision 9. `scripts/elements-native-executor.py` sends every RPC argument through `elements-cli -stdin`, one UTF-8 argument per line, instead of placing transaction hex on argv. Method and routing options remain on argv. Empty arguments and trailing spaces are preserved; a literal line feed is refused before launching the client because it would split an argument (JSON-escaped line feeds remain ordinary bytes). There is no size-dependent transport branch. The existing request/response limits, timeout/retry rules, diagnostic quarantine and policy settings are unchanged. `scripts/test-executor-boundaries.py` exercises the production call path with a node-free stand-in client, including a 512 KiB argument. Exact adapter-source pins and the emitted request-comparison fixture are maintained separately in `packages/vectors/src/maturity_adapter.rs`, `scripts/test-executor-request-comparisons.py` and the backlog's adapter-comparison record; historical native archives retain their original adapter identities.
 
 ```text
 MINIMUM_REVISION_PREFIX_WIDTH: usize = 7
@@ -838,11 +838,11 @@ green.
   executor is configured, and its absence is recorded as incomplete evidence
   rather than as a pass.
 
-Operation replay distinguishes the recorded grammar from the live handshake.
-`OperationRevision` is the closed set of revision-eight and revision-nine
-operation shapes. Revision eight forbids an explicit sponsor funding readback;
-revision nine requires it on acceptance. `validate_shape` selects by the response's
-recorded revision and refuses unknown revisions. The transport still requires
-`NATIVE_PROTOCOL_SCHEMA` exactly at the live handshake and on live responses.
-An archive's bytes and adapter identity remain historical evidence; replay does
-not upgrade either to today's protocol.
+Operation replay distinguishes the recorded grammar from the live handshake. `OperationRevision` is the closed set of revision-eight and revision-nine operation shapes. Revision eight forbids an explicit sponsor funding readback; revision nine requires it on acceptance. `validate_shape` selects by the response's recorded revision and refuses unknown revisions. The transport still requires `NATIVE_PROTOCOL_SCHEMA` exactly at the live handshake and on live responses. An archive's bytes and adapter identity remain historical evidence; replay does not upgrade either to today's protocol.
+
+Revision nine's accepted explicit sponsor-funding response includes a required `MinedFundingReadback`. Before offering it to a planner, the transport uses `bind_sponsor_parent` to check the pinned Elements decoder's canonical round trip, recomputed txid and wtxid, funded outpoint and selected explicit asset, amount and script. Non-explicit assets and values refuse as `NonExplicitAsset` and `NonExplicitValue`; explicit disagreements remain `Asset` and `Amount`. Each mismatch has its own `SponsorParentRefusal`, retained inside the protocol shape refusal. Raw parent bytes are limited to 512 KiB; the enclosing response remains under the existing 4 MiB record bound. These are local checks, not inclusion, unspentness or finality. Transaction's independent parent-binding entry still checks the bytes when construction consumes them.
+
+The current adapter comparison is rendered into `packages/vectors/fixtures/adapter-request-comparisons/CURRENT-REVISION-9` by `scripts/test-executor-request-comparisons.py --emit` on the gate node. The older `COMPARISONS` file and `maturity_adapter` admission retain their revision-eight source digest and outcomes. Current source drift is checked against the new rendered pin; it is never repaired by rewriting historical evidence.
+
+
+The pinned decoder rejects a witness flag with only empty witnesses as `Decode`; `NonCanonical` remains a defensive round-trip guard. A witness-bearing control separates txid from wtxid. Parent binding uses the pinned Elements decoder and can accept an issuance/peg-in parent that transaction construction refuses under its narrower envelope; the bridge pins that refusal at construction, not funding. The node-free adapter stand-in checks that readback bytes come from `getrawtransaction` for the mined block, and checks the byte bound both before mining and on returned bytes. It proves the adapter seam, not native inclusion.

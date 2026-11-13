@@ -182,6 +182,7 @@ vectors_fixture_files = files(
   'fixtures/keyed-funding-run-of-record/RUN-REPORT',
   'fixtures/keyed-funding-run-of-record/MANIFEST.sha256',
   'fixtures/adapter-request-comparisons/COMPARISONS',
+  'fixtures/adapter-request-comparisons/CURRENT-REVISION-9',
   'fixtures/closure-compact-live.golden',
   'fixtures/historical-candidate-0.7.15-dev-operator-successor.leaves',
   'fixtures/compact-run-of-record/4cbb74eb49e745d262f5e5087ea544e3c63317988efc616e280bb4d350f7dee0.report.capture',

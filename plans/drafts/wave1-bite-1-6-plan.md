@@ -303,3 +303,238 @@ part-one commit; the live revision remains eight at that boundary. The library
 run's unchanged archive admissions and byte pins are evidence of historical
 preservation, not new native observations. No archive, fixture or production
 package was edited in this unit.
+
+### Current funding protocol · `sec:w1b16:bridge-protocol`
+
+The live protocol moves from eight to nine, with adapter version 2.1.2. An
+accepted `FundSponsor` response must carry the existing `MinedFundingReadback`;
+a refusal carries no success readback. The executable obtains the canonical
+mined parent in the same funding session. `bind_sponsor_parent` checks raw size,
+canonical decoding, stripped and witness identities, the funded outpoint and
+its actual explicit asset, value and script, in that order. These are local
+checks of public data, not inclusion, unspentness or finality. The consumer's
+transaction request independently decodes and binds the same bytes.
+
+`SponsorParentRefusal` preserves separate Size, Decode, NonCanonical,
+ReadbackIdentity, WitnessIdentity, OutpointIdentity, OutputIndex, Asset, Amount
+and Script conditions inside the transport's response-shape error. The mock
+transport and direct binding tests place each reachable condition beside the
+accepted response. Nonminimal CompactSize refuses during decoding;
+NonCanonical is a defensive round-trip guard, not a claimed public defect.
+The 512-KiB raw bound leaves room for worst-case JSON array expansion inside
+the existing 4-MiB response bound; a source control joins the Rust and Python
+bounds. The public binding span emits one completion or refusal event, with
+its own exact-child capture control.
+
+Current-identity pins move through the existing request-comparison renderer:
+`scripts/test-executor-request-comparisons.py --emit` produces
+`packages/vectors/fixtures/adapter-request-comparisons/CURRENT-REVISION-9`.
+Its five rows carry protocol nine and the current adapter-source digest.
+The old `COMPARISONS` file and its recorded source digest in
+`maturity_adapter.rs` remain unchanged and admitted under their original
+identity. The new current-source check reads the rendered rows; it does not
+reinterpret the old archive. Existing historical synthetic operation replies
+and their journal requests are explicitly revision eight, so changing the
+live constant cannot change their serialized bytes. Previous-revision live
+handshakes still refuse before a subject is sent.
+
+### Ordinary-edge signing boundary · `sec:w1b16:bridge-signing-boundary`
+
+The bridge's ordinary-edge history exposes a further executor authority choice.
+The unchanged history fixture's event 20 spends event 10's ordinary change at
+output one as its sponsor. Public construction can bind and authorize this
+input with the fixture capability. The executor's `OperationExecutor.sign_sponsor`
+accepts only outpoints in `sponsor_coins`: funding operations populate that map,
+but neither `submit` nor `submit_maturity` registers a submitted transaction's
+change. Consequently a fresh-chain SOURCE change, even with the executor's own
+P2WPKH program, refuses before signing with “this adapter did not create the coin
+it was asked to authorize a spend of”. Readback alone does not change this rule.
+
+The node-free probe retained at `.b16bridge3/ordinary-edge-probe.log` isolates
+that condition with a parser stub: an unregistered output-one outpoint refuses;
+the identical outpoint, when registered, reaches the next value/signing stage.
+It ran with a 40-second timeout, exit zero, one-second command wall and
+0.148343-second probe wall. It proves the registry boundary only, not parsing,
+cryptographic verification or native acceptance. Source inspection confirms
+that successful submission does not update the registry. No native process ran.
+
+The bridge is withheld at this choice rather than substituting a fresh funded
+coin for the ordinary edge or claiming the mock's broader signing authority is
+implemented by the real executor. Recommendation: after an accepted submission
+and canonical readback, register only its outputs whose program exactly equals
+the executor's own sponsor program, retaining the actual value field and asset.
+A control must accept that change and refuse another program and an unconfirmed
+or mismatched readback. This is a conformance signing-authority extension,
+separate from the funding-readback revision; it needs an explicit disposition.
+No production package, pinned source beyond the replay re-freeze, or existing
+fixture is changed to bypass it. Final subject digests, capture provenance and
+the native capture table remain pending with the bridge.
+
+### Historical admission controls · `tab:w1b16:bridge-archives`
+
+The following unchanged admissions remain the comparison for the revision
+change. Each file is under `packages/vectors/src`; their old fixtures and
+manifests are unchanged. Passing these controls means identical recorded
+admission and refusal outcomes, not another execution of their subjects.
+
+| Existing archive | Named control and file |
+|---|---|
+| Keyed birth | `run_of_record_admits_exact_four_subjects`, `keyed_birth_corpus.rs` |
+| Keyed continuation | `run_of_record_admits_exact_four_subjects`, `keyed_continuation_corpus.rs` |
+| Keyed funding | `run_of_record_admits_exact_subjects_and_boundaries`, `keyed_funding_corpus.rs` |
+| Keyed cost | `run_of_record_admits_policy_and_two_mined_controls`, `keyed_cost_corpus.rs` |
+| Keyed scaling | Existing corpus admission and `archived_funding_selects_only_its_recorded_shape`, `keyed_scaling_corpus.rs` |
+| Compact first and second | `current_archive_replays_sixteen_rows_after_their_paired_controls`, `second_archive_replays_eleven_rows_after_their_paired_controls`, `compact_corpus.rs` |
+| Maturity historical and variable | `historical_pins_and_public_admission_equal_the_record_loader`, `variable_archive_admits_established_identity_and_exact_mined_readback`, `maturity_corpus.rs` |
+| Maturity native observation | `native_observation_admission_binds_bytes_policy_census_and_replay`, `maturity_corpus.rs` |
+| Maturity retained | `retained_whole_metadata_replays_all_three_archived_requests_exactly`, `maturity_corpus.rs` |
+| Maturity diagnostic | `diagnostic_admission_binds_the_whole_archive_and_recordings`, `maturity_corpus.rs` |
+| Maturity confidential | `confidential_archive_pins_refuse_changed_files` and the unchanged confidential run-of-record loader, `maturity_corpus.rs` |
+| Maturity sponsored | Unchanged sponsored run-of-record loader and recorded fee/reason assertions, `maturity_corpus.rs` |
+| Maturity predecessor/successor mutants | `both_mutant_runs_admit_through_their_pins`, `maturity_corpus.rs` |
+| Maturity observer | `observer_archive_replays_reports_and_preserves_each_boundary`, `maturity_corpus.rs` |
+| Adapter request comparisons | Unchanged `COMPARISONS` admission, `maturity_adapter.rs`; the new current-source row is a separate renderer product. |
+
+The import-side closing history was read from the retained logs. The
+`0.7.124-dev` gate of record ran 2026-11-13T08:38:30Z–09:14:09Z, wall 2,139
+seconds, queue zero, `== record RED`, chain exit 1. Its failing
+`another_deployment_cannot_admit_the_scripted_transcript` encountered OS error
+17 (`AlreadyExists`) in the old test-directory helper; the repair is recorded
+at (`rec:w1b16:test-directory`). The first green gate of record containing the
+bite-1.5 closing is `0.7.126-dev`: 2026-11-13T09:48:06Z–10:05:16Z, wall 1,030
+seconds, queue 300 seconds, `== record green`, chain exit 0. Logs and retained
+journals are under `/var/home/tripod/loops/evidence/wave1/record-0.7.124-dev/`
+and `/var/home/tripod/loops/evidence/wave1/record-0.7.126-dev/`; the latter
+`cargo-test-json.tar.gz` retains 158 files and 602,437 bytes. This is an
+import-side gate fact, not a native capture by this step.
+
+Part-two preliminary checks are retained under `.b16bridge3/`. Fast checks
+8–11 reported local compile/lint/format findings (35, 281, 395 and 338 seconds);
+formatter patches were applied mechanically, except one stale patch which
+failed `git apply --check` and was replaced by the next formatter output.
+The first library run passed 626 conformance controls and failed nine live
+signing controls because their shared helper had inherited historical revision
+eight. The live helper now explicitly names the current revision. The second
+run passed all 635 conformance controls in 11.05 seconds, then found the old
+adapter-version refusal: a permissive version list had admitted 2.1.2 under
+revision eight. The binding now admits only the reviewed pairs (8, 2.1.0/2.1.1)
+and (9, 2.1.2), preserving that original refusal and adding the new accepted
+pair. Neither correction changes an archive or its expected outcome.
+
+The second library round also found eleven prototype planner controls whose
+synthetic output-only sponsor replies followed the live constant. Those
+non-transport transcripts now explicitly retain revision eight, preserving
+their old bytes and shape. That round ended with 1,307 vectors controls passing
+and 12 failing, in 157.12 seconds; no archive admission failed.
+
+The confidential route's historical synthetic exchanges remain revision eight.
+Its current transport control builds a separate revision-nine mock sequence:
+explicit sponsor funding has a canonical synthetic parent, and subsequent
+requests derive their outpoints from that parent's content address. The old
+exchanges and their expectations are not rewritten. The transport still checks
+exact reproduction of the new sequence; the retained replay separately checks
+the old one. Both remain mock evidence, never a chain or signature assertion.
+
+The first full gate was red: `/var/home/tripod/loops/tmp/gate-w20b1-20261113T123549Z.log`,
+2026-11-13T12:35:49Z–12:46:38Z, wall 649 seconds, queue zero, exit 1.
+Ten current-transport mock controls in four integration binaries still emitted
+literal revision eight. Their wire copies now use nine; historical synthetic
+transcripts remain eight. The capture writer checks current identity before
+projecting only the two revision fields and enclosing content digest onto its
+unchanged historical golden. The gate also found missing hash-citation census
+rows for the new renderer product and re-freeze identities, and the command
+omitted the three authorized executor scripts from its extra-path list. These
+are corrected explicitly, not treated as a passing gate. Retained failing
+journals are under `/var/home/tripod/loops/tmp/w20b1-b16bridge3/red1-*.json`.
+Fast check 16 took 295 seconds and found the expanded writer test exceeded the
+line limit; its compatibility projection is now a separate helper. The focused
+four-binary round `.b16bridge3/focused.log` passed in 163 seconds, exit 0.
+
+
+### Partial-step verification · `rec:w1b16:bridge-verification`
+
+Parts one and two passed the full ten-package landing gate with lint and plans:
+`/var/home/tripod/loops/tmp/gate-w20b1-20261113T130010Z.log`,
+2026-11-13T13:00:10Z–13:14:20Z, wall 850 seconds, slot wait zero,
+`== green`, exit 0. The command was
+`bash ~/loops/tmp/w20-code-gate.sh w20b1 architecture,realization,compiler,model,target-elements,tapscript,linker,transaction,target-elements-conformance,vectors plans/drafts/wave1-bite-1-6-plan.md plans/packages/vectors.md scripts/elements-native-executor.py scripts/test-executor-boundaries.py scripts/test-executor-request-comparisons.py lint/hash-citation-families.tsv`.
+The runner entered its own transient systemd cgroup; foreground SSH and
+`systemd-run --wait --pipe` stayed attached until its terminal marker. No
+capture or native ignored target ran. Fast check 17 passed in 67 seconds,
+including formatting, Clippy and rustdoc.
+
+| Battery | Wall s | Exit | CPU delta µs | CPU pressure some/full µs | Memory pressure some/full µs | IO pressure some/full µs |
+|---|---:|---:|---:|---|---|---|
+| setup | 1 | 0 | 2178438 | 5333/3337 | 0/0 | 172/171 |
+| fmt | 4 | 0 | 6001271 | 6814/5196 | 0/0 | 17849/17850 |
+| clippy | 33 | 0 | 72793091 | 21073/11045 | 0/0 | 12140/11956 |
+| package-tests | 545 | 0 | 4060234635 | 103956327/53569717 | 463390/231981 | 50721/31572 |
+| doc | 215 | 0 | 242822675 | 991178/980848 | 693220/693220 | 45452/44386 |
+| lint-suite | 50 | 0 | 145422117 | 55874/31095 | 1/0 | 18929/16163 |
+| checks | 2 | 0 | 3460319 | 4372/3743 | 0/0 | 981/978 |
+
+These are gate-cgroup deltas, not native-subject costs. Journals copied before
+reuse are under `/var/home/tripod/loops/tmp/w20b1-b16bridge3/covering-*.json`.
+The new transport binding battery took 0.134463 seconds, the direct parent-fact
+control 0.032207 seconds, and its bounded trace child parent 0.010640 seconds.
+The existing freeze family passed in 7.635306 seconds; this journal retains its
+family wall, not individual successful child streams. The earlier isolated
+freeze figures above remain separately identified measurements.
+
+The expanded existing confidential current-transport integration control took
+121.276325 seconds under this covering load. This is above the brief's
+10-second split-or-report threshold and is reported here, without widening any
+guard or presenting it as a bounded new bridge subject. It remains a composite
+legacy integration control; part three's new bounded subject family has not
+been implemented. The distinct ordinary-edge signing-authority question in
+(`sec:w1b16:bridge-signing-boundary`) still withholds that part. This green gate does not
+resolve that question or claim a completed bridge.
+
+The preservation comparison against the starting tree has no changes under
+compiler, architecture, transaction, tapscript or linker, and no modification
+to an existing file under the vectors fixture tree. Only the new
+`CURRENT-REVISION-9` renderer product is added there. The keyed reproduction
+and history fixture sources are exact. The gate passed
+`preserve_engine_base` (91.175843 seconds),
+`attestation_canonical_bytes_and_publication_equal_the_opening_base`
+(0.042571 seconds), all historical admissions in
+(`tab:w1b16:bridge-archives`), and all 35 freeze pins. Only the scaling replay pin
+is re-frozen as listed in (`tab:w1b16:bridge-refreeze`).
+
+The first documents confirmation refused three references written in the label
+minting form instead of citation form. Its log is
+`/var/home/tripod/loops/tmp/gate-w20b1-20261113T131547Z.log`, wall 4 seconds,
+exit 1, `== RED`. Only citation syntax was corrected; the full-gated source
+snapshot and its results are unchanged.
+
+### Confidential integration cost repair · `rec:w1b16:bridge-confidential-cost`
+
+The pre-change `0.7.126-dev` gate records 163.9 seconds for
+`confidential_agreement_requires_control_and_subject_readback` under whole-suite
+load; the expanded protocol gate recorded 121.276325 seconds. These are loaded
+samples, not a measured regression between identical loads. The isolated
+expanded control took 34.33 seconds: fixture 31.348427, replay 0.884231,
+current-wire fixture 0.958710, transport 1.139311 and admission below one
+microsecond. Logs are retained in `.b16bridge4/measure.log` and
+`.b16bridge3/record-126.log`.
+
+The first fixture construction admitted three entire archives merely to borrow
+public response, sponsor and policy operands. Their admission, including the
+137-operation native corpus, is already independently tested in the vectors
+library. Test-local extraction now reads exactly those operands from the
+unchanged archived bytes, without giving them admitted standing. No comparison
+or archive admission test is removed. A fingerprint captured before the repair
+pins all fourteen historical fixture exchanges byte for byte, including their
+requests. The current wire comparison and all its assertions remain.
+
+The repaired isolated run passed in 4.02 seconds, exit zero: fixture 1.395103,
+replay 0.813485, current-wire fixture 0.870437, transport 0.929489 seconds;
+admission below one microsecond. The parent enforces exactly one ignored child
+under a 40-second timeout and prints its wall and phase lines. No bound was
+widened. The first extraction attempt omitted the sponsored archive's distinct
+`exchange` form and refused at the missing sponsor program; it was corrected,
+not accepted as an empty fixture. The initial fast check rejected stderr phase
+prints; the retained timings use stdout, with the exception documented in the
+vectors tracing contract. Logs are `.b16bridge4/fingerprint.log`,
+`.b16bridge4/repaired.log`, `.b16bridge4/repaired2.log` and
+`.b16bridge4/check1.log`. These are offline fixture costs, never native costs.

@@ -4,6 +4,7 @@ pub mod common;
 use linker::CandidateDeploymentIdentity;
 use serde_json::{Value, json};
 use std::fmt::Write as _;
+use std::io::Write as _;
 use std::path::Path;
 use std::sync::OnceLock;
 use target_elements_conformance::executor::{
@@ -213,23 +214,85 @@ fn the_confidential_maturity_route_runs_against_a_real_target() {
     assert!(plan.eligible(), "accepted-control boundary");
 }
 
-fn policy() -> Value {
-    vectors::maturity_corpus::maturity_native_run_of_record()
-        .expect("archive")
-        .evidence
-        .policy()
-        .expect("policy")
+// These are fixture operands, not admitted evidence. Full archive admission is
+// covered in the vectors library; repeating its 137-operation replay merely to
+// obtain a policy reading made this integration control pay that cost again.
+fn fixture_field(line: &str, tag: &str) -> Vec<u8> {
+    let rest = line.strip_prefix(tag).expect("fixture tag").trim_start();
+    let (length, hex) = rest.split_once(' ').expect("fixture field");
+    let bytes = hex
+        .as_bytes()
+        .as_chunks::<2>()
         .0
+        .iter()
+        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).expect("hex"), 16).expect("hex"))
+        .collect::<Vec<_>>();
+    assert_eq!(bytes.len(), length.parse::<usize>().expect("length"));
+    bytes
+}
+fn fixture_responses(capture: &str) -> Vec<NativeOperationResponse> {
+    let line = capture
+        .lines()
+        .find(|line| line.starts_with("legacy-rendering "))
+        .expect("payload");
+    let payload = fixture_field(line, "legacy-rendering");
+    std::str::from_utf8(&payload)
+        .expect("payload text")
+        .lines()
+        .filter(|line| line.starts_with("validated-response ") || line.starts_with("exchange "))
+        .map(|line| {
+            if line.starts_with("exchange ") {
+                let (_, _, response): (OperationCaseId, OperationSubject, NativeOperationResponse) =
+                    serde_json::from_slice(&fixture_field(line, "exchange"))
+                        .expect("fixture exchange");
+                response
+            } else {
+                NativeOperationResponse::from_recorded_json(&fixture_field(
+                    line,
+                    "validated-response",
+                ))
+                .expect("fixture response")
+            }
+        })
+        .collect()
+}
+fn response_seed() -> &'static NativeOperationResponse {
+    static SEED: OnceLock<NativeOperationResponse> = OnceLock::new();
+    SEED.get_or_init(|| {
+        fixture_responses(include_str!(
+            "../fixtures/maturity-variable-run-of-record/cae3bd7c.report.capture"
+        ))
+        .remove(0)
+    })
+}
+fn sponsor_seeds() -> &'static [NativeOperationResponse] {
+    static SEEDS: OnceLock<Vec<NativeOperationResponse>> = OnceLock::new();
+    SEEDS.get_or_init(|| {
+        fixture_responses(include_str!(
+            "../fixtures/maturity-sponsored-run-of-record/17280cedd2.report.capture"
+        ))
+    })
+}
+fn policy() -> Value {
+    static POLICY: OnceLock<Value> = OnceLock::new();
+    POLICY
+        .get_or_init(|| {
+            let capture =
+                include_str!("../fixtures/maturity-native-run-of-record/745e4e01ad.report.capture");
+            let line = capture
+                .lines()
+                .find(|line| line.starts_with("response-detail "))
+                .expect("detail");
+            let detail: Value = serde_json::from_slice(&fixture_field(line, "response-detail"))
+                .expect("detail JSON");
+            detail["policy"].clone()
+        })
         .clone()
 }
 fn sponsor_program() -> Vec<u8> {
-    // The published explicit sponsor witness supplies the public signing identity.
-    let seed =
-        vectors::maturity_corpus::maturity_sponsored_run_of_record().expect("sponsored archive");
-    seed.evidence
-        .exchanges()
+    sponsor_seeds()
         .iter()
-        .find_map(|(_, r)| {
+        .find_map(|r| {
             r.funded_outputs
                 .iter()
                 .find(|coin| coin.amount_satoshis == 1_000_000)
@@ -267,8 +330,7 @@ fn readback(raw: Vec<u8>) -> target_elements_conformance::protocol::MinedFunding
     reason = "The scripted responder mirrors the fixed operation vocabulary in one match."
 )]
 fn scripted_response(step: &OperationStep, n: usize) -> NativeOperationResponse {
-    let seed = vectors::maturity_corpus::maturity_variable_run_of_record().expect("archive");
-    let mut response = seed.exchanges()[0].1.clone();
+    let mut response = response_seed().clone();
     response.case = step.case().clone();
     response.issued_asset = None;
     response.funded_outputs.clear();
@@ -306,15 +368,9 @@ fn scripted_response(step: &OperationStep, n: usize) -> NativeOperationResponse 
             script: common::hex_bytes(&sponsor_program()),
         }),
         OperationSubject::SponsorSigning(subject) => {
-            let seed = vectors::maturity_corpus::maturity_sponsored_run_of_record()
-                .expect("sponsor archive");
-            response.sponsor_witness = seed
-                .evidence
-                .exchanges()
+            response.sponsor_witness = sponsor_seeds()
                 .iter()
-                .find_map(|(_, r)| {
-                    (!r.sponsor_witness.is_empty()).then(|| r.sponsor_witness.clone())
-                })
+                .find_map(|r| (!r.sponsor_witness.is_empty()).then(|| r.sponsor_witness.clone()))
                 .expect("witness");
             response.signature_bound_to = Some(subject.finalized_transaction.clone());
             response.resources.transaction_weight = Some(
@@ -438,6 +494,62 @@ fn exchanges() -> &'static [(OperationStep, NativeOperationResponse)] {
         plan.exchanges().to_vec()
     })
 }
+// A distinct current-wire mock; the historical `exchanges()` bytes stay exact.
+fn current_wire_plan() -> Planner {
+    let mut plan = Planner::new(identity(), branch()).expect("planner");
+    let mut next = plan.next_step(None).expect("first");
+    let mut n = 0;
+    while let Some(step) = next {
+        let mut response = scripted_response(&step, n);
+        response.schema = target_elements_conformance::protocol::NATIVE_PROTOCOL_SCHEMA;
+        if matches!(step.subject(), OperationSubject::SponsorFunding(_)) {
+            let coin = &mut response.funded_outputs[0];
+            let selected = usize::try_from(coin.outpoint.vout).expect("index");
+            let mut outputs = vec![
+                TargetOutput::new(
+                    AssetField::Explicit(AssetId::from_internal([0x99; 32])),
+                    ValueField::Explicit(1),
+                    NonceField::Null,
+                    vec![0x52],
+                );
+                selected + 1
+            ];
+            outputs[selected] = TargetOutput::new(
+                AssetField::Explicit(AssetId::from_internal([0x99; 32])),
+                ValueField::Explicit(coin.amount_satoshis),
+                NonceField::Null,
+                sponsor_program(),
+            );
+            let parent = TargetTransaction::new(
+                2,
+                vec![TargetInput::new(
+                    Outpoint::new(
+                        Txid::from_internal([0x88; 32]),
+                        u32::try_from(n).expect("ordinal"),
+                    )
+                    .expect("outpoint"),
+                    19,
+                )],
+                outputs,
+                0,
+                vec![InputWitness::new(vec![])],
+            )
+            .expect("synthetic parent");
+            let mined = readback(parent.encode());
+            coin.outpoint.txid.clone_from(&mined.transaction_id);
+            target_elements_conformance::sponsor_parent::bind_sponsor_parent(&mined, coin)
+                .expect("bound current parent");
+            response.mined_readback = Some(mined);
+        }
+        response.validate_shape().expect("current shape");
+        next = plan
+            .next_step(Some((step.case(), &response)))
+            .expect("current step");
+        n += 1;
+    }
+    assert_eq!(n, 14);
+    plan
+}
 fn replay(exchanges: &[(OperationStep, NativeOperationResponse)]) -> Planner {
     replay_confidential_route(identity(), branch(), exchanges).expect("replay")
 }
@@ -453,11 +565,155 @@ fn refuse(response: &mut NativeOperationResponse) {
     detail["detail"] = Value::Null;
     response.observed_detail = Some(detail.to_string());
 }
+const CONFIDENTIAL_EXCHANGES_DIGEST: [u8; 32] = [
+    207, 136, 235, 77, 208, 248, 59, 204, 178, 212, 111, 95, 27, 87, 44, 138, 216, 155, 106, 94,
+    155, 230, 63, 161, 50, 233, 254, 210, 214, 141, 233, 190,
+];
+
+// Four bounded children share prepared test-local public exchanges. This avoids
+// fitting preparation, historical replay and live transport into one hang guard.
 #[test]
 fn confidential_agreement_requires_control_and_subject_readback() {
-    let plan = replay(exchanges());
-    #[cfg(unix)]
-    assert_scripted_capture(&plan);
+    let family = std::time::Instant::now();
+    let directory = common::test_directory("confidential-agreement-phases");
+    for phase in [
+        "prepare-historical",
+        "prepare-current",
+        "replay",
+        "transport",
+    ] {
+        let start = std::time::Instant::now();
+        let output = std::process::Command::new("/usr/bin/timeout")
+            .args(["-k", "2", "40"])
+            .arg(std::env::current_exe().expect("test executable"))
+            .args([
+                "--ignored",
+                "--exact",
+                "confidential_agreement_child",
+                "--nocapture",
+            ])
+            .env("TRIPOD_CONFIDENTIAL_PHASE", phase)
+            .env("TRIPOD_CONFIDENTIAL_EXCHANGES", &directory)
+            .output()
+            .expect("bounded child");
+        writeln!(
+            std::io::stdout().lock(),
+            "confidential-child {phase} wall={:?} guard=40s",
+            start.elapsed()
+        )
+        .expect("timing output");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        for line in stdout.lines().chain(stderr.lines()) {
+            writeln!(
+                std::io::stdout().lock(),
+                "confidential-child-output: {line}"
+            )
+            .expect("child output");
+        }
+        assert!(output.status.success(), "{phase}: {:?}", output.status);
+        assert_eq!(
+            stdout
+                .lines()
+                .filter(|line| *line == "running 1 test")
+                .count(),
+            1
+        );
+    }
+    std::fs::remove_dir_all(&directory).expect("remove shared exchanges");
+    // Four 40-second guards plus their two-second kills bound the child work
+    // below the unchanged 300-second family ceiling; neither is a performance claim.
+    assert!(family.elapsed() < std::time::Duration::from_secs(300));
+    writeln!(
+        std::io::stdout().lock(),
+        "confidential-family wall={:?} guard=300s",
+        family.elapsed()
+    )
+    .expect("timing output");
+}
+#[test]
+#[ignore = "run only through the bounded parent"]
+fn confidential_agreement_child() {
+    let phase = std::env::var("TRIPOD_CONFIDENTIAL_PHASE").expect("phase");
+    let directory = std::path::PathBuf::from(
+        std::env::var_os("TRIPOD_CONFIDENTIAL_EXCHANGES").expect("exchanges directory"),
+    );
+    match phase.as_str() {
+        "prepare-historical" => prepare_confidential_exchanges(&directory),
+        "prepare-current" => prepare_current_confidential_exchanges(&directory),
+        "replay" => check_confidential_replay(&directory),
+        "transport" => check_confidential_transport(&directory),
+        _ => panic!("unknown test phase"),
+    }
+}
+fn write_confidential_exchanges(
+    path: &std::path::Path,
+    exchanges: &[(OperationStep, NativeOperationResponse)],
+) {
+    let rows = exchanges
+        .iter()
+        .map(|(s, r)| (s.case(), s.subject(), r))
+        .collect::<Vec<_>>();
+    std::fs::write(
+        path,
+        serde_json::to_vec(&rows).expect("test-local exchanges"),
+    )
+    .expect("write exchanges");
+}
+fn read_confidential_exchanges(
+    path: &std::path::Path,
+) -> Vec<(OperationStep, NativeOperationResponse)> {
+    let rows: Vec<(OperationCaseId, OperationSubject, NativeOperationResponse)> =
+        serde_json::from_slice(&std::fs::read(path).expect("read exchanges"))
+            .expect("test-local exchanges");
+    rows.into_iter()
+        .map(|(case, subject, response)| {
+            let step = OperationStep::new(&case.step, subject);
+            assert_eq!(step.case(), &case);
+            (step, response)
+        })
+        .collect()
+}
+fn prepare_confidential_exchanges(directory: &std::path::Path) {
+    let start = std::time::Instant::now();
+    let ex = exchanges();
+    writeln!(
+        std::io::stdout().lock(),
+        "confidential-phase fixture {:?}",
+        start.elapsed()
+    )
+    .expect("timing output");
+    let bytes = serde_json::to_vec(
+        &ex.iter()
+            .map(|(s, r)| (s.case(), s.subject(), r))
+            .collect::<Vec<_>>(),
+    )
+    .expect("fixture bytes");
+    assert_eq!(common::sha256(&bytes), CONFIDENTIAL_EXCHANGES_DIGEST);
+
+    write_confidential_exchanges(&directory.join("historical.json"), ex);
+}
+fn prepare_current_confidential_exchanges(directory: &std::path::Path) {
+    let start = std::time::Instant::now();
+    let current = current_wire_plan();
+    // Both revisions are checked against the original literal result, rather
+    // than accepting one replay's verdict as the other's expected value.
+    assert_eq!(current.label(), "agreement");
+    assert!(current.eligible());
+    write_confidential_exchanges(&directory.join("current.json"), current.exchanges());
+    writeln!(
+        std::io::stdout().lock(),
+        "confidential-phase current-fixture {:?}",
+        start.elapsed()
+    )
+    .expect("timing output");
+}
+fn check_confidential_replay(directory: &std::path::Path) {
+    let start = std::time::Instant::now();
+    let bytes = std::fs::read(directory.join("historical.json")).expect("historical handoff");
+    assert_eq!(common::sha256(&bytes), CONFIDENTIAL_EXCHANGES_DIGEST);
+    let ex = read_confidential_exchanges(&directory.join("historical.json"));
+    let plan = replay(&ex);
     assert_eq!(plan.label(), "agreement");
     assert!(plan.eligible());
     assert!(plan.admit().is_ok());
@@ -468,6 +724,27 @@ fn confidential_agreement_requires_control_and_subject_readback() {
             .collect::<Vec<_>>(),
         STEPS
     );
+    writeln!(
+        std::io::stdout().lock(),
+        "confidential-phase replay-admission {:?}",
+        start.elapsed()
+    )
+    .expect("timing output");
+}
+fn check_confidential_transport(directory: &std::path::Path) {
+    let start = std::time::Instant::now();
+    let ex = read_confidential_exchanges(&directory.join("current.json"));
+    let current = replay(&ex);
+    assert_eq!(current.label(), "agreement");
+    assert!(current.eligible());
+    #[cfg(unix)]
+    assert_scripted_capture(&current);
+    writeln!(
+        std::io::stdout().lock(),
+        "confidential-phase transport {:?}",
+        start.elapsed()
+    )
+    .expect("timing output");
 }
 #[test]
 fn confidential_refused_subject_records_contradiction() {

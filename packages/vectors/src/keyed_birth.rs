@@ -174,9 +174,9 @@ impl Wave1TargetPacket {
         if self.executor.chain != "elementsregtest"
             || target_elements_conformance::protocol::OperationRevision::from_schema(self.executor.protocol_schema).is_err()
             || self.executor.adapter_name != "elements-native-executor"
-            // Both transports implement protocol eight; historical archives
-            // keep 2.1.0, while 2.1.1 streams large RPC arguments over stdin.
-            || !matches!(self.executor.adapter_version.as_str(), "2.1.0" | "2.1.1")
+            // Historical protocol eight keeps its exact adapter versions.
+            // Version 2.1.2 implements nine, never an archive-version upgrade.
+            || !matches!((self.executor.protocol_schema, self.executor.adapter_version.as_str()), (8, "2.1.0" | "2.1.1") | (9, "2.1.2"))
         {
             return Err(BirthPacketRefusal::ExecutorBinding);
         }

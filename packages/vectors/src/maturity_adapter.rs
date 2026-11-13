@@ -1,7 +1,8 @@
 //! Exact request comparisons admitted from an embedded Python reading.
 //!
 //! Derivation reads only embedded data and constructs its own operands. The
-//! ordinary Python gate separately compares that data with the live adapter.
+//! ordinary Python gate separately checks the current revision-nine comparison.
+//! The revision-eight comparison below retains its original source identity.
 //! No interpreter, filesystem access or subprocess participates in derivation.
 
 use std::sync::LazyLock;
@@ -353,11 +354,33 @@ mod tests {
     }
 
     #[test]
-    fn adapter_source_matches_the_admitted_digest() {
+    fn current_adapter_source_matches_rendered_revision_nine_rows() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../scripts/elements-native-executor.py");
         let source = std::fs::read(path).expect("adapter source");
-        assert_eq!(encode_hex(&sha256(&source)), ADAPTER_SOURCE_SHA256);
+        // The current pin is emitted by the existing comparison renderer. The
+        // historical admission above still binds its own recorded source digest.
+        let current = include_str!("../fixtures/adapter-request-comparisons/CURRENT-REVISION-9");
+        let rows: Vec<_> = current.lines().collect();
+        assert_eq!(rows.len(), 5);
+        let historical = std::str::from_utf8(FIXTURE)
+            .expect("historical rows")
+            .lines()
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), historical.len());
+        for (row, old) in rows.into_iter().zip(historical) {
+            let fields: Vec<_> = row.split_whitespace().collect();
+            let previous: Vec<_> = old.split_whitespace().collect();
+            assert_eq!(fields.len(), previous.len());
+            for (index, (now, then)) in fields.iter().zip(&previous).enumerate() {
+                if ![17, 18, 19].contains(&index) {
+                    assert_eq!(now, then, "comparison field {index}");
+                }
+            }
+            assert_eq!(fields.len(), 22);
+            assert_eq!(fields[18], "9");
+            assert_eq!(encode_hex(&sha256(&source)), fields[19]);
+        }
     }
 
     fn changed(field: usize, value: &str) -> Vec<u8> {

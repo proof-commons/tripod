@@ -33,3 +33,5 @@ mod vocabulary_tests;
 mod wide_floor_matrix_tests;
 mod wide_floor_program_tests;
 mod wide_floor_tests;
+
+pub mod sponsor_parent_tests;

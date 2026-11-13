@@ -355,7 +355,7 @@ fn run_scripted_capture(
 #[cfg(unix)]
 fn scripted_capture() -> NativeOperationCapture {
     let refused = concat!(
-        "{\"schema\":8,\"case\":{\"operation\":\"submit\",",
+        "{\"schema\":9,\"case\":{\"operation\":\"submit\",",
         "\"step\":\"empty-signature\"},",
         "\"observed_layer\":\"script_path_rejection\",",
         "\"observed_detail\":\"mutant refused\",",
@@ -714,6 +714,38 @@ fn request_subject_lines_decode(rendered: &str) -> bool {
 }
 
 #[cfg(unix)]
+fn historical_capture_rendering(rendered: &str) -> String {
+    // The golden remains the historical revision-eight writer contract. Check
+    // current identity before projecting only the two revision fields and the
+    // enclosing content digest back to that contract; no operation byte moves.
+    assert!(rendered.contains("handshake-protocol-schema 9\n"));
+    assert!(rendered.contains("environment-schema 9\n"));
+    let (content, tail) = rendered
+        .split_once("capture-content-sha256 ")
+        .expect("writer digest");
+    assert_eq!(
+        tail,
+        format!(
+            "{}\nnative-capture-end explicit-witness-negatives\n",
+            hex_bytes(&sha256(content.as_bytes()))
+        )
+    );
+    let historical = rendered
+        .replace(
+            "handshake-protocol-schema 9\n",
+            "handshake-protocol-schema 8\n",
+        )
+        .replace("environment-schema 9\n", "environment-schema 8\n");
+    let (content, _) = historical
+        .split_once("capture-content-sha256 ")
+        .expect("digest boundary");
+    let historical = format!(
+        "{content}capture-content-sha256 {}\nnative-capture-end explicit-witness-negatives\n",
+        hex_bytes(&sha256(content.as_bytes())),
+    );
+    historical
+}
+
 #[test]
 fn the_enhanced_capture_format_matches_exact_golden_bytes() {
     let directory = test_directory("format");
@@ -800,7 +832,7 @@ fn the_enhanced_capture_format_matches_exact_golden_bytes() {
     let expected = format!(
         "{expected_content}capture-content-sha256 3249c758227f99a26a1b5cf5325c2a3ee2e1ae0d7083d3e52e4aabad4a51dc98\nnative-capture-end explicit-witness-negatives\n",
     );
-    assert_eq!(rendered, expected);
+    assert_eq!(historical_capture_rendering(&rendered), expected);
     assert!(request_subject_lines_decode(&rendered));
     let mut mismatched = facts;
     mismatched.operations[0].role = RequestRole::Acceptance;

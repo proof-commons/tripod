@@ -89,6 +89,17 @@ use crate::test_material::{PublicTestSignerHandle, SIGNATURE_BYTES};
 
 /// The protocol revision this harness speaks.
 ///
+/// # Revision 9 binds explicit sponsor funding to its canonical mined parent
+///
+/// Accepted `fund_sponsor` answers now require `mined_readback`; revision eight
+/// forbids it for that kind. The harness binds canonical parent bytes, content
+/// identities and the selected explicit output before a live consumer uses them.
+/// Revision nine also permits an omitted ordinary-signing spent-output assertion;
+/// when present its asset, value and program must match the registered coin.
+/// Session-submitted, accepted and mined own-program change may be registered.
+/// Live sessions require exact revision equality. Historical replay selects a
+/// closed known grammar from the recorded revision; it does not negotiate live.
+///
 /// # Revision 8 binds public script-path signing answers
 ///
 /// Script-path signing carries finalized bytes, the ordered spent-output
@@ -158,7 +169,8 @@ use crate::test_material::{PublicTestSignerHandle, SIGNATURE_BYTES};
 /// executor nothing at all, which is a stronger guarantee than
 /// translating for it would be, and "never translate a confidential
 /// request backward" is honoured vacuously, because no translation
-/// exists to be misused.
+/// exists to be misused. This is the live-session rule; historical replay
+/// independently selects the closed recorded grammar without translation.
 ///
 /// The two implementations bumped together in one change — this harness
 /// and the reviewed native adapter — for the recorded reason that a
@@ -226,7 +238,7 @@ use crate::test_material::{PublicTestSignerHandle, SIGNATURE_BYTES};
 /// Revision 2 itself added the environment observation, the separated
 /// executor provenance roles, the bounded-record contract, and strict
 /// framing, and was refused for revision 1 on the same ground.
-pub const NATIVE_PROTOCOL_SCHEMA: u32 = 8;
+pub const NATIVE_PROTOCOL_SCHEMA: u32 = 9;
 
 /// Closed set of operation-response grammars retained for historical replay.
 /// Live handshakes still require exactly `NATIVE_PROTOCOL_SCHEMA`.
@@ -1061,6 +1073,8 @@ pub struct NativeExecutionResponse {
 pub enum ResponseShapeDefect {
     /// No retained operation grammar exists for the recorded revision.
     UnknownOperationRevision,
+    /// Canonical sponsor parent bytes disagree with their reported funded output.
+    SponsorParentBinding(crate::sponsor_parent::SponsorParentRefusal),
     /// Revision nine accepted sponsor funding must carry its mined parent.
     SponsorReadbackMissing,
     /// An accepted response named a failure class.
@@ -1150,6 +1164,13 @@ pub enum ResponseShapeDefect {
 impl std::fmt::Display for ResponseShapeDefect {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let text = match self {
+            Self::SponsorParentBinding(refusal) => {
+                return write!(
+                    formatter,
+                    "sponsor parent binding refused: {}",
+                    refusal.refusal_kind()
+                );
+            }
             Self::UnknownOperationRevision => "unknown operation protocol revision",
             Self::SponsorReadbackMissing => "revision nine sponsor funding omits readback",
             Self::AcceptedResponseNamesFailure => "an accepted response named a failure class",
@@ -3036,7 +3057,7 @@ impl NativeOperationResponse {
     /// ```text
     /// fund               issued_asset, funded_outputs
     /// submit             accepted_txid, mined_readback
-    /// fund_sponsor       funded_outputs
+    /// fund_sponsor       funded_outputs, mined_readback (required at revision 9)
     /// sign_sponsor       sponsor_witness, signature_bound_to
     /// sign_script_path   script_path_witness, signer_public_key,
     ///                    signed_profile, signing_genesis, signature_bound_to
@@ -3137,8 +3158,8 @@ impl NativeOperationResponse {
 
         // A mined readback belongs to the kinds that put bytes on a
         // chain: the two confidential funding steps, which mine what
-        // they materialized, and the submission step, which mines the
-        // candidate it was handed. The member is shared rather than
+        // they materialized, the submission step, which mines the
+        // candidate it was handed, and explicit sponsor funding at revision nine. The member is shared rather than
         // duplicated because it is one observation — what the node
         // reports for a transaction it has confirmed — and a second
         // member of the same shape would let two kinds drift into two

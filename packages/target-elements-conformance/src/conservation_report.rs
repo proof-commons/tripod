@@ -419,7 +419,7 @@ mod tests {
             observed_openings: vec![],
         };
         assert!(ingest_conservation_response(&row, control.clone()).is_ok());
-        for offered in [9, 10] {
+        for offered in [8, 10] {
             let mut subject = control.clone();
             subject.schema = offered;
             assert_eq!(

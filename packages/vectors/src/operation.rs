@@ -1909,9 +1909,8 @@ mod tests {
     };
     use target_elements_conformance::executor::TargetOperationPlanner;
     use target_elements_conformance::protocol::{
-        FundedOutput, MinedFundingReadback, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse,
-        NativeResourceObservation, ObservedOutcomeLayer, OperationCaseId, OperationStepKind,
-        OperationSubject, WireOutpoint,
+        FundedOutput, MinedFundingReadback, NativeOperationResponse, NativeResourceObservation,
+        ObservedOutcomeLayer, OperationCaseId, OperationStepKind, OperationSubject, WireOutpoint,
     };
 
     /// A disposable asset identity, in the target's own spelling.
@@ -1991,7 +1990,7 @@ mod tests {
             subject: &OperationSubject,
         ) -> NativeOperationResponse {
             let mut response = NativeOperationResponse {
-                schema: NATIVE_PROTOCOL_SCHEMA,
+                schema: 8, // Retained synthetic protocol-eight planner transcript.
                 case: case.clone(),
                 observed_layer: ObservedOutcomeLayer::Accepted,
                 observed_detail: None,

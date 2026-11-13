@@ -18,8 +18,8 @@ use target_elements_conformance::executor::{
     OperationStep, TargetOperationPlanner, execute_operations_captured,
 };
 use target_elements_conformance::protocol::{
-    FundedOutput, MinedFundingReadback, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse,
-    NativeResourceObservation, ObservedOutcomeLayer, OperationSubject, WireOutpoint,
+    FundedOutput, MinedFundingReadback, NativeOperationResponse, NativeResourceObservation,
+    ObservedOutcomeLayer, OperationSubject, WireOutpoint,
 };
 use transaction::bytes::{TargetTransaction, Txid, ValueField};
 use vectors::keyed_birth::{
@@ -68,7 +68,7 @@ fn policy() -> Value {
 
 pub fn response(step: &OperationStep, ordinal: usize) -> NativeOperationResponse {
     let mut response = NativeOperationResponse {
-        schema: NATIVE_PROTOCOL_SCHEMA,
+        schema: 8, // Historical synthetic response, kept at its original revision.
         case: step.case().clone(),
         observed_layer: ObservedOutcomeLayer::Accepted,
         observed_detail: None,

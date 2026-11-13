@@ -210,7 +210,7 @@ fn a_verify_response_cannot_report_the_constructor_s_verdict() {
 /// One operation response, in whatever shape a test needs.
 fn operation(kind: OperationStepKind, layer: ObservedOutcomeLayer) -> NativeOperationResponse {
     NativeOperationResponse {
-        schema: NATIVE_PROTOCOL_SCHEMA,
+        schema: 8, // Retained revision-eight shape subject.
         case: OperationCaseId {
             operation: kind,
             step: "step".to_owned(),

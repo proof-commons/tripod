@@ -529,3 +529,12 @@ The reviewed expansion pins every named implementation file and its declared non
 `SourceDrift` attests compile-time included source bytes from the checkout used to build the binary, not the runtime tree, an executable, a toolchain or a resolved dependency graph. A moved/copied checkout must rebuild vectors before this control counts. The lock file is untracked and `sha2` is a version range shared by production commitment and the oracle: independence is in tags, layouts, constants and curve arithmetic, not SHA-256 compression. Step 2 must retain the binary's commit, resolved lock and toolchain. Re-freeze is one independently reviewed landing carrying source change and re-pin together, with the path-by-path prior/new digests, editorial/behavioural classification and reopened evidence in (`[PLAN-tab:w1b16:freeze-history]`); no intentionally red intermediate landing or mixed-commit prohibition is imposed.
 
 The sixteen computed categories include construction choices, emission/link projection and closure, and final weight/virtual size. Signature DER length may vary with the key, so whole-transaction weight varies although member 88/91/255 formulas do not. Policy readings include asset, fee, provenance, rates, minimums, ceilings, prior package weight and signature bound. They remain per-run offers checked at admission; step 2 records them and asserts equality with the frozen basis for representative runs. Exhaustive packet/input/snapshot destructuring requires a classification when any field is added. All three edge keys now run construction, membership reading and fresh replay in separate bounded subjects. Upper-case hexadecimal is accepted: the key is 32 bytes, not a unique textual spelling.
+
+Historical operation replay is revision-bound: retained revision-eight funding
+has its original output-only shape; revision nine requires sponsor-parent
+readback. Unknown revisions and mixed-revision sessions refuse. The current
+adapter request-comparison renderer writes `CURRENT-REVISION-9`; the old
+`COMPARISONS` archive and its admission identity remain unchanged. Adapter
+versions are paired with their protocol revision, not admitted as arbitrary
+cross-products. The final-construction bridge remains pending the ordinary-edge
+signing disposition at `sec:w1b16:bridge-signing-boundary`.

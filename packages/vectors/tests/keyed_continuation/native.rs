@@ -20,8 +20,7 @@ use target_elements_conformance::executor::{
     OperationStep, TargetOperationPlanner, execute_operations_captured,
 };
 use target_elements_conformance::protocol::{
-    NATIVE_PROTOCOL_SCHEMA, NativeOperationRequest, NativeOperationResponse, ObservedOutcomeLayer,
-    OperationSubject,
+    NativeOperationRequest, NativeOperationResponse, ObservedOutcomeLayer, OperationSubject,
 };
 use transaction::bytes::{TargetTransaction, ValueField};
 use vectors::keyed_birth_native::{
@@ -80,7 +79,7 @@ fn journal(planner: &ContinuationCampaignPlanner) -> Value {
         "operation_id": format!("operation-{n}"), "request_id": format!("request-{n}"),
         "response_id": format!("response-{n}"), "response_request_id": format!("request-{n}"),
         "response_operation_id": format!("operation-{n}"),
-        "request": NativeOperationRequest { schema: NATIVE_PROTOCOL_SCHEMA, case: step.case().clone(), subject: step.subject().clone() },
+        "request": NativeOperationRequest { schema: response.schema, case: step.case().clone(), subject: step.subject().clone() },
         "response": response,
     })).collect();
     json!({"continuation_wire_schema": 1, "terminal": "complete", "handshake": null, "environment": null, "operations": operations})

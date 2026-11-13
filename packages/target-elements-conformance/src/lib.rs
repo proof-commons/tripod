@@ -41,3 +41,6 @@ pub use error::NativeConformanceError;
 
 #[cfg(test)]
 mod tests;
+
+/// Canonical explicit sponsor readback binding for live protocol revision nine.
+pub mod sponsor_parent;

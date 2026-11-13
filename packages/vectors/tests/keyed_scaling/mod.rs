@@ -5,8 +5,7 @@ use std::sync::OnceLock;
 use target_elements::reviewed_elements_tapscript;
 use target_elements_conformance::executor::{NativeOperationCapture, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
-    MAXIMUM_REQUEST_BYTES, NATIVE_PROTOCOL_SCHEMA, NativeOperationRequest, OperationSubject,
-    ProtocolLimits,
+    MAXIMUM_REQUEST_BYTES, NativeOperationRequest, OperationSubject, ProtocolLimits,
 };
 use transaction::bytes::{TargetTransaction, ValueField};
 use vectors::keyed_scaling::*;
@@ -64,7 +63,7 @@ fn journal() -> Value {
     j["terminal"] = json!("complete");
     j["operations"] = json!(p.exchanges().iter().enumerate().map(|(n,(step,response))| json!({
         "operation_id":format!("operation-{n}"),"request_id":format!("request-{n}"),"response_id":format!("response-{n}"),"response_request_id":format!("request-{n}"),"response_operation_id":format!("operation-{n}"),
-        "request":NativeOperationRequest { schema:NATIVE_PROTOCOL_SCHEMA,case:step.case().clone(),subject:step.subject().clone() },"response":response
+        "request":NativeOperationRequest { schema:response.schema,case:step.case().clone(),subject:step.subject().clone() },"response":response
     })).collect::<Vec<_>>());
     j
 }
@@ -190,7 +189,7 @@ fn exchange_census_order_and_protocol_record_sizes_fit_without_sibling_handles()
     for (s, r) in p.exchanges() {
         max_request = max_request.max(
             serde_json::to_vec(&NativeOperationRequest {
-                schema: NATIVE_PROTOCOL_SCHEMA,
+                schema: r.schema,
                 case: s.case().clone(),
                 subject: s.subject().clone(),
             })

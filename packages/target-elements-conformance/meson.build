@@ -59,6 +59,8 @@ target_elements_conformance_source_files = files(
   'src/owner_authorization.rs',
   'src/owner_key_oracle.rs',
   'src/protocol.rs',
+  'src/sponsor_parent.rs',
+  'src/tests/sponsor_parent_tests.rs',
   'src/prototype.rs',
   'src/prototype_program.rs',
   'src/prototype_report.rs',

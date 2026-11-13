@@ -2347,7 +2347,23 @@ fn read_operation_response<W: Write, R: BufRead>(
             error,
         );
     }
-    if let Err(defect) = response.validate_shape() {
+    let shape = response.validate_shape().and_then(|()| {
+        if matches!(
+            response.case.operation,
+            crate::protocol::OperationStepKind::FundSponsor
+        ) && matches!(
+            response.observed_layer,
+            crate::protocol::ObservedOutcomeLayer::Accepted
+        ) && let Some(readback) = &response.mined_readback
+        {
+            for funded in &response.funded_outputs {
+                crate::sponsor_parent::bind_sponsor_parent(readback, funded)
+                    .map_err(crate::protocol::ResponseShapeDefect::SponsorParentBinding)?;
+            }
+        }
+        Ok(())
+    });
+    if let Err(defect) = shape {
         if let Some(capture) = context.capture.as_deref_mut() {
             capture.response_defect = Some(defect);
         }
@@ -3373,5 +3389,89 @@ mod tests {
             matches!(error, NativeConformanceError::ExecutorHandshakeFailed),
             "expected a handshake failure, got {error}",
         );
+    }
+    fn sponsor_wire(
+        response: &NativeOperationResponse,
+    ) -> Result<super::ExecutionTranscript, NativeConformanceError> {
+        let mut handshake = complete_handshake();
+        handshake
+            .capabilities
+            .insert(ExecutorCapability::TestSponsorAuthorization);
+        let mut planner = OneStepPlan {
+            step: OperationStep::new(
+                "fund-parent",
+                OperationSubject::SponsorFunding(Box::new(
+                    crate::protocol::TargetSponsorFundingSubject {
+                        sponsor_outputs: 1,
+                        amount_per_sponsor_output: 99_999,
+                    },
+                )),
+            ),
+            answered: false,
+        };
+        let tail = format!("{}\n", serde_json::to_string(response).unwrap());
+        drive_captured(
+            &mut planner,
+            operation_script(&handshake, &tail),
+            &mut Vec::new(),
+        )
+        .0
+    }
+
+    #[test]
+    fn mock_sponsor_readback_keeps_each_binding_refusal() {
+        type Mutation = fn(&mut NativeOperationResponse);
+        use crate::sponsor_parent::{MAXIMUM_SPONSOR_PARENT_BYTES, SponsorParentRefusal as R};
+        let (readback, funded) = crate::tests::sponsor_parent_tests::control();
+        let mut control = submission_response("fund-parent", ObservedOutcomeLayer::Accepted, None);
+        control.case.operation = OperationStepKind::FundSponsor;
+        control.accepted_txid = None;
+        control.mined_readback = Some(readback);
+        control.funded_outputs = vec![funded];
+        assert!(sponsor_wire(&control).is_ok());
+        let subjects: [(R, Mutation); 9] = [
+            (R::Size, |r| {
+                r.mined_readback.as_mut().unwrap().raw_transaction =
+                    vec![0; MAXIMUM_SPONSOR_PARENT_BYTES + 1];
+            }),
+            (R::Decode, |r| {
+                r.mined_readback.as_mut().unwrap().raw_transaction.pop();
+            }),
+            (R::ReadbackIdentity, |r| {
+                r.mined_readback
+                    .as_mut()
+                    .unwrap()
+                    .transaction_id
+                    .replace_range(..2, "01");
+            }),
+            (R::WitnessIdentity, |r| {
+                r.mined_readback
+                    .as_mut()
+                    .unwrap()
+                    .witness_transaction_id
+                    .replace_range(..2, "02");
+            }),
+            (R::OutpointIdentity, |r| {
+                r.funded_outputs[0].outpoint.txid.replace_range(..2, "04");
+            }),
+            (R::OutputIndex, |r| r.funded_outputs[0].outpoint.vout = 2),
+            (R::Asset, |r| {
+                r.funded_outputs[0].asset.replace_range(..2, "04");
+            }),
+            (R::Amount, |r| r.funded_outputs[0].amount_satoshis += 1),
+            (R::Script, |r| r.funded_outputs[0].script = "52".into()),
+        ];
+        for (expected, mutate) in subjects {
+            let mut changed = control.clone();
+            mutate(&mut changed);
+            let error = sponsor_wire(&changed).unwrap_err();
+            assert!(
+                matches!(error, NativeConformanceError::MalformedOperationResponseShape {
+                defect: crate::protocol::ResponseShapeDefect::SponsorParentBinding(observed), ..
+            } if observed == expected),
+                "{expected:?}: {error:?}"
+            );
+        }
+        assert!(sponsor_wire(&control).is_ok());
     }
 }

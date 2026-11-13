@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use target_elements::reviewed_elements_tapscript;
 use target_elements_conformance::executor::{NativeOperationCapture, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
-    NATIVE_PROTOCOL_SCHEMA, NativeOperationRequest, ObservedOutcomeLayer, OperationSubject,
+    NativeOperationRequest, ObservedOutcomeLayer, OperationSubject,
 };
 use transaction::bytes::{InputWitness, TargetTransaction};
 use vectors::keyed_cost::*;
@@ -204,7 +204,7 @@ fn synthetic() -> CostCampaignPlanner {
 fn journal(planner: &CostCampaignPlanner) -> Value {
     let mut journal = cost_capture_json(&NativeOperationCapture::default());
     journal["terminal"] = json!("complete");
-    journal["operations"] = json!(planner.exchanges().iter().enumerate().map(|(n,(step,response))| json!({"operation_id":format!("operation-{n}"), "request_id":format!("request-{n}"), "response_id":format!("response-{n}"), "response_request_id":format!("request-{n}"), "response_operation_id":format!("operation-{n}"), "request": NativeOperationRequest { schema:NATIVE_PROTOCOL_SCHEMA, case:step.case().clone(), subject:step.subject().clone() }, "response":response})).collect::<Vec<_>>());
+    journal["operations"] = json!(planner.exchanges().iter().enumerate().map(|(n,(step,response))| json!({"operation_id":format!("operation-{n}"), "request_id":format!("request-{n}"), "response_id":format!("response-{n}"), "response_request_id":format!("request-{n}"), "response_operation_id":format!("operation-{n}"), "request": NativeOperationRequest { schema:response.schema, case:step.case().clone(), subject:step.subject().clone() }, "response":response})).collect::<Vec<_>>());
     journal
 }
 

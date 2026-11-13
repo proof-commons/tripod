@@ -472,7 +472,7 @@ COMMAND_NAME = "elements-native-executor"
 
 # This adapter's own version, which is provenance for the transactions it
 # builds and is not the node's version.
-ADAPTER_VERSION = "2.1.1"
+ADAPTER_VERSION = "2.1.2"
 
 # This adapter speaks the revision declared by NATIVE_PROTOCOL_SCHEMA below.
 #
@@ -516,7 +516,12 @@ ADAPTER_VERSION = "2.1.1"
 # with silence where this authorization lives. Both implementations move
 # together; earlier peers fail the exact handshake and historical records
 # remain the responsibility of their own parsers.
-NATIVE_PROTOCOL_SCHEMA = 8
+# Revision 9 binds explicit sponsor funding to its canonical mined parent.
+# Accepted fund_sponsor answers require readback, bounded before mining and on
+# return; revision-eight archives retain their original no-readback grammar.
+# Live handshakes remain exact. Historical replay selects its recorded grammar.
+NATIVE_PROTOCOL_SCHEMA = 9
+MAXIMUM_SPONSOR_PARENT_BYTES = 512 * 1024
 
 
 # Mirrors test_material.rs FIRST_SCALAR and THIRD_SCALAR: published BIP-340
@@ -4419,6 +4424,9 @@ class OperationExecutor:
         transaction.vout.append(executor.output(remainder, executor.anyone_can_spend))
         transaction.vout.append(executor.output(ADAPTER_FEE_SATOSHIS, b""))
 
+        if len(transaction.serialize()) > MAXIMUM_SPONSOR_PARENT_BYTES:
+            raise AdapterError("sponsor parent exceeds the protocol byte bound before mining")
+
         if amount == 0 and getattr(executor, "maturity_observation", False):
             raw = transaction.serialize()
             observed = self.submit_maturity({"transaction_bytes": raw})
@@ -4432,8 +4440,12 @@ class OperationExecutor:
                 return {"issued_asset": None, "funded_outputs": [], "accepted_txid": None,
                         "observed_layer": observed["observed_layer"], "observed_detail": json.dumps(detail)}
             txid = observed["accepted_txid"]
+            readback = observed["mined_readback"]
         else:
-            txid = self.mine(transaction, "sponsor funding")
+            readback = self.mine_and_read_back(transaction, "sponsor funding")
+            txid = readback["transaction_id"]
+        if len(readback["raw_transaction"]) > MAXIMUM_SPONSOR_PARENT_BYTES:
+            raise AdapterError("sponsor parent exceeds the protocol byte bound")
         executor.change = {"txid": txid, "vout": outputs, "amount": remainder}
 
         created = []
@@ -4455,7 +4467,8 @@ class OperationExecutor:
                 "asset": entry["asset"],
             }
             created.append(entry)
-        answer = {"issued_asset": None, "funded_outputs": created, "accepted_txid": None}
+        answer = {"issued_asset": None, "funded_outputs": created, "accepted_txid": None,
+                  "mined_readback": readback}
         if amount == 0 and getattr(executor, "maturity_observation", False):
             answer["observed_detail"] = json.dumps(detail)
         return answer

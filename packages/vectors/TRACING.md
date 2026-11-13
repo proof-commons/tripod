@@ -139,3 +139,5 @@ The offline freeze inventory adds two conformance boundaries. `validate_manifest
 The same test-only timeout-diagnostic exception applies to `tests/keyed_final/mod.rs`: flushed child and family walls must survive a killed child. Every subject has its own 40-second guard, each replay is capped at 30 seconds and the subject's remaining budget less one second, and the family has 300 seconds, and completed subjects above 10 seconds (family above 75) print `split_or_report=true`; measurements are not native costs. Fresh replay children receive public packets and recorded ordinary signatures only.
 
 The freeze capture additionally asserts the literal target, INFO for successful manifest validation, DEBUG for other outcomes, and no WARN or ERROR events. The key-free selection helper only constructs an untrusted offer and is untraced.
+
+The bounded confidential integration child prints phase durations and its parent prints the child wall to stdout so a stopped child still leaves timing evidence in the gate journal; these test-harness lines are the same deliberate timing exception as the history harness, not library tracing events.

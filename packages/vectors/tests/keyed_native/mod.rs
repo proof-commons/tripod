@@ -7,7 +7,7 @@ use target_elements_conformance::executor::{
     NativeOperationCapture, OperationStep, TargetOperationPlanner,
 };
 use target_elements_conformance::protocol::{
-    NATIVE_PROTOCOL_SCHEMA, NativeOperationRequest, ObservedOutcomeLayer, OperationSubject,
+    NativeOperationRequest, ObservedOutcomeLayer, OperationSubject,
 };
 use transaction::bytes::{TargetTransaction, ValueField};
 use vectors::keyed_birth_native::{BIRTH_VALUE, BirthNativeRefusal, FIXTURE_FEE, SPONSOR_VALUE};
@@ -74,7 +74,7 @@ fn journal(planner: &KeyedCampaignPlanner) -> Value {
         "operation_id": format!("operation-{n}"), "request_id": format!("request-{n}"),
         "response_id": format!("response-{n}"), "response_request_id": format!("request-{n}"),
         "response_operation_id": format!("operation-{n}"),
-        "request": NativeOperationRequest { schema: NATIVE_PROTOCOL_SCHEMA, case: step.case().clone(), subject: step.subject().clone() }, "response": response
+        "request": NativeOperationRequest { schema: response.schema, case: step.case().clone(), subject: step.subject().clone() }, "response": response
     })).collect::<Vec<_>>());
     journal
 }

@@ -592,7 +592,12 @@ fn assert_scripted_capture(scripted: &ManifestPlanner, identity: &CandidateDeplo
         .planner
         .exchanges()
         .iter()
-        .map(|(_, response)| serde_json::to_string(response).expect("response"))
+        .map(|(_, response)| {
+            // Only the live wire copy changes; the historical replay stays exact.
+            let mut current = response.clone();
+            current.schema = target_elements_conformance::protocol::NATIVE_PROTOCOL_SCHEMA;
+            serde_json::to_string(&current).expect("response")
+        })
         .collect::<Vec<_>>();
     std::fs::write(
         &adapter,

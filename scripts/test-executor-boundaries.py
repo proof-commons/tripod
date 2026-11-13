@@ -855,14 +855,14 @@ def test_direct_block_response_keeps_both_key_sets(failures) -> int:
         "funded_outputs", "confidential_funded_outputs", "mined_readback",
         "accepted_txid", "sponsor_witness", "signature_bound_to", "script_path_witness",
         "signer_public_key", "signed_profile", "signing_genesis", "resources",
-    }, "revision-eight response keys")
+    }, "revision-nine response keys")
     detail = json.loads(response["observed_detail"])
     failures.equal(set(detail), {
         "schema", "policy", "route", "relay_allowed", "relay_detail", "detail",
     }, "six outer detail keys")
     failures.equal(detail["detail"]["block_script_error"], "Invalid Schnorr signature",
                    "only the nested facts carry the key")
-    failures.equal(response["schema"], 8, "revision unchanged")
+    failures.equal(response["schema"], 9, "current revision")
     return 4
 
 
@@ -871,14 +871,14 @@ def test_direct_block_response_keeps_both_key_sets(failures) -> int:
 # --------------------------------------------------------------------------
 
 
-def test_the_schema_constants_agree_at_revision_eight(failures) -> int:
+def test_the_schema_constants_agree_at_revision_nine(failures) -> int:
     """Both implementations move in one revision and no other number."""
     failures.equal(
         harness_schema(),
         SCHEMA,
         "the adapter and typed harness declare different protocol revisions",
     )
-    failures.equal(SCHEMA, 8, "the native protocol did not move to revision 8")
+    failures.equal(SCHEMA, 9, "the native protocol did not move to revision 9")
     return 2
 
 
@@ -1146,7 +1146,7 @@ def test_script_path_capability_requires_genesis_aware_framework(failures):
         failures.equal(run.stderr, b"", "capable stub emits no stderr")
         failures.equal(len(records), 3, "three protocol records")
         if len(records) == 3:
-            failures.equal(records[0]["protocol_schema"], 8, "handshake states revision eight")
+            failures.equal(records[0]["protocol_schema"], 9, "handshake states revision nine")
             failures.check("test_script_path_authorization" in records[0]["capabilities"], "capability advertised without a wallet")
             failures.equal(records[2]["signing_genesis"], records[1]["genesis_id"], "session genesis echoed")
             failures.equal(records[2]["script_path_witness"][0][:32], list(reversed(SIGNING_GENESIS)), "hash receives reversed printed genesis bytes in target internal order")
@@ -1386,7 +1386,63 @@ print(json.dumps({"argv": sys.argv[1:], "arguments": arguments}))
         return checked + 1
 
 
+def test_sponsor_funding_returns_node_readback_and_bounds_before_mining(failures):
+    """Stand-in RPC/serialization only; the Rust binding tests authenticate bytes."""
+    from types import SimpleNamespace as NS
+    module = executor_module()
+    txid, block = "12" * 32, "34" * 32
+    program = b"\x00\x14" + bytes(range(20))
+    def instance(built=b"built-parent", returned=b"node-public-parent"):
+        calls = []
+        class Transaction:
+            def __init__(self):
+                self.vin, self.vout = [], []
+            def serialize(self):
+                return built
+            def rehash(self):
+                return txid
+        def call(method, *args):
+            calls.append((method, args))
+            if method == "generateblock": return {"hash": block}
+            if method == "getblock": return {"tx": [txid], "height": 73}
+            if method == "getrawtransaction":
+                return {"txid": txid, "hash": "56" * 32, "hex": returned.hex()}
+            if method == "gettxout":
+                return {"asset": "78" * 32, "value": 0.00012345, "scriptPubKey": {"hex": program.hex()}}
+            raise AssertionError(method)
+        executor = NS(messages=NS(CTransaction=Transaction, CTxIn=lambda *a, **k: NS(), COutPoint=lambda *a: NS()),
+                      change={"txid": "9a" * 32, "vout": 2, "amount": 1000000}, anyone_can_spend=b"\x51",
+                      node=NS(call=call), output=lambda amount, script: NS(amount=amount, script=script))
+        item = module.OperationExecutor(executor)
+        item.sponsor_program = lambda: program
+        return item, calls
+    subject = {"sponsor_outputs": 1, "amount_per_sponsor_output": 12345}
+    item, calls = instance()
+    answer = item.fund_sponsor(subject)
+    failures.equal(answer["mined_readback"], {"transaction_id": txid, "witness_transaction_id": "56" * 32,
+                   "block_hash": block, "block_height": 73, "raw_transaction": list(b"node-public-parent")},
+                   "funding returns the node's readback, not built bytes")
+    failures.check(("getrawtransaction", (txid, "true", block)) in calls, "readback names the mined block")
+    failures.equal(answer["funded_outputs"][0]["amount_satoshis"], 12345, "gettxout amount retained")
+    checked = 3
+    for name, built, returned, mined in (
+        ("serialized bound before mining", b"x" * (module.MAXIMUM_SPONSOR_PARENT_BYTES + 1), b"node", False),
+        ("readback bound after mining", b"built", b"x" * (module.MAXIMUM_SPONSOR_PARENT_BYTES + 1), True),
+    ):
+        item, calls = instance(built, returned)
+        try:
+            item.fund_sponsor(subject)
+            failures.check(False, name + " accepted")
+        except module.AdapterError as error:
+            failures.check("sponsor parent exceeds the protocol byte bound" in str(error), name)
+        failures.equal(any(method == "generateblock" for method, _ in calls), mined, name + " mining order")
+        failures.equal(item.sponsor_coins, {}, name + " no registry entry")
+        checked += 3
+    return checked
+
+
 TESTS = (
+    ("sponsor funding binds node readback and size", test_sponsor_funding_returns_node_readback_and_bounds_before_mining),
     ("RPC arguments use stdin without argv size threshold", test_rpc_arguments_use_stdin_without_an_argv_size_threshold),
     ("signing asset and value encodings", test_signing_asset_and_value_encodings),
     ("signing control block widths", test_signing_control_block_widths),
@@ -1429,7 +1485,7 @@ TESTS = (
     ),
     ("the previous revision is refused before any node", test_a_wrong_revision_is_refused_before_any_node),
     ("direct block response keeps both key sets", test_direct_block_response_keeps_both_key_sets),
-    ("schema constants agree at revision eight", test_the_schema_constants_agree_at_revision_eight),
+    ("schema constants agree at revision nine", test_the_schema_constants_agree_at_revision_nine),
     ("revision seven producer shapes are static", test_revision_seven_producer_shapes_are_stated_at_the_boundary),
     ("the request bounds agree across implementations", test_the_request_bounds_agree_across_the_two_implementations),
     ("both destinations are mandatory", test_both_destinations_are_mandatory),
@@ -1440,6 +1496,7 @@ TESTS = (
 # Module-loading and stream-redirection tests must run on the main thread.
 # Keep source-only checks here too: only subprocess-driven tests use the pool.
 SERIAL_TESTS = frozenset((
+    test_sponsor_funding_returns_node_readback_and_bounds_before_mining,
     test_rpc_arguments_use_stdin_without_an_argv_size_threshold,
     test_an_extra_execution_field_cannot_inject_a_typed_line,
     test_the_typed_sink_rejects_line_bearing_content,
@@ -1447,7 +1504,7 @@ SERIAL_TESTS = frozenset((
     test_the_diagnostic_outcome_inventory_is_closed,
     test_zk_paths_and_loader_exceptions_reach_neither_file,
     test_direct_block_response_keeps_both_key_sets,
-    test_the_schema_constants_agree_at_revision_eight,
+    test_the_schema_constants_agree_at_revision_nine,
     test_revision_seven_producer_shapes_are_stated_at_the_boundary,
     test_the_request_bounds_agree_across_the_two_implementations,
 ))

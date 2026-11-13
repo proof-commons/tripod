@@ -361,3 +361,13 @@ A change to pinned source and its re-pin land together in one gate-passing landi
 The source identities attest bytes compiled into vectors via relative-path inclusion in its build checkout. They do not inspect runtime source files or identify an executable, toolchain or resolved dependencies. This unpublished crate requires the workspace layout. A moved or copied checkout must rebuild vectors before a control counts; a copied old binary still holds the old bytes. `Cargo.lock` is untracked and workspace `sha2 = "0.10"` is a version range used by both commitment and oracle. Step 2's executor provenance must retain the commit, resolved lock and toolchain of the binary actually run. Shared SHA-256 is explicitly outside the prediction's independence claim.
 
 The source census is a literal module/path-declaration check with accepted and missing-child controls, not macro or alias expansion. Non-test child files of pinned Rust files are pinned. Generic program/instruction encoding (`packages/tapscript/src/program.rs`, `instruction.rs`) and opcode/push tables (`packages/target-elements/src/opcode.rs`, `push.rs`) are outside the identity and protected for this template by independent literal prediction. Reader, stack model and conformance arithmetic are instruments to be pinned at step 5, not implicitly frozen template code. The twelve categories now contain 35 pins; sixteen variable categories are tied to exhaustive packet/input/snapshot destructuring. The selection offer helper is pure and untraced; emission remains the checked owner boundary.
+
+Historical replay selects operation shape rules from the recorded closed
+revision set, independently of the live handshake. Revision eight's archives
+keep their bytes, adapter identities and admissions; revision nine's explicit
+sponsor funding carries canonical parent readback. A session may not mix
+revisions. Current request-comparison identity is rendered separately from the
+old comparison archive. The scaling replay change and its sole source re-pin
+are recorded at (`tab:w1b16:bridge-refreeze`); no native evidence is reopened.
+The ordinary-edge signing-authority choice at
+(`sec:w1b16:bridge-signing-boundary`) remains open before the final bridge.

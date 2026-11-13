@@ -32,8 +32,8 @@ fn handshake() -> ExecutorHandshake {
 }
 
 #[test]
-fn the_native_protocol_is_revision_eight() {
-    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 8);
+fn the_native_protocol_is_revision_nine() {
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 9);
 }
 
 /// One response, in whatever shape a test needs.
@@ -86,7 +86,7 @@ fn conservation_response(layer: ObservedOutcomeLayer) -> NativeConservationRespo
 /// One operation response, carrying no operation-specific observation.
 fn operation_response(layer: ObservedOutcomeLayer) -> NativeOperationResponse {
     NativeOperationResponse {
-        schema: NATIVE_PROTOCOL_SCHEMA,
+        schema: 8, // Retained revision-eight shape subject.
         case: OperationCaseId {
             operation: OperationStepKind::Submit,
             step: "revision-seven-shape".to_owned(),
@@ -450,7 +450,7 @@ fn the_handshake_request_states_this_harnesss_schema() {
 }
 
 #[test]
-fn this_harness_speaks_schema_eight_and_no_earlier_one() {
+fn this_harness_speaks_schema_nine_and_no_earlier_one() {
     // Schema 8 adds required script-path signing response members.
     // Stated as a value rather than left implicit. Schema 7 tightens the
     // conservation response shapes and makes fixture resource figures
@@ -479,7 +479,7 @@ fn this_harness_speaks_schema_eight_and_no_earlier_one() {
     // implementations moving together: the adapter's constant of the
     // same name is what it is compared against in the field, and a bump
     // that reached only one side is the fault G12-R09 recorded.
-    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 8);
+    assert_eq!(NATIVE_PROTOCOL_SCHEMA, 9);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 7);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 6);
     assert_ne!(NATIVE_PROTOCOL_SCHEMA, 5);
@@ -950,7 +950,7 @@ fn only_a_signing_step_may_report_an_authorization() {
     };
 
     let signed = |kind: OperationStepKind| NativeOperationResponse {
-        schema: NATIVE_PROTOCOL_SCHEMA,
+        schema: 8, // Retained revision-eight shape subject.
         case: OperationCaseId {
             operation: kind,
             step: "step".to_owned(),
@@ -995,7 +995,7 @@ fn an_accepted_authorization_states_a_stack_and_what_it_was_bound_to() {
     };
 
     let partial = |stack: Vec<Vec<u8>>, bound: Option<Vec<u8>>| NativeOperationResponse {
-        schema: NATIVE_PROTOCOL_SCHEMA,
+        schema: 8, // Retained revision-eight shape subject.
         case: OperationCaseId {
             operation: OperationStepKind::SignSponsor,
             step: "sign".to_owned(),
@@ -1415,7 +1415,7 @@ mod operation_response_shapes {
     /// One response with nothing in it but its identity.
     fn bare(kind: OperationStepKind, layer: ObservedOutcomeLayer) -> NativeOperationResponse {
         NativeOperationResponse {
-            schema: NATIVE_PROTOCOL_SCHEMA,
+            schema: 8, // Retained revision-eight shape subject.
             case: OperationCaseId {
                 operation: kind,
                 step: "step".to_owned(),
@@ -1533,8 +1533,6 @@ mod operation_response_shapes {
         response
     }
 
-    /// The acceptances themselves are well formed, which is what makes
-    /// the refusals below a statement about the verdict.
     #[test]
     fn recorded_revisions_keep_their_own_funding_shapes() {
         let mut old = accepted(OperationStepKind::FundSponsor);
@@ -1564,6 +1562,23 @@ mod operation_response_shapes {
         assert_eq!(serde_json::to_value(&old).unwrap()["schema"], 8);
     }
 
+    #[test]
+    fn refused_revision_nine_sponsor_funding_cannot_carry_readback() {
+        let mut control = bare(
+            OperationStepKind::FundSponsor,
+            ObservedOutcomeLayer::ScriptPathRejection,
+        );
+        control.schema = 9;
+        assert_eq!(verdict(&control), Ok(()));
+        control.mined_readback = Some(readback());
+        assert_eq!(
+            verdict(&control),
+            Err(ResponseShapeDefect::RefusedOperationCarriesObservation)
+        );
+    }
+
+    /// The acceptances themselves are well formed, which is what makes
+    /// the refusals below a statement about the verdict.
     #[test]
     fn an_acceptance_reporting_what_its_kind_produces_is_well_formed() {
         for kind in EVERY_KIND {
@@ -1750,6 +1765,7 @@ pub(super) fn script_path_subject() -> crate::protocol::TargetScriptPathSigningS
 pub(super) fn script_path_response() -> NativeOperationResponse {
     let subject = script_path_subject();
     NativeOperationResponse {
+        schema: NATIVE_PROTOCOL_SCHEMA, // Also drives the current live transport.
         case: OperationCaseId {
             operation: OperationStepKind::SignScriptPath,
             step: "sign-leaf".to_owned(),

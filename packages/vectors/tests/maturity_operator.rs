@@ -187,7 +187,8 @@ fn response_json(response: &NativeOperationResponse) -> String {
         "null"
     };
     format!(
-        "{{\"schema\":8,\"case\":{{\"operation\":\"{}\",\"step\":\"{}\"}},\"observed_layer\":\"{layer}\",\"observed_detail\":{},\"issued_asset\":{},\"funded_outputs\":[{funded}],\"confidential_funded_outputs\":[],\"mined_readback\":{readback},\"accepted_txid\":{},\"sponsor_witness\":[],\"script_path_witness\":{:?},\"signer_public_key\":{},\"signed_profile\":{profile},\"signing_genesis\":{},\"signature_bound_to\":{},\"resources\":{{\"script_bytes\":{},\"initial_stack_items\":{},\"peak_stack_items\":{},\"peak_altstack_items\":{},\"maximum_element_bytes\":{},\"validation_budget_used\":{},\"transaction_weight\":{}}}}}",
+        "{{\"schema\":{},\"case\":{{\"operation\":\"{}\",\"step\":\"{}\"}},\"observed_layer\":\"{layer}\",\"observed_detail\":{},\"issued_asset\":{},\"funded_outputs\":[{funded}],\"confidential_funded_outputs\":[],\"mined_readback\":{readback},\"accepted_txid\":{},\"sponsor_witness\":[],\"script_path_witness\":{:?},\"signer_public_key\":{},\"signed_profile\":{profile},\"signing_genesis\":{},\"signature_bound_to\":{},\"resources\":{{\"script_bytes\":{},\"initial_stack_items\":{},\"peak_stack_items\":{},\"peak_altstack_items\":{},\"maximum_element_bytes\":{},\"validation_budget_used\":{},\"transaction_weight\":{}}}}}",
+        response.schema,
         response.case.operation,
         response.case.step,
         json_text(response.observed_detail.as_deref()),
@@ -477,7 +478,7 @@ fn scripted_exchange() -> (ExecutionTranscript, NativeOperationCapture) {
         &mut planner,
         &mut capture,
     )
-    .expect("scripted revision-8 exchange");
+    .expect("scripted current-revision exchange");
     std::fs::remove_dir_all(directory).expect("scripted directory removed");
     (transcript, capture)
 }
