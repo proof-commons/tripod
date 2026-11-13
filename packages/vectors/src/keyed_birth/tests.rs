@@ -212,7 +212,7 @@ fn mismatched_binary_and_framework_revisions_refuse() {
 fn changed_chain_protocol_or_adapter_refuses() {
     let mutations: [fn(&mut Wave1ExecutorBinding); 4] = [
         |e| e.chain = "another-chain".into(),
-        |e| e.protocol_schema += 1,
+        |e| e.protocol_schema = 10, // Unknown to the closed historical grammar set.
         |e| e.adapter_name = "another-adapter".into(),
         |e| e.adapter_version = "another-version".into(),
     ];

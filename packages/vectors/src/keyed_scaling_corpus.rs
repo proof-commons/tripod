@@ -465,3 +465,32 @@ fn missing_response_field_refused() {
         assert_eq!(complete_response(&value), Err(Refusal::Dimension));
     });
 }
+
+#[test]
+fn archived_funding_selects_only_its_recorded_shape() {
+    use target_elements_conformance::protocol::ResponseShapeDefect as D;
+    timed("archived_funding_selects_only_its_recorded_shape", |a| {
+        let control = &a.planner.exchanges()[0].1;
+        assert_eq!(control.schema, 8);
+        assert_eq!(control.validate_shape(), Ok(()));
+        let mut subject = control.clone();
+        subject.schema = 10;
+        assert_eq!(subject.validate_shape(), Err(D::UnknownOperationRevision));
+        subject.schema = 9;
+        assert_eq!(subject.validate_shape(), Err(D::SponsorReadbackMissing));
+        subject.schema = 8;
+        subject.mined_readback = a
+            .planner
+            .exchanges()
+            .iter()
+            .find_map(|(_, response)| response.mined_readback.clone());
+        assert!(subject.mined_readback.is_some());
+        assert_eq!(
+            subject.validate_shape(),
+            Err(D::OperationResponseMismatchesStep)
+        );
+        // This checks shape only, not that this different transaction funded it.
+        subject.schema = 9;
+        assert_eq!(subject.validate_shape(), Ok(()));
+    });
+}

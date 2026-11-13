@@ -8,8 +8,8 @@ use linker::CandidateDeploymentIdentity;
 use target_elements::ReviewedElementsTapscriptDefinition;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
-    NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId,
-    OperationSubject, TargetFundingSubject, TargetSubmissionSubject,
+    NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationSubject,
+    TargetFundingSubject, TargetSubmissionSubject,
 };
 use transaction::operator_right::BranchContext;
 
@@ -405,7 +405,13 @@ impl MaturityMutantCeremonyPlanner {
         if step.case() != case || &response.case != case {
             return Err(Refusal::UnexpectedResponse);
         }
-        if response.schema != NATIVE_PROTOCOL_SCHEMA {
+        if target_elements_conformance::protocol::OperationRevision::from_schema(response.schema)
+            .is_err()
+            || self
+                .exchanges
+                .first()
+                .is_some_and(|(_, first)| first.schema != response.schema)
+        {
             return Err(Refusal::ResponseSchema {
                 offered: response.schema,
             });
@@ -687,7 +693,7 @@ mod tests {
 
     fn blank_response(step: &OperationStep) -> NativeOperationResponse {
         NativeOperationResponse {
-            schema: NATIVE_PROTOCOL_SCHEMA,
+            schema: 8, // Historical synthetic operation journal.
             case: step.case().clone(),
             observed_layer: ObservedOutcomeLayer::Accepted,
             observed_detail: None,
@@ -998,6 +1004,33 @@ mod tests {
                 &altered,
             ),
             Err(Refusal::TranscriptStepMismatch { position })
+        );
+    }
+
+    #[test]
+    fn mutant_ceremony_refuses_mixed_known_revisions() {
+        let planner = scripted_run(MaturityMutantTable::PredecessorConstructor, None);
+        let control = planner.completed_transcript().expect("complete");
+        assert!(
+            MaturityMutantEvidence::from_transcript(
+                identity(),
+                branch(),
+                MaturityMutantTable::PredecessorConstructor,
+                control
+            )
+            .is_ok()
+        );
+        let mut subject = control.to_vec();
+        subject[1].1.schema = 9;
+        assert_eq!(subject[1].1.validate_shape(), Ok(()));
+        assert_eq!(
+            MaturityMutantEvidence::from_transcript(
+                identity(),
+                branch(),
+                MaturityMutantTable::PredecessorConstructor,
+                &subject
+            ),
+            Err(Refusal::ResponseSchema { offered: 9 })
         );
     }
 

@@ -584,3 +584,16 @@ fn keyed_birth_campaign_runs_against_a_real_target() {
     );
     assert!(eligible, "capture retained but ineligible; see RUN-REPORT");
 }
+
+#[test]
+fn shared_keyed_replay_refuses_a_mixed_known_revision() {
+    let target = reviewed_elements_tapscript().expect("target");
+    let control = synthetic();
+    assert!(replay_birth_campaign(&target, control.exchanges()).is_ok());
+    let mut subject = control.exchanges().to_vec();
+    subject[1].1.schema = 9;
+    assert_eq!(
+        replay_birth_campaign(&target, &subject).err(),
+        Some(BirthNativeRefusal::Replay)
+    );
+}

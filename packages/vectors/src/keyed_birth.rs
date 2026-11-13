@@ -13,7 +13,6 @@
 use std::collections::BTreeSet;
 
 use target_elements::{ReviewedDevelopmentBinding, ReviewedElementsTapscriptDefinition};
-use target_elements_conformance::protocol::NATIVE_PROTOCOL_SCHEMA;
 
 /// A missing or inconsistent preparation field; never a native refusal.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -80,7 +79,7 @@ pub struct Wave1ExecutableProvenance {
 pub struct Wave1ExecutorBinding {
     /// Development chain name from the executor environment.
     pub chain: String,
-    /// Native request/response schema, inherited as revision eight.
+    /// Recorded native request/response revision, selected from the known grammars.
     pub protocol_schema: u32,
     /// Adapter name from the handshake.
     pub adapter_name: String,
@@ -173,7 +172,7 @@ impl Wave1TargetPacket {
             return Err(BirthPacketRefusal::TargetBinding);
         }
         if self.executor.chain != "elementsregtest"
-            || self.executor.protocol_schema != NATIVE_PROTOCOL_SCHEMA
+            || target_elements_conformance::protocol::OperationRevision::from_schema(self.executor.protocol_schema).is_err()
             || self.executor.adapter_name != "elements-native-executor"
             // Both transports implement protocol eight; historical archives
             // keep 2.1.0, while 2.1.1 streams large RPC arguments over stdin.

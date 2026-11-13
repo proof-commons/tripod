@@ -261,3 +261,45 @@ Retained journals are `/var/home/tripod/loops/tmp/w20b1-b16freezefix/covering-co
 Preservation: diffs against the reviewed freeze and the rebased main tree leave production packages, old reproduction fixtures, the freeze's fixture and independent predictor, reader, model, compiler pins, existing vectors and archives byte-identical. The changes are new freeze conformance controls/identity, registrations and documentation. No expected value was regenerated. The main-side test-directory repair is inherited, not overwritten; both plan records survive the rebase. The only scope clarification is the existing fixture helper's two-scope API: its joint-scope equivalence is checked by the original three-scope control, as finding 2 records. All ten findings are closed without a production edit.
 
 The subsequent plans-only verification receipt passed the unchanged documents batteries against that full-gated source snapshot: `/var/home/tripod/loops/tmp/gate-w20b1-20261113T105848Z.log`, 2026-11-13T10:58:49Z–10:58:53Z, wall 4 seconds, `== green`, exit 0. Census, labels, plans, forbidden text, hash citations, generated checks and attestation stamps passed; scope was plans-only and the tree remained clean. The foreground time-prefixed SSH waited through `systemd-run --wait --pipe` to completion. This confirmation is itself checked by the same documents-scope command; the final tip's verdict is retained in the lane report.
+
+## Final construction bridge · `rec:w1b16:bridge`
+
+**Historical replay ruling.** Operation archives select their grammar from a closed set of recorded revisions, independently of the live handshake revision. Revision eight retains output-only explicit sponsor funding; revision nine requires its canonical mined parent readback. Unknown operation revisions refuse with `UnknownOperationRevision`; revision-eight sponsor readback retains the existing `OperationResponseMismatchesStep` refusal, and missing revision-nine accepted sponsor readback refuses with `SponsorReadbackMissing`. No archive is translated or regenerated. The first implementation unit leaves the live revision at eight while introducing both historical grammars and their accepted/refused controls. A live transport still requires exact current-revision equality before sending any subject.
+
+Replay/admission paths affected are `keyed_birth.rs`, the birth/continuation/keyed/cost native planners, `keyed_funding.rs`, `keyed_scaling.rs`, `compact_corpus.rs`, `maturity_native.rs` (including confidential replay), and `maturity_mutant_ceremony.rs`, all under `packages/vectors/src`. Their response checks select a known recorded grammar instead of comparing archives with today's live constant. Keyed journal decoding additionally binds request and response revisions; the shared keyed replay requires a single revision across all exchanges. Existing content digests, archive adapter identities, recorded revision-eight values and expected outcomes are unchanged. The conformance conservation-report ingestion likewise accepts only those known recorded revisions; its response grammar is unchanged between them. Shared operation response-shape validation dispatches on the recorded revision; it never weakens the live handshake.
+
+### Replay re-freeze · `tab:w1b16:bridge-refreeze`
+
+| Pinned path | Previous SHA-256 | New SHA-256 | Classification and reopened evidence |
+|---|---|---|---|
+| `packages/vectors/src/keyed_scaling.rs` | Literal `REVIEW[33].current` in `packages/vectors/tests/keyed_final/freeze_history.rs` | Literal `REPLAY_DIGEST` in that file, checked against the current source pin | Behavioural: historical replay selects rules by recorded revision. Reopens the scaling archive's identical admission, not native evidence. |
+
+The source change and re-pin are one landing under (`rule:vectors:keyed-refreeze`); this step's independent review is required before import or capture. The initial freeze-history rows remain immutable historical entries, with this explicit override for the current manifest. No other frozen source is involved. The current source census and all other 34 pins remain in force.
+
+The replay checks also refuse two individually known revisions in one session;
+`maturity_native::tests::recorded_session_cannot_mix_two_known_revisions` pins that
+condition beside the accepted revision-eight sequence. The compact archive's
+explicit revision-eight header remains exact, including its response revision.
+The unknown-protocol subjects now name revision ten, since nine is known.
+
+Part-one verification retained in `.b16bridge3/`: fast checks 1–3 reported local
+formatting/lint errors (including an import-cleanup syntax error); checks 4–6
+passed Clippy and rustdoc, with formatter patches applied mechanically. Check 6
+ran in 75 seconds. The first library round passed 631 conformance tests and
+1,317 vectors tests and failed the obsolete “eight plus one is unknown” subject.
+The corrected round passed 631 and 1,319 respectively (9.79 and 126.28 seconds of
+test wall). Its freeze family then refused the scaling source pin: the digest
+had been computed before formatting collapsed its guard to one line. The re-pin
+is computed from the formatted source; no archive or expected outcome changed.
+
+The corrected freeze run `.b16bridge3/freeze-r3.log` passed, exit 0, wall 13
+seconds including compilation: family 0.687906 seconds, largest subject
+high-bit-key 0.110351 seconds. Final part-one fast check 7 passed in 79 seconds
+(formatter patch applied mechanically, Clippy and rustdoc green). Source SHA-256
+for the re-freeze is `1cdf2c197418ba97e674030d29efc7f06bc60fa442d1af142ae2e5c0c2462bc5`,
+replacing `4a218f509095dc139b9fbc12a45ca17ec64b26a04b2297c4473b7b49934ba763`.
+All 35 freeze pins recompute. These foreground SSH runs completed before the
+part-one commit; the live revision remains eight at that boundary. The library
+run's unchanged archive admissions and byte pins are evidence of historical
+preservation, not new native observations. No archive, fixture or production
+package was edited in this unit.

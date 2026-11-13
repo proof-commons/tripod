@@ -837,3 +837,12 @@ green.
 - **It does not run in ordinary CI.** The native lane exists only when an
   executor is configured, and its absence is recorded as incomplete evidence
   rather than as a pass.
+
+Operation replay distinguishes the recorded grammar from the live handshake.
+`OperationRevision` is the closed set of revision-eight and revision-nine
+operation shapes. Revision eight forbids an explicit sponsor funding readback;
+revision nine requires it on acceptance. `validate_shape` selects by the response's
+recorded revision and refuses unknown revisions. The transport still requires
+`NATIVE_PROTOCOL_SCHEMA` exactly at the live handshake and on live responses.
+An archive's bytes and adapter identity remain historical evidence; replay does
+not upgrade either to today's protocol.

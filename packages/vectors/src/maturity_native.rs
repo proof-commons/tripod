@@ -17,9 +17,9 @@ use target_elements::EncodingClass;
 use target_elements_conformance::constructor::tagged::sha256;
 use target_elements_conformance::executor::{OperationStep, PlanRefused, TargetOperationPlanner};
 use target_elements_conformance::protocol::{
-    FundedOutput, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse, ObservedFailureClass,
-    ObservedOutcomeLayer, OperationCaseId, OperationSubject, ResponseShapeDefect,
-    TargetFundingSubject, TargetSubmissionSubject,
+    FundedOutput, NativeOperationResponse, ObservedFailureClass, ObservedOutcomeLayer,
+    OperationCaseId, OperationSubject, ResponseShapeDefect, TargetFundingSubject,
+    TargetSubmissionSubject,
 };
 use target_elements_conformance::test_material::TestSigningDefect;
 use transaction::bytes::{AssetField, AssetId, Outpoint, TargetTransaction, Txid, ValueField};
@@ -632,7 +632,15 @@ impl MaturityAnnouncementPlanner {
             (Some(step), Some((case, response)))
                 if step.case() == case && &response.case == case =>
             {
-                if response.schema != NATIVE_PROTOCOL_SCHEMA {
+                if target_elements_conformance::protocol::OperationRevision::from_schema(
+                    response.schema,
+                )
+                .is_err()
+                    || self
+                        .exchanges
+                        .first()
+                        .is_some_and(|(_, first)| first.schema != response.schema)
+                {
                     return Err(Refusal::ResponseSchema {
                         offered: response.schema,
                     });
@@ -1004,11 +1012,11 @@ fn check_coin(
 pub mod native {
     use super::{
         ANNOUNCEMENT_STEPS, AssetField, BranchContext, CandidateDeploymentIdentity, FundedOutput,
-        MaturityAnnouncementPlanner, MaturityWitnessSelection, NATIVE_PROTOCOL_SCHEMA,
-        NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationStep,
-        OperationSubject, PlanRefused, Refusal, TargetFundingSubject, TargetOperationPlanner,
-        TargetSubmissionSubject, TargetTransaction, Txid, ValueField, asset_of, check_coin,
-        closure, closure_target, outpoint_of, sponsored, transaction,
+        MaturityAnnouncementPlanner, MaturityWitnessSelection, NativeOperationResponse,
+        ObservedOutcomeLayer, OperationCaseId, OperationStep, OperationSubject, PlanRefused,
+        Refusal, TargetFundingSubject, TargetOperationPlanner, TargetSubmissionSubject,
+        TargetTransaction, Txid, ValueField, asset_of, check_coin, closure, closure_target,
+        outpoint_of, sponsored, transaction,
     };
     use crate::maturity_continuity::MaturityFundedPredecessor;
     use crate::maturity_mutants::MaturityMutantContext;
@@ -1914,7 +1922,15 @@ pub mod native {
                 (Some((step, action)), Some((case, response)))
                     if step.case() == case && &response.case == case =>
                 {
-                    if response.schema != NATIVE_PROTOCOL_SCHEMA {
+                    if target_elements_conformance::protocol::OperationRevision::from_schema(
+                        response.schema,
+                    )
+                    .is_err()
+                        || self
+                            .exchanges
+                            .first()
+                            .is_some_and(|(_, first)| first.schema != response.schema)
+                    {
                         return Err(Refusal::ResponseSchema {
                             offered: response.schema,
                         });
@@ -2568,7 +2584,15 @@ pub mod native {
                 (Some((step, action)), Some((case, response)))
                     if step.case() == case && &response.case == case =>
                 {
-                    if response.schema != NATIVE_PROTOCOL_SCHEMA {
+                    if target_elements_conformance::protocol::OperationRevision::from_schema(
+                        response.schema,
+                    )
+                    .is_err()
+                        || self
+                            .exchanges
+                            .first()
+                            .is_some_and(|(_, first)| first.schema != response.schema)
+                    {
                         return Err(Refusal::ResponseSchema {
                             offered: response.schema,
                         });
@@ -3946,14 +3970,13 @@ pub mod sponsored {
     use super::{
         AssetField, AssetId, BranchContext, CandidateDeploymentIdentity,
         CandidateLinkedMaturityBundle, Cycle, FinalizedMaturityAnnouncement, FundedOutput,
-        MaturityAcceptanceRoute, MaturityLead, MaturityWitnessSelection, NATIVE_PROTOCOL_SCHEMA,
-        NativeOperationResponse, OPERATOR_HANDLE, ObservedOutcomeLayer, OperationCaseId,
-        OperationStep, OperationSubject, OracleLiveCurve, Outpoint, PlanRefused, Refusal,
-        TargetFundingSubject, TargetOperationPlanner, TargetSubmissionSubject, TargetTransaction,
-        TransactionRefusal, Txid, ValueField, asset_of, build_announcement, build_with_sponsor,
-        check_coin, closure, closure_target, decode_hex, link_for, link_for_metadata, outpoint_of,
-        predecessor_program, sha256, sign_announcement, sign_with_sponsor, singleton_declaration,
-        transaction,
+        MaturityAcceptanceRoute, MaturityLead, MaturityWitnessSelection, NativeOperationResponse,
+        OPERATOR_HANDLE, ObservedOutcomeLayer, OperationCaseId, OperationStep, OperationSubject,
+        OracleLiveCurve, Outpoint, PlanRefused, Refusal, TargetFundingSubject,
+        TargetOperationPlanner, TargetSubmissionSubject, TargetTransaction, TransactionRefusal,
+        Txid, ValueField, asset_of, build_announcement, build_with_sponsor, check_coin, closure,
+        closure_target, decode_hex, link_for, link_for_metadata, outpoint_of, predecessor_program,
+        sha256, sign_announcement, sign_with_sponsor, singleton_declaration, transaction,
     };
     use std::collections::VecDeque;
     use target_elements_conformance::protocol::{
@@ -5309,7 +5332,15 @@ pub mod sponsored {
                 (Some((step, action)), Some((case, response)))
                     if step.case() == case && &response.case == case =>
                 {
-                    if response.schema != NATIVE_PROTOCOL_SCHEMA {
+                    if target_elements_conformance::protocol::OperationRevision::from_schema(
+                        response.schema,
+                    )
+                    .is_err()
+                        || self
+                            .exchanges
+                            .first()
+                            .is_some_and(|(_, first)| first.schema != response.schema)
+                    {
                         return Err(Refusal::ResponseSchema {
                             offered: response.schema,
                         });
@@ -5680,7 +5711,7 @@ pub(crate) mod tests {
 
     fn blank(step: &OperationStep) -> NativeOperationResponse {
         NativeOperationResponse {
-            schema: NATIVE_PROTOCOL_SCHEMA,
+            schema: 8, // Historical synthetic operation journal.
             case: step.case().clone(),
             observed_layer: ObservedOutcomeLayer::Accepted,
             observed_detail: None,
@@ -6905,10 +6936,28 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn recorded_session_cannot_mix_two_known_revisions() {
+        let (mut control, step) = issued();
+        let response = funding_response(&step);
+        assert_eq!(response.schema, 8);
+        assert!(control.next_step(Some((step.case(), &response))).is_ok());
+        let (mut subject, step) = issued();
+        let mut changed = funding_response(&step);
+        changed.schema = 9;
+        assert_eq!(changed.validate_shape(), Ok(()));
+        assert_terminal(
+            &mut subject,
+            &step,
+            &changed,
+            Refusal::ResponseSchema { offered: 9 },
+        );
+    }
+
+    #[test]
     fn another_schema_and_malformed_shapes_are_terminal() {
         let (mut plan, step) = issued();
         let mut response = funding_response(&step);
-        response.schema = NATIVE_PROTOCOL_SCHEMA + 1;
+        response.schema = 10; // Outside the closed historical revision set.
         assert_terminal(
             &mut plan,
             &step,

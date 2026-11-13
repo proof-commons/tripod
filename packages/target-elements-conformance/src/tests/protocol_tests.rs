@@ -1536,6 +1536,35 @@ mod operation_response_shapes {
     /// The acceptances themselves are well formed, which is what makes
     /// the refusals below a statement about the verdict.
     #[test]
+    fn recorded_revisions_keep_their_own_funding_shapes() {
+        let mut old = accepted(OperationStepKind::FundSponsor);
+        old.schema = 8;
+        assert_eq!(verdict(&old), Ok(()));
+        let mut unknown = old.clone();
+        unknown.schema = 10;
+        assert_eq!(
+            verdict(&unknown),
+            Err(ResponseShapeDefect::UnknownOperationRevision)
+        );
+        let mut old_with_parent = old.clone();
+        old_with_parent.mined_readback = Some(readback());
+        assert_eq!(
+            verdict(&old_with_parent),
+            Err(ResponseShapeDefect::OperationResponseMismatchesStep)
+        );
+        let mut current = old_with_parent;
+        current.schema = 9;
+        assert_eq!(verdict(&current), Ok(()));
+        current.mined_readback = None;
+        assert_eq!(
+            verdict(&current),
+            Err(ResponseShapeDefect::SponsorReadbackMissing)
+        );
+        // No translation: serializing a historical record retains its revision.
+        assert_eq!(serde_json::to_value(&old).unwrap()["schema"], 8);
+    }
+
+    #[test]
     fn an_acceptance_reporting_what_its_kind_produces_is_well_formed() {
         for kind in EVERY_KIND {
             verdict(&accepted(kind)).expect("the acceptance shows what its kind produces");

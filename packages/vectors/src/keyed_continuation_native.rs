@@ -19,9 +19,9 @@ use target_elements_conformance::executor::{
     NativeOperationCapture, OperationStep, PlanRefused, TargetOperationPlanner,
 };
 use target_elements_conformance::protocol::{
-    FundedOutput, NATIVE_PROTOCOL_SCHEMA, NativeOperationRequest, NativeOperationResponse,
-    ObservedOutcomeLayer, OperationCaseId, OperationSubject, TargetSponsorFundingSubject,
-    TargetSponsorSigningSubject, TargetSubmissionSubject, WireSighashProfile,
+    FundedOutput, NativeOperationRequest, NativeOperationResponse, ObservedOutcomeLayer,
+    OperationCaseId, OperationSubject, TargetSponsorFundingSubject, TargetSponsorSigningSubject,
+    TargetSubmissionSubject, WireSighashProfile,
 };
 use transaction::bytes::{InputWitness, Outpoint, TargetInput, TargetTransaction};
 
@@ -354,7 +354,8 @@ impl ContinuationCampaignPlanner {
         step: &OperationStep,
         response: &NativeOperationResponse,
     ) -> Result<(), BirthNativeRefusal> {
-        if response.schema != NATIVE_PROTOCOL_SCHEMA
+        if target_elements_conformance::protocol::OperationRevision::from_schema(response.schema)
+            .is_err()
             || &response.case != step.case()
             || response.validate_shape().is_err()
         {
@@ -605,7 +606,11 @@ pub(crate) fn decode_wire_operations(
                 return Err(BirthNativeRefusal::Replay);
             }
             let step = OperationStep::new(&request.case.step, request.subject);
-            if request.schema != NATIVE_PROTOCOL_SCHEMA || &request.case != step.case() {
+            if target_elements_conformance::protocol::OperationRevision::from_schema(request.schema)
+                .is_err()
+                || request.schema != response.schema
+                || &request.case != step.case()
+            {
                 return Err(BirthNativeRefusal::Replay);
             }
             Ok((step, response))

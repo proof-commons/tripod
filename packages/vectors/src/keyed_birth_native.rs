@@ -24,9 +24,9 @@ use target_elements_conformance::executor::{
     NativeOperationCapture, OperationStep, PlanRefused, TargetOperationPlanner,
 };
 use target_elements_conformance::protocol::{
-    FundedOutput, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse, ObservedOutcomeLayer,
-    OperationCaseId, OperationSubject, TargetSponsorFundingSubject, TargetSponsorSigningSubject,
-    TargetSubmissionSubject, WireSighashProfile,
+    FundedOutput, NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationSubject,
+    TargetSponsorFundingSubject, TargetSponsorSigningSubject, TargetSubmissionSubject,
+    WireSighashProfile,
 };
 use transaction::bytes::{
     AssetField, AssetId, InputWitness, NonceField, Outpoint, TargetInput, TargetOutput,
@@ -480,7 +480,8 @@ impl BirthCampaignPlanner {
         step: &OperationStep,
         response: &NativeOperationResponse,
     ) -> Result<(), BirthNativeRefusal> {
-        if response.schema != NATIVE_PROTOCOL_SCHEMA
+        if target_elements_conformance::protocol::OperationRevision::from_schema(response.schema)
+            .is_err()
             || &response.case != step.case()
             || response.validate_shape().is_err()
         {
@@ -650,6 +651,13 @@ pub(crate) fn replay_operations<P: TargetOperationPlanner>(
     exchanges: &[(OperationStep, NativeOperationResponse)],
     refusal: impl Fn(&P) -> Option<BirthNativeRefusal>,
 ) -> Result<P, BirthNativeRefusal> {
+    // A journal is one session, not a mix of individually known revisions.
+    let revision = exchanges.first().map(|(_, response)| response.schema);
+    for (_, response) in exchanges {
+        if Some(response.schema) != revision {
+            return Err(BirthNativeRefusal::Replay);
+        }
+    }
     let mut expected = planner
         .next_step(None)
         .map_err(|_| BirthNativeRefusal::Replay)?;
@@ -700,7 +708,10 @@ impl BirthCaptureJournal for NativeOperationCapture {
                     || operation.response_id() != Some(format!("response-{ordinal}").as_str())
                     || operation.response_request_id() != Some(operation.request_id())
                     || operation.response_operation_id() != Some(operation.operation_id())
-                    || operation.request().schema != NATIVE_PROTOCOL_SCHEMA
+                    || !capture_revisions_match(
+                        operation.request().schema,
+                        operation.response().map(|r| r.schema),
+                    )
                 {
                     return Err(BirthNativeRefusal::Replay);
                 }
@@ -776,4 +787,21 @@ pub fn classify_birth_subject(
         Some(BirthObservationClass::BornFirstEqualVerify)
     };
     classify().unwrap_or(BirthObservationClass::Open)
+}
+
+// The live transport already enforces this. The capture reader retains its own
+// defensive check; the synthetic control below does not forge a live capture.
+fn capture_revisions_match(request: u32, response: Option<u32>) -> bool {
+    target_elements_conformance::protocol::OperationRevision::from_schema(request).is_ok()
+        && response.is_none_or(|revision| revision == request)
+}
+#[cfg(test)]
+mod revision_controls {
+    #[test]
+    fn birth_capture_checks_request_response_revision_before_replay() {
+        assert!(super::capture_revisions_match(8, Some(8)));
+        assert!(!super::capture_revisions_match(8, Some(9)));
+        assert!(super::capture_revisions_match(9, Some(9)));
+        assert!(!super::capture_revisions_match(10, Some(10)));
+    }
 }

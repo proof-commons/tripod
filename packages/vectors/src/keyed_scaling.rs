@@ -24,9 +24,9 @@ use target_elements_conformance::executor::{
     NativeOperationCapture, OperationStep, PlanRefused, TargetOperationPlanner,
 };
 use target_elements_conformance::protocol::{
-    FundedOutput, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse, ObservedOutcomeLayer,
-    OperationCaseId, OperationSubject, TargetSponsorFundingSubject, TargetSponsorSigningSubject,
-    TargetSubmissionSubject, WireSighashProfile,
+    FundedOutput, NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationSubject,
+    TargetSponsorFundingSubject, TargetSponsorSigningSubject, TargetSubmissionSubject,
+    WireSighashProfile,
 };
 use transaction::bytes::{InputWitness, Outpoint, TargetInput, TargetTransaction};
 
@@ -256,10 +256,7 @@ impl ScalingPlanner {
         step: &OperationStep,
         response: &NativeOperationResponse,
     ) -> Result<(), Refusal> {
-        if response.schema != NATIVE_PROTOCOL_SCHEMA
-            || &response.case != step.case()
-            || response.validate_shape().is_err()
-        {
+        if &response.case != step.case() || response.validate_shape().is_err() {
             return Err(Refusal::Response);
         }
         match step.subject() {

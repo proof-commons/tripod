@@ -403,6 +403,33 @@ mod tests {
     }
 
     #[test]
+    fn conservation_ingestion_requires_the_live_revision() {
+        let row = canonical_conservation_matrix()
+            .into_iter()
+            .next()
+            .expect("row");
+        let control = NativeConservationResponse {
+            schema: NATIVE_PROTOCOL_SCHEMA,
+            case: row.id.clone(),
+            observed_layer: ObservedOutcomeLayer::Accepted,
+            observed_detail: None,
+            transaction_bytes: Some(vec![2]),
+            observed_value_commitments: vec![],
+            observed_asset_commitments: vec![],
+            observed_openings: vec![],
+        };
+        assert!(ingest_conservation_response(&row, control.clone()).is_ok());
+        for offered in [9, 10] {
+            let mut subject = control.clone();
+            subject.schema = offered;
+            assert_eq!(
+                ingest_conservation_response(&row, subject),
+                Err(ConservationIngestionDefect::UnsupportedProtocolSchema { offered })
+            );
+        }
+    }
+
+    #[test]
     fn a_construction_failure_establishes_no_target_fact() {
         let outcome = row(
             1,

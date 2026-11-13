@@ -481,3 +481,16 @@ fn keyed_continuation_campaign_runs_against_a_real_target() {
         "capture retained but ineligible; see wire journal and RUN-REPORT"
     );
 }
+
+#[test]
+fn wire_journal_refuses_request_response_revision_disagreement() {
+    let target = reviewed_elements_tapscript().expect("target");
+    let control = journal(&synthetic());
+    assert!(replay_continuation_capture(&target, &control).is_ok());
+    let mut subject = control;
+    subject["operations"][1]["response"]["schema"] = json!(9);
+    assert_eq!(
+        replay_continuation_capture(&target, &subject).err(),
+        Some(BirthNativeRefusal::Replay)
+    );
+}

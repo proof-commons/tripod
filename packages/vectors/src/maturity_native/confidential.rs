@@ -6,11 +6,11 @@ use super::{
     AssetField, AssetId, BranchContext, CandidateDeploymentIdentity, CandidateLinkedMaturityBundle,
     FinalizedMaturityAnnouncement, FundedOutput, MaturityAcceptanceRoute,
     MaturityAnnouncementRequest, MaturityDeployment, MaturityLead, MaturityViewStatement,
-    MaturityWitnessSelection, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse,
-    ObservedOutcomeLayer, OperationCaseId, OperationStep, OperationSubject, OracleStateCurve,
-    Outpoint, PlanRefused, PublicMaturityStateView, RequestedForm, SponsorChangeRequest,
-    TargetFundingSubject, TargetOperationPlanner, TargetSubmissionSubject, TargetTransaction,
-    ValueField, asset_of, build_with_sponsor, check_coin, closure, closure_target, decode_hex,
+    MaturityWitnessSelection, NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId,
+    OperationStep, OperationSubject, OracleStateCurve, Outpoint, PlanRefused,
+    PublicMaturityStateView, RequestedForm, SponsorChangeRequest, TargetFundingSubject,
+    TargetOperationPlanner, TargetSubmissionSubject, TargetTransaction, ValueField, asset_of,
+    build_with_sponsor, check_coin, closure, closure_target, decode_hex,
     derive_maturity_announcement_abi, link_for, maturity_sources, outpoint_of, predecessor_program,
     sha256, sign_with_sponsor, singleton_declaration, sponsored,
 };
@@ -1157,7 +1157,16 @@ impl Planner {
                 if step.case() == case && &response.case == case =>
             {
                 self.exchanges.push((step.clone(), response.clone()));
-                if response.schema != NATIVE_PROTOCOL_SCHEMA || response.validate_shape().is_err() {
+                if target_elements_conformance::protocol::OperationRevision::from_schema(
+                    response.schema,
+                )
+                .is_err()
+                    || self
+                        .exchanges
+                        .first()
+                        .is_some_and(|(_, first)| first.schema != response.schema)
+                    || response.validate_shape().is_err()
+                {
                     return Err(refused("response shape"));
                 }
                 if !self.settle(&step, response)? {

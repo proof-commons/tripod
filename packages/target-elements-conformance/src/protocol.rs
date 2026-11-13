@@ -228,6 +228,28 @@ use crate::test_material::{PublicTestSignerHandle, SIGNATURE_BYTES};
 /// framing, and was refused for revision 1 on the same ground.
 pub const NATIVE_PROTOCOL_SCHEMA: u32 = 8;
 
+/// Closed set of operation-response grammars retained for historical replay.
+/// Live handshakes still require exactly `NATIVE_PROTOCOL_SCHEMA`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OperationRevision {
+    /// Historical explicit funding carries output facts only.
+    Eight,
+    /// Explicit sponsor funding also carries its canonical mined parent.
+    Nine,
+}
+impl OperationRevision {
+    /// Select the recorded grammar, without upgrading or translating a record.
+    /// # Errors
+    /// Unknown revisions are not historical evidence this reader understands.
+    pub const fn from_schema(schema: u32) -> Result<Self, ResponseShapeDefect> {
+        match schema {
+            8 => Ok(Self::Eight),
+            9 => Ok(Self::Nine),
+            _ => Err(ResponseShapeDefect::UnknownOperationRevision),
+        }
+    }
+}
+
 /// Which part of the exchange the harness was in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1037,6 +1059,10 @@ pub struct NativeExecutionResponse {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[non_exhaustive]
 pub enum ResponseShapeDefect {
+    /// No retained operation grammar exists for the recorded revision.
+    UnknownOperationRevision,
+    /// Revision nine accepted sponsor funding must carry its mined parent.
+    SponsorReadbackMissing,
     /// An accepted response named a failure class.
     AcceptedResponseNamesFailure,
     /// A rejected response named no class while the executor advertised
@@ -1124,6 +1150,8 @@ pub enum ResponseShapeDefect {
 impl std::fmt::Display for ResponseShapeDefect {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let text = match self {
+            Self::UnknownOperationRevision => "unknown operation protocol revision",
+            Self::SponsorReadbackMissing => "revision nine sponsor funding omits readback",
             Self::AcceptedResponseNamesFailure => "an accepted response named a failure class",
             Self::RejectedResponseOmitsAdvertisedFailure => {
                 "a rejected response named no failure class, which the executor advertised"
@@ -3047,6 +3075,10 @@ impl NativeOperationResponse {
     /// [`ResponseShapeDefect`] where the response is not a shape the
     /// protocol defines.
     pub const fn validate_shape(&self) -> Result<(), ResponseShapeDefect> {
+        let revision = match OperationRevision::from_schema(self.schema) {
+            Ok(revision) => revision,
+            Err(error) => return Err(error),
+        };
         let issues = self.issued_asset.is_some();
         let creates_coins = !self.funded_outputs.is_empty();
         let submits = self.accepted_txid.is_some();
@@ -3111,17 +3143,31 @@ impl NativeOperationResponse {
         // reports for a transaction it has confirmed — and a second
         // member of the same shape would let two kinds drift into two
         // spellings of one fact.
-        if !matches!(
+        let owns_readback = matches!(
             self.case.operation,
             OperationStepKind::FundConfidential
                 | OperationStepKind::FundConfidentialSponsor
                 | OperationStepKind::Submit
-        ) && reads_back
-        {
+        ) || (matches!(revision, OperationRevision::Nine)
+            && matches!(self.case.operation, OperationStepKind::FundSponsor));
+        if !owns_readback && reads_back {
             return Err(ResponseShapeDefect::OperationResponseMismatchesStep);
         }
 
-        self.validate_observation_for_kind()
+        match self.validate_observation_for_kind() {
+            Err(error) => Err(error),
+            Ok(()) => {
+                if matches!(revision, OperationRevision::Nine)
+                    && matches!(self.case.operation, OperationStepKind::FundSponsor)
+                    && matches!(self.observed_layer, ObservedOutcomeLayer::Accepted)
+                    && !reads_back
+                {
+                    Err(ResponseShapeDefect::SponsorReadbackMissing)
+                } else {
+                    Ok(())
+                }
+            }
+        }
     }
 
     const fn has_script_path_authorization(&self) -> bool {
@@ -3236,7 +3282,7 @@ impl NativeOperationResponse {
                     if !creates_coins {
                         return Err(ResponseShapeDefect::AcceptedOperationOmitsObservation);
                     }
-                } else if creates_coins {
+                } else if creates_coins || reads_back {
                     return Err(ResponseShapeDefect::RefusedOperationCarriesObservation);
                 }
             }

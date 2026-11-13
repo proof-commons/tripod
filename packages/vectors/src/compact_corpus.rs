@@ -654,7 +654,8 @@ fn parse_capture_for(
             serde_json::from_slice(&body.bytes("compact-validated-response")?)
                 .map_err(|_| CompactImportRefusal::Grammar)?;
         require(
-            response.schema == target_elements_conformance::protocol::NATIVE_PROTOCOL_SCHEMA,
+            // This archive grammar explicitly records handshake revision eight.
+            response.schema == 8,
             CompactImportRefusal::Identity,
         )?;
         response

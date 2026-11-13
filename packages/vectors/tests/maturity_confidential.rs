@@ -1155,3 +1155,22 @@ fn assert_failed_second_handshake(
     assert_eq!(capture.operations(), []);
     assert!(!plan.eligible());
 }
+
+#[test]
+fn confidential_replay_refuses_mixed_known_revisions_after_retaining_response() {
+    let original = exchanges();
+    assert!(replay_confidential_route(identity(), branch(), original).is_ok());
+    let mut plan = Planner::new(identity(), branch()).expect("planner");
+    let first = plan.next_step(None).expect("first").expect("step");
+    assert_eq!(first, original[0].0);
+    plan.next_step(Some((first.case(), &original[0].1)))
+        .expect("first response");
+    let (step, response) = &original[1];
+    let mut changed = response.clone();
+    changed.schema = 9;
+    assert_eq!(changed.validate_shape(), Ok(()));
+    assert!(plan.next_step(Some((step.case(), &changed))).is_err());
+    assert_eq!(plan.refusal().expect("refusal").field, "response shape");
+    assert_eq!(plan.exchanges().last().expect("retained").1.schema, 9);
+    assert!(!plan.eligible());
+}

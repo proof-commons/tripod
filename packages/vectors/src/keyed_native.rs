@@ -13,9 +13,9 @@ use target_elements_conformance::executor::{
     NativeOperationCapture, OperationStep, PlanRefused, TargetOperationPlanner,
 };
 use target_elements_conformance::protocol::{
-    FundedOutput, NATIVE_PROTOCOL_SCHEMA, NativeOperationResponse, ObservedOutcomeLayer,
-    OperationCaseId, OperationSubject, TargetSponsorFundingSubject, TargetSponsorSigningSubject,
-    TargetSubmissionSubject, WireSighashProfile,
+    FundedOutput, NativeOperationResponse, ObservedOutcomeLayer, OperationCaseId, OperationSubject,
+    TargetSponsorFundingSubject, TargetSponsorSigningSubject, TargetSubmissionSubject,
+    WireSighashProfile,
 };
 use transaction::bytes::{InputWitness, Outpoint, TargetInput, TargetTransaction};
 
@@ -410,7 +410,8 @@ impl KeyedCampaignPlanner {
         step: &OperationStep,
         response: &NativeOperationResponse,
     ) -> Result<(), BirthNativeRefusal> {
-        if response.schema != NATIVE_PROTOCOL_SCHEMA
+        if target_elements_conformance::protocol::OperationRevision::from_schema(response.schema)
+            .is_err()
             || &response.case != step.case()
             || response.validate_shape().is_err()
         {

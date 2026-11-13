@@ -1,5 +1,10 @@
 //! Literal review freeze history: previous and new SHA-256 bytes per path.
-//! This first entry records the reviewed expansion of the initial freeze.
+/// Current behavioural re-freeze: historical replay selects its recorded revision.
+const REPLAY_DIGEST: [u8; 32] = [
+    28, 223, 44, 25, 116, 24, 186, 151, 230, 116, 3, 13, 41, 239, 199, 240, 107, 198, 15, 164, 66,
+    209, 175, 20, 42, 226, 229, 192, 194, 70, 43, 197,
+];
+// Editorial: the planner still omits the optional assertion, preserving wire bytes.
 use vectors::keyed_final_manifest::FreezeManifest;
 
 struct Row {
@@ -12,6 +17,7 @@ struct Row {
 // selection rule; no existing production behavior changes. Evidence reopened:
 // source identity, child-module census and selection equivalence, not native
 // observations. Future entries must record their own classification and scope.
+// This first entry records the reviewed expansion of the initial freeze.
 const REVIEW: &[Row] = &[
     Row {
         path: "packages/architecture/src/keyed.rs",
@@ -375,10 +381,18 @@ pub fn check() {
         .flatten()
         .map(|p| (p.path.as_str(), p.digest))
         .collect();
-    let history: std::collections::BTreeMap<_, _> = REVIEW
+    let mut history: std::collections::BTreeMap<_, _> = REVIEW
         .iter()
         .filter_map(|row| row.current.map(|digest| (row.path, digest)))
         .collect();
+    for row in REFREEZES {
+        assert_eq!(
+            history.insert(row.path, row.current),
+            Some(row.previous),
+            "{} previous freeze",
+            row.path
+        );
+    }
     assert_eq!(history, current);
     assert_eq!(REVIEW.len(), 36);
     assert_eq!(
@@ -403,3 +417,20 @@ pub fn check() {
         }
     }
 }
+
+struct Refreeze {
+    path: &'static str,
+    previous: [u8; 32],
+    current: [u8; 32],
+}
+const REFREEZES: &[Refreeze] = &[
+    // Behavioural: select recorded replay grammar; scaling archive admission reopened.
+    Refreeze {
+        path: "packages/vectors/src/keyed_scaling.rs",
+        previous: [
+            74, 33, 143, 80, 144, 149, 220, 19, 155, 159, 188, 18, 164, 92, 161, 126, 198, 75, 38,
+            160, 75, 34, 151, 196, 71, 59, 123, 73, 147, 75, 167, 99,
+        ],
+        current: REPLAY_DIGEST,
+    },
+];
