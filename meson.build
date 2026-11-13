@@ -213,7 +213,7 @@ census_paths = [attestation_main_path, realization_path, specification_register_
 census_exclude_pattern = '(^|/)[.]|^archive/|^scripts/[^/]*[.]sh$|^LICENSE-' \
   + '|(^|/)meson[.](build|options)$|(^|/)Cargo[.]toml$|[.](bib|tsv|txt|zip)$'
 
-census_excluded_files = packages_excluded_files \
+census_excluded_files = packages_excluded_files + script_excluded_files \
   + attestation_proj.get_variable('attestation_excluded_files') \
   + lineage_proj.get_variable('lineage_excluded_files')
 census_excluded_args = []

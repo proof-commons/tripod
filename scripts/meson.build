@@ -22,6 +22,22 @@ script_source_files = files(
   'test-executor-boundaries.py',
   'test-executor-classification.py',
   'test-executor-request-comparisons.py',
+  'test-keyed-final-capture-wrappers.py',
+)
+
+# Nested shell helpers are explicit census exclusions, not label subjects.
+script_excluded_files = files(
+  'keyed-final-capture/capture-prepare.sh',
+  'keyed-final-capture/capture-unit.sh',
+  'keyed-final-capture/run-one.sh',
+)
+
+test(
+  'keyed-final-capture-wrappers',
+  find_program('python3'),
+  args: [files('test-keyed-final-capture-wrappers.py')],
+  suite: 'lint',
+  timeout: 60,
 )
 
 test(

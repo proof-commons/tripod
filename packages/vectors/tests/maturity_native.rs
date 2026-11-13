@@ -1003,3 +1003,4 @@ mod tracing_tests {
 }
 
 mod keyed_bridge;
+mod keyed_final_capture;

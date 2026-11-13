@@ -28,6 +28,7 @@ pub mod keyed_cost;
 pub mod keyed_cost_corpus;
 pub mod keyed_cost_native;
 pub mod keyed_evidence;
+pub mod keyed_final_capture;
 pub mod keyed_final_manifest;
 pub mod keyed_final_native;
 pub mod keyed_final_selection;

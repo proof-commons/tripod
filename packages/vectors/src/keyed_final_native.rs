@@ -458,7 +458,8 @@ fn terminal<T>(result: &Result<T, BridgeRefusal>, boundary: &'static str) {
 ///
 /// Presence is a measurement claim, not proof of its truth; matching empty text
 /// is not a measurement. Public all-zero key data remains valid.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CaptureProvenance {
     /// Runner records git rev-parse HEAD from the capture binary build checkout.
     pub repository_commit: Option<String>,

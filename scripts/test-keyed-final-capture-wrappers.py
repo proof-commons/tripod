@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""Node-free wrapper controls. Every spawned process has a wall guard."""
+import json
+import os
+from pathlib import Path
+import signal
+import subprocess
+import tempfile
+import time
+
+ROOT = Path(__file__).resolve().parents[1]
+WRAPPERS = ROOT / "scripts/keyed-final-capture"
+IMAGE = "fa98959193e52e93fe9f042e0b5137a79373272ecbdeaa15177a82362857c1ea"
+
+
+def executable(path, text):
+    path.write_text("#!/bin/sh\nset -eu\n" + text)
+    path.chmod(0o755)
+
+
+def run(name, argv, env, expected, guard=5):
+    started = time.monotonic()
+    process = subprocess.Popen(argv, env=env, cwd=ROOT, stdout=subprocess.PIPE,
+                               stderr=subprocess.STDOUT, start_new_session=True)
+    try:
+        output, _ = process.communicate(timeout=guard)
+        status = process.returncode
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        output, _ = process.communicate()
+        status = 124
+    wall = time.monotonic() - started
+    print(f"capture-wrapper subject={name} wall={wall:.6f}s guard={guard}s exit={status}", flush=True)
+    assert expected(status), (name, status, output.decode(errors="replace"))
+    return output.decode(errors="replace")
+
+
+def artifact_controls(root, env):
+    warm = root / "warm"
+    warm.mkdir()
+    executable(warm / "test", "exit 0\n")
+    source = root / "build.jsonl"
+    row = dict(reason="compiler-artifact", target=dict(name="maturity_native"),
+               profile=dict(test=True), executable="/cargo-target/test")
+    for name, rows, passing in (("artifact-one", [row], True),
+                                ("artifact-zero", [], False),
+                                ("artifact-many", [row, row], False),
+                                ("artifact-outside", [dict(row, executable="/other/test")], False),
+                                ("artifact-missing", [dict(row, executable="/cargo-target/missing")], False),
+                                ("artifact-parent", [dict(row, executable="/cargo-target/../test")], False)):
+        source.write_text("".join(json.dumps(value) + "\n" for value in rows))
+        run(name, [str(WRAPPERS / "capture-prepare.sh"), "--select-artifact",
+                   str(source), str(warm), str(root / "selected")], env,
+            lambda code: (code == 0) == passing)
+
+
+def selection_controls(root, env):
+    env = dict(env, TRIPOD_CAPTURE_STANDIN="1", TRIPOD_CAPTURE_TEST_ROOT=str(root))
+    passing = "printf 'running 1 test\\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 filtered out; finished in 0s\\n'\n"
+    cases = [("one-passing", passing, lambda c: c == 0, 5),
+             ("nonzero-test", "exit 7\n", lambda c: c == 7, 5),
+             ("empty-selection", "printf 'running 0 tests\\ntest result: ok. 0 passed; 0 failed; 0 ignored;\\n'\n", lambda c: c != 0, 5),
+             ("test-timeout", "sleep 20\n", lambda c: c == 124, 1)]
+    for name, body, expected, guard in cases:
+        executable(root / "maturity_native", body)
+        for file in ('test.exit','selection.exit'):
+            (root/file).unlink(missing_ok=True)
+        run(name, [str(WRAPPERS / "run-one.sh"), "birth"], env, expected, guard)
+        if name == 'one-passing': assert (root/'selection.exit').read_text().strip() == '0'
+        if name == 'empty-selection':
+            assert (root/'test.exit').read_text().strip() == '0'
+            assert (root/'selection.exit').read_text().strip() != '0'
+        assert (root/'container-cgroup.txt').exists()
+
+
+def unit_controls(root, env):
+    tools = root / "tools"
+    tools.mkdir()
+    env = dict(env, PATH=str(tools) + os.pathsep + env["PATH"], TRIPOD_CAPTURE_STANDIN="1")
+    cleanup = 'case "$1" in stop|inspect|rm) printf "%s\\n" "$*" >>"$CAPTURE_UNIT_DIR/cleanup.log"; if grep -q B16_CAPTURE_DONE "$CAPTURE_UNIT_DIR/unit.log" 2>/dev/null; then exit 99; fi; exit 0;; container) exit 1;; esac\n'
+    passing_runtime = cleanup + f'if [ "$1" = image ]; then echo {IMAGE}; else printf "0\\n" >"$CAPTURE_UNIT_DIR/test.exit"; touch "$CAPTURE_UNIT_DIR/admitted"; fi\nexit 0\n'
+    executable(tools / "systemctl", 'case "$*" in *ActiveState*) echo "${CAPTURE_ACTIVE:-inactive}";; *) echo 0;; esac\n')
+
+    def case(name, runtime=passing_runtime):
+        run_root = root / name
+        (run_root / 'build').mkdir(parents=True)
+        (run_root / 'build/prepared.json').write_text(json.dumps(dict(image=IMAGE)))
+        directory = run_root / 'birth'
+        directory.mkdir()
+        (directory / 'capture.env').write_text('TRIPOD_FINAL_CAPTURE_DIR=/capture\n')
+        executable(tools / 'podman', runtime)
+        command = [str(WRAPPERS / 'capture-unit.sh'), str(directory), 'birth', '1800', IMAGE]
+        return directory, command, dict(env, CAPTURE_UNIT_DIR=str(directory))
+
+    directory, command, selected = case('success')
+    run('unit-success', command, selected, lambda c:c==0)
+    run('watch-success', [command[0], '--wait', *command[1:]], selected, lambda c:c==0)
+    output = run('check-success', [command[0], '--check', *command[1:]], selected, lambda c:c==0)
+    assert 'capture-state=ended-and-sealed' in output
+    assert (directory/'container-final-state.json').exists()
+    assert (directory/'tools.txt').exists()
+    original = (directory/'unit.log').read_bytes()
+    run('relaunch-refused', command, selected, lambda c:c==73)
+    assert (directory/'unit.log').read_bytes() == original
+    for prior in ('start.utc','unit.pid','test.exit','end.utc','marker'):
+        d, cmd, e = case('reuse-'+prior.replace('.','-'))
+        (d/('unit.log' if prior=='marker' else prior)).write_text('B16_CAPTURE_DONE target=birth exit=0\n')
+        run('reuse-'+prior, cmd, e, lambda c:c==73)
+    directory, command, selected = case('tampered')
+    (directory/'capture.env').write_text('TRIPOD_FINAL_CAPTURE_DIR=/capture\nTRIPOD_CAPTURE_STANDIN=1\nTRIPOD_CAPTURE_TEST_ROOT=/capture\n')
+    run('tampered-environment', command, selected, lambda c:c!=0)
+    assert not (directory/'test.exit').exists()
+    directory, command, selected = case('running')
+    output = run('check-starting', [command[0], '--check', *command[1:]], dict(selected,CAPTURE_ACTIVE='activating'), lambda c:c==75)
+    assert 'awaiting-start=yes' in output
+    (directory/'start.utc').write_text(time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())+'\n')
+    output = run('check-running', [command[0], '--check', *command[1:]], dict(selected,CAPTURE_ACTIVE='active'), lambda c:c==75)
+    assert 'capture-state=still-running' in output
+    (directory/'start.utc').write_text('2000-01-01T00:00:00Z\n')
+    run('check-old-start', [command[0], '--check', *command[1:]], dict(selected,CAPTURE_ACTIVE='active'), lambda c:c not in (0,75))
+    directory, command, selected = case('missing-marker')
+    (directory/'unit.log').write_text('')
+    run('missing-marker', [command[0], '--check', *command[1:]], selected, lambda c:c==74)
+    assert (directory/'retention.sha256').exists()
+    cases = [('missing-admission',cleanup+f'if [ "$1" = image ]; then echo {IMAGE}; fi\n',74),
+             ('image-drift',cleanup+'echo different-image\n',65),
+             ('unit-nonzero',cleanup+f'if [ "$1" = image ]; then echo {IMAGE}; exit 0; fi\nexit 7\n',7)]
+    for name, runtime, status in cases:
+        directory, command, selected = case(name,runtime)
+        run(name, command, selected, lambda c:c==status)
+        assert f'B16_CAPTURE_DONE target=birth exit={status}' in (directory/'unit.log').read_text()
+        run('seal-'+name, [command[0], '--check', *command[1:]], selected, lambda c:c==74)
+        assert (directory/'retention.sha256').exists()
+    directory, command, selected = case('timeout')
+    executable(tools/'timeout', 'if [ "$1" = --kill-after=10 ]; then exit 124; fi\nif [ "$1" = --kill-after=5 ]; then shift; fi\nshift\nexec "$@"\n')
+    run('unit-timeout', command, selected, lambda c:c==124)
+    assert 'B16_CAPTURE_DONE target=birth exit=124' in (directory/'unit.log').read_text()
+    calls=(directory/'cleanup.log').read_text()
+    assert 'stop --time 10 tripod-timeout-birth' in calls
+    assert 'rm --force --ignore tripod-timeout-birth' in calls
+    executable(tools/'timeout', 'if [ "$1" = --kill-after=5 ] && [ "$2" = 60 ]; then exit 124; fi\nexec /usr/bin/timeout "$@"\n')
+    run('seal-timeout', [command[0], '--check', *command[1:]], selected, lambda c:c==124)
+    assert not (directory/'retention.sha256').exists()
+
+
+def preparation_controls(root, env):
+    tools = root / 'tools'
+    tools.mkdir()
+    env = dict(env, PATH=str(tools)+os.pathsep+env['PATH'],
+               TRIPOD_CAPTURE_STANDIN='1', TRIPOD_CAPTURE_TEST_ROOT=str(root),
+               CAPTURE_REPO=str(ROOT), CAPTURE_IMAGE=IMAGE)
+    git = tools/'git'
+    git.write_text('''#!/usr/bin/env python3
+import os, pathlib, shutil, sys
+a=sys.argv[1:]; repo=pathlib.Path(os.environ['CAPTURE_REPO'])
+if a[0]=='clone':
+    destination=pathlib.Path(a[-1]); (destination/'.git').mkdir(parents=True)
+    for relative in ('scripts/keyed-final-capture/capture-prepare.sh','scripts/keyed-final-capture/run-one.sh','scripts/keyed-final-capture/capture-unit.sh','scripts/elements-native-executor.py','packages/vectors/fixtures/adapter-request-comparisons/CURRENT-REVISION-9'):
+        path=destination/relative; path.parent.mkdir(parents=True,exist_ok=True); shutil.copy2(repo/relative,path)
+elif a[0]=='rev-parse': print(repo)
+elif a[2]=='checkout': (pathlib.Path(a[1])/'.git/HEAD').write_text(a[-1]+'\\n')
+elif a[2]=='rev-parse': print('1'*40 if pathlib.Path(a[1])==repo else (pathlib.Path(a[1])/'.git/HEAD').read_text().strip())
+elif a[2]=='status' and os.environ.get('CAPTURE_DIRTY_SOURCE'): print(' M source')
+elif a[2]=='ls-files': print('Cargo.lock'+('\\nextra' if os.environ.get('CAPTURE_EXTRA_FILE') else ''))
+''')
+    git.chmod(0o755)
+    podman = tools/'podman'
+    podman.write_text('''#!/usr/bin/env python3
+import json, os, pathlib, sys
+a=sys.argv[1:]
+if a[0]=='image': print(os.environ['CAPTURE_IMAGE']); sys.exit(0)
+if a[0] in ('stop','inspect','rm'): print('{}'); sys.exit(0)
+if a[0]=='container': sys.exit(1)
+if 'cargo' in a:
+    if os.environ.get('CAPTURE_BUILD_FAIL'): sys.exit(int(os.environ['CAPTURE_BUILD_FAIL']))
+    mounts={}
+    for i,arg in enumerate(a):
+        if arg=='-v':
+            host,guest,*_=a[i+1].split(':'); mounts[guest]=pathlib.Path(host)
+    executable=mounts['/cargo-target']/'mock'; executable.write_text('#!/bin/sh\\nexit 0\\n'); executable.chmod(0o755)
+    (mounts['/src']/'Cargo.lock').write_text('# synthetic resolved lock\\n')
+    print(json.dumps(dict(reason='compiler-artifact',target=dict(name='maturity_native'),profile=dict(test=True),executable='/cargo-target/mock')))
+else:
+    print('rustc synthetic\\ncargo synthetic\\nPython synthetic')
+    print('a'*64+'  /usr/bin/python3')
+    print('b'*64+'  /elements/bin/elementsd')
+    print('c'*64+'  /elements/bin/elements-cli')
+    print('Elements Core daemon version synthetic')
+    print('d'*40)
+    print('tip: '+'d'*40+' synthetic')
+    print('b'*64+'  elementsd')
+''')
+    podman.chmod(0o755)
+    command = [str(WRAPPERS/'capture-prepare.sh'), '1'*40]
+    run('prepare-complete', [*command,'control'], env, lambda c:c==0)
+    measured=json.loads((root/'control/build/prepared.json').read_text())
+    assert measured['trust']=='mock' and measured['framework']=='d'*40
+    assert (root/'control/build/Cargo.lock').exists()
+    run('prepare-image-drift', [*command,'drift'], dict(env,CAPTURE_IMAGE='wrong'), lambda c:c==65)
+    run('prepare-build-failure', [*command,'failed'], dict(env,CAPTURE_BUILD_FAIL='9'), lambda c:c==9)
+    assert (root/'failed/build/build.exit').read_text().strip()=='9'
+    assert 'B16_PREPARE_DONE run=control exit=0' in (root/'control/prepare.log').read_text()
+    assert 'B16_PREPARE_DONE run=failed exit=9' in (root/'failed/prepare.log').read_text()
+    run('prepare-build-timeout', [*command,'timeout'], dict(env,CAPTURE_BUILD_FAIL='124'), lambda c:c==124)
+    assert (root/'timeout/build/build-stop.log').exists()
+    assert (root/'timeout/build/build-final-state.json').exists()
+    assert 'B16_PREPARE_DONE run=timeout exit=124' in (root/'timeout/prepare.log').read_text()
+    run('prepare-extra-untracked', [*command,'extra'], dict(env,CAPTURE_EXTRA_FILE='1'), lambda c:c!=0)
+    assert not (root/'extra/build/prepared.json').exists()
+    run('prepare-dirty-checkout', [*command,'dirty'], dict(env,CAPTURE_DIRTY_SOURCE='1'), lambda c:c!=0)
+    run('prepare-wrong-commit', [command[0], '2'*40, 'wrong'], env, lambda c:c!=0)
+
+
+def main():
+    started = time.monotonic()
+    # tempfile chooses an exclusively created root, never a clock-derived name.
+    with tempfile.TemporaryDirectory(prefix="keyed-capture-wrappers-") as directory:
+        root = Path(directory)
+        env = os.environ.copy()
+        for name, test in (("artifacts", artifact_controls), ("selection", selection_controls),
+                           ("units", unit_controls), ("preparation", preparation_controls)):
+            child = root / name
+            child.mkdir()
+            test(child, env)
+    print(f"capture-wrapper family wall={time.monotonic()-started:.6f}s guard=60s", flush=True)
+
+
+if __name__ == "__main__":
+    main()

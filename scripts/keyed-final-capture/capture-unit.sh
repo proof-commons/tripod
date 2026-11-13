@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# Called by the detached unit, or its --check (single-pass) / --wait watcher.
+set -euo pipefail
+started=$SECONDS
+if [[ ${TRIPOD_CAPTURE_STANDIN:-0} != 1 ]]; then
+    export PATH=/usr/local/bin:/usr/bin:/bin
+fi
+mode=run
+if [[ ${1:-} == --wait || ${1:-} == --check ]]; then mode=${1#--}; shift; fi
+run_dir=${1:?run directory required}
+target=${2:?target required}
+guard=${3:?guard required}
+image=${4:?immutable image required}
+case "$target" in birth|continuation|commitment|cost|funding|scaling) ;; *) exit 64;; esac
+[[ $guard =~ ^[1-9][0-9]*$ ]] || exit 64
+[[ -d "$run_dir" ]] || exit 66
+root=$(dirname "$run_dir")
+run=$(basename "$root")
+unit="tripod-$run-$target"
+container_started=0
+if [[ $mode != run ]]; then
+    trap 'status=$?; printf "capture-watch wall=%ss exit=%s\n" "$((SECONDS-started))" "$status"; exit "$status"' EXIT
+    while :; do
+        state=$(timeout 10 systemctl --user show "$unit" --property=ActiveState --value)
+        case "$state" in
+            active|activating|deactivating)
+                # A poll may precede the wrapper's first instruction. Do not
+                # invent a start time or wait with a freshly renewed budget.
+                if [[ ! -f "$run_dir/start.utc" ]]; then
+                    printf 'capture-state=still-running awaiting-start=yes\n'
+                    exit 75
+                fi
+                # Reconnection cannot renew a run's budget.
+                timeout --kill-after=5 10 python3 - "$run_dir/start.utc" "$guard" <<'BOUND'
+import datetime, pathlib, sys, time
+start = datetime.datetime.fromisoformat(pathlib.Path(sys.argv[1]).read_text().strip().replace('Z','+00:00')).timestamp()
+assert time.time() <= start + int(sys.argv[2]) + 120, 'retained run deadline exceeded'
+BOUND
+                if [[ $mode == check ]]; then printf 'capture-state=still-running\n'; exit 75; fi
+                sleep 1;;
+            inactive|failed) break;;
+            *) printf 'capture-state=failed unknown-unit-state=%s\n' "$state"; exit 74;;
+        esac
+    done
+    # Hash failed runs too, but only after the writer is demonstrably absent.
+    set +e
+    timeout --kill-after=5 10 podman container exists "$unit"
+    absent=$?
+    set -e
+    [[ $absent == 1 ]] || exit 74
+    # A single-pass call is bounded below two minutes even when hashing stalls.
+    timeout --kill-after=5 60 python3 - "$run_dir" <<'SEAL'
+import hashlib, os, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+partial = root/'retention.sha256.partial'
+with partial.open('w') as output:
+    for path in sorted(root.rglob('*')):
+        if path.is_file() and path.name not in ('retention.sha256','retention.sha256.partial') and 'regtest' not in path.parts:
+            output.write(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + str(path.relative_to(root)) + '\n')
+    output.flush()
+    os.fsync(output.fileno())
+partial.replace(root/'retention.sha256')
+directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+try: os.fsync(directory)
+finally: os.close(directory)
+SEAL
+    if ! timeout --kill-after=5 10 python3 - "$run_dir/unit.log" "$target" <<'MARKER'
+import re, sys
+text = open(sys.argv[1], encoding='utf-8').read()
+markers = re.findall(r'^B16_CAPTURE_DONE target=([^ ]+) exit=([0-9]+)$', text, re.M)
+assert markers == [(sys.argv[2], '0')], 'one successful end marker required'
+MARKER
+    then printf 'capture-state=failed sealed=yes\n'; exit 74; fi
+    [[ $(timeout 10 systemctl --user show "$unit" --property=ExecMainStatus --value) == 0 ]] || { printf 'capture-state=failed sealed=yes\n'; exit 74; }
+    printf 'capture-state=ended-and-sealed\n'
+    exit 0
+fi
+# Refuse reuse before installing a trap that could overwrite old evidence.
+for prior in start.utc unit.pid test.exit end.utc; do [[ ! -e "$run_dir/$prior" ]] || exit 73; done
+if [[ -f "$run_dir/unit.log" ]] && grep -q '^B16_CAPTURE_DONE ' "$run_dir/unit.log"; then exit 73; fi
+
+snapshot() {
+    python3 - "$run_dir/$1-resources.json" <<'PY'
+import json, pathlib, time, sys
+proc = pathlib.Path('/proc/self/cgroup').read_text()
+rows = [line[3:] for line in proc.splitlines() if line.startswith('0::')]
+data = dict(epoch_ns=time.time_ns(), cgroup_membership=proc, scope='capture-unit cgroup, not daemon or clause cost', loadavg=pathlib.Path('/proc/loadavg').read_text(), counters={})
+if len(rows) == 1:
+    group = pathlib.Path('/sys/fs/cgroup') / rows[0].lstrip('/')
+    data['cgroup_path'] = str(group)
+    for name in ('cpu.stat','cpu.pressure','memory.pressure','io.pressure','memory.current','memory.peak'):
+        path = group/name
+        data['counters'][name] = path.read_text() if path.is_file() else None
+pathlib.Path(sys.argv[1]).write_text(json.dumps(data, sort_keys=True, indent=2)+'\n')
+PY
+}
+finish() {
+    status=$?
+    trap - EXIT
+    if [[ $container_started == 1 ]]; then
+        # The client may have died while conmon kept the container alive.
+        # Do not publish an end marker until removal is verified.
+        timeout --kill-after=5 20 podman stop --time 10 "$unit" >"$run_dir/container-stop.log" 2>&1 || true
+        timeout --kill-after=5 10 podman inspect "$unit" >"$run_dir/container-final-state.json" 2>"$run_dir/container-inspect.stderr" || true
+        if ! timeout --kill-after=5 20 podman rm --force --ignore "$unit" >"$run_dir/container-remove.log" 2>&1; then
+            printf 'container removal unverified; no end marker\n' >>"$run_dir/unit.log"
+            exit 74
+        fi
+        set +e
+        timeout --kill-after=5 10 podman container exists "$unit"
+        absent=$?
+        set -e
+        if [[ $absent != 1 ]]; then
+            printf 'container absence unverified; no end marker\n' >>"$run_dir/unit.log"
+            exit 74
+        fi
+    fi
+    date -u +%Y-%m-%dT%H:%M:%SZ >"$run_dir/end.utc"
+    if ! snapshot after; then
+        printf 'resource snapshot unavailable\n' >>"$run_dir/unit.log"
+        if [[ $status == 0 ]]; then status=74; fi
+    fi
+    printf 'capture-unit wall=%ss exit=%s\n' "$((SECONDS-started))" "$status" >>"$run_dir/unit.log"
+    printf 'B16_CAPTURE_DONE target=%s exit=%s\n' "$target" "$status" >>"$run_dir/unit.log"
+    exit "$status"
+}
+trap finish EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+printf '%s\n' "$$" >"$run_dir/unit.pid"
+printf '%s\n' "$unit" >"$run_dir/unit.name"
+date -u +%Y-%m-%dT%H:%M:%SZ >"$run_dir/start.utc"
+{
+    for tool in podman systemctl timeout python3 date dirname basename grep cat mkdir; do
+        printf '%s=%s\n' "$tool" "$(command -v "$tool")"
+    done
+} >"$run_dir/tools.txt"
+# A writable capture directory supplies evidence, never environment authority.
+python3 - "$run_dir/capture.env" <<'ENV'
+import pathlib, sys
+assert pathlib.Path(sys.argv[1]).read_bytes() == b'TRIPOD_FINAL_CAPTURE_DIR=/capture\n', 'capture environment differs from prepared line'
+ENV
+actual_image=$(timeout 10 podman image inspect --format '{{.Id}}' localhost/tripod-native:f44)
+[[ $actual_image == "$image" ]] || exit 65
+python3 - "$root/build/prepared.json" "$target" "$guard" "$image" <<'PY'
+import json, sys
+p = json.load(open(sys.argv[1], encoding='utf-8'))
+assert p['image'] == sys.argv[4], 'prepared image mismatch'
+assert int(sys.argv[3]) == (3600 if sys.argv[2] == 'scaling' else 1800), 'pilot guard mismatch'
+PY
+mkdir -p "$run_dir/tmp" "$run_dir/work"
+snapshot before
+command=(timeout --kill-after=10 "$guard" podman run --init --name "$unit" --network=none --userns=keep-id \
+    -v "$root/source:/src:ro,z" -v "$root/build:/capture-build:ro,z" \
+    -v "$root/run-one:/run-one:ro,z" -v "$run_dir:/capture:z" \
+    -v /var/home/tripod/loops/toolchains/elements/b7fc5d08:/elements:ro,z \
+    -e TRIPOD_FINAL_CAPTURE_DIR=/capture -e TMPDIR=/capture/tmp -e HOME=/capture/work \
+    -w /capture/work "$image" /run-one "$target")
+printf '%q ' "${command[@]}" >"$run_dir/command.shell"
+printf '\n' >>"$run_dir/command.shell"
+container_started=1
+time "${command[@]}"
+[[ -f "$run_dir/test.exit" && $(cat "$run_dir/test.exit") == 0 ]] || exit 74
+[[ -f "$run_dir/admitted" ]] || exit 74
