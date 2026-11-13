@@ -352,7 +352,31 @@ fn synthetic_capture_replays_exactly_and_exposes_all_four_records() {
     for row in replay.records() {
         assert_eq!(row.capture_json()["birth_equality_byte_offset"], 8);
         assert!(row.capture_json()["submission_response"].is_object());
+        assert!(
+            row.capture_json()
+                .get("sponsor_registration_failure")
+                .is_none()
+        );
     }
+    let mut registration_failure = replay.records()[0].clone();
+    registration_failure.submission.1.observed_detail = Some(
+        serde_json::json!({
+            "detail": {
+                "consensus": "retained",
+                "sponsor_registration_failure": "registration_unexpected_failure"
+            }
+        })
+        .to_string(),
+    );
+    let rendered = registration_failure.capture_json();
+    assert_eq!(
+        rendered["consensus_evidence"],
+        serde_json::json!({"consensus": "retained"})
+    );
+    assert_eq!(
+        rendered["sponsor_registration_failure"],
+        "registration_unexpected_failure"
+    );
 }
 
 #[test]

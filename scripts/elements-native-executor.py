@@ -4703,13 +4703,15 @@ class OperationExecutor:
     def register_after_acceptance(self, raw: bytes, readback: dict, accepted_txid: str):
         """Registration cannot erase the node's already established acceptance.
 
-        Only the closed authority condition is retained in observed_detail;
-        decoder text is not evidence. Failed registration grants no authority.
+        Only a closed condition is retained in observed_detail; exception text
+        is not evidence. Failed registration grants no authority.
         """
         try:
             self.register_submitted_change(raw, readback, accepted_txid)
         except SponsorAuthorityError as error:
             return error.failure.value
+        except Exception:
+            return "registration_unexpected_failure"
         finally:
             self.submitted_bytes.discard(raw)
         return None

@@ -313,7 +313,11 @@ impl BirthSubjectRecord {
             .as_deref()
             .and_then(|text| serde_json::from_str::<Value>(text).ok())
             .unwrap_or(Value::Null);
-        json!({
+        let mut consensus_evidence = detail["detail"].clone();
+        let registration_failure = consensus_evidence
+            .as_object_mut()
+            .and_then(|facts| facts.remove("sponsor_registration_failure"));
+        let mut capture = json!({
             "subject": format!("{:?}", self.subject.id),
             "declaration": format!("{:?}", self.subject),
             "current_input_index": self.subject.current_input_index,
@@ -335,10 +339,14 @@ impl BirthSubjectRecord {
             "relay_reason": detail["relay_detail"],
             "policy_and_startup": detail["policy"],
             "consensus_route": detail["route"],
-            "consensus_evidence": detail["detail"],
+            "consensus_evidence": consensus_evidence,
             "refusal_text": response.observed_detail,
             "birth_equality_byte_offset": BIRTH_EQUALVERIFY_OFFSET,
-        })
+        });
+        if let Some(failure) = registration_failure {
+            capture["sponsor_registration_failure"] = failure;
+        }
+        capture
     }
 }
 

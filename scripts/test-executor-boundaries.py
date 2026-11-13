@@ -1458,35 +1458,41 @@ def test_submitted_change_authority(failures):
     return checked
 
 
-def test_accepted_submission_preserves_failed_registration(failures):
-    """The node accepts; the actual registration core's framework decode refuses."""
+def accepted_registration_case(failure):
+    """Drive accepted submit through the registration core's framework seam."""
     from types import SimpleNamespace as NS
     module = executor_module()
     txid = "12" * 32
-    def run(broken):
-        class Transaction:
-            def deserialize(self, stream):
-                self.raw = stream.read()
-                if broken: raise ValueError("untrusted framework detail")
-                self.vout = []
-            def serialize(self): return self.raw
-            def rehash(self): return txid
-        def call(method, *args):
-            if method == "testmempoolaccept": return [{"allowed": True, "txid": txid}]
-            if method == "generateblock": return {"hash": "34" * 32}
-            raise AssertionError(method)
-        item = module.OperationExecutor(NS(node=NS(call=call), messages=NS(CTransaction=Transaction),
-                                           weight_of=lambda raw: 401))
-        item.sponsor_program = lambda: b"program"
-        import hashlib
-        raw = b"accepted"
-        readback = dict(raw_transaction=list(raw), transaction_id=txid,
-                        witness_transaction_id=hashlib.sha256(hashlib.sha256(raw).digest()).digest()[::-1].hex(),
-                        block_hash="34" * 32, block_height=1)
-        item.read_back_confirmed = lambda mined, identity: readback
-        return item, item.submit({"transaction_bytes": raw}), readback
-    control, accepted, readback = run(False)
-    item, subject, _ = run(True)
+    class Transaction:
+        def deserialize(self, stream):
+            self.raw = stream.read()
+            if failure == "typed": raise ValueError("untrusted framework detail")
+            self.vout = []
+        def serialize(self):
+            if failure == "untyped": raise RuntimeError("untrusted framework detail")
+            return self.raw
+        def rehash(self): return txid
+    def call(method, *args):
+        if method == "testmempoolaccept": return [{"allowed": True, "txid": txid}]
+        if method == "generateblock": return {"hash": "34" * 32}
+        raise AssertionError(method)
+    item = module.OperationExecutor(NS(node=NS(call=call), messages=NS(CTransaction=Transaction),
+                                       weight_of=lambda raw: 401))
+    item.sponsor_program = lambda: b"program"
+    import hashlib
+    raw = b"accepted"
+    readback = dict(raw_transaction=list(raw), transaction_id=txid,
+                    witness_transaction_id=hashlib.sha256(hashlib.sha256(raw).digest()).digest()[::-1].hex(),
+                    block_hash="34" * 32, block_height=1)
+    item.read_back_confirmed = lambda mined, identity: readback
+    return module, item, item.submit({"transaction_bytes": raw}), readback
+
+
+def test_accepted_submission_preserves_failed_registration(failures):
+    """The node accepts; the actual registration core's framework decode refuses."""
+    _, control, accepted, readback = accepted_registration_case(None)
+    module, item, subject, _ = accepted_registration_case("typed")
+    txid = "12" * 32
     for answer in (accepted, subject):
         failures.equal(answer["observed_layer"], "accepted", "registration cannot overwrite acceptance")
         failures.equal(answer["accepted_txid"], txid, "accepted identity retained")
@@ -1502,6 +1508,32 @@ def test_accepted_submission_preserves_failed_registration(failures):
     except module.SponsorAuthorityError as error:
         failures.equal(error.failure, module.SponsorAuthorityFailure.COIN, "later coin stays unknown")
     return 12
+
+
+def test_accepted_submission_preserves_unexpected_registration_failure(failures):
+    """An untyped framework failure cannot replace an accepted verdict."""
+    _, control, accepted, readback = accepted_registration_case(None)
+    module, item, subject, _ = accepted_registration_case("untyped")
+    txid = "12" * 32
+    for answer in (accepted, subject):
+        failures.equal(answer["observed_layer"], "accepted", "accepted verdict retained")
+        failures.equal(answer["accepted_txid"], txid, "accepted identity retained")
+        failures.equal(answer["mined_readback"], readback, "accepted readback retained")
+        failures.equal(answer["transaction_weight"], 401, "target weight retained")
+    failures.equal(accepted["observed_detail"], None, "control has no registration failure")
+    failures.equal(json.loads(subject["observed_detail"]),
+                   {"sponsor_registration_failure": "registration_unexpected_failure"},
+                   "unexpected registration failure has a closed condition")
+    failures.check("untrusted framework detail" not in subject["observed_detail"],
+                   "exception text is not exposed")
+    failures.equal(item.sponsor_coins, {}, "unexpected failure registers nothing")
+    failures.equal(item.submitted_bytes, set(), "transient bytes discarded")
+    try:
+        item.registered_sponsor({"txid": txid, "vout": 0})
+        failures.check(False, "failed registration later authorized signing")
+    except module.SponsorAuthorityError as error:
+        failures.equal(error.failure, module.SponsorAuthorityFailure.COIN, "later coin stays unknown")
+    return 14
 
 
 def test_sponsor_funding_returns_node_readback_and_bounds_before_mining(failures):
@@ -1668,6 +1700,7 @@ TESTS = (
     ("parsed sponsor assertion reaches signing", test_sponsor_assertion_parser_and_signing),
     ("plain submission registration routes", test_plain_submission_registration_routes),
     ("acceptance survives registration failure", test_accepted_submission_preserves_failed_registration),
+    ("acceptance survives unexpected registration failure", test_accepted_submission_preserves_unexpected_registration_failure),
     ("sponsor funding binds node readback and size", test_sponsor_funding_returns_node_readback_and_bounds_before_mining),
     ("submitted change has session-bound signing authority", test_submitted_change_authority),
     ("RPC arguments use stdin without argv size threshold", test_rpc_arguments_use_stdin_without_an_argv_size_threshold),
@@ -1726,6 +1759,7 @@ SERIAL_TESTS = frozenset((
     test_sponsor_assertion_parser_and_signing,
     test_plain_submission_registration_routes,
     test_accepted_submission_preserves_failed_registration,
+    test_accepted_submission_preserves_unexpected_registration_failure,
     test_sponsor_funding_returns_node_readback_and_bounds_before_mining,
     test_submitted_change_authority,
     test_rpc_arguments_use_stdin_without_an_argv_size_threshold,

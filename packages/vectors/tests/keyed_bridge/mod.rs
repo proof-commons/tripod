@@ -316,6 +316,22 @@ fn missing_provenance(control: vectors::keyed_final_native::CaptureProvenance) {
             Err(ProvenanceRefusal::Missing(field))
         );
     }
+    let zero_digest: [(ProvenanceField, Mutate); 3] = [
+        (ProvenanceField::Lock, |p| p.dependency_lock = Some([0; 32])),
+        (ProvenanceField::Freeze, |p| p.freeze = Some([0; 32])),
+        (ProvenanceField::CaptureBinary, |p| {
+            p.capture_binary = Some([0; 32]);
+        }),
+    ];
+    for (field, replace) in zero_digest {
+        assert_eq!(bind_capture_provenance(&control, &control), Ok(()));
+        let mut subject = control.clone();
+        replace(&mut subject);
+        assert_eq!(
+            bind_capture_provenance(&control, &subject),
+            Err(ProvenanceRefusal::Missing(field))
+        );
+    }
     let mut unreviewed = control;
     unreviewed.executor = Some([0; 32]);
     assert_eq!(
@@ -389,13 +405,13 @@ fn tracing_control() {
         rows.iter()
             .filter(|r| r.contains("capture provenance completed"))
             .count(),
-        2
+        5
     );
     assert_eq!(
         rows.iter()
             .filter(|r| r.contains("capture provenance refused"))
             .count(),
-        65
+        68
     );
     assert_eq!(
         rows.iter()

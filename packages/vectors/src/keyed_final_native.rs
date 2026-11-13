@@ -606,12 +606,13 @@ pub fn bind_capture_provenance(
 }
 fn provenance_core(e: &CaptureProvenance, o: &CaptureProvenance) -> Result<(), ProvenanceRefusal> {
     use ProvenanceRefusal as R;
+    let missing_digest = |digest: Option<[u8; 32]>| digest.is_none_or(|bytes| bytes == [0; 32]);
     if e.repository_commit.as_ref().is_none_or(String::is_empty)
         || o.repository_commit.as_ref().is_none_or(String::is_empty)
     {
         return Err(R::Missing(ProvenanceField::Repository));
     }
-    if e.dependency_lock.is_none() || o.dependency_lock.is_none() {
+    if missing_digest(e.dependency_lock) || missing_digest(o.dependency_lock) {
         return Err(R::Missing(ProvenanceField::Lock));
     }
     if e.toolchain.as_ref().is_none_or(String::is_empty)
@@ -644,13 +645,13 @@ fn provenance_core(e: &CaptureProvenance, o: &CaptureProvenance) -> Result<(), P
     {
         return Err(R::Missing(ProvenanceField::Image));
     }
-    if e.freeze.is_none() || o.freeze.is_none() {
+    if missing_digest(e.freeze) || missing_digest(o.freeze) {
         return Err(R::Missing(ProvenanceField::Freeze));
     }
     if e.key.is_none() || o.key.is_none() {
         return Err(R::Missing(ProvenanceField::Key));
     }
-    if e.capture_binary.is_none() || o.capture_binary.is_none() {
+    if missing_digest(e.capture_binary) || missing_digest(o.capture_binary) {
         return Err(R::Missing(ProvenanceField::CaptureBinary));
     }
     if e.interpreter.as_ref().is_none_or(String::is_empty)
