@@ -13,8 +13,7 @@
 
 #![cfg(unix)]
 
-use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -105,40 +104,67 @@ fn fixtures() -> PrimitiveFixtureSet {
     PrimitiveFixtureSet::new([build(0), build(1)]).expect("distinct cases")
 }
 
-/// A wrapper script selecting one mock behaviour.
+/// A per-run alias selecting a behavior from an immutable checked-in script.
+///
+/// No test opens the executed inode for writing. Unlike a freshly written
+/// script, these symlinks leave no writable descriptor for another test's
+/// concurrent fork to inherit during its pre-exec window.
 fn wrapper(directory: &Path, behavior: &str) -> PathBuf {
     let path = directory.join(format!("executor-{behavior}.sh"));
-    let mut file = std::fs::File::create(&path).expect("create wrapper");
-    writeln!(file, "#!/bin/sh").expect("write wrapper");
-    writeln!(
-        file,
-        "exec {} --behavior {behavior} \"$@\"",
-        env!("CARGO_BIN_EXE_mock-native-executor"),
+    symlink(
+        concat!(env!("CARGO_MANIFEST_DIR"), "/tests/executor-wrapper.sh"),
+        &path,
     )
-    .expect("write wrapper");
-    let mut permissions = file.metadata().expect("metadata").permissions();
-    permissions.set_mode(0o755);
-    file.set_permissions(permissions).expect("set mode");
-    drop(file);
+    .expect("alias checked-in wrapper");
+    symlink(
+        env!("CARGO_BIN_EXE_mock-native-executor"),
+        directory.join("mock-native-executor"),
+    )
+    .expect("alias compiled mock");
     path
 }
 
 /// A local child writes raw stderr before handing the protocol to the mock.
 fn raw_stderr_wrapper(directory: &Path) -> PathBuf {
-    let path = directory.join("raw-stderr-child.sh");
-    let mut file = std::fs::File::create(&path).expect("create child");
-    writeln!(file, "#!/bin/sh").expect("write shebang");
-    writeln!(file, "printf '%s\\n' '{NOISE}' >&2").expect("write raw diagnostic");
-    writeln!(
-        file,
-        "exec {} --behavior answer-from-census \"$@\"",
-        env!("CARGO_BIN_EXE_mock-native-executor"),
-    )
-    .expect("write mock handoff");
-    let mut permissions = file.metadata().expect("metadata").permissions();
-    permissions.set_mode(0o755);
-    file.set_permissions(permissions).expect("set mode");
-    path
+    wrapper(directory, "raw-stderr")
+}
+
+// Narrow test-harness diagnostics keep OS causes in any failing test's output.
+// Library users still choose their own subscriber; scoped capture tests retain
+// their own subscribers. Initialization does not serialize executor exchanges.
+fn startup_diagnostics() {
+    use tracing_subscriber::{Layer, layer::SubscriberExt};
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        let subscriber = tracing_subscriber::registry().with(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_test_writer()
+                .with_filter(tracing_subscriber::filter::filter_fn(|metadata| {
+                    metadata.fields().field("os_error").is_some()
+                })),
+        );
+        tracing::subscriber::set_global_default(subscriber).expect("one startup subscriber");
+    });
+}
+
+#[test]
+fn wrappers_alias_the_checked_in_script_and_compiled_mock() {
+    let source = Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/executor-wrapper.sh"
+    ));
+    let before = std::fs::read(source).expect("fixture bytes");
+    for behavior in ["answer-from-census", "unknown-field", "raw-stderr"] {
+        let directory = tempfile::tempdir().expect("tempdir");
+        let alias = wrapper(directory.path(), behavior);
+        assert_eq!(std::fs::read_link(alias).expect("script alias"), source);
+        assert_eq!(
+            std::fs::read_link(directory.path().join("mock-native-executor")).expect("mock alias"),
+            Path::new(env!("CARGO_BIN_EXE_mock-native-executor"))
+        );
+    }
+    assert_eq!(std::fs::read(source).expect("fixture bytes"), before);
 }
 
 /// Runs the two fixtures through one mock behaviour.
@@ -158,6 +184,7 @@ fn run_with(
     timeout: Duration,
     limits: ProtocolLimits,
 ) -> Result<ExecutionTranscript, NativeConformanceError> {
+    startup_diagnostics();
     let directory = tempfile::tempdir().expect("tempdir");
     let program = wrapper(directory.path(), behavior);
     let configuration = ExecutorConfiguration::new(
@@ -194,10 +221,13 @@ fn a_well_behaved_executor_answers_every_case_once() {
 #[test]
 fn a_handshake_schema_this_harness_does_not_speak_fails_closed() {
     let error = run("wrong-handshake-schema").expect_err("the schema is refused");
-    assert!(matches!(
-        error,
-        NativeConformanceError::UnsupportedProtocolSchema { .. },
-    ));
+    assert!(
+        matches!(
+            error,
+            NativeConformanceError::UnsupportedProtocolSchema { .. },
+        ),
+        "unexpected executor error: {error:?}"
+    );
 }
 
 #[test]
@@ -214,19 +244,22 @@ fn an_executor_of_the_previous_revision_fails_loudly() {
             NativeConformanceError::UnsupportedProtocolSchema { offered }
                 if offered == NATIVE_PROTOCOL_SCHEMA - 1,
         ),
-        "expected the previous revision to be named, got {error}",
+        "expected the previous revision to be named, got {error:?}",
     );
 }
 
 #[test]
 fn a_malformed_line_fails_closed() {
     let error = run("malformed-json").expect_err("the line is refused");
-    assert!(matches!(
-        error,
-        NativeConformanceError::MalformedResponse {
-            phase: ProtocolPhase::Handshake,
-        },
-    ));
+    assert!(
+        matches!(
+            error,
+            NativeConformanceError::MalformedResponse {
+                phase: ProtocolPhase::Handshake,
+            },
+        ),
+        "unexpected executor error: {error:?}"
+    );
 }
 
 #[derive(Clone)]
@@ -361,21 +394,27 @@ fn executor_tracing_keeps_results_and_refuses_one_malformed_frame_at_debug() {
 #[test]
 fn an_unknown_response_field_fails_closed() {
     let error = run("unknown-field").expect_err("the field is refused");
-    assert!(matches!(
-        error,
-        NativeConformanceError::MalformedResponse {
-            phase: ProtocolPhase::Response,
-        },
-    ));
+    assert!(
+        matches!(
+            error,
+            NativeConformanceError::MalformedResponse {
+                phase: ProtocolPhase::Response,
+            },
+        ),
+        "unexpected executor error: {error:?}"
+    );
 }
 
 #[test]
 fn a_response_schema_this_harness_does_not_speak_fails_closed() {
     let error = run("wrong-response-schema").expect_err("the schema is refused");
-    assert!(matches!(
-        error,
-        NativeConformanceError::UnsupportedProtocolSchema { .. },
-    ));
+    assert!(
+        matches!(
+            error,
+            NativeConformanceError::UnsupportedProtocolSchema { .. },
+        ),
+        "unexpected executor error: {error:?}"
+    );
 }
 
 #[test]
@@ -383,7 +422,7 @@ fn a_duplicated_result_fails_closed() {
     let error = run("duplicate-result").expect_err("the duplicate is refused");
     assert!(
         matches!(error, NativeConformanceError::DuplicateCaseResponse(_)),
-        "expected a duplicate-response failure, got {error}",
+        "expected a duplicate-response failure, got {error:?}",
     );
 }
 
@@ -392,7 +431,7 @@ fn a_result_for_a_case_never_asked_about_fails_closed() {
     let error = run("unexpected-result").expect_err("the stray result is refused");
     assert!(
         matches!(error, NativeConformanceError::UnexpectedCaseResponse(_)),
-        "expected an unexpected-response failure, got {error}",
+        "expected an unexpected-response failure, got {error:?}",
     );
 }
 
@@ -401,7 +440,7 @@ fn a_reordered_result_fails_closed() {
     let error = run("reordered-result").expect_err("the reordering is refused");
     assert!(
         matches!(error, NativeConformanceError::ResponseOrderViolation { .. }),
-        "expected an ordering failure, got {error}",
+        "expected an ordering failure, got {error:?}",
     );
 }
 
@@ -410,7 +449,7 @@ fn a_missing_result_fails_closed() {
     let error = run("missing-result").expect_err("the silence is refused");
     assert!(
         matches!(error, NativeConformanceError::MissingCaseResponse(_)),
-        "expected a missing-response failure, got {error}",
+        "expected a missing-response failure, got {error:?}",
     );
 }
 
@@ -419,7 +458,7 @@ fn protocol_data_after_the_last_response_fails_closed() {
     let error = run("trailing-data").expect_err("the trailing data is refused");
     assert!(
         matches!(error, NativeConformanceError::TrailingProtocolData),
-        "expected trailing protocol data, got {error}"
+        "expected trailing protocol data, got {error:?}"
     );
 }
 
@@ -428,7 +467,7 @@ fn a_child_that_never_starts_the_protocol_fails_closed() {
     let error = run("die-early").expect_err("the early exit is refused");
     assert!(
         matches!(error, NativeConformanceError::ExecutorHandshakeFailed),
-        "expected a handshake failure, got {error}",
+        "expected a handshake failure, got {error:?}",
     );
 }
 
@@ -437,12 +476,15 @@ fn a_nonzero_exit_fails_closed() {
     let error = run("exit-nonzero").expect_err("the exit status is refused");
     assert!(
         matches!(error, NativeConformanceError::ExecutorExited { .. }),
-        "expected an exit-status failure, got {error}",
+        "expected an exit-status failure, got {error:?}",
     );
 }
 
 #[test]
 fn an_executor_that_cannot_be_started_fails_closed() {
+    if !isolated_capture_child("an_executor_that_cannot_be_started_fails_closed") {
+        return;
+    }
     let directory = tempfile::tempdir().expect("tempdir");
     let missing = directory.path().join("no-such-executor");
     let configuration = ExecutorConfiguration::new(
@@ -453,12 +495,15 @@ fn an_executor_that_cannot_be_started_fails_closed() {
     );
     let target = reviewed_target();
     let binding = development_binding(&target);
-    let error =
-        execute(&target, &binding, &configuration, &fixtures()).expect_err("nothing to start");
-    assert!(matches!(
-        error,
-        NativeConformanceError::ExecutorStartupFailed,
-    ));
+    let (result, trace) = capture_trace(|| execute(&target, &binding, &configuration, &fixtures()));
+    let error = result.expect_err("nothing to start");
+    assert_eq!(trace.matches("executor spawn failed").count(), 1, "{trace}");
+    assert!(trace.contains("io_error_kind=NotFound"), "{trace}");
+    assert!(trace.contains("os_error=2"), "{trace}");
+    assert!(
+        matches!(error, NativeConformanceError::ExecutorStartupFailed,),
+        "unexpected executor error: {error:?}"
+    );
 }
 
 #[test]
@@ -467,7 +512,7 @@ fn a_hanging_executor_is_a_timeout_and_never_a_rejection() {
         run_with_timeout("hang", Duration::from_millis(300)).expect_err("the hang is refused");
     assert!(
         matches!(error, NativeConformanceError::ExecutorTimeout),
-        "a timeout must be its own failure, got {error}",
+        "a timeout must be its own failure, got {error:?}",
     );
 }
 
@@ -492,7 +537,7 @@ fn a_blank_record_is_refused_rather_than_skipped() {
                 phase: ProtocolPhase::Handshake,
             },
         ),
-        "expected a blank-record failure, got {error}",
+        "expected a blank-record failure, got {error:?}",
     );
 }
 
@@ -501,7 +546,7 @@ fn a_blank_record_after_the_last_response_is_trailing_data() {
     let error = run("trailing-blank-record").expect_err("the trailing record is refused");
     assert!(
         matches!(error, NativeConformanceError::TrailingProtocolData),
-        "expected trailing protocol data, got {error}",
+        "expected trailing protocol data, got {error:?}",
     );
 }
 
@@ -516,7 +561,7 @@ fn a_record_past_the_bound_is_refused() {
                 ..
             },
         ),
-        "expected an oversized-record failure, got {error}",
+        "expected an oversized-record failure, got {error:?}",
     );
 }
 
@@ -540,7 +585,7 @@ fn an_unterminated_oversized_record_is_refused_without_unbounded_allocation() {
                 maximum: 1024,
             },
         ),
-        "expected an oversized-record failure at the stated bound, got {error}",
+        "expected an oversized-record failure at the stated bound, got {error:?}",
     );
 }
 
@@ -576,7 +621,7 @@ fn a_record_at_exactly_the_bound_is_accepted() {
                 ..
             },
         ),
-        "expected an oversized-record failure, got {error}",
+        "expected an oversized-record failure, got {error:?}",
     );
 }
 
@@ -585,7 +630,7 @@ fn an_executor_that_states_no_environment_fails_closed() {
     let error = run("missing-environment").expect_err("the silence is refused");
     assert!(
         matches!(error, NativeConformanceError::MissingEnvironmentObservation),
-        "expected a missing-environment failure, got {error}",
+        "expected a missing-environment failure, got {error:?}",
     );
 }
 
@@ -594,19 +639,19 @@ fn an_executor_that_ran_another_chain_fails_before_any_case() {
     let error = run("wrong-genesis").expect_err("the other chain is refused");
     assert!(
         matches!(error, NativeConformanceError::GenesisObservationMismatch),
-        "expected a genesis mismatch, got {error}",
+        "expected a genesis mismatch, got {error:?}",
     );
 
     let error = run("wrong-network").expect_err("the other network is refused");
     assert!(
         matches!(error, NativeConformanceError::EnvironmentBindingMismatch),
-        "expected an environment mismatch, got {error}",
+        "expected an environment mismatch, got {error:?}",
     );
 
     let error = run("inactive-leaf-version").expect_err("the inactive leaf is refused");
     assert!(
         matches!(error, NativeConformanceError::ActivationObservationMismatch),
-        "expected an activation mismatch, got {error}",
+        "expected an activation mismatch, got {error:?}",
     );
 }
 
@@ -621,7 +666,7 @@ fn an_accepted_response_naming_a_failure_class_is_not_a_passing_case() {
                 ..
             },
         ),
-        "expected a response-shape failure, got {error}",
+        "expected a response-shape failure, got {error:?}",
     );
 }
 

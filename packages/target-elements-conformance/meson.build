@@ -118,6 +118,7 @@ target_elements_conformance_source_files = files(
 target_elements_conformance_excluded_files = files(
   'tests/emit_subprocess_contract.rs',
   'tests/executor_protocol.rs',
+  'tests/executor-wrapper.sh',
   'tests/executor_supervision.rs',
   'tests/prototype_round_trip.rs',
   'tests/prototype_subprocess_contract.rs',

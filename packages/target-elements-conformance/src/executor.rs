@@ -991,6 +991,11 @@ pub(crate) struct PrototypeTranscriptParts<'a> {
 /// soon as the concurrent child completes its exec, so that one cause is
 /// retried briefly. Every other spawn failure — an absent program, a
 /// permission refusal — is reported on the first attempt.
+///
+/// This fallback covers caller-owned programs staged outside the harness,
+/// whose writable descriptors this API cannot control. Protocol-test wrappers
+/// instead alias an immutable checked-in script: their window is removed,
+/// not made acceptable by a longer retry.
 fn spawn_executor(
     program: &std::path::Path,
     diagnostics: &ExecutorDiagnostics,
@@ -1638,13 +1643,25 @@ fn execute_workload_core(
         finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
         return Err(error);
     }
-    let Ok(child) = spawn_executor(
+    let child = match spawn_executor(
         &configuration.program,
         &configuration.diagnostics,
         attempt_count,
-    ) else {
-        finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
-        return Err(NativeConformanceError::ExecutorStartupFailed);
+    ) {
+        Ok(child) => child,
+        Err(error) => {
+            // Preserve the OS cause without exposing paths or child diagnostics.
+            // The public refusal remains the same startup boundary.
+            tracing::debug!(
+                target: "target_elements_conformance::executor",
+                phase = "startup",
+                io_error_kind = ?error.kind(),
+                os_error = error.raw_os_error(),
+                "executor spawn failed"
+            );
+            finish_capture(&mut capture, CaptureTerminalState::AdapterSpawnRefused);
+            return Err(NativeConformanceError::ExecutorStartupFailed);
+        }
     };
     let mut spawned = UnadoptedChild::new(child);
 
