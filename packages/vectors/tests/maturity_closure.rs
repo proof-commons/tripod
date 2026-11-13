@@ -1583,6 +1583,7 @@ impl AdoptionRun {
             return Err(PlanRefused);
         };
         let subject = TargetSponsorSigningSubject {
+            spent_output: None,
             finalized_transaction: self.candidate(case, false).encode(),
             sponsor_input_index: u16::try_from(input).map_err(|_| PlanRefused)?,
             sponsor_outpoint: self.foreign_wires.get(index).ok_or(PlanRefused)?.clone(),

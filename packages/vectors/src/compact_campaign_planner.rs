@@ -613,6 +613,7 @@ impl Planner {
                     OperationStep::new(
                         &signing_name,
                         OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                            spent_output: None,
                             finalized_transaction: bytes.clone(),
                             sponsor_input_index: u16::try_from(index).map_err(|e| e.to_string())?,
                             sponsor_outpoint: WireOutpoint {

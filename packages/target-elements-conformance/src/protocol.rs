@@ -2291,6 +2291,10 @@ pub struct TargetSponsorSigningSubject {
     /// The coin that input spends, so the executor knows which of its
     /// own programs is in question without inferring it.
     pub sponsor_outpoint: WireOutpoint,
+    /// Optional revision-nine assertion checked against the executor's registered
+    /// parent output. Omission preserves the historical request encoding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spent_output: Option<WireSpentOutput>,
     /// The profile the authorization must commit under.
     pub sighash_profile: WireSighashProfile,
 }

@@ -996,6 +996,7 @@ impl CompactAshOperationPlanner {
                 task.request().input()
             ),
             OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                spent_output: None,
                 finalized_transaction: task.request().transaction().to_vec(),
                 sponsor_input_index: task.request().input(),
                 sponsor_outpoint: WireOutpoint {

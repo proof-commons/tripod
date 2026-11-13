@@ -239,6 +239,7 @@ impl ScalingPlanner {
         } else {
             let tx = self.build()?;
             OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                spent_output: None,
                 finalized_transaction: tx.encode(),
                 sponsor_input_index: u16::try_from(tx.inputs().len() - 1)
                     .map_err(|_| Refusal::Transaction)?,

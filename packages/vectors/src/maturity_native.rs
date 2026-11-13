@@ -2518,6 +2518,7 @@ pub mod native {
                     Ok(Some(self.offer(
                         "sign-sponsor",
                         OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                            spent_output: None,
                             finalized_transaction: candidate.encode(),
                             sponsor_input_index: 1,
                             sponsor_outpoint: coin.outpoint.clone(),
@@ -4740,6 +4741,7 @@ pub mod sponsored {
             self.push(
                 "sign-sponsor",
                 OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                    spent_output: None,
                     finalized_transaction: raw,
                     sponsor_input_index: index,
                     sponsor_outpoint: coin.outpoint.clone(),

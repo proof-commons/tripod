@@ -770,6 +770,7 @@ fn every_operation_subject_round_trips_to_its_own_variant() {
             amount_per_sponsor_output: 900,
         })),
         OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+            spent_output: None,
             finalized_transaction: vec![0x02, 0x00, 0x01],
             sponsor_input_index: 3,
             sponsor_outpoint: WireOutpoint {
@@ -840,6 +841,7 @@ fn a_sponsor_step_is_refused_by_an_executor_that_did_not_advertise_one() {
         amount_per_sponsor_output: 1,
     }));
     let signing = OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+        spent_output: None,
         finalized_transaction: vec![0x02],
         sponsor_input_index: 0,
         sponsor_outpoint: WireOutpoint {
@@ -2481,4 +2483,49 @@ fn conservation_ingestion_compares_observed_and_expected_layers() {
         assert_eq!(outcome.verdict, verdict, "{layer:?}");
         assert_eq!(outcome.observed_layer, Some(layer));
     }
+}
+
+#[test]
+fn sponsor_spent_assertion_is_optional_and_round_trips_without_historical_drift() {
+    use crate::protocol::{
+        TargetSponsorSigningSubject, WireOutpoint, WireSighashProfile, WireSpentOutput,
+    };
+    let mut subject = TargetSponsorSigningSubject {
+        finalized_transaction: vec![2, 0],
+        sponsor_input_index: 3,
+        sponsor_outpoint: WireOutpoint {
+            txid: "12".repeat(32),
+            vout: 1,
+        },
+        spent_output: None,
+        sighash_profile: WireSighashProfile::AllInputsAllOutputs,
+    };
+    assert_eq!(
+        serde_json::to_vec(&subject).expect("wire bytes"),
+        br#"{"finalized_transaction":[2,0],"sponsor_input_index":3,"sponsor_outpoint":{"txid":"1212121212121212121212121212121212121212121212121212121212121212","vout":1},"sighash_profile":"all_inputs_all_outputs"}"#
+    );
+    let historical = serde_json::to_value(&subject).expect("request");
+    assert!(historical.get("spent_output").is_none());
+    assert_eq!(
+        serde_json::from_value::<TargetSponsorSigningSubject>(historical.clone())
+            .expect("old request"),
+        subject
+    );
+    subject.spent_output = Some(WireSpentOutput {
+        asset_field: vec![1; 33],
+        value_field: vec![1; 9],
+        program: vec![0, 20],
+    });
+    let current = serde_json::to_value(&subject).expect("current request");
+    assert_eq!(
+        serde_json::from_value::<TargetSponsorSigningSubject>(current.clone())
+            .expect("current round trip"),
+        subject
+    );
+    let mut projected = current;
+    projected
+        .as_object_mut()
+        .expect("object")
+        .remove("spent_output");
+    assert_eq!(projected, historical);
 }

@@ -538,3 +538,57 @@ prints; the retained timings use stdout, with the exception documented in the
 vectors tracing contract. Logs are `.b16bridge4/fingerprint.log`,
 `.b16bridge4/repaired.log`, `.b16bridge4/repaired2.log` and
 `.b16bridge4/check1.log`. These are offline fixture costs, never native costs.
+
+
+### Session-owned change registration · `rec:w1b16:bridge-authority`
+
+The orchestrator's disposition permits revision-nine registration of change
+outputs from this executor's own accepted, mined submissions. Both submission
+routes retain their session-local submitted bytes, then call the same atomic
+registration core after accepted mined readback. It checks the byte bound,
+canonical decode/re-encoding, exact submitted bytes, transaction identity and
+witness identity before retaining only outputs of its exact sponsor program.
+Unconfirmed/relayed paths do not call registration; a fresh session has no
+registry or submission standing. Values and serialized assets come from the
+readback, not from a signing offer. No signature is accepted by the harness
+without the existing frozen-byte, index and signature checks.
+
+`TargetSponsorSigningSubject::spent_output` is an optional revision-nine
+assertion of serialized asset, value and program. Existing callers use `None`,
+which serde omits, preserving every historical request byte. If supplied, each
+coordinate must equal the registered coin; it never grants authority. The
+node-free `test_submitted_change_authority` control covers an owned nonzero
+output, an excluded different program, another session, an unregistered relay,
+missing mining, size/decode/canonical/subject/identity failures, and the three
+assertion mismatches, with an empty registry after every failed registration.
+It uses a declared framework-decoder seam and claims registry evidence, not
+Elements decoding or native validity. The bridge's mock supplies the complete
+construction path separately. `SponsorAuthorityFailure` keeps these conditions
+typed; all remain conformance infrastructure refusals, never covenant verdicts.
+
+| Re-frozen path | Previous SHA-256 | New SHA-256 | Classification and reopened evidence |
+|---|---|---|---|
+| `packages/vectors/src/keyed_scaling.rs` | `1cdf2c197418ba97e674030d29efc7f06bc60fa442d1af142ae2e5c0c2462bc5` | `6ef3d8410b90916c63e0aec3b3f49032d0d7678cedf8adc2cbdd25fd8cae3641` | Editorial: only the omitted optional-field initializer; planner behaviour and wire bytes unchanged. Reopens source identity and omission/round-trip controls, no native evidence. |
+
+The source and re-pin land together and require independent review before
+capture under the existing re-freeze procedure. The literal freeze history
+retains both earlier identities and this editorial transition; all 35 pins
+pass. No other pinned file is changed.
+
+The revision-nine comparison was regenerated with
+`scripts/test-executor-request-comparisons.py --emit`; its adapter digest is
+`dbadb2aecd4278fd1611fb08cc13e3b3b258edecec7e45b3b2cb85f41c4f31c9`.
+Revision-eight comparison rows and all old archive bytes remain unchanged.
+The adapter version and live protocol remain 2.1.2 and 9: no native session has
+used this revision yet.
+
+Preliminary verification: the first Python invocation used an unavailable
+nested timeout command and exited 125 without running tests; the corrected
+outer process guards ran the node-free boundary/classification suites. The
+first conformance run passed 635 tests and found one policy-only stub that
+bypassed executor initialization. That stub now explicitly isolates authority,
+whose real controls are in the boundary suite. The corrected run passed all
+636 conformance tests and the freeze family (1.41 seconds), exit zero, overall
+57 seconds. The authority control passed 24 assertions in 0.102 seconds in
+the preceding run. Logs are `.b16bridge5/tests1.log`, `tests2.log`, `tests3.log`,
+`render.log` and `render.err`; no native process ran.

@@ -426,6 +426,7 @@ impl BirthCampaignPlanner {
 
     fn signing(tx: &TargetTransaction, index: u16, coin: &FundedOutput) -> OperationSubject {
         OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+            spent_output: None,
             finalized_transaction: tx.encode(),
             sponsor_input_index: index,
             sponsor_outpoint: coin.outpoint.clone(),

@@ -1386,6 +1386,124 @@ print(json.dumps({"argv": sys.argv[1:], "arguments": arguments}))
         return checked + 1
 
 
+def test_submitted_change_authority(failures):
+    """Node-free registry controls; the framework decoder is a deliberate seam."""
+    from types import SimpleNamespace as NS
+    import hashlib
+    import copy
+    module = executor_module()
+    F = module.SponsorAuthorityFailure
+    raw = b"owned-change"
+    program = b"\x00\x14" + bytes(range(20))
+    asset = b"\x01" + bytes(range(32))
+    value = b"\x01" + (1973).to_bytes(8, "big")
+    txid = "12" * 32
+    class Transaction:
+        def deserialize(self, stream):
+            self.raw = stream.read(len(raw)) if stream.getvalue().endswith(b"trailing") else stream.read()
+            if self.raw.startswith(b"bad"):
+                raise ValueError("synthetic decoder refusal")
+            self.vout = [NS(scriptPubKey=b"\x51", nAsset=NS(vchCommitment=asset), nValue=NS(vchCommitment=value)),
+                         NS(scriptPubKey=program, nAsset=NS(vchCommitment=asset), nValue=NS(vchCommitment=value))]
+        def serialize(self):
+            return self.raw.removesuffix(b"noncanonical")
+        def rehash(self):
+            return txid
+    def instance(submitted=True):
+        item = module.OperationExecutor(NS(messages=NS(CTransaction=Transaction)))
+        item.sponsor_program = lambda: program
+        if submitted:
+            item.submitted_bytes.add(raw)
+        return item
+    readback = dict(transaction_id=txid, witness_transaction_id=hashlib.sha256(hashlib.sha256(raw).digest()).digest()[::-1].hex(),
+                    block_hash="34" * 32, block_height=7, raw_transaction=list(raw))
+    offer = dict(asset_field=list(asset), value_field=list(value), program=list(program))
+    point = dict(txid=txid, vout=1)
+    item = instance()
+    failures.equal(item.register_submitted_change(raw, readback, txid), (txid + ":1",), "owned output at nonzero index")
+    failures.equal(item.registered_sponsor(point, offer)["value_field"], value, "readback value retained")
+    failures.equal(item.registered_sponsor(point, offer)["asset_field"], asset, "readback asset retained")
+    checked = 3
+    def refuses(call, expected, name):
+        nonlocal checked
+        try:
+            call()
+            failures.check(False, name + " accepted")
+        except module.SponsorAuthorityError as error:
+            failures.equal(error.failure, expected, name)
+        checked += 1
+    refuses(lambda: instance(False).register_submitted_change(raw, readback, txid), F.NOT_SUBMITTED, "another session or request-only transaction")
+    refuses(lambda: instance().registered_sponsor(point, offer), F.COIN, "relayed without mined registration")
+    refuses(lambda: item.registered_sponsor(dict(txid=txid, vout=0), offer), F.COIN, "different output program excluded")
+    refuses(lambda: instance(False).registered_sponsor(point, offer), F.COIN, "no authority crosses sessions")
+    for field, failure in (("asset_field", F.ASSET), ("value_field", F.VALUE), ("program", F.PROGRAM)):
+        changed = copy.deepcopy(offer); changed[field][-1] ^= 1
+        refuses(lambda: item.registered_sponsor(point, changed), failure, field)
+    refuses(lambda: item.registered_sponsor(point), F.ASSERTION, "change requires spent assertion")
+    refuses(lambda: instance().register_submitted_change(raw, readback, "56" * 32), F.IDENTITY, "accepted txid disagreement")
+    for change, failure in ((dict(block_hash=None), F.NOT_MINED),
+                            (dict(block_height=0), F.NOT_MINED),
+                            (dict(raw_transaction=list(raw + b"trailing")), F.CANONICAL),
+                            (dict(raw_transaction=[0] * (module.MAXIMUM_SPONSOR_PARENT_BYTES + 1)), F.SIZE),
+                            (dict(raw_transaction=list(b"bad")), F.DECODE),
+                            (dict(raw_transaction=list(raw + b"noncanonical")), F.CANONICAL),
+                            (dict(raw_transaction=list(b"another-canonical-subject")), F.SUBJECT),
+                            (dict(transaction_id="56" * 32), F.IDENTITY),
+                            (dict(witness_transaction_id="56" * 32), F.WITNESS_IDENTITY)):
+        changed = dict(readback, **change)
+        fresh = instance()
+        refuses(lambda: fresh.register_submitted_change(raw, changed, txid), failure, failure.value)
+        failures.equal(fresh.sponsor_coins, {}, "refusal is atomic")
+        checked += 1
+    return checked
+
+
+def test_accepted_submission_preserves_failed_registration(failures):
+    """The node accepts; the actual registration core's framework decode refuses."""
+    from types import SimpleNamespace as NS
+    module = executor_module()
+    txid = "12" * 32
+    def run(broken):
+        class Transaction:
+            def deserialize(self, stream):
+                self.raw = stream.read()
+                if broken: raise ValueError("untrusted framework detail")
+                self.vout = []
+            def serialize(self): return self.raw
+            def rehash(self): return txid
+        def call(method, *args):
+            if method == "testmempoolaccept": return [{"allowed": True, "txid": txid}]
+            if method == "generateblock": return {"hash": "34" * 32}
+            raise AssertionError(method)
+        item = module.OperationExecutor(NS(node=NS(call=call), messages=NS(CTransaction=Transaction),
+                                           weight_of=lambda raw: 401))
+        item.sponsor_program = lambda: b"program"
+        import hashlib
+        raw = b"accepted"
+        readback = dict(raw_transaction=list(raw), transaction_id=txid,
+                        witness_transaction_id=hashlib.sha256(hashlib.sha256(raw).digest()).digest()[::-1].hex(),
+                        block_hash="34" * 32, block_height=1)
+        item.read_back_confirmed = lambda mined, identity: readback
+        return item, item.submit({"transaction_bytes": raw}), readback
+    control, accepted, readback = run(False)
+    item, subject, _ = run(True)
+    for answer in (accepted, subject):
+        failures.equal(answer["observed_layer"], "accepted", "registration cannot overwrite acceptance")
+        failures.equal(answer["accepted_txid"], txid, "accepted identity retained")
+        failures.equal(answer["mined_readback"], readback, "accepted readback retained")
+        failures.equal(answer["transaction_weight"], 401, "target weight retained")
+    failures.equal(accepted["observed_detail"], None, "control has no registration failure")
+    failures.equal(json.loads(subject["observed_detail"]), {"sponsor_registration_failure": "parent_decode"},
+                   "typed registration failure is separate from verdict")
+    failures.equal(item.sponsor_coins, {}, "decode failure registers nothing")
+    try:
+        item.registered_sponsor({"txid": txid, "vout": 0})
+        failures.check(False, "failed registration later authorized signing")
+    except module.SponsorAuthorityError as error:
+        failures.equal(error.failure, module.SponsorAuthorityFailure.COIN, "later coin stays unknown")
+    return 12
+
+
 def test_sponsor_funding_returns_node_readback_and_bounds_before_mining(failures):
     """Stand-in RPC/serialization only; the Rust binding tests authenticate bytes."""
     from types import SimpleNamespace as NS
@@ -1441,8 +1559,117 @@ def test_sponsor_funding_returns_node_readback_and_bounds_before_mining(failures
     return checked
 
 
+def test_sponsor_assertion_parser_and_signing(failures):
+    """Parse actual requests and sign through a deliberately node-free framework seam."""
+    from types import SimpleNamespace as NS
+    import copy
+    module = executor_module()
+    txid = "12" * 32
+    asset = b"\x01" + bytes(range(32))
+    value = b"\x01" + (1973).to_bytes(8, "big")
+    program = b"\x00\x14" + bytes(range(20))
+    class Transaction:
+        def deserialize(self, stream):
+            assert stream.read() == b"final"
+            self.vin = [NS(prevout=NS(hash=module.txid_to_internal_int(txid), n=1))]
+    values = []
+    def digest(script, transaction, index, profile, amount):
+        values.append(amount.vchCommitment)
+        return b"digest"
+    script = NS(CScript=lambda x: x, OP_DUP=1, OP_HASH160=2, OP_EQUALVERIFY=3, OP_CHECKSIG=4,
+                hash160=lambda x: b"hash", SegwitV0SignatureHash=digest)
+    item = module.OperationExecutor(NS(messages=NS(CTransaction=Transaction, CTxOutValue=NS), script=script))
+    item.sponsor_program = lambda: program
+    item.sponsor_key = lambda: NS(get_pubkey=lambda: NS(get_bytes=lambda: b"public"),
+                                  sign_ecdsa=lambda digest, rfc6979: b"signature")
+    offer = dict(asset_field=list(asset), value_field=list(value), program=list(program))
+    wire = dict(finalized_transaction=list(b"final"), sponsor_input_index=0,
+                sponsor_outpoint=dict(txid=txid, vout=1), sighash_profile="all_inputs_all_outputs")
+    checked = 0
+    for change in (False, True):
+        item.sponsor_coins[txid + ":1"] = (dict(asset_field=asset, value_field=value, program=program, change=True)
+                                          if change else dict(asset=asset[1:][::-1].hex(), value_field=value))
+        matched = dict(wire, spent_output=offer)
+        answer = item.sign_sponsor(module.parse_operation_subject(matched, "sign_sponsor"))
+        failures.equal(answer["signature_bound_to"], list(b"final"), "parsed signing binds frozen bytes")
+        failures.equal(values[-1], value, "digest uses registered value")
+        checked += 2
+        for field, expected in (("asset_field", module.SponsorAuthorityFailure.ASSET),
+                                ("value_field", module.SponsorAuthorityFailure.VALUE),
+                                ("program", module.SponsorAuthorityFailure.PROGRAM)):
+            wrong = copy.deepcopy(matched); wrong["spent_output"][field][-1] ^= 1
+            before = len(values)
+            try:
+                item.sign_sponsor(module.parse_operation_subject(wrong, "sign_sponsor"))
+                failures.check(False, "mismatched assertion signed")
+            except module.SponsorAuthorityError as error:
+                failures.equal(error.failure, expected, "parsed assertion refusal")
+            failures.equal(len(values), before, "mismatch refuses before digest/signing")
+            checked += 2
+        absent = module.parse_operation_subject(wire, "sign_sponsor")
+        if change:
+            try:
+                item.sign_sponsor(absent)
+                failures.check(False, "change signed without assertion")
+            except module.SponsorAuthorityError as error:
+                failures.equal(error.failure, module.SponsorAuthorityFailure.ASSERTION, "change requires assertion")
+        else:
+            failures.equal(item.sign_sponsor(absent)["signature_bound_to"], list(b"final"), "funding omission stays supported")
+        checked += 1
+    for mutation, field in (("missing", "asset_field"), ("extra", "extra"), ("non-bytes", "value_field")):
+        wrong = dict(wire, spent_output=copy.deepcopy(offer))
+        if mutation == "missing": del wrong["spent_output"][field]
+        elif mutation == "extra": wrong["spent_output"][field] = []
+        else: wrong["spent_output"][field] = False
+        try:
+            module.parse_operation_subject(wrong, "sign_sponsor")
+            failures.check(False, mutation + " parsed")
+        except (module.FatalAdapterError, module.AdapterError) as error:
+            failures.check("spent_output." + field in str(error), mutation + " names its field")
+        checked += 1
+    return checked
+
+
+def test_plain_submission_registration_routes(failures):
+    """A spy pins accepted, refused, relay-policy and timeout call sites."""
+    from types import SimpleNamespace as NS
+    module = executor_module()
+    checked = 0
+    for route in ("accepted", "refused", "relay-policy", "timeout"):
+        registrations = []
+        def call(method, *args):
+            if method == "testmempoolaccept":
+                return [{"allowed": route in ("accepted", "timeout"), "txid": "12" * 32,
+                         "reject-reason": "min relay fee not met"}]
+            if method == "generateblock":
+                if route == "timeout": raise module.UndecidedCall(method, 120, "expired")
+                if route == "refused": raise module.AdapterError("refused", "TestBlockValidity failed: bad-txns-inputs-missingorspent")
+                return {"hash": "34" * 32}
+            if method == "getrawtransaction": raise module.AdapterError("not found")
+            raise AssertionError(method)
+        item = module.OperationExecutor(NS(node=NS(call=call), weight_of=lambda raw: 401))
+        item.register_submitted_change = lambda *args: registrations.append(args)
+        rb = {"transaction_id": "12" * 32, "block_hash": "34" * 32}
+        item.read_back_confirmed = lambda mined, identity: rb
+        try:
+            answer = item.submit({"transaction_bytes": b"raw"})
+            failures.check(route != "timeout", "timeout cannot return a verdict")
+            failures.equal(answer["observed_layer"], {"accepted": "accepted", "refused": "consensus_rejection_before_script",
+                           "relay-policy": "relay_policy_rejection"}[route], "route verdict")
+        except module.UndecidedCall:
+            failures.equal(route, "timeout", "only timeout is undecided")
+        failures.equal(registrations, [(b"raw", rb, "12" * 32)] if route == "accepted" else [], "registration call site")
+        failures.equal(item.submitted_bytes, set(), "transient bytes released")
+        checked += 4
+    return checked
+
+
 TESTS = (
+    ("parsed sponsor assertion reaches signing", test_sponsor_assertion_parser_and_signing),
+    ("plain submission registration routes", test_plain_submission_registration_routes),
+    ("acceptance survives registration failure", test_accepted_submission_preserves_failed_registration),
     ("sponsor funding binds node readback and size", test_sponsor_funding_returns_node_readback_and_bounds_before_mining),
+    ("submitted change has session-bound signing authority", test_submitted_change_authority),
     ("RPC arguments use stdin without argv size threshold", test_rpc_arguments_use_stdin_without_an_argv_size_threshold),
     ("signing asset and value encodings", test_signing_asset_and_value_encodings),
     ("signing control block widths", test_signing_control_block_widths),
@@ -1496,7 +1723,11 @@ TESTS = (
 # Module-loading and stream-redirection tests must run on the main thread.
 # Keep source-only checks here too: only subprocess-driven tests use the pool.
 SERIAL_TESTS = frozenset((
+    test_sponsor_assertion_parser_and_signing,
+    test_plain_submission_registration_routes,
+    test_accepted_submission_preserves_failed_registration,
     test_sponsor_funding_returns_node_readback_and_bounds_before_mining,
+    test_submitted_change_authority,
     test_rpc_arguments_use_stdin_without_an_argv_size_threshold,
     test_an_extra_execution_field_cannot_inject_a_typed_line,
     test_the_typed_sink_rejects_line_bearing_content,

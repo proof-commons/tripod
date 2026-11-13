@@ -5,6 +5,10 @@ const REPLAY_DIGEST: [u8; 32] = [
     209, 175, 20, 42, 226, 229, 192, 194, 70, 43, 197,
 ];
 // Editorial: the planner still omits the optional assertion, preserving wire bytes.
+const SIGNING_INITIALIZER_DIGEST: [u8; 32] = [
+    110, 243, 216, 65, 11, 144, 145, 108, 99, 224, 174, 195, 179, 244, 144, 50, 208, 215, 103, 140,
+    237, 248, 173, 194, 203, 221, 37, 253, 140, 174, 54, 65,
+];
 use vectors::keyed_final_manifest::FreezeManifest;
 
 struct Row {
@@ -432,5 +436,11 @@ const REFREEZES: &[Refreeze] = &[
             160, 75, 34, 151, 196, 71, 59, 123, 73, 147, 75, 167, 99,
         ],
         current: REPLAY_DIGEST,
+    },
+    // Editorial: omitted optional signing assertion; existing wire bytes unchanged.
+    Refreeze {
+        path: "packages/vectors/src/keyed_scaling.rs",
+        previous: REPLAY_DIGEST,
+        current: SIGNING_INITIALIZER_DIGEST,
     },
 ];

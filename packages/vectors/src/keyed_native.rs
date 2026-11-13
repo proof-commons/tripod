@@ -352,6 +352,7 @@ impl KeyedCampaignPlanner {
     }
     fn sign(tx: &TargetTransaction, coin: &FundedOutput, index: u16) -> OperationSubject {
         OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+            spent_output: None,
             finalized_transaction: tx.encode(),
             sponsor_input_index: index,
             sponsor_outpoint: coin.outpoint.clone(),

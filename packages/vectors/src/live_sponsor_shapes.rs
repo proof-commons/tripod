@@ -1577,6 +1577,7 @@ impl SponsorShapePlanner {
         Ok(OperationStep::new(
             "authorize-sponsor-input",
             OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                spent_output: None,
                 finalized_transaction: sent,
                 sponsor_input_index: input,
                 sponsor_outpoint: WireOutpoint {

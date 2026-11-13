@@ -289,7 +289,7 @@ def test_a_mempool_conservation_reason_is_not_upgraded_to_a_script_verdict(
     return checks
 
 
-def maturity_submission(executor, block_error=None, relay_reason="min relay fee not met"):
+def maturity_submission(executor, block_error=None, relay_reason="min relay fee not met", registration_failure=False):
     """Drive the real submission and classifier over a scripted node, without RPC."""
     txid = "11" * 32
     block_hash = "22" * 32
@@ -335,9 +335,20 @@ def maturity_submission(executor, block_error=None, relay_reason="min relay fee 
     operations = executor.OperationExecutor.__new__(executor.OperationExecutor)
     operations.executor = SimpleNamespace(
         node=node, messages=SimpleNamespace(CBlock=Block), weight_of=lambda raw: 400)
+    operations.submitted_bytes = set()
+    registrations = []
+    def register(*args):
+        registrations.append(args)
+        if registration_failure:
+            raise executor.SponsorAuthorityError(executor.SponsorAuthorityFailure.CANONICAL)
+    operations.register_submitted_change = register
     operations.read_back_confirmed = lambda mined, identity: {
         "block_hash": block_hash, "transaction_id": identity}
-    return operations.submit_maturity({"transaction_bytes": b"\x00"}), node.methods
+    answer = operations.submit_maturity({"transaction_bytes": b"\x00"})
+    assert registrations == ([(b"\x00", {"block_hash": block_hash, "transaction_id": txid}, txid)]
+                             if answer["observed_layer"] == "accepted" else [])
+    assert not operations.submitted_bytes
+    return answer, node.methods
 
 
 def test_direct_block_records_only_vocabulary_keys(executor, failures):
@@ -400,7 +411,11 @@ def test_direct_block_preserves_other_routes(executor, failures):
     failures.equal(detail["detail"]["verdict_reason"], "bad-txns-in-ne-out", "mempool reason wins")
     failures.equal(detail["detail"]["block_script_error"], "Invalid Schnorr signature",
                    "recording does not decide the layer")
-    return 16
+    body, _ = maturity_submission(executor, registration_failure=True)
+    failures.equal(body["observed_layer"], "accepted", "registration failure cannot erase maturity acceptance")
+    failures.equal(json.loads(body["observed_detail"])["detail"]["sponsor_registration_failure"],
+                   "parent_noncanonical", "maturity keeps the typed registration diagnostic")
+    return 18
 
 
 TESTS = [

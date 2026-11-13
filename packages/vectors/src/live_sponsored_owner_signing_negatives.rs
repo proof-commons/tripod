@@ -1038,6 +1038,7 @@ impl SponsoredOwnerSigningNegativePlanner {
         Ok(OperationStep::new(
             AUTHORIZE_STEP,
             OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                spent_output: None,
                 finalized_transaction: sent,
                 sponsor_input_index: input,
                 sponsor_outpoint: WireOutpoint {

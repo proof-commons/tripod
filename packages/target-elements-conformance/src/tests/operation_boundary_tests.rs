@@ -146,9 +146,29 @@ for method in adapter.SINGLE_BUDGET_METHODS:
             raise AssertionError('expired mutation became a verdict')
 node = Mock(fee_policy='node-defaults', start_arguments=['elementsd', '-daemon=0'], call_observations=[])
 operations = adapter.OperationExecutor.__new__(adapter.OperationExecutor)
+operations.submitted_bytes = set()
+# This stub isolates policy observations; authority has its own boundary controls.
+operations.register_submitted_change = Mock(return_value=())
 operations.executor = Mock(node=node, weight_of=lambda raw: 4000)
 operations.read_back_confirmed = Mock(return_value={'transaction_id': 'accepted', 'block_hash':'block'})
 operations.executor.messages.CBlock.return_value = Mock(vtx=[Mock(hash='accepted', rehash=lambda: 'accepted')], get_weight=lambda: 4000)
+submit_route = operations.submit_maturity
+def checked_submit(subject):
+    operations.register_submitted_change.reset_mock()
+    try:
+        answer = submit_route(subject)
+    except BaseException:
+        operations.register_submitted_change.assert_not_called()
+        assert not operations.submitted_bytes
+        raise
+    if answer['observed_layer'] == 'accepted':
+        operations.register_submitted_change.assert_called_once_with(
+            subject['transaction_bytes'], answer['mined_readback'], answer['accepted_txid'])
+    else:
+        operations.register_submitted_change.assert_not_called()
+    assert not operations.submitted_bytes
+    return answer
+operations.submit_maturity = checked_submit
 floors = {'minrelaytxfee': '0.00000100', 'mempoolminfee': '0.00000100', 'size':999}
 for accepted in [True, False]:
     calls = []

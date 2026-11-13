@@ -790,6 +790,7 @@ impl Planner {
     fn signing(&self, bytes: Vec<u8>) -> Result<OperationSubject, RouteRefusal> {
         Ok(OperationSubject::SponsorSigning(Box::new(
             TargetSponsorSigningSubject {
+                spent_output: None,
                 finalized_transaction: bytes,
                 sponsor_input_index: 1,
                 sponsor_outpoint: point(self.sponsor()?.outpoint),

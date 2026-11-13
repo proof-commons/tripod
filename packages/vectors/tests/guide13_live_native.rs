@@ -186,6 +186,7 @@ fn scripted_step(operation: ScriptedCeremonyOperation) -> OperationStep {
         }
         ScriptedOperationKind::SponsorSigning => {
             OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                spent_output: None,
                 finalized_transaction: vec![0x02, 0x00, 0x00, 0x00],
                 sponsor_input_index: 0,
                 sponsor_outpoint: WireOutpoint {

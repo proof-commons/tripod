@@ -372,6 +372,7 @@ impl FundingPlanner {
                 let tx = self.build(source, handle, fee, ordinary)?;
                 let coin = &self.coins[usize::from(!source)];
                 OperationSubject::SponsorSigning(Box::new(TargetSponsorSigningSubject {
+                    spent_output: None,
                     finalized_transaction: tx.encode(),
                     sponsor_input_index: u16::from(!source),
                     sponsor_outpoint: coin.outpoint.clone(),

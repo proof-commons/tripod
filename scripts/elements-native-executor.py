@@ -520,6 +520,8 @@ ADAPTER_VERSION = "2.1.2"
 # Accepted fund_sponsor answers require readback, bounded before mining and on
 # return; revision-eight archives retain their original no-readback grammar.
 # Live handshakes remain exact. Historical replay selects its recorded grammar.
+# An optional signing assertion is checked against registered output facts.
+# Only this session's accepted, mined own-program change gains signing standing.
 NATIVE_PROTOCOL_SCHEMA = 9
 MAXIMUM_SPONSOR_PARENT_BYTES = 512 * 1024
 
@@ -1283,6 +1285,30 @@ class AdapterError(Exception):
         super().__init__(note)
         self.note = note
         self.client_detail = client_detail
+
+
+class SponsorAuthorityFailure(Enum):
+    """Conformance registration failures, never covenant verdicts."""
+    NOT_SUBMITTED = "not_submitted_in_session"
+    NOT_MINED = "mined_readback_required"
+    SIZE = "parent_size"
+    DECODE = "parent_decode"
+    CANONICAL = "parent_noncanonical"
+    SUBJECT = "submitted_bytes_mismatch"
+    IDENTITY = "parent_identity"
+    WITNESS_IDENTITY = "parent_witness_identity"
+    COIN = "coin_not_registered"
+    ASSET = "spent_asset_mismatch"
+    VALUE = "spent_value_mismatch"
+    PROGRAM = "spent_program_mismatch"
+    ASSERTION = "change_spent_assertion_required"
+
+
+class SponsorAuthorityError(AdapterError):
+    """A typed authority boundary carried in the infrastructure diagnostic."""
+    def __init__(self, failure):
+        self.failure = failure
+        super().__init__("sponsor authority: " + failure.value)
 
 
 RPC_CALL_BUDGET_SECONDS = 120
@@ -3675,6 +3701,9 @@ class OperationExecutor:
         # and a coin this adapter never created is one it cannot
         # authorize, which is a refusal rather than a guess.
         self.sponsor_coins = {}
+        # Session-local submitted bytes, never caller-named outpoints. Only an
+        # accepted mined readback can turn one into owned signing authority.
+        self.submitted_bytes = set()
         self.sponsor_key_cache = None
         # The deterministic materializer, where the zero-knowledge
         # library the node's own build produced could be reached. None
@@ -4626,6 +4655,85 @@ class OperationExecutor:
             "transaction_weight": executor.weight_of(transaction.serialize().hex()),
         }
 
+    def register_submitted_change(self, raw: bytes, readback: dict, accepted_txid: str):
+        """Register owned outputs only after this session submitted exact mined bytes.
+
+        The two submit routes call this only after their accepted block readback.
+        Merely relayed, refused, or unresolved submissions never call it.
+        Parsing and content identities are rechecked before any registry write.
+        """
+        F = SponsorAuthorityFailure
+        if raw not in self.submitted_bytes:
+            raise SponsorAuthorityError(F.NOT_SUBMITTED)
+        if not isinstance(readback, dict) or not isinstance(readback.get("block_hash"), str) or not readback["block_hash"] or not isinstance(readback.get("block_height"), int) or readback["block_height"] <= 0:
+            raise SponsorAuthorityError(F.NOT_MINED)
+        reported = bytes(readback.get("raw_transaction", []))
+        if len(reported) > MAXIMUM_SPONSOR_PARENT_BYTES:
+            raise SponsorAuthorityError(F.SIZE)
+        transaction = self.executor.messages.CTransaction()
+        stream = io.BytesIO(reported)
+        try:
+            transaction.deserialize(stream)
+        except Exception as error:
+            raise SponsorAuthorityError(F.DECODE) from error
+        if stream.read() or transaction.serialize() != reported:
+            raise SponsorAuthorityError(F.CANONICAL)
+        if reported != raw:
+            raise SponsorAuthorityError(F.SUBJECT)
+        txid = transaction.rehash()
+        if txid != accepted_txid or txid != readback.get("transaction_id"):
+            raise SponsorAuthorityError(F.IDENTITY)
+        wtxid = hashlib.sha256(hashlib.sha256(reported).digest()).digest()[::-1].hex()
+        if wtxid != readback.get("witness_transaction_id"):
+            raise SponsorAuthorityError(F.WITNESS_IDENTITY)
+        program = self.sponsor_program()
+        owned = {}
+        for index, output in enumerate(transaction.vout):
+            if bytes(output.scriptPubKey) == program:
+                owned["%s:%d" % (txid, index)] = {
+                    "asset_field": bytes(output.nAsset.vchCommitment),
+                    "value_field": bytes(output.nValue.vchCommitment),
+                    "program": program,
+                    "change": True,
+                }
+        self.sponsor_coins.update(owned)
+        self.submitted_bytes.remove(raw)
+        return tuple(owned)
+
+    def register_after_acceptance(self, raw: bytes, readback: dict, accepted_txid: str):
+        """Registration cannot erase the node's already established acceptance.
+
+        Only the closed authority condition is retained in observed_detail;
+        decoder text is not evidence. Failed registration grants no authority.
+        """
+        try:
+            self.register_submitted_change(raw, readback, accepted_txid)
+        except SponsorAuthorityError as error:
+            return error.failure.value
+        finally:
+            self.submitted_bytes.discard(raw)
+        return None
+
+    def registered_sponsor(self, stated: dict, offered=None):
+        """An offer asserts facts about an owned coin; it never creates one."""
+        F = SponsorAuthorityFailure
+        held = self.sponsor_coins.get("%s:%d" % (stated["txid"], stated["vout"]))
+        if held is None:
+            raise SponsorAuthorityError(F.COIN)
+        if held.get("change", False) and offered is None:
+            raise SponsorAuthorityError(F.ASSERTION)
+        if offered is not None:
+            asset = held.get("asset_field")
+            if asset is None:
+                asset = bytes([1]) + bytes.fromhex(held["asset"])[::-1]
+            if bytes(offered["asset_field"]) != asset:
+                raise SponsorAuthorityError(F.ASSET)
+            if bytes(offered["value_field"]) != held["value_field"]:
+                raise SponsorAuthorityError(F.VALUE)
+            if bytes(offered["program"]) != held.get("program", self.sponsor_program()):
+                raise SponsorAuthorityError(F.PROGRAM)
+        return held
+
     def sign_sponsor(self, subject: dict) -> dict:
         """Authorizes one input of a finalized transaction.
 
@@ -4679,12 +4787,7 @@ class OperationExecutor:
                 "input %d does not spend the coin the step named" % index
             )
 
-        held = self.sponsor_coins.get("%s:%d" % (stated["txid"], stated["vout"]))
-        if held is None:
-            raise AdapterError(
-                "this adapter did not create the coin it was asked to "
-                "authorize a spend of, so it holds nothing that could"
-            )
+        held = self.registered_sponsor(stated, subject.get("spent_output"))
 
         # The field the funding step retained, written through unchanged.
         # Whether it is an explicit amount or a value commitment is the
@@ -4740,6 +4843,13 @@ class OperationExecutor:
     # -- submission -------------------------------------------------------
 
     def submit(self, subject: dict) -> dict:
+        """Submit once; retain no transient bytes after any return or exception."""
+        try:
+            return self._submit(subject)
+        finally:
+            self.submitted_bytes.discard(subject["transaction_bytes"])
+
+    def _submit(self, subject: dict) -> dict:
         """Hands the target a complete transaction and reports the layer.
 
         # Why the mempool is asked first and the block second
@@ -4777,6 +4887,7 @@ class OperationExecutor:
             # Confirmed rather than left in the mempool, so that an
             # acceptance is an acceptance by block validation too and the
             # coins it creates are visible to any later step.
+            self.submitted_bytes.add(bytes.fromhex(raw))
             try:
                 mined = self.executor.node.call(
                     "generateblock", "raw(%s)" % ANYONE_CAN_SPEND_HEX, json.dumps([raw])
@@ -4786,11 +4897,14 @@ class OperationExecutor:
             except AdapterError as error:
                 return self.refused_at_consensus(error, raw=raw)
             txid = result.get("txid")
+            readback = self.read_back_confirmed(mined, txid)
+            registration = self.register_after_acceptance(bytes.fromhex(raw), readback, txid)
             return {
                 "observed_layer": "accepted",
-                "observed_detail": None,
+                "observed_detail": (json.dumps({"sponsor_registration_failure": registration})
+                                    if registration is not None else None),
                 "accepted_txid": txid,
-                "mined_readback": self.read_back_confirmed(mined, txid),
+                "mined_readback": readback,
                 "transaction_weight": self.executor.weight_of(raw),
             }
 
@@ -4851,6 +4965,13 @@ class OperationExecutor:
         }
 
     def submit_maturity(self, subject: dict) -> dict:
+        """Observe maturity once, clearing transient bytes on every route."""
+        try:
+            return self._submit_maturity(subject)
+        finally:
+            self.submitted_bytes.discard(subject["transaction_bytes"])
+
+    def _submit_maturity(self, subject: dict) -> dict:
         """Separate relay, ordinary selection and explicit block inclusion."""
         started = time.monotonic()
         node = self.executor.node
@@ -4895,6 +5016,7 @@ class OperationExecutor:
                     return waiting(unresolved.observation, readback)
                 return waiting(unresolved.observation)
         if result.get("allowed") is True:
+            self.submitted_bytes.add(bytes.fromhex(raw))
             try:
                 sent = node.call("sendrawtransaction", raw)
             except UndecidedCall as error:
@@ -4985,6 +5107,7 @@ class OperationExecutor:
                 return waiting(error.observation)
             except AdapterError:
                 pass
+            self.submitted_bytes.add(bytes.fromhex(raw))
             try:
                 mined = node.call("generateblock", MINING_DESCRIPTOR, json.dumps([raw]))
             except UndecidedCall as error:
@@ -5022,6 +5145,9 @@ class OperationExecutor:
         facts.update(produced_block=mined["hash"] if isinstance(mined, dict) else mined,
                      included_block=readback["block_hash"], calls=node.call_observations[call_start:])
         facts["inclusion_in_produced"] = facts["produced_block"] == facts["included_block"]
+        registration = self.register_after_acceptance(bytes.fromhex(raw), readback, txid)
+        if registration is not None:
+            facts["sponsor_registration_failure"] = registration
         return {"observed_layer": "accepted", "observed_detail": json.dumps(detail),
                 "accepted_txid": txid, "mined_readback": readback,
                 "transaction_weight": weight}
@@ -8093,6 +8219,13 @@ def parse_operation_subject(raw: object, kind: str) -> dict:
         }
 
     if kind == "sign_sponsor":
+        subject = dict(subject)
+        spent_output = subject.pop("spent_output", None)
+        if spent_output is not None:
+            spent_output = require_object(spent_output, "request.subject.spent_output")
+            require_keys(spent_output, ("asset_field", "value_field", "program"), "request.subject.spent_output")
+            spent_output = {name: require_bytes(spent_output[name], "request.subject.spent_output." + name)
+                            for name in ("asset_field", "value_field", "program")}
         require_keys(
             subject,
             (
@@ -8126,6 +8259,7 @@ def parse_operation_subject(raw: object, kind: str) -> dict:
                 subject.get("finalized_transaction"),
                 "request.subject.finalized_transaction",
             ),
+            "spent_output": spent_output,
             "sponsor_input_index": require_int(
                 subject.get("sponsor_input_index"),
                 "request.subject.sponsor_input_index",
