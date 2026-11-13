@@ -464,6 +464,7 @@ credentials, or production authority.
 |Cryptographic report assumptions|TODO|Add an assumption kind for conditional NUMS/discrete-log, preimage, second-preimage/collision and target-authentication premises in the keyed report form, with binding/refusal controls and independent review. They remain carried in the records, not discharged or encoded by current headers (`rec:w1b15:gate-review`).|
 |Gate-of-record journal retention|DONE|The loop-owned gate now copies each run’s per-test journals into its evidence directory as `cargo-test-json.tar.gz`, retaining digest, file count and size in the gate log; the `0.7.123-dev` journals were saved before replacement. This preserves future passing durations; the first `0.7.121-dev` timing gap remains explicitly unavailable under (`rec:w1b15:gate-review`).|
 |History phase tracing|TODO|Convert test-only printed phase timers to scoped tracing spans while preserving flushed diagnostics when a child times out; the current exception and its reason are recorded in `packages/vectors/TRACING.md` and (`rec:w1b15:gate-review`).|
+|Test-directory collision|REPAIRED|The shared vectors allocator uses exclusive temporary-directory creation with collision retry; an eight-thread, 512-directory same-label control checks distinct empty owned directories (`rec:w1b16:test-directory`). The `0.7.124-dev` gate remains RED; the repair's covering gate is separate evidence.|
 
 ## 4. Compact historical record · `sec:backlog:history`
 

@@ -3,7 +3,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use target_elements::DeploymentEnvironment;
 use target_elements_conformance::executor::NativeOperationCapture;
@@ -1996,17 +1995,21 @@ pub(crate) fn timing_path(report: &Path) -> PathBuf {
     path
 }
 
+/// Create an empty directory whose lifetime and cleanup belong to the caller.
+///
+/// # Panics
+/// Panics if the temporary directory cannot be created because of an I/O error.
 pub(crate) fn test_directory(label: &str) -> PathBuf {
+    let _span = tracing::debug_span!("test_directory", label).entered();
     let base = environment("TMPDIR").map_or_else(std::env::temp_dir, PathBuf::from);
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let directory = base.join(format!(
-        "guide13-live-native-{label}-{}-{nonce}",
-        std::process::id(),
-    ));
-    std::fs::create_dir(&directory).expect("the test directory is created");
+    // Exclusive creation with collision retry also covers other test processes
+    // sharing TMPDIR. A clock reading is not a uniqueness source.
+    let directory = tempfile::Builder::new()
+        .prefix(&format!("guide13-live-native-{label}-"))
+        .tempdir_in(base)
+        .expect("the test directory is created")
+        .keep();
+    tracing::debug!(path = %directory.display(), "test directory created");
     directory
 }
 

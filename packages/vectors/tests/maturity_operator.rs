@@ -571,6 +571,46 @@ fn another_deployment_cannot_admit_the_scripted_transcript() {
 }
 
 #[test]
+fn concurrent_same_label_directories_are_distinct_and_empty() {
+    let barrier = std::sync::Barrier::new(8);
+    let directories = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    (0..64)
+                        .map(|_| common::test_directory("concurrent-operator"))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().expect("directory worker completes"))
+            .collect::<Vec<_>>()
+    });
+    let unique: std::collections::BTreeSet<_> = directories.iter().collect();
+    assert_eq!(directories.len(), 512);
+    assert_eq!(unique.len(), directories.len());
+    // Retain all directories until every allocation finishes: neither reuse
+    // after cleanup nor a shared nonempty directory can satisfy the control.
+    for directory in &directories {
+        assert!(directory.is_dir());
+        assert!(
+            directory
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("guide13-live-native-concurrent-operator-")
+        );
+        assert!(std::fs::read_dir(directory).unwrap().next().is_none());
+    }
+    for directory in directories {
+        std::fs::remove_dir(directory).expect("owned empty directory removed");
+    }
+}
+
+#[test]
 fn missing_evidence_answers_no_row() {
     let evidence = OperatorEvidence::incomplete();
     assert_eq!(evidence.rows.len(), 11);
