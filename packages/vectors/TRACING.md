@@ -132,3 +132,10 @@ The internal family-report surface uses `vectors::keyed_evidence` for its three 
 
 
 The test-only history harness is an explicit exception to the ordinary-test standard-stream rule: `packages/vectors/tests/keyed_history/mod.rs`, `fixture.rs` and `families.rs` print bounded child walls and `history phase=` timings. A completed phase must reach the captured gate output even if a later phase is killed by the child's hang guard. These ad hoc timers are not the ADR-026 production instrumentation interface and are not native measurements. Conversion to scoped phase spans with equivalent flushed timeout diagnostics is tracked at (`[PLAN-tab:backlog:wave1-followups]`); no library tracing contract changes here.
+
+
+The offline freeze inventory adds two conformance boundaries. `validate_manifest` enters INFO span `validate_keyed_freeze` on target `vectors::keyed_final_manifest`; it emits one INFO `keyed freeze validated` or DEBUG `keyed freeze refused` event with `refusal_kind`. `parse_key` enters DEBUG span `parse_keyed_freeze_key` on that target and emits one DEBUG `keyed freeze key parsed` or `keyed freeze key refused` event with `refusal_kind` on refusal. The offer and literal-template helpers only construct untrusted values and do not emit completion events. The external bounded capture subject asserts the two spans, four distinct messages and exactly one event per return.
+
+The same test-only timeout-diagnostic exception applies to `tests/keyed_final/mod.rs`: flushed child and family walls must survive a killed child. Every subject has its own 40-second guard, each replay is capped at 30 seconds and the subject's remaining budget less one second, and the family has 300 seconds, and completed subjects above 10 seconds (family above 75) print `split_or_report=true`; measurements are not native costs. Fresh replay children receive public packets and recorded ordinary signatures only.
+
+The freeze capture additionally asserts the literal target, INFO for successful manifest validation, DEBUG for other outcomes, and no WARN or ERROR events. The key-free selection helper only constructs an untrusted offer and is untraced.

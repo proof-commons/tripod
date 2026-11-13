@@ -10,6 +10,7 @@ mod keyed_commitment;
 mod keyed_constructor;
 mod keyed_continuation;
 mod keyed_cost;
+mod keyed_final;
 mod keyed_funding;
 mod keyed_history;
 mod keyed_inputs;

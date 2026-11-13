@@ -106,3 +106,158 @@ The achievable Wave-1 claim is one parameterized reviewed realization with condi
 
 
 Study verification: the initial documents round at `/var/home/tripod/loops/tmp/gate-w20b1-20261113T084418Z.log` was red in 3 seconds because three array-literal spellings in prose were parsed as imported citations. They were rewritten as words; no design, code or expectation changed. The final documents verdict is retained in the lane report.
+
+## Parameterized freeze evidence · `rec:w1b16:freeze`
+
+Step 1 implements the adopted supplied-key requirement offline. `packages/vectors/src/keyed_final_manifest.rs` and its `pins.rs` inventory identify reviewed functions by exact source bytes; `packages/vectors/tests/keyed_final/` consumes the public pipeline. No production entry, prior fixture helper, reader, model, projector, archive or expected value changes. These are conformance offers and internal test packets, not a stable production descriptor, native admission or a completed Wave-1 freeze of an executable. Step 2 must additionally pin the executor, protocol and capture environment before execution.
+
+**Key fixed before fixtures.** SHA-256 of exactly the adoption's ASCII phrase `Tripod Wave 1 supplied-key independence control` is pinned as `SECOND_KEY` in `packages/vectors/src/keyed_final_manifest/pins.rs`. `SECOND_KEY_PHRASE` names the input, and the `second-key` subject recomputes its digest. The source constant, rather than a duplicate unregistered hash citation in prose, is the byte authority. No newline, NUL or framing enters it. The unchanged control key repeats byte 42 thirty-two times. Neither is a secret.
+
+### Frozen and variable inventories · `tab:w1b16:freeze-inventory`
+
+Each of these twelve categories contains the SHA-256 of every named file, with its exact repository path. `validate_manifest` hashes the included bytes against those independent literal pins before examining an offer. The 35 source identities pin selected reviewed seams, not a transitive workspace or executable digest; dependency manifests pin the requested versions and features, not an invented universal toolchain identity.
+
+| Frozen category | Exact source identity (paths under `packages/` unless stated) |
+|---|---|
+| Declarations | `architecture/src/keyed.rs`, `architecture/src/semantic.rs` |
+| Realization (3) | `realization/src/keyed.rs`, `realization/src/declarations/keyed.rs`, `realization/src/relation.rs` |
+| Key-free plans (6) | `compiler/src/keyed_plan.rs`, `compiler/src/engine_keyed.rs`, `compiler/src/engine_keyed/program.rs` and its `refusal.rs`, `restore.rs`, `stage_refusal.rs` children |
+| Proof/placement selection (1) | `vectors/src/keyed_final_selection.rs`: proof zero, placement zero for every selected operation; the shared fixture is unpinned and byte-identical |
+| Grammar (4) | `tapscript/src/keyed_constructor.rs`, `keyed_pattern.rs`, `keyed_bundle.rs`, and `linker/src/keyed_bundle.rs` |
+| Schema-1 commitment/control function (4) | `transaction/src/keyed_taproot.rs`, `keyed_curve.rs`, `taproot.rs`, and `tapscript/src/state_constructor.rs` |
+| Target and encoding (3) | `target-elements/src/definition.rs`, `encoding.rs`, `resource.rs`; definition version 2 |
+| ABI/request binding (4) | `transaction/src/keyed_abi.rs`, `keyed_request.rs`, `keyed_inputs.rs`, and `tapscript/src/keyed_members.rs` |
+| Dependency versions/roles | root `Cargo.toml`, `transaction/Cargo.toml`; pinned curve wrapper, HASH160 and comparison-library edges retain their owners and independence limits |
+| Funding/signing separation (3) | `transaction/src/keyed_construct.rs`, `keyed_sponsor.rs`, `construct.rs` |
+| Measured envelope | `target-elements/src/transaction_form.rs`, `vectors/src/keyed_scaling.rs`; 1564 handles, one P2WPKH sponsor, successor/change/fee, signature bound 72 bytes and weight ceiling 400000 units |
+| References/relocation census | `linker/src/keyed_reference.rs`; completed grammar, zero mandatory byte relocations |
+
+Sixteen `ComputedItem` rows remain per key or run: leaf; leaf hash; root; unreduced tweak; output program; parity; control data; sealed commitment; request/parent association; handle sets; ordinary funding signatures; transaction identities; policy readings (asset, fee, provenance, rates, minimums, ceilings, prior package weight and signature bound); construction choices (scope, ordered inputs/sequences, successor/change values and destination); per-key emission/link projection, recipe offers and closure occurrences; final transaction weight and virtual size. DER signature length varies, so the transaction total is not a key-invariant member formula. An actual policy reading and asset do not become frozen observations merely because the structural envelope is frozen. `FreezeManifest` is a mutable untrusted offer; validation does not mint a chain receipt. The exported types are `FrozenItem`, `ComputedItem`, `SourceIdentity`, `Envelope`, `FreezeManifest`, `FreezeRefusal`, `FreezeBoundary`; helpers are `offer`, `predicted_leaf`, `parse_key`, `validate_manifest`, and the phrase, digest, suffix and computed-inventory constants. No macro/alias analysis or maintained interchange format is claimed.
+
+### Controls and comparison sources · `tab:w1b16:freeze-controls`
+
+All controls live in `packages/vectors/tests/keyed_final/`, under the bounded `supplied_keys_have_bounded_freeze_evidence` parent. Each selected child must report exactly one test. The same declared edges, SOURCE 10 and SOURCE 20 into MERGE 30, precede construction under either key. Sponsor parents are explicit supplied premises, not a fabricated chain. Distinct parents and sequences prevent accidental symmetric comparisons. No existing reproduction comparison is weakened or replaced.
+
+| Subject/control | Independent comparison and refusal boundary |
+|---|---|
+| `manifest` / `controls::manifest` | Twelve categories, 35 sources, sixteen variable rows; recipe/target/handle ceiling checked against their owners. Changed key, leaf digest, schema, target or envelope refuses respectively `KeyBinding`, `LeafBinding`, `Recipe`, `Target`, `Policy` at artifact binding. |
+| Inventory subjects | A changed source digest offer and omitted variable row refuse `FrozenInventory` and `ComputedInventory` at source freeze. Actual included-source drift is the defensive `SourceDrift(path)` guard, not a fabricated public offer condition. |
+| Text subjects | Accepted 64 hex digits beside 31-byte and 33-byte values (`KeyWidth`) and non-hex data (`KeyEncoding`), at the textual key boundary. All ten refusal variants have an exhaustive typed boundary mapping. |
+| Two keys, three scopes | `controls::scopes` independently declares SOURCE, MERGE and joint scopes, checks literal relation/evidence counts and permutes offers. Every result equals the independently spelled leaf. Existing link tests remain unchanged. |
+| `control-key`, `second-key` | Literal prefix/key/suffix predicts the entire 52-byte leaf. A boundary walk pins 16 instructions, one 32-byte operand at offset 1, the four-byte zero at offset 38, and equality instructions at 42, 49, 50. The last census is tied to the unchanged native-offset constant; incidental key-byte values cannot be mistaken for opcodes. |
+| Independent commitment prediction | `prediction::check` uses first-party conformance NUMS/curve/tagged-hash operations, not production construction, to compare leaf/version/internal x, root, tweak, output x/parity, control and witness program. Production's single-leaf root is its leaf hash. Both sides share the `sha2` SHA-256 primitive; independence is in tags, layouts, constants and curve arithmetic. |
+| Fresh replay | A distinct PID receives only public packets, fee/census/policy and recorded ordinary signature bytes. It recomputes predictions and compares every `Snapshot` coordinate: linked bytes/projection/closure, commitment, receipts/coverage/evidence, stripped and complete bytes, witnesses and obligations. Shared reconstruction code establishes repeatability, not an independent implementation; the literal/curve comparison is the second source. |
+| Literal set comparison | SOURCE singleton sets, MERGE union without a new record, live frontier containing only MERGE 30, and four member relation rows are compared with the unchanged byte reader from bytes/assertions only. No builder membership verdict is passed to it. |
+| `edge-keys` | All-zero, all-ones and repeated high-bit bytes accepted as data and independently committed. Synthetic capability outputs exercise above-order and infinity refusals in `vectors::keyed_constructor::construct_keyed`, the conformance constructor beside a real-curve accepted twin; no semantic key is alleged to realize those hash preimages. |
+| Production exceptional core | Unchanged `transaction/src/keyed_curve.rs::checked_scalar_and_point_boundaries_have_accepted_twins` and `keyed_taproot/tests.rs::constructor_curve_refusals_are_not_authentication_or_execution` exercise the production scalar/point core and refusal routing. The two assertions in `controls::edge_keys` check production refusal labels only; the cited production tests establish routing. A semantic-key end-to-end exceptional preimage is unavailable; this is stated, not invented. |
+| `bindings`: foreign member | The SOURCE-20 parent changes only output 0's program to the other key's valid program, with its content address recomputed; this replaces member 1: request input authentication returns `Authentication(WrongProgram)` at index 1. The unchanged member-0 request still passes. |
+| `bindings`: foreign successor | The supplied untrusted byte subject replaces output 0 with the other key's valid program and updates its content address. The reader refuses `WrongSuccessor` at continuation; the original two-member reading with both keys supplied has four passing relation rows. This mutant is not an admitted transaction. |
+| `bindings`: nonminimal push | Canonical leaf/control passes; replacing push32 with PUSHDATA1(32), retaining the control, refuses `WrongLeaf` at commitment authentication, before model execution. |
+| `tracing` | Capture asserts the two public spans, distinct success/refusal messages and exactly one event per return, with refusal kinds. No constructor-policy refusal is labelled covenant execution. |
+
+### Generic argument and per-instance debts · `sec:w1b16:freeze-generic`
+
+Any 32-byte value is accepted as data; commitment succeeds or refuses by one reviewed rule. Canonical push32 and DROP leave the same stacks before the birth and continuation clauses. The suffix never branches on key data. Thus instruction offsets, literal widths, script/control size, stack schedules and the existing 88-byte stack, 91-byte witness and 255-unit member formulas are invariant under consistent authenticated substitution. This is a grammar/semantics argument supported by the new literal census and the unchanged canonical-key, prefix-schedule and resource tests, not an inference from two samples or a universal native timing claim. The key is instantiated once by emission, never relocated again by the linker; no self-hash fixed point or unauthenticated comparison program is added.
+
+Leaf hashes, tweaks, parity, programs, signatures, transaction identities and sets are recomputed for each key. NUMS/discrete-log, preimage, second-preimage and collision assumptions remain carried, not proven; cross-key handle separation is conditional on them. A different key requires no new review or campaign under the same template/target/policy/envelope, but it inherits no inclusion, unspentness, retrieval, finality, per-key exclusion or policy observation. Exactly one reviewed script path contains both clauses, plus the unavoidable key path under the same assumptions. No new predicate, owner authorization or STATE metadata appears. Inspection found no production key-value assumption requiring an edit; existing fixed-key tests/archives intentionally retain their own subjects.
+
+Step 2 receives the source-bound template inventory, supplied-key factory and public packets/snapshots, independent dependent-byte predictions, and explicit refusal domains. It still owes the final executor bridge/provenance and all native observations; this step runs no native capture and claims neither finality nor whole-transaction native validity.
+
+### Verification · `sec:w1b16:freeze-verification`
+
+The fast-check correction rounds found formatter differences, manifest const/conversion/event-style lints, one test array-versus-vector comparison and fixture item-order/clone lints. They changed only new code. Rustdoc passed in those rounds; the failed rounds are retained in the lane's `.b16freeze/check*.log`. The covering measurements below distinguish the later successful round. All commands run through the sanctioned kranich alias in the foreground; no host build/test or native execution is part of this step.
+
+The corrected code's fast check passed formatting clean, warnings-denied Clippy and rustdoc in 101 seconds (`.b16freeze/check5.log`). The focused gate-profile family run passed in 65 seconds including compilation (`.b16freeze/test1.log`, exit 0). Its printed child walls were manifest 0.039708 s, control key 1.015768 s, second key 0.407201 s, edge keys 0.190203 s, bindings 0.251126 s and tracing 0.006587 s; nested fresh replays were 0.207911 s and 0.203548 s. The family wall was 2.072837 s. Every process had its own 40-second subject or 300-second family guard and exactly-one-test check; no subject reached the ten-second report/split threshold and no guard was widened. These are offline process measurements, not native cost evidence.
+
+The first covering round, `/var/home/tripod/loops/tmp/gate-w20b1-20261113T091411Z.log`, ran 09:14:12Z–09:29:27Z on 2026-11-13: 915 seconds plus 120 seconds queued, exit 1, RED. All 33 package lanes, formatting, Clippy and rustdoc passed. Lint and document-check rebuilds refused one unregistered SHA-256 citation in this record. The correction cites the existing `SECOND_KEY` source constant instead; no code, pin or expected byte changed. The red run is not presented as a covering pass.
+
+
+The covering ten-package gate is `/var/home/tripod/loops/tmp/gate-w20b1-20261113T094144Z.log`, 2026-11-13T09:41:44Z–09:48:06Z, wall 382 seconds, queue 677 seconds, `== green`, exit 0. Its command was `bash ~/loops/tmp/w20-code-gate.sh w20b1 architecture,realization,compiler,model,target-elements,tapscript,linker,transaction,target-elements-conformance,vectors plans/drafts/wave1-bite-1-6-plan.md plans/packages/vectors.md`, through the time-prefixed sanctioned SSH route. Setup/fmt/Clippy/package-tests/rustdoc/lint/checks walls were 0/6/1/307/1/64/2 seconds, all exit 0; all 33 package lanes passed and the tracked tree stayed clean. The log retains each battery's start/end/resource samples in the transient gate unit's own cgroup, distinct from native transaction measurements. Foreground SSH remained attached through the runner's `systemd-run --wait --pipe` and final end marker; neither covering round was abandoned.
+
+The covering journals are retained at `/var/home/tripod/loops/tmp/w20b1-b16freeze/covering-compiler.json`, `covering-architecture.json` and `covering-vectors-test-maturity_native.json`. They retain the compiler base controls, canonical attestation publication comparison and new family. The final source tree's printed walls were manifest 0.523823 s, control key 0.670543 s, second key 1.599555 s, edge keys 0.619455 s, bindings 0.365690 s and tracing 0.010058 s; fresh replays were 0.371899 s and 1.190735 s. Family wall: 3.873416 s. All remain below the split/report thresholds with unchanged 40/300 guards. The earlier covering attempt's family also passed (1.912855 s); its overall RED remains recorded above.
+
+Preservation is checked against the starting reviewed tree: no prior executable body, literal, compiler pin, vector, archive, reproduction helper, reader, model or projector changed. Outside new files, code changes are only a library-module export and integration/Meson registrations. The full gate reruns the unchanged ten compiler pins and canonical attestation comparison; no expectation is regenerated. The verification receipt is a subsequent plans-only change; its documents-scope verdict is reported separately from this full-gated source snapshot. No native execution, deployment observation or host build/test ran.
+
+### Freeze history · `tab:w1b16:freeze-history`
+
+This step starts the maintained freeze-history table. The literal digest columns are `REVIEW[row].previous` and `.current` in `packages/vectors/tests/keyed_final/freeze_history.rs`, stored as SHA-256 byte arrays in the same representation as the pins, rather than duplicated unregistered hash citations in prose. `None` means not previously pinned or now retired, never a zero digest. The control compares every current row with the manifest and retains all 22 previous digests. For this entry every source diff is editorial identity expansion or extraction of the identical selection rule; there is no change to existing production behavior. Reopened evidence is the identity census and selection equivalence; there is no native observation to reopen in this offline step.
+
+| Path | Previous digest | New digest | Source disposition |
+|---|---|---|---|
+| `packages/architecture/src/keyed.rs` | `REVIEW[0].previous` | `REVIEW[0].current` | Unchanged source |
+| `packages/architecture/src/semantic.rs` | `REVIEW[1].previous` | `REVIEW[1].current` | Unchanged source |
+| `packages/realization/src/keyed.rs` | `REVIEW[2].previous` | `REVIEW[2].current` | Unchanged source |
+| `packages/realization/src/declarations/keyed.rs` | Not pinned | `REVIEW[3].current` | New identity coverage |
+| `packages/realization/src/relation.rs` | Not pinned | `REVIEW[4].current` | New identity coverage |
+| `packages/compiler/src/keyed_plan.rs` | `REVIEW[5].previous` | `REVIEW[5].current` | Unchanged source |
+| `packages/compiler/src/engine_keyed.rs` | `REVIEW[6].previous` | `REVIEW[6].current` | Unchanged source |
+| `packages/compiler/src/engine_keyed/program.rs` | Not pinned | `REVIEW[7].current` | New identity coverage |
+| `packages/compiler/src/engine_keyed/program/refusal.rs` | Not pinned | `REVIEW[8].current` | New identity coverage |
+| `packages/compiler/src/engine_keyed/program/restore.rs` | Not pinned | `REVIEW[9].current` | New identity coverage |
+| `packages/compiler/src/engine_keyed/program/stage_refusal.rs` | Not pinned | `REVIEW[10].current` | New identity coverage |
+| `packages/vectors/src/keyed_final_selection.rs` | Not pinned | `REVIEW[11].current` | New identity coverage |
+| `packages/tapscript/src/keyed_constructor.rs` | `REVIEW[12].previous` | `REVIEW[12].current` | Unchanged source |
+| `packages/linker/src/keyed_bundle.rs` | `REVIEW[13].previous` | `REVIEW[13].current` | Unchanged source |
+| `packages/tapscript/src/keyed_pattern.rs` | Not pinned | `REVIEW[14].current` | New identity coverage |
+| `packages/tapscript/src/keyed_bundle.rs` | Not pinned | `REVIEW[15].current` | New identity coverage |
+| `packages/transaction/src/keyed_taproot.rs` | `REVIEW[16].previous` | `REVIEW[16].current` | Unchanged source |
+| `packages/transaction/src/keyed_curve.rs` | `REVIEW[17].previous` | `REVIEW[17].current` | Unchanged source |
+| `packages/transaction/src/taproot.rs` | Not pinned | `REVIEW[18].current` | New identity coverage |
+| `packages/tapscript/src/state_constructor.rs` | Not pinned | `REVIEW[19].current` | New identity coverage |
+| `packages/target-elements/src/definition.rs` | `REVIEW[20].previous` | `REVIEW[20].current` | Unchanged source |
+| `packages/target-elements/src/encoding.rs` | `REVIEW[21].previous` | `REVIEW[21].current` | Unchanged source |
+| `packages/target-elements/src/resource.rs` | Not pinned | `REVIEW[22].current` | New identity coverage |
+| `packages/transaction/src/keyed_abi.rs` | `REVIEW[23].previous` | `REVIEW[23].current` | Unchanged source |
+| `packages/transaction/src/keyed_request.rs` | `REVIEW[24].previous` | `REVIEW[24].current` | Unchanged source |
+| `packages/transaction/src/keyed_inputs.rs` | `REVIEW[25].previous` | `REVIEW[25].current` | Unchanged source |
+| `packages/tapscript/src/keyed_members.rs` | Not pinned | `REVIEW[26].current` | New identity coverage |
+| `Cargo.toml` | `REVIEW[27].previous` | `REVIEW[27].current` | Unchanged source |
+| `packages/transaction/Cargo.toml` | `REVIEW[28].previous` | `REVIEW[28].current` | Unchanged source |
+| `packages/transaction/src/keyed_construct.rs` | `REVIEW[29].previous` | `REVIEW[29].current` | Unchanged source |
+| `packages/transaction/src/keyed_sponsor.rs` | `REVIEW[30].previous` | `REVIEW[30].current` | Unchanged source |
+| `packages/transaction/src/construct.rs` | Not pinned | `REVIEW[31].current` | New identity coverage |
+| `packages/target-elements/src/transaction_form.rs` | `REVIEW[32].previous` | `REVIEW[32].current` | Unchanged source |
+| `packages/vectors/src/keyed_scaling.rs` | `REVIEW[33].previous` | `REVIEW[33].current` | Unchanged source |
+| `packages/linker/src/keyed_reference.rs` | `REVIEW[34].previous` | `REVIEW[34].current` | Unchanged source |
+| `packages/vectors/tests/keyed_reproduction/fixture.rs` | `REVIEW[35].previous` | Retired | Unpinned unchanged fixture |
+
+### Freeze review disposition · `tab:w1b16:freeze-findings`
+
+All ten findings are closed in vectors conformance code and records. The additional main-side temporary-directory repair and its record (`rec:w1b16:test-directory`) are retained. No production, prior fixture, archive or expected byte changes.
+
+| Finding | Closure and evidence |
+|---|---|
+| 1 · source identity | All listed implementation files are pinned: 35 paths in twelve categories. `census::check` walks literal non-test module declarations and path attributes, with omitted-child and path mutants. Generic `packages/tapscript/src/program.rs`, `instruction.rs`, `packages/target-elements/src/opcode.rs` and `push.rs` remain outside the identity, protected by the independent literal leaf prediction. The byte reader, stack model and conformance constructor remain instruments, to be identified at step 5. The census is a literal-source guard, not macro expansion or a transitive dependency proof. |
+| 2 · selection | `keyed_final_selection::first_selection` defines the key-free proof-zero/placement-zero rule and is the Selection pin. `controls::scopes` compares it with the original independently written selection for both keys and all three scopes and directly compares the existing fixture's SOURCE and MERGE bundles. The old fixture's boolean entry has no joint-scope input; the joint comparison uses the original three-scope control rather than claiming such an entry exists. The fixture remains byte-identical and unpinned. |
+| 3 · re-freeze/provenance | (`rule:vectors:keyed-refreeze`) requires one independently reviewed landing containing any source change and its re-pin, with path-by-path old/new digests, editorial/behavioural classification and reopened evidence. (`tab:w1b16:freeze-history`) starts that history with this freeze and its review corrections. No mixed-commit ban is imposed. `SourceDrift` attests compiled-in checkout bytes, not executable, toolchain or resolved graph; moved/copied checkouts rebuild vectors before this control counts. The workspace layout is required. `Cargo.lock` is untracked, and the shared `sha2` range is not a resolved version pin. Step 2 retains the actual binary's commit, resolved lock and toolchain. |
+| 4 · envelope | `controls::manifest` ties signature, weight and handle figures to exported scaling constants and the reviewed target's public transaction-weight maximum. `envelope::check` admits one sponsor/three outputs and refuses an otherwise balanced second sponsor as `KeyedConstructionError::Envelope`, before signing. Production's unchanged `extra_outputs_and_redistribution_stay_structural_not_measured_admission` in `packages/transaction/src/keyed_construct/tests.rs` pins the extra-output refusal. Per-run `KeyedPolicy` readings remain readings checked at admission against the frozen envelope; step 2 records both and asserts equality for its representative runs. |
+| 5 · variable inventory | Sixteen rows include construction choices, emission/closure and final weight/virtual size. PolicyReading explicitly covers every policy parameter. `inventory::check` exhaustively destructures Packet, Input and Snapshot without rest patterns and classifies every field; a new field needs a classification. The member formulas are invariant, but final weight varies with the ordinary DER signature length. |
+| 6 · one-coordinate offers | One final hexadecimal digit changes to nonhex; uppercase and lowercase accepted twins yield the same 32 bytes. Text is a convenience, not a unique key identity. Each of the five envelope fields has its own one-coordinate refusal. |
+| 7 · foreign bindings | The foreign-member parent is SOURCE 20 with only output 0's program replaced, and its content address recomputed. The successor mutant sits beside an accepted reading already supplied both keys. The unchanged member still passes. |
+| 8 · edge reproduction | Separate zero-key, ones-key and high-bit-key children run the complete SOURCE/MERGE, admission, reader, prediction and fresh-process reproduction checks. They use the same guards and literal sets as representative keys. |
+| 9 · comparison limits | The prediction row names shared SHA-256 (`sha2`) separately from independent tags/layouts/curve arithmetic. The synthetic exceptional capability drives the conformance constructor; production assertions here check labels only, while the named unchanged production core tests establish routing. No exceptional semantic-key preimage is invented. |
+| 10 · guards/tracing | Replay receives at most 30 seconds and less than its subject's remaining guard, with one second reserved for cleanup. The tracing child asserts the literal target, INFO/DEBUG levels, distinct messages and no WARN/ERROR events. |
+
+Review fast checks retained in `.b16freezefix/check1.log` through `check3.log` found formatting plus four local style lints (conditional shape, extension comparison, function length and a redundant clone); all were corrected without changing expectations. Check 3 passed Clippy and rustdoc in 99 seconds and supplied the mechanically applied formatter patch. The focused family passed in 33 seconds including compilation, exit 0 (`.b16freezefix/test1.log`): family 0.735599 seconds; manifest 0.027180, control-key 0.123061, second-key 0.116929, edge-keys 0.050300, zero-key 0.110249, ones-key 0.115271, high-bit-key 0.115790, bindings 0.068950 and tracing 0.003630 seconds. Five nested replay walls were 0.045523, 0.040929, 0.041064, 0.042512 and 0.042435 seconds. These are focused offline samples; the full landing run is recorded separately below. No guard was widened and no subject crossed ten seconds.
+
+### Review covering verification · `sec:w1b16:freeze-review-verification`
+
+Final fast check `.b16freezefix/check4.log` passed with a clean formatter, Clippy and rustdoc, exit 0, wall 79 seconds (4/8/66 seconds respectively). The covering code gate is `/var/home/tripod/loops/tmp/gate-w20b1-20261113T104825Z.log`: 2026-11-13T10:48:25Z–10:57:41Z, wall 556 seconds, queue 0 seconds, `== green`, exit 0. It ran `bash ~/loops/tmp/w20-code-gate.sh w20b1 architecture,realization,compiler,model,target-elements,tapscript,linker,transaction,target-elements-conformance,vectors plans/drafts/wave1-bite-1-6-plan.md plans/packages/vectors.md` through time-prefixed sanctioned SSH. All 33 package lanes, formatting, Clippy, rustdoc, lint and plans checks passed; the checked tree was clean. The foreground SSH waited on the runner's `systemd-run --wait --pipe` until the end marker; no round was abandoned and no native capture or host build/test ran.
+
+The following deltas belong to the gate's own transient cgroup `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261113T104825Z.service`. CPU and pressure totals are seconds; memory peak is the cumulative cgroup high-water mark in bytes, not a per-battery allocation delta or a native transaction cost. The log retains start/end samples, the other pressure dimensions and shell process accounting.
+
+| Battery | Wall s | CPU s | CPU some s | CPU full s | Memory some s | I/O some s | Cumulative peak bytes |
+|---|---|---|---|---|---|---|---|
+| setup | 1 | 1.943277 | 0.004586 | 0.003299 | 0.000000 | 0.000173 | 55943168 |
+| fmt | 4 | 5.784915 | 0.005988 | 0.004782 | 0.000000 | 0.017774 | 200331264 |
+| clippy | 15 | 30.856534 | 0.998166 | 0.742356 | 0.000000 | 0.038070 | 2849902592 |
+| package-tests | 443 | 3741.502637 | 77.300803 | 36.411827 | 0.341278 | 0.201257 | 9238843392 |
+| doc | 52 | 56.396329 | 0.154195 | 0.140702 | 0.143990 | 0.029066 | 9238843392 |
+| lint-suite | 39 | 132.678136 | 0.221225 | 0.161287 | 0.000001 | 0.023079 | 9238843392 |
+| checks | 2 | 3.641883 | 0.005044 | 0.004548 | 0.000000 | 0.001114 | 9238843392 |
+
+Retained journals are `/var/home/tripod/loops/tmp/w20b1-b16freezefix/covering-compiler.json`, `covering-architecture.json` and `covering-vectors-test-maturity_native.json`. The unchanged `preserve_engine_base` control passed (89.630304 seconds), as did `attestation_canonical_bytes_and_publication_equal_the_opening_base` (0.027542 seconds). The freeze family wall was 3.682967 seconds. Subject walls were manifest 0.144878, control-key 0.622682, second-key 0.861276, edge-keys 0.252622, zero-key 0.539976, ones-key 0.299405, high-bit-key 0.633492, bindings 0.287633 and tracing 0.015589 seconds. The five fresh replays took 0.157727, 0.298648, 0.170309, 0.126303 and 0.319933 seconds. The largest subject was 0.861276 seconds: no subject crossed ten seconds, and the 40/300-second hang guards stayed unchanged.
+
+Preservation: diffs against the reviewed freeze and the rebased main tree leave production packages, old reproduction fixtures, the freeze's fixture and independent predictor, reader, model, compiler pins, existing vectors and archives byte-identical. The changes are new freeze conformance controls/identity, registrations and documentation. No expected value was regenerated. The main-side test-directory repair is inherited, not overwritten; both plan records survive the rebase. The only scope clarification is the existing fixture helper's two-scope API: its joint-scope equivalence is checked by the original three-scope control, as finding 2 records. All ten findings are closed without a production edit.
+
+The subsequent plans-only verification receipt passed the unchanged documents batteries against that full-gated source snapshot: `/var/home/tripod/loops/tmp/gate-w20b1-20261113T105848Z.log`, 2026-11-13T10:58:49Z–10:58:53Z, wall 4 seconds, `== green`, exit 0. Census, labels, plans, forbidden text, hash citations, generated checks and attestation stamps passed; scope was plans-only and the tree remained clean. The foreground time-prefixed SSH waited through `systemd-run --wait --pipe` to completion. This confirmation is itself checked by the same documents-scope command; the final tip's verdict is retained in the lane report.
