@@ -266,116 +266,41 @@ The subsequent plans-only verification receipt passed the unchanged documents ba
 
 **Historical replay ruling.** Operation archives select their grammar from a closed set of recorded revisions, independently of the live handshake revision. Revision eight retains output-only explicit sponsor funding; revision nine requires its canonical mined parent readback. Unknown operation revisions refuse with `UnknownOperationRevision`; revision-eight sponsor readback retains the existing `OperationResponseMismatchesStep` refusal, and missing revision-nine accepted sponsor readback refuses with `SponsorReadbackMissing`. No archive is translated or regenerated. The first implementation unit leaves the live revision at eight while introducing both historical grammars and their accepted/refused controls. A live transport still requires exact current-revision equality before sending any subject.
 
-Replay/admission paths affected are `keyed_birth.rs`, the birth/continuation/keyed/cost native planners, `keyed_funding.rs`, `keyed_scaling.rs`, `compact_corpus.rs`, `maturity_native.rs` (including confidential replay), and `maturity_mutant_ceremony.rs`, all under `packages/vectors/src`. Their response checks select a known recorded grammar instead of comparing archives with today's live constant. Keyed journal decoding additionally binds request and response revisions; the shared keyed replay requires a single revision across all exchanges. Existing content digests, archive adapter identities, recorded revision-eight values and expected outcomes are unchanged. The conformance conservation-report ingestion likewise accepts only those known recorded revisions; its response grammar is unchanged between them. Shared operation response-shape validation dispatches on the recorded revision; it never weakens the live handshake.
+Replay/admission paths affected are `keyed_birth.rs`, the birth/continuation/keyed/cost native planners, `keyed_funding.rs`, `keyed_scaling.rs`, `compact_corpus.rs`, `maturity_native.rs` (including confidential replay), and `maturity_mutant_ceremony.rs`, all under `packages/vectors/src`. Their response checks select a known recorded grammar instead of comparing archives with today's live constant. Keyed journal decoding additionally binds request and response revisions; the shared keyed replay requires a single revision across all exchanges. Existing content digests, archive adapter identities, recorded revision-eight values and expected outcomes are unchanged. Conservation-report ingestion remains live-only and checks the current revision; no historical conservation response is consumed by that entry. Shared operation response-shape validation dispatches on the recorded revision; it never weakens the live handshake.
 
 ### Replay re-freeze · `tab:w1b16:bridge-refreeze`
 
 | Pinned path | Previous SHA-256 | New SHA-256 | Classification and reopened evidence |
 |---|---|---|---|
-| `packages/vectors/src/keyed_scaling.rs` | Literal `REVIEW[33].current` in `packages/vectors/tests/keyed_final/freeze_history.rs` | Literal `REPLAY_DIGEST` in that file, checked against the current source pin | Behavioural: historical replay selects rules by recorded revision. Reopens the scaling archive's identical admission, not native evidence. |
+| `packages/vectors/src/keyed_scaling.rs` | `REFREEZES[0].previous` in `packages/vectors/tests/keyed_final/freeze_history.rs` | `REFREEZES[0].current` (the historical replay digest) | Behavioural: historical replay selects rules by recorded revision. Reopens the scaling archive's identical admission, not native evidence. |
 
-The source change and re-pin are one landing under (`rule:vectors:keyed-refreeze`); this step's independent review is required before import or capture. The initial freeze-history rows remain immutable historical entries, with this explicit override for the current manifest. No other frozen source is involved. The current source census and all other 34 pins remain in force.
+The source change and re-pin are one landing under (`rule:vectors:keyed-refreeze`); this step's independent review is required before import or capture. The initial freeze-history rows remain immutable historical entries, with ordered path/previous/new re-freeze rows. Each replacement asserts that the previous digest is exactly the value being replaced; the second row records the later editorial initializer-only change. No other frozen source is involved. The current source census and all other 34 pins remain in force.
 
-The replay checks also refuse two individually known revisions in one session;
-`maturity_native::tests::recorded_session_cannot_mix_two_known_revisions` pins that
-condition beside the accepted revision-eight sequence. The compact archive's
-explicit revision-eight header remains exact, including its response revision.
-The unknown-protocol subjects now name revision ten, since nine is known.
+The replay checks also refuse two individually known revisions in one session; `maturity_native::tests::recorded_session_cannot_mix_two_known_revisions` pins that condition beside the accepted revision-eight sequence. The compact archive's explicit revision-eight header remains exact, including its response revision. The unknown-protocol subjects now name revision ten, since nine is known.
 
-Part-one verification retained in `.b16bridge3/`: fast checks 1–3 reported local
-formatting/lint errors (including an import-cleanup syntax error); checks 4–6
-passed Clippy and rustdoc, with formatter patches applied mechanically. Check 6
-ran in 75 seconds. The first library round passed 631 conformance tests and
-1,317 vectors tests and failed the obsolete “eight plus one is unknown” subject.
-The corrected round passed 631 and 1,319 respectively (9.79 and 126.28 seconds of
-test wall). Its freeze family then refused the scaling source pin: the digest
-had been computed before formatting collapsed its guard to one line. The re-pin
-is computed from the formatted source; no archive or expected outcome changed.
+Part-one verification retained in `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge3/`: fast checks 1–3 reported local formatting/lint errors (including an import-cleanup syntax error); checks 4–6 passed Clippy and rustdoc, with formatter patches applied mechanically. Check 6 ran in 75 seconds. The first library round passed 631 conformance tests and 1,317 vectors tests and failed the obsolete “eight plus one is unknown” subject. The corrected round passed 631 and 1,319 respectively (9.79 and 126.28 seconds of test wall). Its freeze family then refused the scaling source pin: the digest had been computed before formatting collapsed its guard to one line. The re-pin is computed from the formatted source; no archive or expected outcome changed.
 
-The corrected freeze run `.b16bridge3/freeze-r3.log` passed, exit 0, wall 13
-seconds including compilation: family 0.687906 seconds, largest subject
-high-bit-key 0.110351 seconds. Final part-one fast check 7 passed in 79 seconds
-(formatter patch applied mechanically, Clippy and rustdoc green). Source SHA-256
-for the re-freeze is `1cdf2c197418ba97e674030d29efc7f06bc60fa442d1af142ae2e5c0c2462bc5`,
-replacing `4a218f509095dc139b9fbc12a45ca17ec64b26a04b2297c4473b7b49934ba763`.
-All 35 freeze pins recompute. These foreground SSH runs completed before the
-part-one commit; the live revision remains eight at that boundary. The library
-run's unchanged archive admissions and byte pins are evidence of historical
-preservation, not new native observations. No archive, fixture or production
-package was edited in this unit.
+The corrected freeze run `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge3/freeze-r3.log` passed, exit 0, wall 13 seconds including compilation: family 0.687906 seconds, largest subject high-bit-key 0.110351 seconds. Final part-one fast check 7 passed in 79 seconds (formatter patch applied mechanically, Clippy and rustdoc green). Source SHA-256 for the re-freeze is `1cdf2c197418ba97e674030d29efc7f06bc60fa442d1af142ae2e5c0c2462bc5`, replacing `4a218f509095dc139b9fbc12a45ca17ec64b26a04b2297c4473b7b49934ba763`. All 35 freeze pins recompute. These foreground SSH runs completed before the part-one commit; the live revision remains eight at that boundary. The library run's unchanged archive admissions and byte pins are evidence of historical preservation, not new native observations. No archive, fixture or production package was edited in this unit.
 
 ### Current funding protocol · `sec:w1b16:bridge-protocol`
 
-The live protocol moves from eight to nine, with adapter version 2.1.2. An
-accepted `FundSponsor` response must carry the existing `MinedFundingReadback`;
-a refusal carries no success readback. The executable obtains the canonical
-mined parent in the same funding session. `bind_sponsor_parent` checks raw size,
-canonical decoding, stripped and witness identities, the funded outpoint and
-its actual explicit asset, value and script, in that order. These are local
-checks of public data, not inclusion, unspentness or finality. The consumer's
-transaction request independently decodes and binds the same bytes.
+The live protocol moves from eight to nine, with adapter version 2.1.2. An accepted `FundSponsor` response must carry the existing `MinedFundingReadback`; a refusal carries no success readback. Source inspection of `fund_sponsor` shows that the executable obtains the canonical mined parent in the same funding session; this step observes that route through a node-free stand-in, not a native node. `bind_sponsor_parent` checks raw size, canonical decoding, stripped and witness identities, the funded outpoint and its actual explicit asset, value and script, in that order. These are local checks of public data, not inclusion, unspentness or finality. The consumer's transaction request independently decodes and binds the same bytes.
 
-`SponsorParentRefusal` preserves separate Size, Decode, NonCanonical,
-ReadbackIdentity, WitnessIdentity, OutpointIdentity, OutputIndex, Asset, Amount
-and Script conditions inside the transport's response-shape error. The mock
-transport and direct binding tests place each reachable condition beside the
-accepted response. Nonminimal CompactSize refuses during decoding;
-NonCanonical is a defensive round-trip guard, not a claimed public defect.
-The 512-KiB raw bound leaves room for worst-case JSON array expansion inside
-the existing 4-MiB response bound; a source control joins the Rust and Python
-bounds. The public binding span emits one completion or refusal event, with
-its own exact-child capture control.
+`SponsorParentRefusal` preserves separate Size, Decode, NonCanonical, ReadbackIdentity, WitnessIdentity, OutpointIdentity, OutputIndex, NonExplicitAsset, Asset, NonExplicitValue, Amount and Script conditions inside the transport's response-shape error. The mock transport and direct binding tests place each reachable condition beside the accepted response. Nonminimal CompactSize refuses during decoding; NonCanonical is a defensive round-trip guard, not a claimed public defect. The 512-KiB raw bound leaves room for worst-case JSON array expansion inside the existing 4-MiB response bound; a source control joins the Rust and Python bounds. The public binding span emits one completion or refusal event, with its own exact-child capture control.
 
-Current-identity pins move through the existing request-comparison renderer:
-`scripts/test-executor-request-comparisons.py --emit` produces
-`packages/vectors/fixtures/adapter-request-comparisons/CURRENT-REVISION-9`.
-Its five rows carry protocol nine and the current adapter-source digest.
-The old `COMPARISONS` file and its recorded source digest in
-`maturity_adapter.rs` remain unchanged and admitted under their original
-identity. The new current-source check reads the rendered rows; it does not
-reinterpret the old archive. Existing historical synthetic operation replies
-and their journal requests are explicitly revision eight, so changing the
-live constant cannot change their serialized bytes. Previous-revision live
-handshakes still refuse before a subject is sent.
+Current-identity pins move through the existing request-comparison renderer: `scripts/test-executor-request-comparisons.py --emit` produces `packages/vectors/fixtures/adapter-request-comparisons/CURRENT-REVISION-9`. Its five rows carry protocol nine and the current adapter-source digest. The old `COMPARISONS` file and its recorded source digest in `maturity_adapter.rs` remain unchanged and admitted under their original identity. The new current-source check reads the rendered rows; it does not reinterpret the old archive. Existing historical synthetic operation replies and their journal requests are explicitly revision eight, so changing the live constant cannot change their serialized bytes. Previous-revision live handshakes still refuse before a subject is sent.
 
 ### Ordinary-edge signing boundary · `sec:w1b16:bridge-signing-boundary`
 
-The bridge's ordinary-edge history exposes a further executor authority choice.
-The unchanged history fixture's event 20 spends event 10's ordinary change at
-output one as its sponsor. Public construction can bind and authorize this
-input with the fixture capability. The executor's `OperationExecutor.sign_sponsor`
-accepts only outpoints in `sponsor_coins`: funding operations populate that map,
-but neither `submit` nor `submit_maturity` registers a submitted transaction's
-change. Consequently a fresh-chain SOURCE change, even with the executor's own
-P2WPKH program, refuses before signing with “this adapter did not create the coin
-it was asked to authorize a spend of”. Readback alone does not change this rule.
+The bridge's ordinary-edge history exposes a further executor authority choice. The unchanged history fixture's event 20 spends event 10's ordinary change at output one as its sponsor. Public construction can bind and authorize this input with the fixture capability. The executor's `OperationExecutor.sign_sponsor` accepts only outpoints in `sponsor_coins`: funding operations populate that map, but neither `submit` nor `submit_maturity` registers a submitted transaction's change. Consequently a fresh-chain SOURCE change, even with the executor's own P2WPKH program, refuses before signing with “this adapter did not create the coin it was asked to authorize a spend of”. Readback alone does not change this rule.
 
-The node-free probe retained at `.b16bridge3/ordinary-edge-probe.log` isolates
-that condition with a parser stub: an unregistered output-one outpoint refuses;
-the identical outpoint, when registered, reaches the next value/signing stage.
-It ran with a 40-second timeout, exit zero, one-second command wall and
-0.148343-second probe wall. It proves the registry boundary only, not parsing,
-cryptographic verification or native acceptance. Source inspection confirms
-that successful submission does not update the registry. No native process ran.
+The node-free probe retained at `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge3/ordinary-edge-probe.log` isolates that condition with a parser stub: an unregistered output-one outpoint refuses; the identical outpoint, when registered, reaches the next value/signing stage. It ran with a 40-second timeout, exit zero, one-second command wall and 0.148343-second probe wall. It proves the registry boundary only, not parsing, cryptographic verification or native acceptance. At that stop, source inspection confirmed that successful submission did not update the registry. No native process ran.
 
-The bridge is withheld at this choice rather than substituting a fresh funded
-coin for the ordinary edge or claiming the mock's broader signing authority is
-implemented by the real executor. Recommendation: after an accepted submission
-and canonical readback, register only its outputs whose program exactly equals
-the executor's own sponsor program, retaining the actual value field and asset.
-A control must accept that change and refuse another program and an unconfirmed
-or mismatched readback. This is a conformance signing-authority extension,
-separate from the funding-readback revision; it needs an explicit disposition.
-No production package, pinned source beyond the replay re-freeze, or existing
-fixture is changed to bypass it. Final subject digests, capture provenance and
-the native capture table remain pending with the bridge.
+The bridge was withheld at this choice rather than substituting a fresh funded coin for the ordinary edge or claiming the mock's broader signing authority is implemented by the real executor. Recommendation: after an accepted submission and canonical readback, register only its outputs whose program exactly equals the executor's own sponsor program, retaining the actual value field and asset. A control must accept that change and refuse another program and an unconfirmed or mismatched readback. This is a conformance signing-authority extension, separate from the funding-readback revision; it needs an explicit disposition. No production package, pinned source beyond the replay re-freeze, or existing fixture is changed to bypass it. Final subject digests, capture provenance and the native capture table were pending at that stop; the ruling and completed offline bridge are now recorded at (`rec:w1b16:bridge-authority`) and (`rec:w1b16:bridge-subjects`).
 
 ### Historical admission controls · `tab:w1b16:bridge-archives`
 
-The following unchanged admissions remain the comparison for the revision
-change. Each file is under `packages/vectors/src`; their old fixtures and
-manifests are unchanged. Passing these controls means identical recorded
-admission and refusal outcomes, not another execution of their subjects.
+The following unchanged admissions remain the comparison for the revision change. Each file is under `packages/vectors/src`; their old fixtures and manifests are unchanged. Passing these controls means identical recorded admission and refusal outcomes, not another execution of their subjects.
 
 | Existing archive | Named control and file |
 |---|---|
@@ -395,200 +320,361 @@ admission and refusal outcomes, not another execution of their subjects.
 | Maturity observer | `observer_archive_replays_reports_and_preserves_each_boundary`, `maturity_corpus.rs` |
 | Adapter request comparisons | Unchanged `COMPARISONS` admission, `maturity_adapter.rs`; the new current-source row is a separate renderer product. |
 
-The import-side closing history was read from the retained logs. The
-`0.7.124-dev` gate of record ran 2026-11-13T08:38:30Z–09:14:09Z, wall 2,139
-seconds, queue zero, `== record RED`, chain exit 1. Its failing
-`another_deployment_cannot_admit_the_scripted_transcript` encountered OS error
-17 (`AlreadyExists`) in the old test-directory helper; the repair is recorded
-at (`rec:w1b16:test-directory`). The first green gate of record containing the
-bite-1.5 closing is `0.7.126-dev`: 2026-11-13T09:48:06Z–10:05:16Z, wall 1,030
-seconds, queue 300 seconds, `== record green`, chain exit 0. Logs and retained
-journals are under `/var/home/tripod/loops/evidence/wave1/record-0.7.124-dev/`
-and `/var/home/tripod/loops/evidence/wave1/record-0.7.126-dev/`; the latter
-`cargo-test-json.tar.gz` retains 158 files and 602,437 bytes. This is an
-import-side gate fact, not a native capture by this step.
+The import-side closing history was read from the retained logs. The `0.7.124-dev` gate of record ran 2026-11-13T08:38:30Z–09:14:09Z, wall 2,139 seconds, queue zero, `== record RED`, chain exit 1. Its failing `another_deployment_cannot_admit_the_scripted_transcript` encountered OS error 17 (`AlreadyExists`) in the old test-directory helper; the repair is recorded at (`rec:w1b16:test-directory`). The first green gate of record containing the bite-1.5 closing is `0.7.126-dev`: 2026-11-13T09:48:06Z–10:05:16Z, wall 1,030 seconds, queue 300 seconds, `== record green`, chain exit 0. Logs and retained journals are under `/var/home/tripod/loops/evidence/wave1/record-0.7.124-dev/` and `/var/home/tripod/loops/evidence/wave1/record-0.7.126-dev/`; the latter `cargo-test-json.tar.gz` retains 158 files and 602,437 bytes. This is an import-side gate fact, not a native capture by this step.
 
-Part-two preliminary checks are retained under `.b16bridge3/`. Fast checks
-8–11 reported local compile/lint/format findings (35, 281, 395 and 338 seconds);
-formatter patches were applied mechanically, except one stale patch which
-failed `git apply --check` and was replaced by the next formatter output.
-The first library run passed 626 conformance controls and failed nine live
-signing controls because their shared helper had inherited historical revision
-eight. The live helper now explicitly names the current revision. The second
-run passed all 635 conformance controls in 11.05 seconds, then found the old
-adapter-version refusal: a permissive version list had admitted 2.1.2 under
-revision eight. The binding now admits only the reviewed pairs (8, 2.1.0/2.1.1)
-and (9, 2.1.2), preserving that original refusal and adding the new accepted
-pair. Neither correction changes an archive or its expected outcome.
+Part-two preliminary checks are retained under `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge3/`. Fast checks 8–11 reported local compile/lint/format findings (35, 281, 395 and 338 seconds); formatter patches were applied mechanically, except one stale patch which failed `git apply --check` and was replaced by the next formatter output. The first library run passed 626 conformance controls and failed nine live signing controls because their shared helper had inherited historical revision eight. The live helper now explicitly names the current revision. The second run passed all 635 conformance controls in 11.05 seconds, then found the old adapter-version refusal: a permissive version list had admitted 2.1.2 under revision eight. The binding now admits only the reviewed pairs (8, 2.1.0/2.1.1) and (9, 2.1.2), preserving that original refusal and adding the new accepted pair. Neither correction changes an archive or its expected outcome.
 
-The second library round also found eleven prototype planner controls whose
-synthetic output-only sponsor replies followed the live constant. Those
-non-transport transcripts now explicitly retain revision eight, preserving
-their old bytes and shape. That round ended with 1,307 vectors controls passing
-and 12 failing, in 157.12 seconds; no archive admission failed.
+The second library round also found eleven prototype planner controls whose synthetic output-only sponsor replies followed the live constant. Those non-transport transcripts now explicitly retain revision eight, preserving their old bytes and shape. That round ended with 1,307 vectors controls passing and 12 failing, in 157.12 seconds; no archive admission failed.
 
-The confidential route's historical synthetic exchanges remain revision eight.
-Its current transport control builds a separate revision-nine mock sequence:
-explicit sponsor funding has a canonical synthetic parent, and subsequent
-requests derive their outpoints from that parent's content address. The old
-exchanges and their expectations are not rewritten. The transport still checks
-exact reproduction of the new sequence; the retained replay separately checks
-the old one. Both remain mock evidence, never a chain or signature assertion.
+The confidential route's historical synthetic exchanges remain revision eight. Its current transport control builds a separate revision-nine mock sequence: explicit sponsor funding has a canonical synthetic parent, and subsequent requests derive their outpoints from that parent's content address. The old exchanges and their expectations are not rewritten. The transport still checks exact reproduction of the new sequence; the retained replay separately checks the old one. Both remain mock evidence, never a chain or signature assertion.
 
-The first full gate was red: `/var/home/tripod/loops/tmp/gate-w20b1-20261113T123549Z.log`,
-2026-11-13T12:35:49Z–12:46:38Z, wall 649 seconds, queue zero, exit 1.
-Ten current-transport mock controls in four integration binaries still emitted
-literal revision eight. Their wire copies now use nine; historical synthetic
-transcripts remain eight. The capture writer checks current identity before
-projecting only the two revision fields and enclosing content digest onto its
-unchanged historical golden. The gate also found missing hash-citation census
-rows for the new renderer product and re-freeze identities, and the command
-omitted the three authorized executor scripts from its extra-path list. These
-are corrected explicitly, not treated as a passing gate. Retained failing
-journals are under `/var/home/tripod/loops/tmp/w20b1-b16bridge3/red1-*.json`.
-Fast check 16 took 295 seconds and found the expanded writer test exceeded the
-line limit; its compatibility projection is now a separate helper. The focused
-four-binary round `.b16bridge3/focused.log` passed in 163 seconds, exit 0.
+The first full gate was red: `/var/home/tripod/loops/tmp/gate-w20b1-20261113T123549Z.log`, 2026-11-13T12:35:49Z–12:46:38Z, wall 649 seconds, queue zero, exit 1. Ten current-transport mock controls in four integration binaries still emitted literal revision eight. Their wire copies now use nine; historical synthetic transcripts remain eight. The capture writer checks current identity before projecting only the two revision fields and enclosing content digest onto its unchanged historical golden. The gate also found missing hash-citation census rows for the new renderer product and re-freeze identities, and the command omitted the three authorized executor scripts from its extra-path list. These are corrected explicitly, not treated as a passing gate. Retained failing journals are under `/var/home/tripod/loops/tmp/w20b1-b16bridge3/red1-*.json`. Fast check 16 took 295 seconds and found the expanded writer test exceeded the line limit; its compatibility projection is now a separate helper. The focused four-binary round `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge3/focused.log` passed in 163 seconds, exit 0.
 
 
 ### Partial-step verification · `rec:w1b16:bridge-verification`
 
-Parts one and two passed the full ten-package landing gate with lint and plans:
-`/var/home/tripod/loops/tmp/gate-w20b1-20261113T130010Z.log`,
-2026-11-13T13:00:10Z–13:14:20Z, wall 850 seconds, slot wait zero,
-`== green`, exit 0. The command was
-`bash ~/loops/tmp/w20-code-gate.sh w20b1 architecture,realization,compiler,model,target-elements,tapscript,linker,transaction,target-elements-conformance,vectors plans/drafts/wave1-bite-1-6-plan.md plans/packages/vectors.md scripts/elements-native-executor.py scripts/test-executor-boundaries.py scripts/test-executor-request-comparisons.py lint/hash-citation-families.tsv`.
-The runner entered its own transient systemd cgroup; foreground SSH and
-`systemd-run --wait --pipe` stayed attached until its terminal marker. No
-capture or native ignored target ran. Fast check 17 passed in 67 seconds,
-including formatting, Clippy and rustdoc.
+Parts one and two passed the full ten-package landing gate with lint and plans: `/var/home/tripod/loops/tmp/gate-w20b1-20261113T130010Z.log`, 2026-11-13T13:00:10Z–13:14:20Z, wall 850 seconds, slot wait zero, `== green`, exit 0. The command was `bash ~/loops/tmp/w20-code-gate.sh w20b1 architecture,realization,compiler,model,target-elements,tapscript,linker,transaction,target-elements-conformance,vectors plans/drafts/wave1-bite-1-6-plan.md plans/packages/vectors.md scripts/elements-native-executor.py scripts/test-executor-boundaries.py scripts/test-executor-request-comparisons.py lint/hash-citation-families.tsv`. The runner entered its own transient systemd cgroup; foreground SSH and `systemd-run --wait --pipe` stayed attached until its terminal marker. No capture or native ignored target ran. Fast check 17 passed in 67 seconds, including formatting, Clippy and rustdoc.
 
-| Battery | Wall s | Exit | CPU delta µs | CPU pressure some/full µs | Memory pressure some/full µs | IO pressure some/full µs |
-|---|---:|---:|---:|---|---|---|
-| setup | 1 | 0 | 2178438 | 5333/3337 | 0/0 | 172/171 |
-| fmt | 4 | 0 | 6001271 | 6814/5196 | 0/0 | 17849/17850 |
-| clippy | 33 | 0 | 72793091 | 21073/11045 | 0/0 | 12140/11956 |
-| package-tests | 545 | 0 | 4060234635 | 103956327/53569717 | 463390/231981 | 50721/31572 |
-| doc | 215 | 0 | 242822675 | 991178/980848 | 693220/693220 | 45452/44386 |
-| lint-suite | 50 | 0 | 145422117 | 55874/31095 | 1/0 | 18929/16163 |
-| checks | 2 | 0 | 3460319 | 4372/3743 | 0/0 | 981/978 |
+| Battery | Wall s | CPU user/system s | CPU PSI some/full s | Memory PSI some/full s | IO PSI some/full s | Peak bytes (cumulative) | Exit |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| setup | 1 | 0.970995/1.207443 | 0.005333/0.003337 | 0.000000/0.000000 | 0.000172/0.000171 | 60432384 | 0 |
+| fmt | 4 | 4.663257/1.338014 | 0.006814/0.005196 | 0.000000/0.000000 | 0.017849/0.017850 | 194473984 | 0 |
+| clippy | 33 | 64.351229/8.441861 | 0.021073/0.011045 | 0.000000/0.000000 | 0.012140/0.011956 | 3130933248 | 0 |
+| package-tests | 545 | 3951.021492/109.213144 | 103.956327/53.569717 | 0.463390/0.231981 | 0.050721/0.031572 | 9301868544 | 0 |
+| doc | 215 | 154.649964/88.172711 | 0.991178/0.980848 | 0.693220/0.693220 | 0.045452/0.044386 | 9301868544 | 0 |
+| lint-suite | 49 | 129.938991/15.483127 | 0.055874/0.031095 | 0.000001/0.000000 | 0.018929/0.016163 | 9301868544 | 0 |
+| checks | 1 | 1.939120/1.521198 | 0.004372/0.003743 | 0.000000/0.000000 | 0.000981/0.000978 | 9301868544 | 0 |
 
-These are gate-cgroup deltas, not native-subject costs. Journals copied before
-reuse are under `/var/home/tripod/loops/tmp/w20b1-b16bridge3/covering-*.json`.
-The new transport binding battery took 0.134463 seconds, the direct parent-fact
-control 0.032207 seconds, and its bounded trace child parent 0.010640 seconds.
-The existing freeze family passed in 7.635306 seconds; this journal retains its
-family wall, not individual successful child streams. The earlier isolated
-freeze figures above remain separately identified measurements.
+These are gate-cgroup deltas, not native-subject costs. Battery sample walls can differ by one second from the runner summaries; the rows use the resource-sample bracket. Peak bytes are the cumulative high-water mark of the same transient unit, not per-battery allocations. Journals copied before reuse are under `/var/home/tripod/loops/tmp/w20b1-b16bridge3/covering-*.json`. The new transport binding battery took 0.134463 seconds, the direct parent-fact control 0.032207 seconds, and its bounded trace child parent 0.010640 seconds. The existing freeze family passed in 7.635306 seconds; this journal retains its family wall, not individual successful child streams. The earlier isolated freeze figures above remain separately identified measurements.
 
-The expanded existing confidential current-transport integration control took
-121.276325 seconds under this covering load. This is above the brief's
-10-second split-or-report threshold and is reported here, without widening any
-guard or presenting it as a bounded new bridge subject. It remains a composite
-legacy integration control; part three's new bounded subject family has not
-been implemented. The distinct ordinary-edge signing-authority question in
-(`sec:w1b16:bridge-signing-boundary`) still withholds that part. This green gate does not
-resolve that question or claim a completed bridge.
+The expanded existing confidential current-transport integration control took 121.276325 seconds under this covering load. This is above the brief's 10-second split-or-report threshold and is reported here, without widening any guard or presenting it as a bounded new bridge subject. It remains a composite legacy integration control; part three's new bounded subject family has not been implemented. The distinct ordinary-edge signing-authority question in (`sec:w1b16:bridge-signing-boundary`) still withholds that part. This green gate does not resolve that question or claim a completed bridge.
 
-The preservation comparison against the starting tree has no changes under
-compiler, architecture, transaction, tapscript or linker, and no modification
-to an existing file under the vectors fixture tree. Only the new
-`CURRENT-REVISION-9` renderer product is added there. The keyed reproduction
-and history fixture sources are exact. The gate passed
-`preserve_engine_base` (91.175843 seconds),
-`attestation_canonical_bytes_and_publication_equal_the_opening_base`
-(0.042571 seconds), all historical admissions in
-(`tab:w1b16:bridge-archives`), and all 35 freeze pins. Only the scaling replay pin
-is re-frozen as listed in (`tab:w1b16:bridge-refreeze`).
+The preservation comparison against the starting tree has no changes under compiler, architecture, transaction, tapscript or linker, and no modification to an existing file under the vectors fixture tree. Only the new `CURRENT-REVISION-9` renderer product is added there. The keyed reproduction and history fixture sources are exact. The gate passed `preserve_engine_base` (91.175843 seconds), `attestation_canonical_bytes_and_publication_equal_the_opening_base` (0.042571 seconds), all historical admissions in (`tab:w1b16:bridge-archives`), and all 35 freeze pins. Only the scaling replay pin is re-frozen as listed in (`tab:w1b16:bridge-refreeze`).
 
-The first documents confirmation refused three references written in the label
-minting form instead of citation form. Its log is
-`/var/home/tripod/loops/tmp/gate-w20b1-20261113T131547Z.log`, wall 4 seconds,
-exit 1, `== RED`. Only citation syntax was corrected; the full-gated source
-snapshot and its results are unchanged.
+The first documents confirmation refused three references written in the label minting form instead of citation form. Its log is `/var/home/tripod/loops/tmp/gate-w20b1-20261113T131547Z.log`, wall 4 seconds, exit 1, `== RED`. Only citation syntax was corrected; the full-gated source snapshot and its results are unchanged.
 
 ### Confidential integration cost repair · `rec:w1b16:bridge-confidential-cost`
 
-The pre-change `0.7.126-dev` gate records 163.9 seconds for
-`confidential_agreement_requires_control_and_subject_readback` under whole-suite
-load; the expanded protocol gate recorded 121.276325 seconds. These are loaded
-samples, not a measured regression between identical loads. The isolated
-expanded control took 34.33 seconds: fixture 31.348427, replay 0.884231,
-current-wire fixture 0.958710, transport 1.139311 and admission below one
-microsecond. Logs are retained in `.b16bridge4/measure.log` and
-`.b16bridge3/record-126.log`.
+The pre-change `0.7.126-dev` gate records 163.9 seconds for `confidential_agreement_requires_control_and_subject_readback` under whole-suite load; the expanded protocol gate recorded 121.276325 seconds. These are loaded samples, not a measured regression between identical loads. The isolated expanded control took 34.33 seconds: fixture 31.348427, replay 0.884231, current-wire fixture 0.958710, transport 1.139311 and admission below one microsecond. Logs are retained in `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge4/measure.log` and `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge3/record-126.log`.
 
-The first fixture construction admitted three entire archives merely to borrow
-public response, sponsor and policy operands. Their admission, including the
-137-operation native corpus, is already independently tested in the vectors
-library. Test-local extraction now reads exactly those operands from the
-unchanged archived bytes, without giving them admitted standing. No comparison
-or archive admission test is removed. A fingerprint captured before the repair
-pins all fourteen historical fixture exchanges byte for byte, including their
-requests. The current wire comparison and all its assertions remain.
+The protocol expansion added a separate fourteen-step current-wire plan, with revision-nine canonical sponsor-parent readback and binding; transport now checks that current plan while historical replay and its label/eligibility comparison remain. The isolated added plan cost was 0.958710 seconds. The 31.348427-second cold fixture cost, rather than the protocol exchange, dominated that run.
 
-The repaired isolated run passed in 4.02 seconds, exit zero: fixture 1.395103,
-replay 0.813485, current-wire fixture 0.870437, transport 0.929489 seconds;
-admission below one microsecond. The parent enforces exactly one ignored child
-under a 40-second timeout and prints its wall and phase lines. No bound was
-widened. The first extraction attempt omitted the sponsored archive's distinct
-`exchange` form and refused at the missing sponsor program; it was corrected,
-not accepted as an empty fixture. The initial fast check rejected stderr phase
-prints; the retained timings use stdout, with the exception documented in the
-vectors tracing contract. Logs are `.b16bridge4/fingerprint.log`,
-`.b16bridge4/repaired.log`, `.b16bridge4/repaired2.log` and
-`.b16bridge4/check1.log`. These are offline fixture costs, never native costs.
+The first fixture construction admitted three entire archives merely to borrow public response, sponsor and policy operands. Their admission, including the 137-operation native corpus, is already independently tested in the vectors library. Test-local extraction now reads exactly those operands from the unchanged archived bytes, without giving them admitted standing. No comparison or archive admission test is removed. A fingerprint captured before the repair pins all fourteen historical fixture exchanges byte for byte, including their requests. The current wire comparison and all its assertions remain.
+
+The repaired isolated run passed in 4.02 seconds, exit zero: fixture 1.395103, replay 0.813485, current-wire fixture 0.870437, transport 0.929489 seconds; admission below one microsecond. The parent enforces exactly one ignored child under a 40-second timeout and prints its wall and phase lines. No bound was widened. The first extraction attempt omitted the sponsored archive's distinct `exchange` form and refused at the missing sponsor program; it was corrected, not accepted as an empty fixture. The initial fast check rejected stderr phase prints; the retained timings use stdout, with the exception documented in the vectors tracing contract. Logs are `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge4/fingerprint.log`, `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge4/repaired.log`, `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge4/repaired2.log` and `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge4/check1.log`. These are offline fixture costs, never native costs. The passing fast check is `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge4/check2.log`: exit 0, 62 seconds (format 4, Clippy 3, rustdoc 54; formatter patch applied mechanically). The later split and loaded measurements at (`rec:w1b16:bridge-gate`) already close the missing loaded-wall part of review finding 7: three children 15.874785/3.256704/7.700041 seconds and parent 26.831799 seconds under the covering gate. They are separate load samples, not a controlled speedup claim.
 
 
 ### Session-owned change registration · `rec:w1b16:bridge-authority`
 
-The orchestrator's disposition permits revision-nine registration of change
-outputs from this executor's own accepted, mined submissions. Both submission
-routes retain their session-local submitted bytes, then call the same atomic
-registration core after accepted mined readback. It checks the byte bound,
-canonical decode/re-encoding, exact submitted bytes, transaction identity and
-witness identity before retaining only outputs of its exact sponsor program.
-Unconfirmed/relayed paths do not call registration; a fresh session has no
-registry or submission standing. Values and serialized assets come from the
-readback, not from a signing offer. No signature is accepted by the harness
-without the existing frozen-byte, index and signature checks.
+Revision-nine registration is safe for this executor's own accepted, mined, exact-program change: the coin returns to its existing key, and canonical readback supplies its asset and value. A request alone, a different session or mere relay supplies no such authority. Both submission routes retain their session-local submitted bytes, then call the same atomic registration core after accepted mined readback. It checks the byte bound, canonical decode/re-encoding, exact submitted bytes, transaction identity and witness identity before retaining only outputs of its exact sponsor program. Unconfirmed/relayed paths do not call registration; a fresh session has no registry or submission standing. Values and serialized assets come from the readback, not from a signing offer. No signature is accepted by the harness without the existing frozen-byte, index and signature checks.
 
-`TargetSponsorSigningSubject::spent_output` is an optional revision-nine
-assertion of serialized asset, value and program. Existing callers use `None`,
-which serde omits, preserving every historical request byte. If supplied, each
-coordinate must equal the registered coin; it never grants authority. The
-node-free `test_submitted_change_authority` control covers an owned nonzero
-output, an excluded different program, another session, an unregistered relay,
-missing mining, size/decode/canonical/subject/identity failures, and the three
-assertion mismatches, with an empty registry after every failed registration.
-It uses a declared framework-decoder seam and claims registry evidence, not
-Elements decoding or native validity. The bridge's mock supplies the complete
-construction path separately. `SponsorAuthorityFailure` keeps these conditions
-typed; all remain conformance infrastructure refusals, never covenant verdicts.
+`TargetSponsorSigningSubject::spent_output` is an optional revision-nine assertion of serialized asset, value and program. Existing callers use `None`, which serde omits, preserving every historical request byte. For funding coins omission remains accepted: the digest uses the registered value and the harness verifies the signature, preserving revision-eight meaning. Change-registered coins require the assertion, with typed `ASSERTION` refusal on absence. If supplied, each coordinate must equal the registered coin; it never grants authority. The node-free `test_submitted_change_authority` control covers an owned nonzero output, an excluded different program, another session, an unregistered relay, missing mining, size/decode/canonical/subject/identity failures, and the three assertion mismatches, with an empty registry after every failed registration. It uses a declared framework-decoder seam and claims registry evidence, not Elements decoding or native validity. The bridge's mock supplies the complete construction path separately. `SponsorAuthorityFailure` keeps these conditions typed; all remain conformance infrastructure refusals, never covenant verdicts.
 
 | Re-frozen path | Previous SHA-256 | New SHA-256 | Classification and reopened evidence |
 |---|---|---|---|
 | `packages/vectors/src/keyed_scaling.rs` | `1cdf2c197418ba97e674030d29efc7f06bc60fa442d1af142ae2e5c0c2462bc5` | `6ef3d8410b90916c63e0aec3b3f49032d0d7678cedf8adc2cbdd25fd8cae3641` | Editorial: only the omitted optional-field initializer; planner behaviour and wire bytes unchanged. Reopens source identity and omission/round-trip controls, no native evidence. |
 
-The source and re-pin land together and require independent review before
-capture under the existing re-freeze procedure. The literal freeze history
-retains both earlier identities and this editorial transition; all 35 pins
-pass. No other pinned file is changed.
+The source and re-pin land together and require independent review before capture under the existing re-freeze procedure. The literal freeze history retains both earlier identities and this editorial transition; all 35 pins pass. No other pinned file is changed.
 
-The revision-nine comparison was regenerated with
-`scripts/test-executor-request-comparisons.py --emit`; its adapter digest is
-`dbadb2aecd4278fd1611fb08cc13e3b3b258edecec7e45b3b2cb85f41c4f31c9`.
-Revision-eight comparison rows and all old archive bytes remain unchanged.
-The adapter version and live protocol remain 2.1.2 and 9: no native session has
-used this revision yet.
+The revision-nine comparison was regenerated with `scripts/test-executor-request-comparisons.py --emit`; its adapter digest is `dbadb2aecd4278fd1611fb08cc13e3b3b258edecec7e45b3b2cb85f41c4f31c9`. Revision-eight comparison rows and all old archive bytes remain unchanged. The adapter version and live protocol remain 2.1.2 and 9: no native session has used this revision yet.
 
-Preliminary verification: the first Python invocation used an unavailable
-nested timeout command and exited 125 without running tests; the corrected
-outer process guards ran the node-free boundary/classification suites. The
-first conformance run passed 635 tests and found one policy-only stub that
-bypassed executor initialization. That stub now explicitly isolates authority,
-whose real controls are in the boundary suite. The corrected run passed all
-636 conformance tests and the freeze family (1.41 seconds), exit zero, overall
-57 seconds. The authority control passed 24 assertions in 0.102 seconds in
-the preceding run. Logs are `.b16bridge5/tests1.log`, `tests2.log`, `tests3.log`,
-`render.log` and `render.err`; no native process ran.
+Preliminary verification: the first Python invocation used an unavailable nested timeout command and exited 125 without running tests; the corrected outer process guards ran the node-free boundary/classification suites. The first conformance run passed 635 tests and found one policy-only stub that bypassed executor initialization. That stub now explicitly isolates authority, whose real controls are in the boundary suite. The corrected run passed all 636 conformance tests and the freeze family (1.41 seconds), exit zero, overall 57 seconds. The authority control passed 24 assertions in 0.102 seconds in the preceding run. Logs are `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge5/tests1.log`, `tests2.log`, `tests3.log`, `render.log` and `render.err`; no native process ran.
+
+### Sealed final subjects and offline bridge · `rec:w1b16:bridge-subjects`
+
+The bridge consumes public `keyed_request`, `construct_keyed`, `admit_keyed`, commitment and sponsor verification entries. It never calls the prototype spend builder. `FrozenFinalSubject` retains the key, operation, ordered parent-bound inputs, sequences, capability snapshots, member receipt, structure and signing request. `FinalSubject` binds the admitted complete bytes to that freeze and names them by SHA-256; its expected accepted-submission boundary stays outside the protocol. Both carriers have private-field privacy doctests. No raw script, stated total or detached predecessor receipt is an entry parameter.
+
+For each representative key, `tests/keyed_bridge/fixture.rs` constructs four subjects: SOURCE A; single-member MERGE spending A's change at input 0 and A's handle at input 1; SOURCE B; and multi-member MERGE with members at inputs 0 and 2 and the single MERGE's change at input 1. Sponsor funding parents have a nonzero selected output index, distinct content addresses and sequences. Constructed sequences retain the relative-locktime disable bit, so these fresh-chain subjects do not silently request long relative delays. The session mock supplies canonical funding readback, binds it through the revision-9 readback checker, builds a checked request, freezes non-witness bytes, signs, admits through production ECDSA verification, submits, reads back, registers its own output-1 change and spends it in the next event. Every request calls `offer()` once; signing never recalls it. The 16-bit index conversion, role/profile, protected outputs, ordered census and returned signature are checked. The unchanged executor transport replays the exact request/response sequence through a separate mock process. Its accepted observations are mock assertions only, not chain inclusion or native acceptance. Fresh native funding and ordinary signatures will produce new per-run transaction identities.
+
+| Control in `tests/keyed_bridge/` | Refusing boundary and standing |
+|---|---|
+| `fixture::refusals`, complete member beside empty parent | Request input decoding; missing bytes are not SOURCE evidence. |
+| Same control, changed parent content address | Request `ParentHash`; canonical bytes do not match the stated outpoint. |
+| Same control, another key's commitment | Request linker recipe assertion; no substituted comparison program. |
+| Same control, member offered as collateral | Request `FalseCollateralRole`, before sponsor exclusion. |
+| Same control, offered flag bit | Request `UnsupportedSpendingInputForm`, not covenant execution. |
+| `fixture::Session::event`, signer index above 16-bit domain | Bridge `SigningIndex`; no truncation. |
+| Same control, signed submission bytes changed under the old case digest | Bridge `SubmissionBytes`; an untrusted request cannot replace the sealed subject. Case, schema and script-byte twins also refuse with `SubmissionCase`, `SubmissionSchema` and `SubmissionBytes`. |
+| `provenance`, each of fourteen changed coordinates and each absent coordinate | Capture provenance refusal for that coordinate; no mismatch counts as a capture. |
+| `tracing_control` | Exact events/levels/target and refusal kinds; no native verdict. |
+
+`fixture::pairing_controls` swaps sealed values to refuse census, output-zero, signing role/index/bytes, admitted bytes and capability snapshot mispairings. The profile subject comes from the other sealed compact entry because all eight keyed subjects share a profile. Only `SignerForm` (sealed admission fixes the sponsor form), `UnsupportedRole` (the request exposes only SOURCE/MERGE), and `MemberWitness` (the earlier output-zero comparison prevents a public mispair reaching it) remain defensive. An explicitly internal synthetic subject tests the member-witness comparison itself. The native negative cases which public construction refuses remain explicitly untrusted byte subjects for step 3, not admitted artifacts.
+
+`CaptureProvenance` carries fourteen optional measured coordinates: repository commit, resolved dependency-lock digest, toolchain, executable and framework identities, executor digest, recorded protocol revision, node, image, public key, checked freeze digest, capture-binary digest, interpreter identity and daemon identity. Each field documents its measuring owner. Missing or empty textual observations refuse before mismatches; the executor must also equal the rendered revision-nine digest. The freeze join is the versioned test-local diagnostic rendering, not a protocol identity or stable descriptor. Capture preparation must retain the build's actual lock and toolchain and match the handshake, not read the runtime checkout as proof of what was compiled. Matching supplied observations establishes agreement, not their truth. Native execution, inclusion, unspentness, retrieval, finality and the remaining cryptographic premises are not discharged here.
+
+### Native dispatch plan · `tab:w1b16:bridge-captures`
+
+These are ignored targets to implement and review in steps 3 and 4, not executable targets or captures counted by this offline landing. Only the orchestrator launches native rounds; the lane supplies the capture target, `run-one` wrapper and offline admission. The orchestrator's watcher awaits each detached unit and its end marker. The first `birth` pilot must exercise the real Python functional-framework decode of a keyed final transaction, retain its registration diagnostic separately from target acceptance, and demonstrate spending the registered change. A mock decoder is no substitute for that pilot.
+
+| Target (`keyed_final_capture::` prefix) | Subjects, both keys | Step | Pilot guard (seconds) | Retention suffix |
+|---|---|---|---|---|
+| `birth` | Final SOURCE/single/multi; later-born and flagged untrusted subjects | 3, measurement a | 1800 | `birth/` |
+| `continuation` | Ordinary edges/nonzero positions; wrong key/script/version/output position, one changed member | 3, b | 1800 | `continuation/` |
+| `commitment` | Exact final controls, wrong parity/uncommitted leaf and key-path attempt | 3, c | 1800 | `commitment/` |
+| `cost` | Birth, continuation and composition on exact final bytes, available native dimensions only | 3, d | 1800 | `cost/` |
+| `funding` | Final policy asset, explicit fee/change and shortage/imbalance controls | 4, e | 1800 | `funding/` |
+| `scaling` | SOURCE, representative MERGEs, 252/253 and admitted 1,564; typed 1,565 refusal remains construction policy | 4, f | 3600 | `scaling/` |
+
+**Fixed paths and build.** On kranich, `ROOT=/var/home/tripod/loops/evidence/wave1/final`, `RUN` is the orchestrator's unique UTC dispatch identity, `TARGET` is exactly one table entry, and `RUN_DIR=$ROOT/$RUN/$TARGET`. The prepared source copy is `$ROOT/$RUN/source`, the warm build target is `/var/home/tripod/loops/cargo-target-final-w20b1`, the retained executable is `$ROOT/$RUN/build/maturity_native`, and the retained wrappers are `$ROOT/$RUN/run-one` and `$ROOT/$RUN/capture-unit`. Step 3 implements these wrappers, including their failure paths, as reviewed capture support; none is generated or run by this gate. The orchestrator prepares the copy from the reviewed tree, verifies it has no tracked changes, and retains the exact source identity. The build copy is writable only for the untracked resolved lock; the run mounts the same source read-only. `TMPDIR=/capture/tmp`, `HOME=/capture/work`, the working directory `/capture/work` and fresh regtest root `/capture/work/regtest` are writable and unique per target; no daemon or signing state is shared between targets.
+
+The build image is the retained `localhost/tripod-native:f44`, resolved once by `podman image inspect --format '{{.Id}}' localhost/tripod-native:f44`; its measured immutable ID must match the reviewed environment and is used as `IMAGE` for both build and run. A mismatch stops rather than choosing another image. The exact build invocation is `podman run --rm --network=none --userns=keep-id -v "$ROOT/$RUN/source:/src:z" -v "$ROOT/$RUN/build:/capture:z" -v /var/home/tripod/loops/cargo-target-final-w20b1:/cargo-target:z -v /var/home/tripod/loops/cargo-home:/cargo:z -v /usr/local/rustup:/usr/local/rustup:ro -e RUSTUP_HOME=/usr/local/rustup -e CARGO_HOME=/cargo -e CARGO_TARGET_DIR=/cargo-target -e HOME=/capture -e TMPDIR=/capture/tmp -e PATH=/usr/local/rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin:/usr/bin:/bin -w /src "$IMAGE" cargo test --offline --profile release -p tripod-vectors --test maturity_native --no-run --message-format=json`. Retain stdout as `build.jsonl`, stderr and exit as build evidence. The wrapper selects exactly one `compiler-artifact` JSON row whose target name is `maturity_native`, profile is test and executable is non-null, copies that executable to `$ROOT/$RUN/build/maturity_native`, and refuses zero or multiple matches. It retains SHA-256 of that file, the resolved `/src/Cargo.lock`, `rustc -Vv` and `cargo -V`. The lock is untracked: no `--locked` claim is made. Offline resolution uses the warm registry cache; missing dependencies stop the build rather than fetching during capture preparation. A warm target saves compilation, never substitutes for provenance of this binary.
+
+**Detached launch, per row.** With `GUARD` equal to that row's pilot guard, the orchestrator starts `systemd-run --user --unit="tripod-$RUN-$TARGET" --property="RuntimeMaxSec=$((GUARD + 60))" --property="StandardOutput=append:$RUN_DIR/unit.log" --property="StandardError=append:$RUN_DIR/unit.log" "$ROOT/$RUN/capture-unit" "$RUN_DIR" "$TARGET" "$GUARD" "$IMAGE"`. This command has no waiting flags. The unit wrapper retains its PID/unit identity, timestamps and exact command, and invokes `timeout --kill-after=10 "$GUARD" podman run --rm --network=none --userns=keep-id -v "$ROOT/$RUN/source:/src:ro,z" -v "$ROOT/$RUN/build:/capture-build:ro,z" -v "$ROOT/$RUN/run-one:/run-one:ro,z" -v "$RUN_DIR:/capture:z" -v /var/home/tripod/loops/toolchains/elements/b7fc5d08:/elements:ro,z --env-file="$RUN_DIR/capture.env" -e TMPDIR=/capture/tmp -e HOME=/capture/work -w /capture/work "$IMAGE" /run-one "$TARGET"`. It writes `B16_CAPTURE_DONE target=TARGET exit=STATUS` to `$RUN_DIR/unit.log` after the bounded invocation, even on a nonzero exit. The outer 60 seconds allow termination and evidence flushing, not extra subject execution. The orchestrator watcher waits on this same unit, records its result, and requires that marker plus exit zero; interruption reconnects to the same unit and never starts a replacement. A missing marker, timeout, empty test selection or provenance mismatch is failed capture evidence, not acceptance.
+
+`run-one` invokes `/capture-build/maturity_native --ignored --exact "keyed_final_capture::$TARGET" --nocapture --test-threads=1`, checks line-anchored exactly one test and one passing result, and retains stdout/stderr as `test.log`/`test.stderr`. The capture uses `/usr/bin/python3 /src/scripts/elements-native-executor.py`, `/elements/bin/elementsd` and `/elements/bin/elements-cli` with the retained functional framework in the native image and the fresh regtest directory; its complete adapter argv, interpreter identity, executable and framework provenance are retained before the handshake. The retained Elements installation is `/var/home/tripod/loops/toolchains/elements/b7fc5d08`, mounted read-only at `/elements`; the image provides dependencies, not that installation. The framework path is `/elements/src/test/functional`, and `/elements/PROVENANCE.txt` binds the daemon, framework and intended tip. The capture target assembles the adapter argv with `--framework /elements/src/test/functional --elementsd /elements/bin/elementsd --elements-cli /elements/bin/elements-cli --fee-policy node-defaults --maturity-observation --datadir /capture/work/regtest`; its existing transport supplies `--output` and `--elements-output` under `/capture/work`, and `--network-id` is the public development identity of its checked target packet, compared with the handshake. The intended tip is the retained provenance value, never a runner-chosen substitute. The capture environment is produced by the reviewed wrapper from those fixed paths and retained measurements; it cannot supply substitute programs. The runner measures script and binary digests, image, build and host identities; adapter-reported daemon/framework facts are checked against the retained provenance. The executor digest must equal the revision-nine comparison, not merely agree with another supplied value. Every `CaptureProvenance` coordinate is present or capture refuses.
+
+**Bounds and retention.** The 1800-second pilot guard is a hang guard with setup and shared-node headroom beyond the earlier 5–15 minute aggregate planning allowance for a–d; scaling gets 3600 seconds because it prepares both keys' large histories and the earlier scaling observation alone took 209 seconds. Neither figure is a performance claim or an offline-bound extension. After a completed pilot, each campaign guard is four times its largest completed pilot wall rounded up; a censored pilot supplies only a lower bound and triggers split/report, never automatic widening. Retain pilot and campaign in distinct run directories: source/build/lock/toolchain and environment manifests, handshake, freeze/key, policy readings, parents, frozen bytes, signing requests/signatures, all wire exchanges, submitted/mined bytes, diagnostics, stdout/stderr, exits and scoped wall/CPU/cgroup samples, journals and digests. Planning allowances remain estimates. No native process was started here; independent re-review of the bridge and protocol prerequisites precedes even the first pilot.
+
+### Bridge verification rounds · `rec:w1b16:bridge-rounds`
+
+The resumed work retained and reviewed the existing uncommitted signing-authority edits. The protocol focused run `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge5/tests3.log` passed all 636 conformance library tests, the 38 Python boundary groups (including the 24-assertion change registration control), classification controls and all 35 freeze pins; wall 57 seconds, exit 0. Earlier rounds exposed an unavailable inner-container `timeout` command (moved to the outer runner without widening it), and an old policy-only stub missing the new registry state; neither was a successful run. The stub now explicitly excludes authority and the dedicated authority controls cover it. The final protocol fast check `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge5/check2.log` passed in 348 seconds (format 7, Clippy 15, rustdoc 325), exit 0; its formatter patch is applied.
+
+Bridge rounds `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge5/bridge1.log`, `bridge2.log` and `bridge3.log` were red: two fixture API mistakes at compile time; a mock deployment identity different from the shared peer; and nested unprefixed output making the outer exactly-one check count six tests. No construction or signature result failed. The final bounded run `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge5/bridge4.log` passed in 27 seconds including compilation, exit 0: family 0.067452 s; control key 0.023030, second key 0.020474, refusals 0.006480, provenance 0.003012 and tracing 0.010817 s. Transport replays took 0.011225 and 0.009272 s. Every process had its own bound, the outer check saw exactly one child test, and no subject reached the report/split threshold.
+
+Fast rounds `check3.log`, `check4.log` and `check5.log` reported tracing semicolons, a doc paragraph, test-helper length/borrowing and small Clippy style findings; these were corrected, with the event helper split into construction and submission phases. The final fast check `check6.log` passed in 67 seconds (format 4, Clippy 9, rustdoc 53), exit 0, with its exact formatter output applied. One formatter application reported `error: patch failed: packages/vectors/tests/keyed_final/freeze_history.rs:5` and `patch does not apply`: the identical history formatting was already present locally. A reverse-apply check proved that hunk was already applied; the remaining hunks were checked and applied mechanically. No source expectation was edited to make a check pass.
+
+The bridge's session mock has its own typed authority refusals and negative controls, in addition to the real executor's Python boundary controls. It requires a session-submitted transaction, an accepted mined readback and exact content identities before registering only its sponsor-program outputs. The `authority_controls` subject refuses a request-only/different-session attempt, a merely relayed result, unmined readback, an unregistered other-script output, and each mismatched asset/value/program offer beside the accepted registration. Size, malformed content, wrong transaction/witness identities and changed canonical bytes have separate mock controls; canonical re-encoding is a defensive check of the shared decoder. The whole history calls this mock registration and checking path, rather than asserting coin facts only in the test body. Neither implementation turns registration into an inclusion or unspentness proof.
+
+The first covering run (`/var/home/tripod/loops/tmp/gate-w20b1-20261113T142804Z.log`), 2026-11-13T14:28:04Z–14:44:25Z, wall 981 s, queue zero, exited 1/RED. All 33 package lanes, format, Clippy, rustdoc and lint passed; plans checking refused the new unregistered `contract` label kind. The label now uses `sec`. Its test journals were copied before another run to `/var/home/tripod/loops/tmp/w20b1-b16bridge5-pre-mock/covering-*.json`. The repaired confidential control took 24.923755 s under that load (its isolated repaired wall was 4.02 s): this exceeds the 10-second reporting threshold and is reported, not hidden or given a wider guard. It remains within its 40-second hang guard. The bridge family took 0.975411 s. Final inspection then added explicit typed mock authority controls beside the existing real-executor controls. Fast round `check7.log` refused the new helper's length and a redundant clone; splitting the helper and removing the clone changed no subject bytes.
+
+With the mock controls included, `check8.log` was clean (72 s: formatting 6, Clippy 4, rustdoc 62). `bridge5.log` passed the bounded family in 0.076426 s (command including compilation 7 s): control 0.026796, second 0.020610, refusals 0.006765, provenance 0.003359, authority 0.002876 and tracing 0.011569 s. All eight subject digests were identical to the preceding bounded run. The mock extension changes the checks, not the subjects or their recorded signatures.
+
+The second covering run (`/var/home/tripod/loops/tmp/gate-w20b1-20261113T144912Z.log`), 2026-11-13T14:49:12Z–14:56:33Z, wall 441 s, queue zero, exited 1/RED on the confidential integration child, at its unchanged 40-second hang guard (40.117753 s, child exit 124). Its flushed phases were fixture 22.835429, historical replay 7.866780 and current-fixture 2.767751 s; transport had not completed. All other package lanes and all other batteries passed. Journals are retained under `/var/home/tripod/loops/tmp/w20b1-b16bridge5-unsplit/`. This is a failed combined control, not a wrong result or a reason to widen its guard.
+
+The follow-up cost repair splits that integration into preparation, historical replay/admission and current transport children. Preparation writes the same public exchanges to a private test directory once; the other children consume those bytes, with operation identities checked on decoding. The historical fingerprint and step inventory are unchanged. Both historical and current results are asserted against the existing literal `agreement` and eligible standing, so their former equality remains checked without making either a verdict authority. No archive is generated or readmitted by this handoff. Each child has its own 40-second guard and printed wall; three such children (and two-second kill grace each) remain below the adopted 300-second family ceiling. The split changes no child guard or performance threshold.
+
+The split's fast check `check9.log` passed (82 s: format 5, Clippy 2, rustdoc 75), with its formatter output applied. The focused `confidential-split.log` passed in 11 s including compilation: family 7.615784 s, longest child 3.454267 s. The cost repair precedes the protocol and bridge commits; a tree comparison verified that reordering those independent changes altered no file bytes.
+
+### Covering bridge gate · `rec:w1b16:bridge-gate`
+
+G is `/var/home/tripod/loops/tmp/gate-w20b1-20261113T150108Z.log`: start 2026-11-13T15:01:08Z, end 2026-11-13T15:07:23Z, wall 375 s, slot wait zero, `== green`, exit 0. It covers the final source tree with the split confidential control, session-owned signing and the two-key bridge. The command was `bash ~/loops/tmp/w20-code-gate.sh w20b1 architecture,realization,compiler,model,target-elements,tapscript,linker,transaction,target-elements-conformance,vectors plans/drafts/wave1-bite-1-6-plan.md plans/packages/vectors.md scripts/elements-native-executor.py scripts/test-executor-boundaries.py scripts/test-executor-request-comparisons.py scripts/test-executor-classification.py lint/hash-citation-families.tsv`. Formatting, warnings-denied Clippy, all 33 selected package lanes, rustdoc, lint and plans/census/generated-artifact checks passed. This is the full package set of (`gate:w1b16:landing`), not the later full-repository release or native gate.
+
+All server commands used the sanctioned foreground SSH route. The covering runner entered its own systemd unit with `--wait --pipe`; the SSH process stayed attached to its final marker. No round was detached or abandoned and no native process ran. G's cgroup is `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261113T150108Z.service`; the resource deltas below belong to that unit and descendants, not to a final transaction or the whole shared node. CPU and PSI values are seconds converted from the retained microsecond counters; peak memory is cumulative for the unit, not a battery delta. Raw start/end samples remain in each log.
+
+| Battery | Wall s | CPU user/system s | CPU PSI some/full s | Memory PSI some/full s | IO PSI some/full s | Peak bytes (cumulative) | Exit |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| setup | 1 | 0.892825/1.198989 | 0.004585/0.003385 | 0.000000/0.000000 | 0.000157/0.000154 | 70844416 | 0 |
+| fmt | 4 | 4.503254/1.309947 | 0.006040/0.004874 | 0.000000/0.000000 | 0.021221/0.021222 | 196456448 | 0 |
+| clippy | 2 | 1.452843/1.399624 | 0.007436/0.006493 | 0.000000/0.000000 | 0.080583/0.080482 | 386174976 | 0 |
+| package-tests | 296 | 3065.650264/52.595393 | 35.991168/12.387810 | 0.000005/0.000005 | 0.061244/0.038516 | 9671680000 | 0 |
+| doc | 40 | 24.920402/15.722369 | 0.023706/0.023421 | 0.327836/0.327836 | 0.033530/0.033530 | 9671680000 | 0 |
+| lint-suite | 28 | 85.038657/10.990489 | 0.169121/0.127756 | 0.017360/0.017360 | 0.017344/0.015644 | 9671680000 | 0 |
+| checks | 3 | 2.677891/2.164841 | 0.059132/0.029121 | 0.000000/0.000000 | 0.005447/0.005169 | 9671680000 | 0 |
+
+For audit, the two earlier red covering rounds retained the same scoped resource form. The first failed only its label check; the second failed the unsplit confidential child. Neither is counted as a successful gate.
+
+First round, own cgroup `tripod-gate-w20b1-20261113T142804Z.service`:
+
+| Battery | Wall s | CPU user/system s | CPU PSI some/full s | Memory PSI some/full s | IO PSI some/full s | Peak bytes (cumulative) | Exit |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| setup | 2 | 1.417175/2.976285 | 0.032317/0.021297 | 0.000000/0.000000 | 0.000252/0.000244 | 145420288 | 0 |
+| fmt | 6 | 5.889158/1.495859 | 0.230216/0.224195 | 0.000000/0.000000 | 0.029991/0.029929 | 271626240 | 0 |
+| clippy | 31 | 55.752718/8.264212 | 0.967189/0.695121 | 0.037153/0.037153 | 0.082847/0.079819 | 3860705280 | 0 |
+| package-tests | 593 | 4234.722762/101.786543 | 80.110607/38.548226 | 0.317062/0.201539 | 0.108231/0.074001 | 9840005120 | 0 |
+| doc | 273 | 181.506765/100.141690 | 11.846401/11.422948 | 0.324638/0.323170 | 0.059160/0.054077 | 9840005120 | 0 |
+| lint-suite | 73 | 194.632025/21.923669 | 0.438975/0.293836 | 0.003654/0.003654 | 0.027480/0.023507 | 9840005120 | 0 |
+| checks | 2 | 2.186743/2.118982 | 0.048227/0.015744 | 0.000000/0.000000 | 0.000994/0.000987 | 9840005120 | 125 |
+
+Second round, own cgroup `tripod-gate-w20b1-20261113T144912Z.service`:
+
+| Battery | Wall s | CPU user/system s | CPU PSI some/full s | Memory PSI some/full s | IO PSI some/full s | Peak bytes (cumulative) | Exit |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| setup | 1 | 0.744128/1.113596 | 0.054536/0.011568 | 0.000000/0.000000 | 0.000079/0.000060 | 64225280 | 0 |
+| fmt | 6 | 5.058582/1.180503 | 0.086694/0.011998 | 0.000000/0.000000 | 0.040415/0.040410 | 195956736 | 0 |
+| clippy | 4 | 3.373686/1.529494 | 0.030194/0.006204 | 0.000000/0.000000 | 0.010839/0.010836 | 542105600 | 0 |
+| package-tests | 345 | 3334.986872/53.994351 | 80.836834/40.897416 | 0.210810/0.085940 | 0.095825/0.058617 | 8843292672 | 1 |
+| doc | 45 | 28.646573/17.300498 | 0.059470/0.037014 | 0.082357/0.082357 | 0.016846/0.016822 | 8843292672 | 0 |
+| lint-suite | 35 | 95.925485/12.706699 | 0.317137/0.251545 | 0.000001/0.000001 | 0.015098/0.012909 | 8843292672 | 0 |
+| checks | 5 | 3.254442/2.239195 | 0.118918/0.056368 | 0.000000/0.000000 | 0.000408/0.000369 | 8843292672 | 0 |
+
+The final package journals are retained at `/var/home/tripod/loops/tmp/w20b1-b16bridge5-final/covering-*.json`, with byte counts and SHA-256 values in the lane receipt `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge5/retained-final.log`. The earlier rounds have separate `pre-mock` and `unsplit` directories; none is substituted for G. The old 245 fixture/archive files compare byte-for-byte with the freeze base. The only new current comparison is revision nine; revision-eight archives, their adapter identities, admissions and expectations are unchanged. Architecture, compiler, model, realization, tapscript, linker, transaction and target-elements sources, the old reproduction/final fixtures and independent prediction are unchanged by this work. The canonical attestation comparison, ten compiler preservation pins and all 35 freeze pins passed their named tests. The only new source re-pin is the recorded initializer-only scaling edit in (`rec:w1b16:bridge-authority`); no additional pinned file moved.
+
+Final subject walls from G's retained journals (seconds):
+
+| Child/family | Focused split run | Covering G | Guard |
+|---|---:|---:|---:|
+| Confidential preparation | 2.463623 | 15.874785 | 40 |
+| Confidential historical replay/admission | 1.697546 | 3.256704 | 40 |
+| Confidential current transport | 3.454267 | 7.700041 | 40 |
+| Confidential family | 7.615784 | 26.831799 | 300 |
+| Bridge control-key history | 0.026796 | 1.096956 | 40 |
+| Bridge second-key history | 0.020610 | 0.080810 | 40 |
+| Bridge input refusals | 0.006765 | 0.114902 | 40 |
+| Bridge provenance | 0.003359 | 0.011094 | 40 |
+| Bridge mock authority | 0.002876 | 0.012683 | 40 |
+| Bridge tracing | 0.011569 | 0.041957 | 40 |
+| Bridge family | 0.076426 | 1.386840 | 300 |
+| Existing freeze family | not repeated in that focused run | 4.415546 | 300 |
+
+The confidential preparation child remains above the 10-second reporting threshold under G's shared-node load: 15.874785 s, reported here explicitly. Its phases were historical fixture 11.592571 s and current fixture 3.853431 s; neither is a native measurement. The split puts the independent replay and transport work in their own children without duplicating preparation. No child exceeded 40 s. The quiet and loaded figures are distinct samples, not a claimed controlled speedup. All eight bridge subject digests in G equal the focused run; the journal records the full digests and byte counts. The target-capture table remains a plan for separately reviewed native targets, not an invocation or a claim that they already ran.
+
+### Bridge receipt confirmation · `rec:w1b16:bridge-confirmation`
+
+The documents-only receipt against G's full-gated parent passed `/var/home/tripod/loops/tmp/gate-w20b1-20261113T150839Z.log`, start 2026-11-13T15:08:40Z, end 15:08:46Z, wall 6 s, exit 0, `== green`. The scope check found only `plans/` changes and the checked tree was clean. The same foreground SSH/systemd wait form reached its final marker. Its own cgroup was `tripod-gate-w20b1-20261113T150839Z.service`; setup/checks took 2/4 s, CPU user/system deltas 1.439849/0.490725 and 2.127982/1.148508 s, CPU PSI some/full 0.061300/0.033821 and 0.024812/0.008703 s, IO PSI some/full 0.005210/0.005203 and 0.008022/0.007459 s; memory PSI was zero in both batteries, and cumulative peaks were 105488384 and 176226304 bytes. These are document-gate resources, not subject measurements. This confirmation adds no source change; the final documents-scope check is also reported with the published tip.
+## Protocol review disposition · `rec:w1b16:protocol-review`
+
+This closes the independent review of the recorded-replay and revision-nine funding landings, including its two bridge obligations before a revision-nine archive or native capture. The accepted re-freeze remains unchanged: this review edits neither `keyed_scaling.rs` nor its pin. The two path/previous/new history rows now assert the value each replaces, including the later editorial signing initializer. No native process runs and no revision-nine native archive exists. The bridge's recorded-journal binding is a prerequisite for future archive admission, not a claim that mock observations are native evidence.
+
+### Findings and owners · `tab:w1b16:protocol-review-findings`
+
+| Finding | Landing and closure |
+|---|---|
+| 1 | Protocol: `historical_capture_rendering` in `tests/guide13_live_native.rs` checks the current writer's own SHA-256 tail and end marker before projecting revision fields for the unchanged historical golden. |
+| 2 | Replay: `shared_keyed_replay_refuses_a_mixed_known_revision`, `wire_journal_refuses_request_response_revision_disagreement` and `birth_capture_checks_request_response_revision_before_replay` pin the three journal guards. The last is an internal defensive check because live transport already prevents a mismatched captured response. Protocol: `refused_revision_nine_sponsor_funding_cannot_carry_readback` pins the fourth shape refusal. |
+| 3 | Protocol: `NonExplicitAsset` and `NonExplicitValue` distinguish committed fields from explicit `Asset`/`Amount` mismatches; `non_explicit_sponsor_fields_have_their_own_refusals` changes each field beside a canonical explicit control. Documentation names both conditions. |
+| 4 | Replay: conservation ingestion again requires the live constant. `conservation_ingestion_requires_the_live_revision` accepts current and refuses eight/ten; no historical conservation response is a consumer of this entry. |
+| 5 | Protocol: Rust and Python revision histories state revision nine, required sponsor readback, session-owned change and the optional spent-output assertion. The member census and ownership comment agree; live exactness is distinct from recorded grammar. |
+| 6 | Records: the earlier lane logs are retained under `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/`, in `b16bridge3`, `b16bridge4` and `b16bridge5` subdirectories. The fingerprint, isolated measurements, fast checks and failures now have absolute retained paths. |
+| 7 | Protocol cost record: the passing C4 fast check is 62 seconds, exit zero. The later three-child split and loaded 26.831799-second parent were already recorded at (`rec:w1b16:bridge-gate`); this round records a further loaded preparation timeout and splits historical and current preparation into separate children; its final covering child walls appear below. Neither sample is substituted for the earlier 121.276325/163.9-second loaded observations. |
+| 8 | Bridge: `bind_capture_journal` checks known packet grammar, recorded handshake equality and each request/response revision, then case/kind/shape and every accepted revision-nine sponsor parent. `journal_controls` checks changed parent facts and each revision coordinate beside a bound journal for both keys. Errors retain their response-shape or parent-binding owner. |
+| 9 | Protocol implementation, bridge obligation: `test_sponsor_funding_returns_node_readback_and_bounds_before_mining` uses a stand-in RPC/serialization seam to show that `fund_sponsor` returns the mined node readback, not its built bytes. Oversized serialization refuses before mining; oversized readback refuses before registry insertion. This is node-free evidence only. |
+| 10 | Protocol: `superfluous_witness_flag_is_refused_by_the_pinned_decoder` pins the decoder's refusal; `NonCanonical` is explicitly defensive in its variant documentation. |
+| 11 | Protocol: `witness_identity_is_not_the_stripped_identity` accepts a witness-bearing parent with distinct txid/wtxid, then refuses substitution of the stripped id for its witness identity. |
+| 12 | Bridge: `decoder_boundary` binds a peg-in parent through the pinned Elements decoder, then the public request refuses it as `UnsupportedForm(PegIn)`, beside the explicit ordinary parent. Construction owns this narrower envelope; funding does not claim it. |
+| 13 | Replay packet control: `packet_binds_reviewed_rpc_transports_but_not_an_unreviewed_adapter` additionally refuses revision nine paired with adapter 2.1.0 or 2.1.1 beside the current pair. The replay and protocol landings still import in order. |
+| 14 | Replay: the confidential mixed-revision subject pins refusal after retaining the response and keeps eligibility false; the mutant-ceremony subject pins its `ResponseSchema` refusal beside a complete control. |
+| 15 | Replay and signing-authority history: `REFREEZES` carries path/previous/current for both entries and asserts the replaced digest. The initial-review comment again documents `REVIEW`; no source is re-frozen by this correction. |
+| 16 | Protocol identity census: computed rows precede the residual filename rule; the current renderer updates the comparison fixture's pin, not a removed script source-pin constant. |
+| 17 | Protocol comparison: `current_adapter_source_matches_rendered_revision_nine_rows` compares all five rows with `COMPARISONS` outside only version, revision and source-digest fields. The current comparison is re-rendered after this round's adapter edit; historical rows stay exact. |
+| 18 | Protocol: the acceptance test's comment is restored to its test; parent-binding Display is a sentence; confidential child launch uses `/usr/bin/timeout`. |
+| 19 | Records: bridge prose uses single-line paragraphs and README citations use the PLAN form; adapter behaviour is marked source/stand-in evidence. The earlier covering battery table now includes user/system CPU and cumulative peak bytes, with its resource-sample scope stated. |
+
+The existing session-change stand-in and the split confidential children had already supplied some requested evidence before this review round, at (`rec:w1b16:bridge-authority`) and (`rec:w1b16:bridge-gate`). They did not cover funding's readback member or its size seam; finding 9 therefore adds that separate control rather than claiming the authority test answered it.
+
+### Journal admission boundary · `sec:w1b16:bridge-journal-binding`
+
+`BoundCaptureJournal` contains only immutable recorded exchanges and their revision. Its producer takes the bridge's `CaptureProvenance` packet, recorded `ExecutorHandshake` and typed untrusted exchanges. `JournalRefusal` distinguishes unknown revision, handshake disagreement, request revision, response revision, case, kind, response shape and sponsor-parent binding, retaining row/output indices and owner errors. The order is exactly that list, with row checks in recorded order. For revision nine each accepted funding output is bound through `bind_sponsor_parent`; revision-eight funding retains its old shape. Packet/handshake agreement is local agreement, not proof of provenance. Four parent facts and execution remain external.
+
+Existing archive-specific admissions bind their own revision-eight headers and remain unchanged. The generic planners' lower-level shape replay is not permission to admit a new revision-nine archive: the final bridge now produces the sealed journal binding after mock transport, and step 5 must require it when admitting new capture evidence. It is not complete native archive admission by itself. The test changes the last funding row so the check is not satisfied by checking only the first. The bridge capture child pins completion/refusal counts, target, level and private-field surface; it never manufactures a live malformed capture.
+
+The cross-decoder subject is deliberately untrusted evidence: Elements can decode and locally bind a peg-in parent, while transaction's supported-parent envelope refuses it before request classification. No inclusion, peg-in validity or spendability follows from the funding binding. No production decoder, reader, planner or predicate was changed to accommodate it.
+
+### Review verification rounds · `sec:w1b16:protocol-review-verification`
+
+The retained original log set contains 72 files; the copied bytes were checked against the lane originals by SHA-256. Its fingerprint provenance and the C4 measurements therefore name retained files rather than an unnamed scratch checkout. These are historical measurements, not fresh observations of this tree.
+
+Review fast check 1 (310 s) found a moved value in the new packet-pair test; rustdoc passed. After correction, fast check 2 passed with clean formatting, Clippy and rustdoc in 326 s. The focused replay round passed in 109 s: the live conservation control, 18 revision-filtered vectors tests, shared keyed replay, wire-journal disagreement, confidential mixed-revision controls and the 35-pin freeze family. Fast check 3 (348 s) found the new witness-bearing subject needed the pinned library's `Witness` conversion; rustdoc passed. The corrected protocol-focused round passed in 75 s, including 39 node-free adapter groups, six parent-binding tests, the refused funding shape, current comparison rows and the exact historical writer golden. The witness-flag subject reaches `Decode`, as the pinned decoder specifies.
+
+The initial renderer invocation named an absent old scratch script and exited 127 without rendering. The unchanged renderer script was uploaded under this round's name and ran successfully in one second; only `CURRENT-REVISION-9` was replaced with its exact stdout. No historical row was rendered again. All SSH calls stayed foreground and were awaited to completion; no native process was started.
+
+Protocol fast check 4 passed with clean formatting, Clippy and rustdoc in 302 s. Bridge preflight 1 (23 s) found a long opening rustdoc paragraph and two terminal-event semicolons; preflight 2 (24 s) found an allocation-style clone assignment. Preflight 3 (44 s) passed Clippy and both keys' transport/journal controls, then exposed a test-fixture error: the decoder control paired a MERGE-scoped commitment with a SOURCE request, so its supposed accepted twin refused at `Scope`. The control now uses the existing SOURCE-scoped fixture. These were test/style corrections, not production defects or changes to expected owner behaviour.
+
+Corrected bridge preflight 4 passed in 8 s with clean formatting and warnings-denied Clippy. Its two selected tests passed, with the two ignored child entries invoked only by their bounded parent. The focused bridge family completed in 0.09 s, including both representative keys, journal mutants, decoder-envelope refusal and tracing. These quiet figures are not substituted for the covering load below.
+
+The first covering review gate was red: `/var/home/tripod/loops/tmp/gate-w20b1-20261113T155126Z.log`, 2026-11-13T15:51:26Z–16:10:53Z, wall 1167 s, slot wait zero, exit 1. Formatting, Clippy, rustdoc, lint and plans passed; 32 of 33 package lanes passed. The only failure was `confidential_agreement_requires_control_and_subject_readback`: its preparation child reached the unchanged 40-second guard (40.500942 s, exit 124), after printing historical fixture work of 24.290819 s. The current-wire preparation had begun but did not finish; its censored time is not a completed measurement. Package-battery load averages went from 27.83/19.31/18.56 to 65.82/72.31/52.29. The original journals were copied before another gate into `/var/home/tripod/loops/tmp/w20b1-b16bridge6-red1/covering-*.json`, with byte counts and digests retained.
+
+Finding 7 therefore receives a further test-only cost repair: historical preparation and current-wire preparation run as separate children, followed by the existing replay and transport children. The same historical fingerprint, exact step inventory, literal agreement/eligibility assertions and serialized handoff remain. Neither preparation is repeated, no check is removed or moved to a weaker subject, and no planner or archive byte changes. Four 40-second guards with two-second kill grace still fit the unchanged 300-second family ceiling. A phase exceeding the 10-second reporting threshold is reported as measured, not made into a performance guarantee. This split responds to the failed sample rather than replacing it with a rerun.
+
+The red gate's scoped resource samples are retained below; CPU and PSI deltas are seconds and peaks are cumulative bytes in its own systemd unit. These are gate costs only.
+
+| Battery | Wall s | CPU user/system s | CPU PSI some/full s | Memory PSI some/full s | IO PSI some/full s | Peak bytes (cumulative) | Exit |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| setup | 1 | 1.137554/1.311837 | 0.016335/0.007370 | 0.000000/0.000000 | 0.000129/0.000129 | 57298944 | 0 |
+| fmt | 5 | 5.147253/1.401365 | 0.038896/0.010932 | 0.000000/0.000000 | 0.011094/0.011086 | 203010048 | 0 |
+| clippy | 28 | 55.064071/9.026177 | 0.280837/0.180485 | 0.005488/0.005488 | 0.026955/0.026139 | 3877539840 | 0 |
+| package-tests | 793 | 4526.027912/114.909191 | 158.142356/97.601895 | 1.129218/0.672797 | 0.134820/0.078967 | 8074903552 | 1 |
+| doc | 285 | 194.613662/114.940850 | 3.275407/2.977799 | 2.176821/2.176434 | 0.088308/0.083663 | 8074903552 | 0 |
+| lint-suite | 53 | 140.519866/18.388135 | 0.453501/0.350906 | 0.000001/0.000000 | 0.055053/0.049606 | 8074903552 | 0 |
+| checks | 2 | 2.078932/1.788533 | 0.007411/0.004125 | 0.000000/0.000000 | 0.000463/0.000463 | 8074903552 | 0 |
+
+The four-child focused control passed in a 10-second command round: historical preparation 1.442859 s, current preparation 1.410715 s, replay 1.322740 s and transport 2.178784 s; family 6.355596 s. The repair fast check passed in 70 s, exit 0; its formatter output was applied mechanically, with Clippy and rustdoc green. The focused sample is not a controlled comparison with the red covering load.
+
+### Protocol review covering gate · `rec:w1b16:protocol-review-gate`
+
+G is `/var/home/tripod/loops/tmp/gate-w20b1-20261113T161402Z.log`: 2026-11-13T16:14:02Z–2026-11-13T16:20:41Z, wall 399 s, slot wait 30 s, `== green`, exit 0. It covers all review source and record corrections. The command was `bash ~/loops/tmp/w20-code-gate.sh w20b1 architecture,realization,compiler,model,target-elements,tapscript,linker,transaction,target-elements-conformance,vectors plans/drafts/wave1-bite-1-6-plan.md plans/packages/vectors.md scripts/elements-native-executor.py scripts/test-executor-boundaries.py scripts/test-executor-request-comparisons.py scripts/test-executor-classification.py lint/hash-citation-families.tsv`. Formatting, warnings-denied Clippy, all 33 package lanes, rustdoc, lint and plans/census/generated checks passed. This is the full package set of (`gate:w1b16:landing`), not a native run or full-repository release gate.
+
+Fast check 5 passed in 94 s with clean formatting, Clippy and rustdoc; the later preparation-split check passed in 70 s, with its formatter patch applied mechanically. Every server command used the sanctioned time-prefixed foreground SSH route. The covering runner entered its own `systemd-run --wait --pipe` unit; the same SSH remained attached through the terminal marker. No round was detached, abandoned or interpreted as complete from a lost connection. The resource scope is `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261113T161402Z.service` and its descendants. CPU and PSI deltas below are seconds, peak bytes are the cumulative unit high-water mark, and raw start/end samples remain in G. They are gate costs, not native transaction measurements.
+
+| Battery | Wall s | CPU user/system s | CPU PSI some/full s | Memory PSI some/full s | IO PSI some/full s | Peak bytes (cumulative) | Exit |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| setup | 1 | 0.819660/1.093970 | 0.032079/0.008172 | 0.000000/0.000000 | 0.000156/0.000155 | 59092992 | 0 |
+| fmt | 4 | 4.727523/1.216956 | 0.025624/0.007157 | 0.000000/0.000000 | 0.000121/0.000121 | 168689664 | 0 |
+| clippy | 2 | 1.505004/1.355785 | 0.008286/0.004325 | 0.000000/0.000000 | 0.003650/0.003645 | 304566272 | 0 |
+| package-tests | 274 | 2820.969265/53.178366 | 54.433436/19.733401 | 0.290867/0.133105 | 0.085026/0.050438 | 8991830016 | 0 |
+| doc | 55 | 34.920436/20.563915 | 0.163612/0.159973 | 0.405686/0.405685 | 0.133602/0.133561 | 8991830016 | 0 |
+| lint-suite | 58 | 141.307783/12.235756 | 6.796575/4.127381 | 0.000822/0.000823 | 0.040973/0.035780 | 8991830016 | 0 |
+| checks | 5 | 3.370145/2.303199 | 0.162323/0.069647 | 0.000000/0.000000 | 0.001892/0.001353 | 8991830016 | 0 |
+
+The 245 historical fixture/archive files compare byte-for-byte with the reviewed freeze base. `keyed_scaling.rs` is unchanged in this review, as are all 35 frozen sources, the ten compiler pins and the canonical attestation subject. The only current comparison update was the authorized renderer output after the adapter bound/comment change; no historical expectation was regenerated. Existing archive admission tests passed unchanged. No production crate was edited.
+
+This round's fast/preflight/renderer logs are retained under `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge6/`. The full-gate journals are retained under `/var/home/tripod/loops/tmp/w20b1-b16bridge6-final/covering-*.json`, with their byte counts and digests in the retained receipt. They preserve the actual child output, not a later rerun.
+
+| Confidential child | Focused wall s | G wall s | G inner phase s | Guard s |
+|---|---:|---:|---:|---:|
+| Historical preparation | 1.442859 | 7.183815 | 7.106768 | 40 |
+| Current-wire preparation | 1.410715 | 10.205363 | 10.093261 | 40 |
+| Historical replay/admission | 1.322740 | 10.242517 | 10.211008 | 40 |
+| Current transport | 2.178784 | 9.554048 | 9.469958 | 40 |
+| Parent/family | 6.355596 | 37.186037 | absent | 300 |
+
+Current preparation and replay/admission exceeded the 10-second reporting threshold in G (10.205363 and 10.242517 s), explicitly reported here; every child stayed inside its unchanged hang guard. The split removed the combined preparation guard failure; it does not assert a controlled speedup across the focused, red and green load samples. All phase lines and parent walls are retained in G's original journals, not inferred from totals.
+
+G's bridge children were control key 0.084168 s, second key 0.202932 s, refusal controls 0.023064 s, provenance 0.010016 s, authority 0.011377 s, decoder boundary 0.016281 s and tracing 0.214330 s; family 0.571122 s. The freeze family passed in 4.912367 s. The eight bridge subject digests remain identical to the earlier bridge record. These are offline/mock observations; no native acceptance or capture is claimed.
+
+### Protocol review receipt confirmation · `rec:w1b16:protocol-review-confirmation`
+
+The documents-scope receipt passed `/var/home/tripod/loops/tmp/gate-w20b1-20261113T162157Z.log`, 2026-11-13T16:21:57Z–2026-11-13T16:22:03Z, wall 6 s, exit 0, `== green`. Its scope check found only `plans/` edits against G's full-gated parent; all seven document checks passed and the checked tree was clean. It ran through the same foreground SSH and `systemd-run --wait --pipe` form to its terminal marker, in its own `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261113T162157Z.service` unit. No source or byte recipe changed after G. The final documents-only confirmation is gated again and its verdict accompanies the published tip.
+
+| Battery | Wall s | CPU user/system s | CPU PSI some/full s | Memory PSI some/full s | IO PSI some/full s | Peak bytes (cumulative) | Exit |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| document-setup | 2 | 1.090895/0.491125 | 0.004018/0.001400 | 0.000000/0.000000 | 0.000382/0.000382 | 106516480 | 0 |
+| doc-checks | 4 | 1.746764/1.033475 | 0.003665/0.002093 | 0.000000/0.000000 | 0.004153/0.004141 | 175988736 | 0 |
+
+
+### Signing-authority and bridge review · `rec:w1b16:bridge-review`
+
+The second review's seventeen findings are closed below by landing. Its accepted editorial re-freeze is unchanged; this round changes no pinned source, historical fixture, archive or production crate. The protocol remains revision nine. Re-review before native capture is required for findings 1, 5, 6 and 7 here and protocol-review findings 8 and 9 at (`rec:w1b16:protocol-review`). The former are isolated as acceptance-preservation, pairing, measured-provenance and dispatch-plan changes; the latter remain `bind_capture_journal` with `journal_controls`, and the node-free funding readback/size tests. No native session is asserted by these closures.
+
+| Finding | Landing and closure |
+|---|---|
+| 1 | Signing authority: `register_after_acceptance` retains target acceptance and quarantines a typed registration failure in `observed_detail`; failed registration leaves no authority. `test_accepted_submission_preserves_failed_registration` uses the real registration core with a refusing decoder and proves later `COIN` refusal. The first birth pilot must exercise actual framework decoding. |
+| 2 | Signing authority: plain, relay/template and direct-block route spies require one registration call with exact submitted bytes only on acceptance; waiting, refusal, policy and timeout paths require zero calls. Both Python classification tests and Rust's node-free operation-boundary seam assert this. |
+| 3 | Signing authority: `test_sponsor_assertion_parser_and_signing` traverses parser and signer for funding and change coins, including funding's display-asset fallback; missing/extra/non-byte fields and all three fact mismatches refuse beside matching signatures. |
+| 4 | Signing authority: change coins require `spent_output`, with `ASSERTION` on absence. Funding omission retains historical bytes and meaning; it is safe because the digest uses the registered value and the harness verifies the signature. README and authority record state both cases. |
+| 5 | Bridge: `pairing_controls` pins census, output-zero, member signer role, absent/other signer index, profile, signing bytes, admitted bytes and capability snapshot. The profile subject uses another public sealed compact entry: the eight keyed subjects cannot differ in profile. The member-witness comparison has an explicitly internal synthetic test; no public sealed mispair reaches it after output-zero validation. The defensive inventory is exactly `SignerForm`, `UnsupportedRole`, `MemberWitness`, with reasons above. |
+| 6 | Bridge: fourteen optional measured provenance coordinates, including capture binary, interpreter and daemon, with measuring owner documented per field. Missing/empty observations refuse, each mismatch refuses, and equal unreviewed executor digests refuse against the rendered revision-nine pin. `provenance` checks both missing sides and equal absence, plus matching observations. Agreement is not truth. |
+| 7 | Bridge record: (`tab:w1b16:bridge-captures`) fixes orchestrator-only detached launches, watcher/end-marker semantics, pilot guards, build command/profile/toolchain, artifact selection and writable paths. The untracked resolved lock is retained, never claimed pinned by a lock flag. Nothing launches here. |
+| 8 | Bridge: mock signing decodes the frozen bytes, requires an existing index and exact selected outpoint, with `SigningDecode`, `SigningIndex` and `SigningOutpoint` subjects beside accepted signing. The changed-outpoint subject now refuses at this earlier actual boundary; the fresh-session subject still pins unknown-coin refusal. |
+| 9 | Bridge: `FinalSubject::validate_request` takes an explicit recorded `OperationRevision`; `recorded_revision_control` accepts the same sealed subject under an eight-labelled request with Eight and refuses it with Nine. It cannot silently substitute the live revision for an archive's. |
+| 10 | Signing authority: node-free core tests cover zero height, the accepted-txid coordinate and trailing bytes separately beside accepted registration. |
+| 11 | Signing authority: the timeout helper is called without assigning its impossible return. |
+| 12 | Signing authority: both submission wrappers discard session submitted bytes on every return or exception; route spies assert empty transient state after acceptance and non-acceptance. |
+| 13 | Signing authority: omitted-assertion serialization is compared to a byte literal, including JSON field order, not only an order-insensitive value. |
+| 14 | Bridge: eight literal complete-transaction SHA-256 pins in the mock `submit` path match the earlier measured subjects; native per-run identities must instead come from their own captured case digests. |
+| 15 | Protocol: the replay child hashes `historical.json` against the unchanged literal before decoding, and the parent removes the shared directory. The prior covering sample's smallest child headroom was 29.757483 seconds (40 minus 10.242517); the final sample is recorded separately. |
+| 16 | Bridge: fixture module docs list the different decoder, explicit-only assertion comparison, absent separate accepted-txid argument and non-hex block labels. A mock pass claims none of those real-framework facts. |
+| 17 | Signing/bridge records: the authority paragraph now gives the owned-coin reason, new prose is reflowed, and the initializer indentation is corrected. Census-before-residual and path-based freeze-history lookup were already closed by the protocol review and remain intact. |
+
+The revision-nine adapter comparison was re-rendered after the authority changes through `scripts/test-executor-request-comparisons.py --emit`; the comparison itself carries the exact current digest and the bridge independently hashes the script against it. Revision-eight rows and all 245 older fixture/archive files remain byte-exact. Registration failure is diagnostic infrastructure evidence, not a changed target verdict or covenant refusal. The bridge's new checks strengthen mock pairing and provenance without changing any of its eight complete transaction bytes.
+
+Preliminary rounds are retained, not smoothed into the final verdict. The first signing focused run failed because a parser-negative test caught only one of the two parser error owners; the corrected test preserves both and the next run passed. The first pairing check found a test module placed before later items, then passed after moving it to the end. Provenance checks first found documentation/function-length lints, then test-length/semicolon lints; the next run passed. A combined stdout/stderr formatter transcript interleaved timing bytes inside a diff, so its corrupt patch was refused; a separate stdout-only node `git diff --binary` was fetched and applied mechanically. No expected refusal or bound was relaxed. The bounded bridge family passed with literal subject pins and all provenance/pairing controls; its measured walls and the covering receipt follow below.
+
+### Bridge review covering receipt · `rec:w1b16:bridge-review-gate`
+
+G is `/var/home/tripod/loops/tmp/gate-w20b1-20261113T165831Z.log`, 2026-11-13T16:58:31Z–2026-11-13T17:13:00Z, wall 869 seconds, queue 0 seconds, `== green`, exit 0. It covers all source corrections, formatting, warnings-denied Clippy, the full 33 package lanes of (`gate:w1b16:landing`), rustdoc, lint and plans/census/generated checks. The command is the same full-package command recorded at (`rec:w1b16:protocol-review-gate`), with both executor boundary and classification scripts as explicit extra paths. All SSH calls stayed foreground; the runner's `systemd-run --wait --pipe` held the lane until the terminal marker. No round was detached by the lane, abandoned or read as successful after a lost connection. No native process ran.
+
+The resource scope is `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261113T165831Z.service` and descendants. CPU and pressure deltas are seconds; peak bytes are cumulative unit high-water marks. These are build/test costs, not native measurements. Raw samples remain in G.
+
+| Battery | Wall s | CPU user/system s | CPU PSI some/full s | Memory PSI some/full s | IO PSI some/full s | Peak bytes (cumulative) | Exit |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| setup | 1 | 1.109842/2.031286 | 0.008821/0.006390 | 0.000000/0.000000 | 0.000085/0.000084 | 104878080 | 0 |
+| fmt | 5 | 4.948127/1.392613 | 0.018601/0.005445 | 0.000000/0.000000 | 0.011222/0.011220 | 244228096 | 0 |
+| clippy | 31 | 64.901918/8.030615 | 0.066083/0.024796 | 0.000000/0.000000 | 0.011861/0.011762 | 3205705728 | 0 |
+| package-tests | 533 | 4313.993950/118.050137 | 95.717486/49.406477 | 0.304543/0.208760 | 0.076770/0.040504 | 10242441216 | 0 |
+| doc | 233 | 164.545765/91.587483 | 2.145984/2.141327 | 0.579441/0.579441 | 0.030125/0.029847 | 10242441216 | 0 |
+| lint-suite | 62 | 172.241311/19.854846 | 0.350435/0.241833 | 0.000487/0.000487 | 0.016056/0.011836 | 10242441216 | 0 |
+| checks | 3 | 2.810211/2.196083 | 0.014089/0.007085 | 0.000000/0.000000 | 0.001044/0.001043 | 10242441216 | 0 |
+
+Fast checks passed in 83, 332, 110, 81 and 88 seconds for the successive source units. The corrected focused signing run passed in 30 seconds; the corrected provenance/mock run in 73 seconds; the final focused internal member-witness, confidential and bridge checks in 79 seconds. Preliminary red rounds and the refused interleaved formatter diff are accounted for above. The final confidential focused phase walls were 1.603553, 2.820337, 3.160471 and 5.034256 seconds; they are a different load sample, not a controlled speedup against G.
+
+| Confidential child | G wall seconds | Guard seconds | Headroom seconds |
+|---|---:|---:|---:|
+| Historical preparation | 10.475673 | 40 | 29.524327 |
+| Current preparation | 6.603543 | 40 | 33.396457 |
+| Historical replay | 4.223830 | 40 | 35.776170 |
+| Current transport | 9.752086 | 40 | 30.247914 |
+| Family | 31.055605 | 300 | 268.944395 |
+
+Historical preparation exceeded the ten-second reporting threshold under G's load and is explicitly reported, not hidden or given a wider guard. It is one already isolated child; its fixture phase was 10.411710 seconds. Every child remained inside the unchanged guard. Bridge walls were control 0.255740, second key 0.716961, request refusals 0.034856, provenance 0.013411, authority 0.013358, decoder 0.019231, pairing 4.184128, recorded revision 0.087558 and tracing 1.486836 seconds; family 7.021988 seconds. Freeze family was 5.114019 seconds. All eight digest pins matched.
+
+The original per-test streams were copied before another gate to `/var/home/tripod/loops/tmp/w20b1-b16bridge8-final/covering-*.json`, with byte counts and SHA-256 values in the retained journal receipt. This round's logs and read-only image/path inspections are retained under `/var/home/tripod/loops/evidence/wave1/w20b1-b16-protocol-review/b16bridge8/`. All 245 historical fixture/archive files compare byte-for-byte to the freeze base; all 35 freeze pins, ten compiler pins and the canonical attestation comparison passed. There is no further re-freeze. The only current comparison update is the authorized revision-nine renderer output. The receipt and offline-build clarification are documents-only follow-up; the final-tree gate and each reordered landing boundary are reported with their own retained logs, not inferred from G.
