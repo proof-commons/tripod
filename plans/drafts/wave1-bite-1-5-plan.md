@@ -1,6 +1,6 @@
 # Wave 1 bite-1.5 landing plan · `sec:w1b15:plan`
 
-This sequence reads `0.7.115-dev` and receives (`rec:w1b14:closed`), (`rec:w1b13:closed`) and (`rec:w1b13:members`). Its adoption and decisions are recorded at (`rec:w1b15:adoption`); the proposals below retain their reasoning. It implements (`proposal:wave1:bite-1-5`) and (`task:guide15-exec:bite-1-5-deliverables`) under rulings 159, 164 and 165 at (`rule:phase7:wave1-realization-rulings`). It specifies evidence machinery, not another covenant, production history API or realization claim. No build, test or native execution is run for this study; its documents gate validates the plan only.
+This sequence reads `0.7.115-dev` and receives (`rec:w1b14:closed`), (`rec:w1b13:closed`) and (`rec:w1b13:members`). Its adoption and decisions are recorded at (`rec:w1b15:adoption`); the proposals below retain their reasoning. It implements (`proposal:wave1:bite-1-5`) and (`task:guide15-exec:bite-1-5-deliverables`) under rulings 159, 164 and 165 at (`rule:phase7:wave1-realization-rulings`). It specifies evidence machinery, not another covenant, production history API or realization claim. The original planning study ran only its documents gate. The implemented evidence packet is now offered for review at (`rec:w1b15:gate`); its full offline verification is separate from that planning study.
 
 **Disposition (Adopted sequence and decisions)** · `rec:w1b15:adoption`
 
@@ -40,7 +40,7 @@ Every landing keeps attestation paths, the ten realization/compiler length/diges
 
 Each code step passes formatting, clippy with warnings denied, affected-package tests and rustdoc, registration/census, labels and plans checks; the explicit step gates below supplement that common bar. The final packet covers architecture, realization, compiler, model, target-elements, tapscript, linker, transaction, target-elements-conformance and vectors, plus lint and plans. Future briefs supply exact remote commands. All execution is offline: construction/replay, finite histories, curve operations and bounded byte evaluation. No step launches native Elements; final-byte execution and policy observations remain bite 1.6.
 
-Every newly launched test process has its own timeout, exact selection, exactly-one-child assertion where applicable, exit status and printed duration. Use the existing ignored-child capture pattern; parent and child each have a bound. Target a few seconds per subject, use the adopted 10-second subject timeout and 60-second family-process cap, and report a breach rather than silently widening it. The 253-member subject is built/decoded once per process and reused immutably across validators; index parents once, not once per member. Gate queue/build time is separate from subject duration. File estimates include tests, registrations and documentation; overlapping sets are not additive.
+Every newly launched test process has its own timeout, exact selection, exactly-one-child assertion where applicable, exit status and printed duration. Use the existing ignored-child capture pattern; parent and child each have a bound. Target a few seconds per subject; the hang guards are now 40 seconds per subject and 300 seconds per family under the measured-load rule at (`rec:w1b15:wide-bound`), which supersedes the initial adoption's 10/60-second guards. Report a breach rather than silently widening a bound. The 253-member subject is built/decoded once per process and reused immutably across validators; index parents once, not once per member. Gate queue/build time is separate from subject duration. File estimates include tests, registrations and documentation; overlapping sets are not additive.
 
 ## Five landings · `sec:w1b15:steps`
 
@@ -82,7 +82,7 @@ Malformed evidence is an untrusted fixture envelope, not a sealed construction r
 
 ### 5. Gate packet and review · `step:w1b15:close`
 
-**Scope: 6–10 files.** Update this plan, vectors/realization READMEs and contracts, Phase-7 and backlog records; add only a demonstrably missing small control. Assemble `rec:w1b15:gate` with a row per clause of the three gates, named tests/records, source and dependency inventories, measured subject durations and a covering full-package log. State production reachability: internal conformance readers/reports do not create a production chain reader, signing authority or native acceptance. Preserve existing backlog follow-ups.
+**Scope: 6–10 files.** Update this plan, vectors/realization READMEs and contracts, Phase-7 and backlog records; add only a demonstrably missing small control. Assemble (`rec:w1b15:gate`) with a row per clause of the three gates, named tests/records, source and dependency inventories, measured subject durations and a covering full-package log. State production reachability: internal conformance readers/reports do not create a production chain reader, signing authority or native acceptance. Preserve existing backlog follow-ups.
 
 **Gate and handoff.** Run the full package set in (`gate:w1b15:landing`); record command, start/end, wall, queue, exit and scoped battery resource deltas. Offer the packet for independent review under (`gate:wave1:bite-1-5-packet`) and (`gate:guide15-exec:bite-1-5-gate`); write a separate closing disposition only after review. The finality clause is met by the published premise form, refusal without a matching accepted declaration and hypothetical-declaration controls; an actual deployment declaration is not required here. A missing required control remains open. Hand byte-bound relation evidence, validators and absent metrics to bite 1.6; no full-wave realization claim follows from this packet.
 
@@ -855,3 +855,275 @@ The wide fixture no longer reconstructs every one of its 253 SOURCE events twice
 **Hang guards.** The single rule lives beside `SUBJECT_TIMEOUT` and `FAMILY_TIMEOUT` in `packages/vectors/tests/keyed_history/mod.rs`: at least four times the largest completed quiet/loaded wall, rounded upward to ten seconds for subjects and sixty seconds for the family, retaining the historical loaded floor. Subjects use 40 seconds (4.16 times the completed 9.605960-second loaded wide sample); the family uses 300 seconds (5.16 times the interrupted 58.142684-second family sample, conservatively retained as a floor rather than treated as a completed upper bound). The timed-out child is censored and is not a calibration completion. A new subject must print its wall, be measured alongside the parallel suite, and split work that exceeds the sampled subject share rather than silently raising the guard. Existing isolated compiler and trace-process guards are separate and unchanged. Measured figures remain the performance statement; these guards only bound hangs.
 
 The repair changes tests and documentation only. The model, reader, projector, production construction, existing expected values, archives and pins remain unchanged. The packet remains offered for review; no closing disposition follows from this repair.
+## Evidence-family gate packet · `rec:w1b15:gate`
+
+This packet is offered for independent review, not closed. It assembles the four implemented steps and their review dispositions at (`rec:w1b15:histories-review`), (`rec:w1b15:reader-review`), (`rec:w1b15:reading-review`) and (`rec:w1b15:families-review`). The adopted finality disposition at (`rec:w1b15:adoption`) governs the earlier deployment wording. No closing disposition, deployment activation or full-wave realization claim follows. This packet changes documents only; no new control was needed and no expected value was regenerated.
+
+**Reachability and premises.** A caller can use the default production declaration, keyed plan, emission, linking, commitment, checked request and construction surfaces delivered by bites 1.1–1.4. Those artifacts retain their external obligations. The exported vectors reader and report entries are internal conformance-library APIs, not a production chain reader, maintained report interchange, signing authority or native admission API. SOURCE produces a singleton record; MERGE unions consumed SOURCE records and creates no record of its own. The two emitted predicates remain born-first and continue-first; the reader's recurrence and filters add no leaf clause, carried accumulator, STATE metadata or owner-authorization law.
+
+A complete member reading authenticates the recipe, empty scriptSig and two-item witness, models the two clauses and reconstructs sets relative to supplied evidence. It does not validate the containing transaction's signatures, balance, fees, sequence/lock-time chain semantics, policy or native execution. Inclusion, unspentness, retrieval and finality remain per-input external assumptions even when assertion presence is checked. Exclusion of a consumed handle of an unsupplied key rests on inclusion in one valid history, not bytes proving that exclusion. The three classification controls and their exact limit are at (`rec:w1b15:reader-review`).
+
+**Finality.** The clause is met by the published declaration form, required-finality refusals and hypothetical-declaration controls, as adopted; no deployment declaration exists or is claimed. The form names deployment, policy version, opaque external history anchor, depth or replacement rule, inclusion/retrieval sources, unspentness scope and acceptance source. Matching binds caller provenance, not an independently verified chain position. Required finality accepts only the sealed deployment type, which has no public producer pending activation. Missing offers refuse `FinalityMissing`; hypothetical offers refuse `FinalityHypothetical` before coordinate checks. Under `NotRequested`, hypothetical matching and one-coordinate deployment/anchor/version/source subjects exercise the form without establishing finality. The crate-internal synthetic deployment control demonstrates the required route and prevents hypothetical promotion; it is not activation data. Depth zero is an allowed declaration choice, not a repository-selected count. Birth, continuation and resources make no finality claim and refuse a required-finality request as `FinalityUnsupported`. All fixture reports here are nonfinal.
+
+**Review first.** Generation and validation share derivation helpers: proposed-report validation establishes consistency/binding, not independent correctness of those helpers. The graph-only model and independent literals supply the second source in the harness. Fragment replay compares two indexes using the same evaluator; recurrence repeats the reader fold over its own outputs. Neither is a second semantic opinion. Inspect the comparison-source table at (`rec:w1b15:families-review`): grammar versus decoded fields establishes 88 bytes and the 41-byte/255-unit member form; the complete weight formula takes measured non-member terms, with pinned Elements as its independent comparison. Inspect the same record's defensive-guard inventory: sealed-context failures without a public subject are explicitly not claimed as exercised public defects. Archive references identify admitted old subjects, never native observations of these final subjects.
+
+**Source and dependency inventory** · `tab:w1b15:gate-independence`
+
+| Component | Inputs and permitted sharing | Independent answer and reviewed limit |
+|---|---|---|
+| `packages/vectors/src/keyed_history_model.rs` | Declared finite events; only `std::collections`; compiled by external tests and isolated standard-library harness, not a library module | Topological graph fold, no bytes, hashes, curves, constructor or reader. Conditional compilation/modules/path attributes/string literals are refused by the scan; isolated compilation backs explicit-path checks. Semantic independence remains source review, as (`rec:w1b15:histories-review`) records. |
+| `packages/vectors/src/keyed_history_reader.rs` and its five helpers | Canonical decoder, stripped serialization/hash, target types, first-party conformance curve reconstruction and bounded byte evaluator | Classifies actual parent outputs without model, plans, request roles, builder totals or producer coverage. Shared substrate is no independent recurrence evidence; exact allowlist/isolated compile and source review are (`rec:w1b15:reader-review`). |
+| `packages/vectors/src/keyed_evidence/` | Reader result plus one family-owned decoded index, request provenance, rules, unchanged projector and admitted archive | Six validators rederive their own claims without trusting another report's verdict. Shared generation helpers, replay and recurrence limits are (`rec:w1b15:reading-review`) and (`rec:w1b15:families-review`). No second reader decode per validator/member; standalone reading entry remains separately documented. |
+| `packages/vectors/tests/keyed_history/` | Predeclared graph, public production construction, recorded ordinary-signature replay; association checked only after expected sets exist | Model/literals versus reader/reports; pinned Elements weight/serialization comparison and conformance curve versus production wrapper. Fixture signing is disposable funding support. Reader projection excludes graph/sets/role flags structurally. Existing reproduction comparisons remain intact. |
+
+**Public conformance inventory** · `tab:w1b15:gate-surface`
+
+Names below are vectors exports, not a new production contract. Fields and exact variants remain defined by the named source modules; review records inventory their reachability and precedence.
+
+| Surface | Exported inventory |
+|---|---|
+| Reader entry and immutable result | `read`, `Reading`; read-only `memberships`, `live`, `successors`, `relations`, `obligations`, `unexamined`, `leaves`, `boundary_premises`, `query` |
+| Reader offers/identities/evidence | `Input`, `Assertions`, `Key`, `Address`, `EventId`, `ByteSource`, `Output`, `Handle`, `Missing`, `Membership`, `ParentFact`, `Obligation`, `Relation`, `Member`, `RelationEvidence`, `LeafEvidence`, `Query`, `Boundary`, `Refusal` |
+| Report entries/context | `reading_report`, `validate_report`, `prepare_families`, `FamilyContext`, `family_report`, `validate_birth`, `validate_continuation`, `validate_recurrence`, `validate_reading`, `validate_acceptance`, `validate_resources`; context exposes read-only input, second-pass wall and retained archive rows |
+| Shared frame | `SCHEMA`, `Header`, `Report`, `Body`, `Family`, `ReadingFamily`, `Request`, `Completeness`, `Subject`, `Trace`, `PaperId`, `RequirementId`, `EvidenceReferences`, `Observation`, `Dimension`, `Unit`, `Absence`, `Measurement`, `Quantity` |
+| Bodies and outcomes | `BirthBody`, `ContinuationBody`, `Recurrence`, `RecurrenceBody`, `ReadingBody`, `AcceptanceBody`, `ResourcesBody`, `Outcome`, `CompleteReading`, `AcceptedReading`, `Schedule`, `ScheduleResources`, `ResourceComparison`, `ArchiveDigest`, `ArchivedObservation` |
+| Rules, values and premises | `Rule`, `Scope`, `Amount`, `Value`, `Asset`, `AssetValue`, `Unknown`, `Attribution`, `Annotation`, `Epoch`, `Assumption`, `Declaration`, `DeclarationOffer`, `Deployment`, `DeploymentDeclaration`, `EvidenceSource`, `Finality`, `FinalityRequest`, `FinalityRule`, `HistoryAnchor`, `HypotheticalDeclaration`, `PolicyVersion`, `PremiseSources`, `Provenance` |
+| Evidence errors | `Boundary`, `Field`, `ProvenanceField`, `MissingEvents`, `MissingHandles`, `Refusal`; family layer `FamilyBoundary`, `FamilyCondition`, `FamilyObservationBoundary`, `FamilyRefusal` |
+
+Only complete outcomes contain record sets. Incomplete, invalid and non-handle types contain none; invalid reader observations remain owner refusals rather than fabricated reports. Reading bodies retain every other incomplete handle and unexamined missing set. Acceptance adds rule identity, observation epoch, accepted set and SOURCE annotations; unknown committed amount is not zero and attribution stays unassigned. The rule threshold is not a funding floor or entitlement. Whole-history completeness names all supplied failures; an unused association is not a supplied event.
+
+| Boundary / outcome | Conditions (exact enum spellings) and disposition |
+|---|---|
+| Reader evidence consistency | `DuplicateEvent`, `ConflictingEvent`, `ConflictingAlias`, `UnassociatedBytes`, `MissingOutput`, `DuplicateConsumption`, `Cycle`, `ConflictingParent` |
+| Reader content addressing / unsupported form | `MalformedBytes`, `NonCanonical`, `ContentAddress` / `UnsupportedForm`; decoder owner error retained |
+| Reader key authentication / born-first / continuation | `Recipe`, `TargetDefinition` / `LaterBirth` / `WrongSuccessor`, `WrongVersion` |
+| Reader commitment authentication / model evaluation | `ScriptSig`, `WitnessShape`, `UncommittedLeaf`, `ControlVersion`, `WrongParity`, `ControlRecipe` / `Model` |
+| Completeness and queries, not refusal boundaries | `Missing::{Event, Parent, Inclusion, Retrieval, Membership}`; `Membership::{Complete, Incomplete}`; `Query::{NotHandle, MissingEvent, MissingOutput, WrongKey, UnresolvedKey, Handle}` |
+| Evidence `ReaderEvidence` | Owner `Reader`, `Query`, `Incomplete`, `WholeHistory`, `EmptyProvenance`; `FinalityMissing`, `FinalityHypothetical`, `FinalityAcceptanceSource`, `FinalityDeployment`, `FinalityAnchor`, `FinalityPolicy`, `FinalityInclusionSource`, `FinalityRetrievalSource`, `FinalityUnspentnessScope`, `FinalityRule`, `FinalityInclusionMismatch`, `FinalityRetrievalMismatch` |
+| Evidence `ReaderRule` / `Annotation` | `SameEpoch`, `UnknownEpoch` / `AnnotationMissing`, `AnnotationDecode` |
+| Evidence `ReportFraming` | `SubjectMissing`, `MissingField`, `SchemaMismatch`, `FamilyMismatch`, `BodyMismatch`, `SubjectBytesMismatch`, `SubjectIdentityMismatch`, `SubjectHandleMismatch`, `ProvenanceMismatch`, `TraceMismatch`, `RuleMismatch`, `EvidenceMismatch`, `AssumptionsMismatch`, `OutcomeMismatch`, `MembershipMismatch`, `AcceptedMismatch`, `AnnotationsMismatch`, `IncompleteMismatch`, `UnexaminedMismatch`, `ObservationMismatch` |
+| Evidence `Quantity` | `QuantityMissing`, `QuantityUnit`, `QuantityValue`, `QuantityAvailability`, `QuantityOverflow` |
+| Family preparation / validation | `FamilyBoundary::{Preparation, FamilyReportValidation}`; family is absent at preparation. Exact `FamilyCondition` inventory and controls are the refusal table at (`rec:w1b15:families-review`), including owner errors and unexercised defensive guards. `FamilyObservationBoundary::{Reader, Evidence}` is present only when a failure arose in observation; a report mismatch is never a covenant refusal. |
+
+**Eight-row requirement join** · `tab:w1b15:gate-requirements`
+
+The paper anchors are exactly those of (`tab:w1b15:requirements`), checked in both directions by `family_controls::trace_rows`. Below, all helper paths are under `packages/vectors/tests/keyed_history/`; the executable parent is `mod.rs::keyed_histories_have_bounded_public_subjects`, selecting exactly one ignored child for each named subject. Resources supplies cross-cutting evidence, not a ninth requirement.
+
+| Requirement | Families / accepted report subject | Focused refusing or incomplete comparison |
+|---|---|---|
+| 1 born first / single birth | Birth and continuation; source, multi; `families.rs::expected`, `identities` | `specific` first-output mutation; `family_controls.rs::observed_refusals` later birth |
+| 2 continue first / unique continuation | Continuation and birth; single, multi, ordinary-edge | `reader.rs::consistency`, `continuation`; `families.rs::relation_mutants`, successor mutation |
+| 3 fixed-key separation | Continuation; two-keys and multi | `reader_review.rs::classification`, `mapped`; relation-member/key mutation; supplied/unsupplied-key limit explicitly conditional |
+| 4 SOURCE identity | Recurrence; source | `families.rs::special_requests` SOURCE identity and `specific` record mutation |
+| 5 union / disjoint growth | Recurrence and reading; multi, path, wide | `families.rs::specific` inserts MERGE's own handle; `more_mutants` consumed map; model `assert_invariants` in mod.rs |
+| 6 faithful reconstruction | Reading; all complete histories; cut-two/cut-253 explicitly incomplete | `reader.rs::compare`, `compare_query`; `families.rs::missing`; reading-review concealment subjects |
+| 7 acceptance | Acceptance; `reading.rs::rules`, `growth`; `family_controls.rs::rules` | Fixed-filter/membership mutant, path removal counterexample, wrong epoch/identity; no changing-rule monotonicity claim |
+| 8 published assumptions | Every header, including resources; `reading.rs::premise_identities` | `common` premise/evidence mutation; `reading.rs::finality`; `reading_review.rs::precedence`; resource absence/unit subjects |
+
+The two reused reproduction closures remain incomplete, not empty or conditionally labelled complete: their exact unresolved ancestors equal the model's boundary declarations. Only the model's graph answer is conditional on those declarations. Per-member authenticated relation evidence is still available. Sponsor-parent outputs classify from bytes; their own ancestors are outside the relevant traversal when those outputs are ordinary. No boundary name establishes a SOURCE singleton. Four parent facts, per-key inclusion and nonfinal standing accompany every accepted report; no growth claim crosses changed premises, parameters, replacement histories or incomplete readings.
+
+**Clause-by-clause packet** · `tab:w1b15:gate-clauses`
+
+G denotes the full ten-package covering log at (`rec:w1b15:gate-run`), repeated in each row by that key; D there covers only the subsequent run-record amendment. G is evidence for this packet tree, not retroactive evidence for each earlier landing. Earlier per-step runs and red-round dispositions remain in the four implementation/review records cited above. “Review” rows have no standalone executable absence/process test and say so; none is an invented runtime control. No required executable control is missing. The command-spelling and file-estimate guidance is not an additional executable clause. The adopted two-pass decision supersedes the landing paragraph's original once-decoded wording.
+
+| Clause | Standing | Named control / source evidence | Record | Log |
+|---|---|---|---|---|
+| Landing: attestation paths unchanged | Review | No standalone absence test; source diff from 0.7.115-dev leaves production packages unchanged, plus their regression suites | (`rec:w1b15:gate`) | G |
+| Landing: ten length/digest pins, no regeneration | Supported | `packages/compiler/src/tests/engine_base_capture.rs::preserve_engine_base` | (`rec:w1b12:gate`) | G |
+| Landing: canonical publication | Supported | `packages/architecture/src/tests/keyed_profile_tests.rs::attestation_canonical_bytes_and_publication_equal_the_opening_base` | (`rec:w1b12:gate`) | G |
+| Landing: existing vectors/archives and all keyed/link/commit/construct bytes | Supported | `packages/vectors/tests/keyed_constructor/mod.rs::repeated_construction_reproduces_every_public_byte`; `packages/vectors/tests/keyed_reproduction/mod.rs::source_and_merge_reproduce_from_public_inputs_in_a_fresh_process`; `packages/vectors/tests/keyed_cost/mod.rs::admitted_weights_match_exact_carriers_without_clause_subtraction` plus unchanged archive files | (`rec:w1b14:closed`) | G |
+| Landing: no engine/grammar/construction/predicate/accumulator/STATE/owner-law changes | Review | No standalone absence test; unchanged production source and the independence inventory above | (`rec:w1b15:gate`) | G |
+| Landing: report production defects before edits | Review | Process condition, no standalone test; boundary-parent and two-pass decisions recorded before implementation | (`rec:w1b15:reader`), (`rec:w1b15:families`) | G |
+| Landing: fmt, warnings-denied Clippy, tests, rustdoc | Supported | G batteries; earlier per-step verification ledgers remain their own evidence | (`rec:w1b15:gate-run`) | G |
+| Landing: registrations/census, labels, plans | Supported | G lint/checks batteries, census-audit, labels-check, plans-check | (`rec:w1b15:gate-run`) | G |
+| Landing: full ten packages plus lint/plans | Supported | Architecture, realization, compiler, model, target-elements, tapscript, linker, transaction, target-elements-conformance, vectors | (`rec:w1b15:gate-run`) | G |
+| Landing: offline only; final execution/policy deferred | Review | No native invocation; ignored native tests remain ignored. No executable proof of a process non-action | (`rec:w1b15:gate`) | G |
+| Landing: bounded exact child, exit and duration | Supported | `packages/vectors/tests/keyed_history/mod.rs::keyed_histories_have_bounded_public_subjects`, `bounded`, `one_test`; trace capture parents | (`rec:w1b15:histories-review`) | G |
+| Landing: hang guards recalibrated after the release timeout | Supported | Same parent; 40/300-second guards, measured-load rule and repair at (rec:w1b15:wide-bound); final subject table at covering run | (`rec:w1b15:gate-run`) | G |
+| Landing: reuse 253 fixture/index; separate queue/build time | Supported | `packages/vectors/tests/keyed_history/families.rs::subject`; sealed `prepare_families`; measured second pass, no per-member decoding | (`rec:w1b15:families-review`) | G |
+| Packet: six families independently validated | Supported, qualified | `packages/vectors/tests/keyed_history/families.rs::subject`, `expected`, `resources`, `common`; independent model/literals and Elements comparison, shared-helper limits above | (`rec:w1b15:families-review`) | G |
+| Packet: every requirement traced to paper | Supported | `packages/vectors/tests/keyed_history/family_controls.rs::trace_rows`, `check_trace`; eight-row join above | (`tab:w1b15:requirements`) | G |
+| Packet: reader/target/construction boundaries | Supported / Review | `reader_boundary.rs::keyed_reader_import_boundary_and_isolated_compile`, `mod.rs::keyed_history_oracle_import_boundary` under `packages/vectors/tests/keyed_history/`; source review still required | (`rec:w1b15:reader-review`) | G |
+| Packet: MERGE adds no record | Supported | `packages/vectors/tests/keyed_history/families.rs::recurrence_expected`, `specific`; model/literal union and spurious own-handle refusal | (`rec:w1b15:families-review`) | G |
+| Packet: no extra covenant clause | Review / Supported | Unchanged emitted grammar; `packages/vectors/tests/keyed_constructor/mod.rs::canonical_key_literal_is_data_before_both_clauses`; source claim has no standalone absence test | (`rec:w1b15:gate`) | G |
+| Packet: no carried accumulator | Review | Graph-derived sets, no new production fields/bytes; no standalone absence test | (`rec:w1b15:gate`) | G |
+| Guide 15: all six validate independently | Supported, qualified | Six validator dispatch in `packages/vectors/tests/keyed_history/families.rs::validator`, `subject`, cross-family `common`; independent second sources above | (`rec:w1b15:families-review`) | G |
+| Guide 15: all eight requirements / paper | Supported | `packages/vectors/tests/keyed_history/family_controls.rs::trace_rows`, `check_trace` | (`tab:w1b15:gate-requirements`) | G |
+| Guide 15: positive and focused negatives | Supported | `families.rs::common`, `specific`, `relation_mutants`, `resource_mutants`, `missing` under `packages/vectors/tests/keyed_history/` | (`rec:w1b15:families-review`) | G |
+| Guide 15: separately published reader/evidence premises | Supported | `packages/vectors/tests/keyed_history/reading.rs::premise_identities`, `finality`, `completeness`; hypothetical and synthetic deployment controls described above | (`rec:w1b15:reading-review`) | G |
+| Guide 15: documentation excludes extra clause | Review / Supported | Two-clause grammar control above and reachability statement; no standalone prose-semantic test | (`rec:w1b15:gate`) | G |
+| Guide 15: documentation excludes accumulator | Review | Recurrence/source inventory and unchanged serialized fields; no standalone absence test | (`rec:w1b15:gate`) | G |
+| Guide 15: documentation excludes MERGE record | Supported | Literal union and own-handle mutant in `packages/vectors/tests/keyed_history/families.rs::specific` | (`rec:w1b15:gate`) | G |
+| Adopted finality interpretation of published-premise clause | Supported | `packages/vectors/tests/keyed_history/reading.rs::finality`; `packages/vectors/src/keyed_evidence/premises.rs::synthetic_deployment_is_required_and_hypothetical_cannot_promote`; `family_controls.rs::overrides` and `families.rs::more_mutants` under history tests | (`rec:w1b15:adoption`), (`rec:w1b15:reading-review`) | G |
+
+**Preservation and change census.** This documents-only packet changes no source or test. Across the bite, all production-package source outside vectors is unchanged from 0.7.115-dev. Vectors adds the conformance modules and fixtures, extracts the existing evaluator into `keyed_stack_core` without semantic changes, and exposes shared fixture support while retaining the previous reproduction assertions. The one deliberate amendment to an already reviewed reader behavior is the three-line scriptSig check before witness shape, with `family_controls.rs::scriptsig_size` pinning the single-fault and two-fault refusal and retaining the other member unchanged. It changes no emitted byte or expected accepted set. The ten frozen pins and canonical publication are independent retained references; descriptor reconstruction, archive admissions and existing vectors retain their old expectations. Parent/child or generator/validator agreement alone is not offered as preservation evidence.
+
+**Handoff.** Bite 1.6 receives exact constructed subjects, byte-bound member/relation identities with leaf/control evidence, six validators, complete histories and the explicitly incomplete cut-two/cut-253 histories whose ancestors are still owed. It receives the input-fact table at (`rec:w1b15:families-review`): member-form/model checks do not establish sequence/lock-time validity, balance, fee, sponsor authorization or transaction limits. It must supply final-byte execution and repeated funding/scaling/policy observations, with current-subject wall, CPU, stalls, validation charge and relay policy absent here, and deployment/package and unavailable interpreter dimensions still explicit. Archived observations retain their own subject bindings and cannot discharge final-subject measurements. Records stay at (`obl:guide15-exec:measurement-home`). The four parent facts remain per-instance; bite 1.6 observes only its final subjects and records joint relation-plus-native execution discharge when both exist on the same final bytes. No native result, final reading, production activation or full-wave realization is claimed by this packet.
+
+**Covering verification** · `rec:w1b15:gate-run`
+
+The superseded pre-repair G0 is `/var/home/tripod/loops/tmp/gate-w20b1-20261112T204629Z.log`, covering `docs(plans): record the bite-1.5 gate` on kranich: start 2026-11-12T20:46:29Z, end 20:50:22Z, wall 233 seconds, slot wait 0, exit 0, `== green`. The foreground SSH call took 232.877 seconds (the script reports integer-second boundaries). All ten requested packages plus lint and plans passed. G0 covered the original packet's sources, tests and READMEs; the only subsequent change is this plan's run record, checked by D0 below. No closing disposition is made.
+
+The exact foreground command was `time ssh -F "$CODEX_HOME/ssh_config" kranich-worker 'time bash ~/loops/tmp/w20-code-gate.sh w20b1 architecture,realization,compiler,model,target-elements,tapscript,linker,transaction,target-elements-conformance,vectors plans/drafts/wave1-bite-1-5-plan.md plans/packages/vectors.md plans/packages/realization.md plans/phases/07-burn-and-clear.md plans/backlog.md'`. The unmodified runner starts `#!/bin/bash`, its explanatory comment, then `set -o pipefail`. It holds the governor slot and runs a transient user unit with `--wait --pipe`; the lane remained in that one foreground SSH call through the end marker and exit, including the first run's queue. No host build/test or native execution ran. The initial packet fast check passed in 92 seconds; the citation correction's passed in 6 seconds.
+
+`preserve_engine_base` passed in 55.018440781 seconds and `attestation_canonical_bytes_and_publication_equal_the_opening_base` in 0.007785833 seconds. All old vector/archive and reproduction controls passed; no expected byte or digest changed. Raw compiler, architecture, vectors library and history journals are retained at `/var/home/tripod/loops/tmp/gate-w20b1-20261112T204629Z.b15close-journals.tar`, with the package Meson journal beside G0. The independent import/release gate remains the gate of record; G0 is the lane's offline gate.
+
+**Pre-repair packet subject durations (historical).** Each subject below exited 0 under its own 10-second timeout. The history family exited 0 in 25.139323 seconds under its 60-second cap. The model-only harness ran in 0.008194 seconds; reader/evidence/family trace children took 0.215638 / 0.517260 / 0.530330 seconds. These are offline test walls, not final-subject native measurements. No bound was widened.
+
+| Subject | Wall s | Family-owned second decode/index s |
+|---|---:|---:|
+| source | 0.196913 | not applicable |
+| single | 0.143887 | not applicable |
+| ordinary-edge | 0.101166 | not applicable |
+| multi | 0.128547 | not applicable |
+| path | 0.202600 | not applicable |
+| two-keys | 0.381040 | not applicable |
+| wide | 1.394266 | not applicable |
+| later | 0.331235 | not applicable |
+| existing-two | 0.178731 | not applicable |
+| existing-253 | 0.641687 | not applicable |
+| association | 0.437129 | not applicable |
+| reader-negatives | 1.155925 | not applicable |
+| reader-review | 1.603212 | not applicable |
+| reading-review | 0.739024 | not applicable |
+| families-constants | 1.471018 | not separately sampled |
+| families-source | 0.577722 | 0.000023694 |
+| families-single | 0.514144 | 0.000031849 |
+| families-ordinary-edge | 0.537800 | 0.000020969 |
+| families-path | 0.681793 | 0.000039934 |
+| families-two-keys | 0.612202 | 0.000029896 |
+| families-later | 0.661768 | 0.000022070 |
+| families-multi | 2.131524 | 0.000030115 |
+| families-wide | 2.884124 | 0.001192899 |
+| families-cut-two | 1.205085 | 0.000036197 |
+| families-cut-253 | 1.816752 | 0.000599832 |
+| reading-rules | 0.739374 | not applicable |
+| reading-premises | 1.073287 | not applicable |
+| reading-reports | 2.098901 | not applicable |
+| reading-conditional | 0.418044 | not applicable |
+
+The wide 253-source fixture and cut-253 fixture are each built once per family subject process; the unchanged reader performs its own decode, then the family-owned index is shared by all validators/annotations/resources. This is the adopted two-pass exception, not per-member or per-validator decoding. Their measured second passes are 0.001192899 and 0.000599832 seconds. Cut subjects remain incomplete, with exact missing identities retained.
+
+**Scoped resources.** The samples belong to G0's own container-inclusive cgroup `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T204629Z.service`, not node-wide load or merely the shell-child accounting. The log retains each battery's full start/end samples. Cells below are deltas in microseconds; no counter is clamped and no causal performance claim is made (`req:environment:gate-resource-deltas`).
+
+| Battery | Wall s | CPU usage / user / system μs | CPU pressure some / full μs | Memory pressure some / full μs | I/O pressure some / full μs |
+|---|---:|---|---|---|---|
+| setup | 1 | +2115313 / +949402 / +1165910 | +16168 / +7529 | +0 / +0 | +62 / +62 |
+| fmt | 4 | +4977871 / +3828205 / +1149667 | +3179 / +2715 | +0 / +0 | +38 / +38 |
+| clippy | 1 | +2832449 / +1536822 / +1295627 | +3075 / +2725 | +0 / +0 | +1810 / +1810 |
+| package-tests | 200 | +2756191019 / +2707255453 / +48935567 | +24277865 / +5361774 | +0 / +0 | +1881 / +838 |
+| doc | 1 | +1942060 / +871864 / +1070196 | +4258 / +3656 | +0 / +0 | +486 / +486 |
+| lint-suite | 24 | +83559817 / +74149388 / +9410429 | +18120 / +8378 | +0 / +0 | +139 / +106 |
+| checks | 2 | +3254757 / +1843572 / +1411185 | +4007 / +3103 | +0 / +0 | +352 / +353 |
+
+Only the plan verification record differs after G0. D0 runs the unchanged documents-gate setup/check batteries with its scope pinned to this full-gated parent and only this plan allowed to differ. Its completed verdict is recorded in the confirmation below.
+
+
+The first packet run, `/var/home/tripod/loops/tmp/gate-w20b1-20261112T203357Z.log`, ran 2026-11-12T20:33:57Z–20:45:34Z after 636 seconds in the slot queue: wall 697 seconds, RED, exit 1. All ten package suites, formatting, Clippy, rustdoc and lint passed. The checks battery found a duplicate label mint: the original step-5 instruction named the future record without citation parentheses. It now cites the actual record. No source, test or expected value changed; the full gate is rerun rather than counting that failed run as a pass.
+
+
+**Documents verification confirmation** · `rec:w1b15:gate-confirmation`
+
+D0 is `/var/home/tripod/loops/tmp/gate-w20b1-b15close-doc-20261112T205128Z.log`: start 2026-11-12T20:51:49Z, end 20:52:09Z, wall 20 seconds, no slot queue, exit 0, `== green`. The foreground command was `time ssh -F "$CODEX_HOME/ssh_config" kranich-worker 'time bash ~/loops/tmp/w20b1-b15close-doc-gate.sh w20b1'`. The wrapper preserves the documents runner batteries verbatim and pins the scope to G0’s full-gated parent, permitting only this plan to differ. Its own container-inclusive cgroup is `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T205148Z.service`; the log retains each start/end sample. Setup took 0 seconds, CPU usage/user/system +1202745/+854487/+348257 μs, CPU pressure some/full +558/+514 μs, memory +0/+0, I/O +91/+91. Document checks took 20 seconds, CPU +58772160/+55679360/+3092801 μs, CPU pressure +27250/+3645, memory +0/+0, I/O +7587/+7583. The verification commit’s fast check passed in 7 seconds.
+
+This confirmation changes only the plan record; sources, tests and package READMEs remain G0’s exact tree. The final confirmation is checked through the same foreground wrapper at `/var/home/tripod/loops/tmp/gate-w20b1-b15close-doc-20261112T205220Z.log`; its terminal verdict covers this confirmation tree and is reported with the packet. D0 is a completed documents verdict, not a claim that G0 covered its own later log insertion. This remains an offer for independent review, not closure.
+
+
+**Repaired-tree covering run (G).** `/var/home/tripod/loops/tmp/gate-w20b1-20261112T210954Z.log` ran 2026-11-12T21:09:55Z–21:15:25Z, wall 330 seconds, slot wait 0, exit 0, `== green`. This is G for every clause row above; G0/D0 are historical pre-repair evidence only. The repair's fast check passed in 86 seconds. The full ten-package command and unchanged runner are those stated above. A foreground supervisor invoked that exact runner, retained its output, and waited for its `== green` end marker and exit; the runner used its normal `systemd-run --wait --pipe` slot unit. No gate was abandoned or detached from its foreground waiter. The supervisor's foreground SSH wall was 331.611 seconds. All package tests, formatting, warnings-denied Clippy, rustdoc, lint and checks passed.
+
+**Parallel-suite exercise.** The first extra family started at the package-battery marker, which includes compilation/warm-up; it passed but is not used to claim overlap with active test lanes. The retained preliminary log is `/var/home/tripod/loops/tmp/w20b1-b15widebound-loaded-20261112T210954Z.log`. The qualifying run waited until the current maturity test journal was opened by Meson at 21:10:58.930Z, then ran at 21:10:59.684Z–21:11:19.892Z. Its family wall was 16.365472 seconds, exit 0. It ran beside G's default parallel suite (30 available CPUs): architecture, realization, compiler, model, target-elements, tapscript, linker, transaction, target-elements-conformance and all vectors test lanes. G's package battery ran 21:10:15Z–21:14:09Z; the fresh journal proves this overlap was after warm-up, not merely a queued gate. Load averages at the extra run's start/end were 30.73/34.51 (one minute). No artificial CPU burner or native execution was used.
+
+The extra run used the repair commit's unchanged test tree in the separate check clone/target, avoiding a shared build directory with G. The two later packet commits change documents only. Its command was `time ssh -F "$CODEX_HOME/ssh_config" kranich-worker 'time python3 ~/loops/tmp/w20b1-wide-parallel.py'`; the foreground waiter waited for the journal, ran the bounded family, and returned its exit. Raw output is `/var/home/tripod/loops/tmp/w20b1-b15widebound-parallel.log`. The standalone family, `/var/home/tripod/loops/tmp/w20b1-b15widebound-quiet-family.log`, took 7.588728 seconds. “Standalone” means without this lane's companion suite, not an idle-node claim. G's own history family took 22.001488 seconds. These are test-process observations, not native costs or a throughput promise.
+
+| Subject | Standalone s | Alongside parallel suite s | G s | Hang bound s | Bound / largest repaired sample |
+|---|---:|---:|---:|---:|---:|
+| source | 0.045023 | 0.102965 | 0.127274 | 40 | 314.28× |
+| single | 0.048687 | 0.100424 | 0.129229 | 40 | 309.53× |
+| ordinary-edge | 0.048233 | 0.100904 | 0.199688 | 40 | 200.31× |
+| multi | 0.050172 | 0.080836 | 0.143018 | 40 | 279.69× |
+| path | 0.053345 | 0.113959 | 0.422066 | 40 | 94.77× |
+| two-keys | 0.084337 | 0.183865 | 0.312905 | 40 | 127.83× |
+| wide | 0.368518 | 0.700245 | 0.898912 | 40 | 44.50× |
+| later | 0.044497 | 0.135384 | 0.086018 | 40 | 295.46× |
+| existing-two | 0.044793 | 0.070532 | 0.298853 | 40 | 133.85× |
+| existing-253 | 0.074054 | 0.196537 | 0.289353 | 40 | 138.24× |
+| association | 0.123484 | 0.298933 | 0.287504 | 40 | 133.81× |
+| reader-negatives | 0.280308 | 0.787615 | 0.650450 | 40 | 50.79× |
+| reader-review | 0.274300 | 0.517980 | 0.663001 | 40 | 60.33× |
+| reading-review | 0.258640 | 0.556145 | 0.635990 | 40 | 62.89× |
+| families-constants | 0.602181 | 1.281727 | 1.957847 | 40 | 20.43× |
+| families-source | 0.251734 | 0.508718 | 0.937293 | 40 | 42.68× |
+| families-single | 0.260919 | 1.267559 | 0.987840 | 40 | 31.56× |
+| families-ordinary-edge | 0.253194 | 0.575046 | 1.123315 | 40 | 35.61× |
+| families-path | 0.264088 | 0.593969 | 1.700987 | 40 | 23.52× |
+| families-two-keys | 0.274546 | 0.558682 | 0.680176 | 40 | 58.81× |
+| families-later | 0.255541 | 0.478202 | 0.792615 | 40 | 50.47× |
+| families-multi | 0.717402 | 1.406461 | 1.950466 | 40 | 20.51× |
+| families-wide | 0.587430 | 1.113290 | 1.184771 | 40 | 33.76× |
+| families-cut-two | 0.251696 | 0.520684 | 0.565106 | 40 | 70.78× |
+| families-cut-253 | 0.286427 | 0.591041 | 0.625215 | 40 | 63.98× |
+| reading-rules | 0.254526 | 0.557235 | 0.582263 | 40 | 68.70× |
+| reading-premises | 0.468196 | 1.065950 | 1.171637 | 40 | 34.14× |
+| reading-reports | 0.776867 | 1.517092 | 1.954309 | 40 | 20.47× |
+| reading-conditional | 0.279063 | 0.366268 | 0.611340 | 40 | 65.43× |
+| Whole family | 7.588728 | 16.365472 | 22.001488 | 300 | 13.64× |
+
+Every child exited zero. The subject floor is still calibrated conservatively to the historical completed loaded wide sample (40 / 9.605960 = 4.16), not reduced to the much smaller repaired figures. The family floor retains the interrupted historical 58.142684-second wall (300 / 58.142684 = 5.16); the final completed repaired family sample independently leaves 13.64-fold headroom. The old 10.098874-second child is a censored failure, never evidence of an upper bound. No repaired subject needs splitting: the largest is 1.957847 seconds in G, below the sampled subject share. The 40/300-second rule is written once beside the constants; existing isolated compilation/model/trace guards remain separate.
+
+**Detailed phase comparison.** The before column is the instrumented pre-repair run; after is the final standalone family with the repaired code. Times are seconds, nested phases are not additive: model/signing/rebuild/replay are inside fixture; reader/index/archive are inside preparation. Blank entries mean that phase is absent on that route, not a measured zero. Raw before and initial-after samples remain retained as well; changing shared-node conditions preclude a causal speedup claim.
+
+| Subject | Phase | Before s | After s |
+|---|---|---:|---:|
+| wide | model | 0.000807 | 0.000900 |
+| wide | fixture | 0.421547 | 0.312014 |
+| wide | fixture-sign | 0.137692 | 0.149149 |
+| wide | fixture-rebuild | 0.135603 | 0.146587 |
+| wide | fixture-repeat | 0.136157 | 0.004383 |
+| wide | reader-comparison | 0.035621 | 0.038564 |
+| families-wide | model | 0.000773 | 0.000854 |
+| families-wide | fixture | 0.403555 | 0.310363 |
+| families-wide | fixture-sign | 0.131983 | 0.148228 |
+| families-wide | fixture-rebuild | 0.129773 | 0.145903 |
+| families-wide | fixture-repeat | 0.130636 | 0.004442 |
+| families-wide | family-prepare | 0.200975 | 0.236280 |
+| families-wide | reader | 0.016000 | 0.018200 |
+| families-wide | index | 0.000530 | 0.000620 |
+| families-wide | archive admission | 0.184000 | 0.217000 |
+| families-wide | report | 0.015206 | 0.016432 |
+| families-wide | validate | 0.015931 | 0.017548 |
+| families-wide | expected | 0.000486 | 0.000560 |
+| families-wide | mutants | 0.495400 | 0.000000 |
+| families-cut-253 | model | 0.000849 | 0.000906 |
+| families-cut-253 | fixture | 0.019026 | 0.020742 |
+| families-cut-253 | family-prepare | 0.211896 | 0.226291 |
+| families-cut-253 | reader | 0.015400 | 0.016300 |
+| families-cut-253 | index | 0.000287 | 0.000297 |
+| families-cut-253 | archive admission | 0.196000 | 0.209000 |
+| families-cut-253 | report | 0.015532 | 0.016508 |
+| families-cut-253 | validate | 0.016177 | 0.017292 |
+| families-cut-253 | expected | 0.000473 | 0.000551 |
+| families-cut-253 | mutants | 0.489778 | 0.000000 |
+
+The generic large-subject mutant work disappears from those children because the same condition/boundary controls remain on source, multi and cut-two. It is not a removed refusal test. All 253 identities, literal sets, relation rows, CompactSize comparisons, accepted reports and validators remain. The existing cut reconstruction repeats are retained. Before/after complete-byte fingerprints agree; no expected byte was regenerated. The family-owned second pass remains explicitly measured in all three runs.
+
+**Preservation.** `preserve_engine_base` passed in 59.266620874 seconds and `attestation_canonical_bytes_and_publication_equal_the_opening_base` in 0.006851819 seconds. Every selected old vector/archive/reproduction target passed. The model, reader, projector and all production source files are byte-identical to the repair base; the only Rust changes are three history test files. Raw compiler, architecture, vectors-library and history journals are retained at `/var/home/tripod/loops/tmp/gate-w20b1-20261112T210954Z.b15widebound-journals.tar`, with the Meson package journal beside G. No native test ran. The only later edit is this plan's measured-results record; its documents-scope confirmation follows below.
+
+**G resource scope.** Battery samples belong to `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T210954Z.service`, including G's containers. They exclude the separately launched family, which ran under its foreground SSH scope; that extra run has wall/load observations only. Each full start/end sample is retained in G. Deltas below are microseconds, not node-wide totals or a performance claim (`req:environment:gate-resource-deltas`).
+
+| Battery | Wall s | CPU usage / user / system μs | CPU pressure some / full μs | Memory pressure some / full μs | I/O pressure some / full μs |
+|---|---:|---|---|---|---|
+| setup | 1 | +2286874 / +920254 / +1366620 | +147906 / +68354 | +0 / +0 | +242 / +223 |
+| fmt | 7 | +7590384 / +6247276 / +1343108 | +85082 / +26073 | +0 / +0 | +1899 / +1890 |
+| clippy | 11 | +28501751 / +22021401 / +6480351 | +93113 / +46681 | +0 / +0 | +15151 / +14750 |
+| package-tests | 234 | +2948682804 / +2882531192 / +66151612 | +33759129 / +7398311 | +1 / +1 | +71012 / +49467 |
+| doc | 33 | +36904644 / +24662941 / +12241704 | +18276 / +17357 | +0 / +0 | +3451 / +3413 |
+| lint-suite | 41 | +128012579 / +112118386 / +15894194 | +1194272 / +1021106 | +0 / +0 | +7005 / +4608 |
+| checks | 2 | +3582236 / +1995220 / +1587015 | +4799 / +3893 | +0 / +0 | +384 / +384 |
+
+
+**Repair verification corrections.** The initial instrumentation fast check (58 seconds) found three missing statement semicolons and a 112-line fixture function; extracting the timed construction helper and applying the formatter closed them. A later instrumentation check (50 seconds) found an import after a statement; moving the import closed it. Their Clippy exits were 101, not passing checks. Subsequent checks passed in 46, 47 and 86 seconds; neither correction changed a byte or expected value. The first phase probe accidentally read the old gate clone and supplied no instrumentation; it is excluded from the breakdown, which uses the corrected check-clone measurements. The first companion exercise overlapped warm-up, so the separately journal-triggered run supplies the claimed parallel-test evidence. These are disclosed measurement/check corrections, not hidden retries of the release gate.
+
+
+**Repaired documents confirmation.** D is `/var/home/tripod/loops/tmp/gate-w20b1-b15widebound-doc-20261112T211736Z.log`: start 2026-11-12T21:17:46Z, end 21:17:50Z, wall 4 seconds, no slot queue, exit 0, `== green`. It used the unchanged documents setup/check batteries and compared against G's retained full-gated snapshot, permitting only this plan's record to differ. The snapshot is retained even though the verification commit is amended to preserve the requested two-commit packet history; no ancestry claim is needed for the exact tree-difference check. The command was `time ssh -F "$CODEX_HOME/ssh_config" kranich-worker 'time bash ~/loops/tmp/w20b1-b15widebound-doc-gate.sh w20b1'`, a transient user unit awaited with `--wait --pipe` through its end marker. The final record fast check passed in 64 seconds. No Rust source differs from G.
+
+D's own container-inclusive resource scope is `/sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-gate-w20b1-20261112T211746Z.service`. Its full samples remain in the log. The final confirmation is checked by the same foreground wrapper at `/var/home/tripod/loops/tmp/gate-w20b1-b15widebound-doc-20261112T211848Z.log`; that terminal verdict is reported with the published packet. D is a completed verdict, not a claim that a run covered its own later insertion. This remains an offer for independent review, with no closing disposition.

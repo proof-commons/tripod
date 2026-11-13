@@ -453,3 +453,9 @@ Both STATE sides carry a public confidentiality baseline; that baseline does not
 ## Stable keyed declarations
 
 `keyed::KeyedRealizationDraft` derives and validates SOURCE and MERGE from `architecture::keyed::KeyedManifest::contract()` without a feature flag. The normative nine-row paper weld, evidence obligations and refusal boundaries are in (`[PLAN-sec:realization:keyed-declarations]`). The default compiler library now consumes these declarations through production keyed preparation, publication and independent validation. The discharged bite-1.2 obligations and explicit later-bite handoffs are recorded at (`[PLAN-rec:w1b12:gate]`).
+
+## Offline keyed evidence packet
+
+The bite-1.5 packet is offered for independent review at (`[PLAN-rec:w1b15:gate]`), not yet closed. Vectors supplies a graph-only model, byte/evidence reader and six internal report validators; these do not change this package's declarations or add a production chain reader. SOURCE has its singleton record and MERGE only the consumed union: no extra clause, carried accumulator, STATE metadata or owner-authorization law is introduced. The comparison-source and premise inventories distinguish local model evidence from native transaction validity.
+
+The published finality form is a named external premise. No deployment declaration exists here; hypothetical fixtures never satisfy Required, and birth, continuation and resources make no finality claim. Four per-input parent facts and the per-key inclusion assumption remain conditional. Exact byte-bound relation evidence and every absent final-subject measurement pass to bite 1.6 at (`[PLAN-obl:guide15-exec:measurement-home]`); this packet makes no full-wave realization claim.
