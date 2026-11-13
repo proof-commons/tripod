@@ -126,6 +126,7 @@ container_started=1
 timeout --kill-after=5 60 podman run --init --name "$container" --network=none --userns=keep-id \
     -v /usr/local/rustup:/usr/local/rustup:ro \
     -v /var/home/tripod/loops/toolchains/elements/b7fc5d08:/elements:ro,z \
+    -e HOME=/tmp \
     "$image" /bin/sh -eu -c '
       /usr/local/rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/rustc -Vv
       /usr/local/rustup/toolchains/nightly-x86_64-unknown-linux-gnu/bin/cargo -V

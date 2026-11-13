@@ -187,6 +187,9 @@ if 'cargo' in a:
     (mounts['/src']/'Cargo.lock').write_text('# synthetic resolved lock\\n')
     print(json.dumps(dict(reason='compiler-artifact',target=dict(name='maturity_native'),profile=dict(test=True),executable='/cargo-target/mock')))
 else:
+    if not any(a[i] == '-e' and a[i+1].startswith('HOME=') and
+               a[i+1] not in ('HOME=', 'HOME=/') for i in range(len(a)-1)):
+        sys.exit(77)
     print('rustc synthetic\\ncargo synthetic\\nPython synthetic')
     print('a'*64+'  /usr/bin/python3')
     print('b'*64+'  /elements/bin/elementsd')
