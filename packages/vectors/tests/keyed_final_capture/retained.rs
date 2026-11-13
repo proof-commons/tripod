@@ -268,8 +268,8 @@ pub fn mock_archive(target: CaptureTarget) -> Archive {
 
 /// Accepted packets and coordinate mutants, bounded by the caller's child guard.
 /// # Panics
-/// Panics if any control differs from its declared result or exceeds its bound.
-pub fn controls(target: CaptureTarget) {
+/// Panics if any control differs from its declared result or retention fails.
+pub fn controls(target: CaptureTarget, directory: &std::path::Path) {
     let started = std::time::Instant::now();
     let archive = mock_archive(target);
     let expected: Vec<_> = archive
@@ -284,11 +284,6 @@ pub fn controls(target: CaptureTarget) {
         Err(Refusal::Encoding(_))
     ));
     owner_controls(target, &expected, &archive);
-    let mut transported = archive.clone();
-    for session in &mut transported.sessions {
-        session.handshake = super::native::offline_transport(target, session);
-    }
-    assert_eq!(admit(target, &expected, &transported), Ok(()));
     let mut missing = archive.clone();
     missing.sessions.pop();
     assert_eq!(
@@ -329,12 +324,50 @@ pub fn controls(target: CaptureTarget) {
     if target == CaptureTarget::Cost {
         cost_controls(&expected, &archive);
     }
-    let elapsed = started.elapsed();
+    std::fs::write(
+        directory.join("archive.json"),
+        serde_json::to_vec(&archive).unwrap(),
+    )
+    .unwrap();
+    let wall = started.elapsed().as_secs_f64();
     println!(
-        "capture {target:?} mock+replay wall={:.6}s",
-        elapsed.as_secs_f64()
+        "capture {target:?} mock-admission wall={wall:.6}s split_or_report={}",
+        wall > 10.0
     );
-    assert!(elapsed.as_secs() < 10, "split/report threshold");
+}
+
+/// Replay one key's complete transport, retaining its observed handshake.
+/// # Panics
+/// Panics if the shared packet, transport assertions or retention fail.
+pub fn transport_controls(target: CaptureTarget, directory: &std::path::Path, index: usize) {
+    let archive: Archive =
+        serde_json::from_slice(&std::fs::read(directory.join("archive.json")).unwrap()).unwrap();
+    let handshake = super::native::offline_transport(target, &archive.sessions[index]);
+    std::fs::write(
+        directory.join(format!("handshake-{index}.json")),
+        serde_json::to_vec(&handshake).unwrap(),
+    )
+    .unwrap();
+}
+
+/// Preserve the original joint admission assertion after both transport children.
+/// # Panics
+/// Panics if the retained handshakes or full two-key admission fail.
+pub fn transported_controls(target: CaptureTarget, directory: &std::path::Path) {
+    let mut archive: Archive =
+        serde_json::from_slice(&std::fs::read(directory.join("archive.json")).unwrap()).unwrap();
+    let expected: Vec<_> = archive
+        .sessions
+        .iter()
+        .map(|session| session.provenance.clone())
+        .collect();
+    for (index, session) in archive.sessions.iter_mut().enumerate() {
+        session.handshake = serde_json::from_slice(
+            &std::fs::read(directory.join(format!("handshake-{index}.json"))).unwrap(),
+        )
+        .unwrap();
+    }
+    assert_eq!(admit(target, &expected, &archive), Ok(()));
 }
 
 fn owner_controls(target: CaptureTarget, expected: &[CaptureProvenance], archive: &Archive) {

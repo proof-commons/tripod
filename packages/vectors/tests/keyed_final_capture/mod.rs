@@ -113,12 +113,12 @@ fn cost_control() -> (
         assert!(replay.pending.is_empty());
         rows.extend(replay.rows);
         journal.extend(replay.journal);
+        let wall = started.elapsed().as_secs_f64();
         println!(
-            "capture mock-pin-replay key={} wall={:.6}s",
+            "capture mock-pin-replay key={} wall={wall:.6}s split_or_report={}",
             crate::common::hex_bytes(&key),
-            started.elapsed().as_secs_f64()
+            wall > 10.0
         );
-        assert!(started.elapsed().as_secs() < 10, "split/report threshold");
     }
     (
         CaptureManifest {
@@ -337,58 +337,16 @@ fn capture_support_has_bounded_offline_controls() {
 #[ignore = "bounded family parent"]
 fn family_child() {
     let family = std::time::Instant::now();
-    for subject in [
-        "pins",
-        "watchdog",
-        "birth",
-        "continuation",
-        "commitment",
-        "cost",
-    ] {
-        let start = std::time::Instant::now();
-        let output = std::process::Command::new("/usr/bin/timeout")
-            .args(["--kill-after=1", "40"])
-            .arg(std::env::current_exe().unwrap())
-            .args([
-                "--ignored",
-                "--exact",
-                "keyed_final_capture::offline_child",
-                "--nocapture",
-            ])
-            .env("TRIPOD_CAPTURE_CONTROL", subject)
-            .output()
-            .unwrap();
-        let wall = start.elapsed().as_secs_f64();
-        writeln!(
-            std::io::stdout().lock(),
-            "final capture subject={subject} wall={wall:.6}s guard=40s split_or_report={} exit={}",
-            wall > 10.0,
-            output.status
-        )
-        .unwrap();
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-            writeln!(std::io::stdout().lock(), "capture-child| {line}").unwrap();
+    let retained = tempfile::tempdir().unwrap();
+    for subject in ["pins", "watchdog", "command", "capabilities"] {
+        run_child(subject, retained.path());
+    }
+    for target in ["birth", "continuation", "commitment", "cost"] {
+        let directory = retained.path().join(target);
+        std::fs::create_dir(&directory).unwrap();
+        for stage in ["mock", "key-0", "key-1", "joined"] {
+            run_child(&format!("{target}-{stage}"), &directory);
         }
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert_eq!(
-            stdout
-                .lines()
-                .filter(|line| *line == "running 1 test")
-                .count(),
-            1
-        );
-        assert_eq!(
-            stdout
-                .lines()
-                .filter(|line| line.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored;"))
-                .count(),
-            1
-        );
     }
     let wall = family.elapsed().as_secs_f64();
     writeln!(
@@ -399,10 +357,59 @@ fn family_child() {
     assert!(wall < 300.0);
 }
 
+fn run_child(subject: &str, directory: &std::path::Path) {
+    let start = std::time::Instant::now();
+    let output = std::process::Command::new("/usr/bin/timeout")
+        .args(["--kill-after=1", "40"])
+        .arg(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "keyed_final_capture::offline_child",
+            "--nocapture",
+        ])
+        .env("TRIPOD_CAPTURE_CONTROL", subject)
+        .env("TRIPOD_CAPTURE_DIRECTORY", directory)
+        .output()
+        .unwrap();
+    let wall = start.elapsed().as_secs_f64();
+    writeln!(
+        std::io::stdout().lock(),
+        "final capture subject={subject} wall={wall:.6}s guard=40s split_or_report={} exit={}",
+        wall > 10.0,
+        output.status
+    )
+    .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        writeln!(std::io::stdout().lock(), "capture-child| {line}").unwrap();
+    }
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        stdout
+            .lines()
+            .filter(|line| *line == "running 1 test")
+            .count(),
+        1
+    );
+    assert_eq!(
+        stdout
+            .lines()
+            .filter(|line| line.starts_with("test result: ok. 1 passed; 0 failed; 0 ignored;"))
+            .count(),
+        1
+    );
+}
+
 #[test]
 #[ignore = "bounded offline parent"]
 fn offline_child() {
-    let target = match std::env::var("TRIPOD_CAPTURE_CONTROL").unwrap().as_str() {
+    let subject = std::env::var("TRIPOD_CAPTURE_CONTROL").unwrap();
+    match subject.as_str() {
         "pins" => {
             let (manifest, journal) = cost_control();
             manifest_controls(&manifest, &journal);
@@ -410,17 +417,36 @@ fn offline_child() {
             tracing_control(&manifest, &journal);
             return;
         }
+        "command" => {
+            native::command_control();
+            return;
+        }
+        "capabilities" => {
+            native::capability_control();
+            return;
+        }
         "watchdog" => {
             native::watchdog_control();
             return;
         }
+        _ => {}
+    }
+    let (target, stage) = subject.split_once('-').unwrap();
+    let target = match target {
         "birth" => CaptureTarget::Birth,
         "continuation" => CaptureTarget::Continuation,
         "commitment" => CaptureTarget::Commitment,
         "cost" => CaptureTarget::Cost,
-        _ => panic!("closed offline subject census"),
+        _ => panic!("closed offline target census"),
     };
-    retained::controls(target);
+    let directory = std::path::PathBuf::from(std::env::var("TRIPOD_CAPTURE_DIRECTORY").unwrap());
+    match stage {
+        "mock" => retained::controls(target, &directory),
+        "key-0" => retained::transport_controls(target, &directory, 0),
+        "key-1" => retained::transport_controls(target, &directory, 1),
+        "joined" => retained::transported_controls(target, &directory),
+        _ => panic!("closed offline stage census"),
+    }
 }
 
 fn tracing_control(

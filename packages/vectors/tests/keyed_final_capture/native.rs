@@ -238,13 +238,84 @@ fn executor(directory: &Path, prepared: &serde_json::Value) -> PathBuf {
     assert_eq!(tip.len(), 40);
     assert!(tip.bytes().all(|b| b.is_ascii_hexdigit()));
     let script = format!(
-        "#!/bin/sh\nset -eu\nexec /usr/bin/python3 /src/scripts/elements-native-executor.py --framework /elements/src/test/functional --elementsd /elements/bin/elementsd --elements-cli /elements/bin/elements-cli --fee-policy node-defaults --maturity-observation --datadir '{}/regtest' --network-id 75e823f7c5c70ddfbd9584f90f67298f2570907947829828066c7047b21b53b1 --intended-executed-tip {tip} --upstream-base {tip} \"$@\"\n",
+        "#!/bin/sh\nset -eu\nexec /usr/bin/python3 /src/scripts/elements-native-executor.py --framework /elements/src/test/functional --elementsd /elements/bin/elementsd --elements-cli /elements/bin/elements-cli --fee-policy node-defaults --maturity-observation --enable-wallet --datadir '{}/regtest' --network-id 75e823f7c5c70ddfbd9584f90f67298f2570907947829828066c7047b21b53b1 --intended-executed-tip {tip} --upstream-base {tip} \"$@\"\n",
         directory.display()
     );
     let path = directory.join("executor");
     std::fs::write(&path, script).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
     path
+}
+
+fn retain_exchanges(
+    directory: &Path,
+    capture: &NativeOperationCapture,
+) -> Vec<(NativeOperationRequest, NativeOperationResponse)> {
+    write_json(&directory.join("handshake.json"), &capture.handshake());
+    write_json(&directory.join("environment.json"), &capture.environment());
+    let exchanges: Vec<_> = capture
+        .operations()
+        .iter()
+        .filter_map(|op| {
+            op.response()
+                .map(|answer| (op.request().clone(), answer.clone()))
+        })
+        .collect();
+    write_json(&directory.join("journal.json"), &exchanges);
+    exchanges
+}
+
+// Explain the transport's refusal after retention; this is not a preflight check.
+fn unsupported_operation_message(
+    error: &NativeConformanceError,
+    capture: &NativeOperationCapture,
+) -> Option<String> {
+    if !matches!(error, NativeConformanceError::OperationStepUnsupported(_)) {
+        return None;
+    }
+    let needed = [
+        ExecutorCapability::TestFundingCeremony,
+        ExecutorCapability::TargetTransactionSubmission,
+        ExecutorCapability::TestSponsorAuthorization,
+    ];
+    let offered = capture.handshake().map(|handshake| &handshake.capabilities);
+    let missing: Vec<_> = needed
+        .iter()
+        .filter(|capability| offered.is_none_or(|offered| !offered.contains(capability)))
+        .collect();
+    Some(format!(
+        "native transport {error:?}: needed={} offered={} missing={}",
+        serde_json::to_string(&needed).unwrap(),
+        serde_json::to_string(&offered).unwrap(),
+        serde_json::to_string(&missing).unwrap(),
+    ))
+}
+
+pub(super) fn command_control() {
+    let directory = tempfile::tempdir().unwrap();
+    let tip = "1".repeat(40);
+    let path = executor(directory.path(), &serde_json::json!({"framework":tip}));
+    let actual = std::fs::read_to_string(path).unwrap();
+    for required in [
+        "exec /usr/bin/python3 /src/scripts/elements-native-executor.py",
+        "--framework /elements/src/test/functional",
+        "--elementsd /elements/bin/elementsd",
+        "--elements-cli /elements/bin/elements-cli",
+        "--fee-policy node-defaults",
+        "--maturity-observation",
+        "--enable-wallet",
+        "--network-id 75e823f7c5c70ddfbd9584f90f67298f2570907947829828066c7047b21b53b1",
+        &format!("--datadir '{}/regtest'", directory.path().display()),
+        &format!("--intended-executed-tip {tip}"),
+        &format!("--upstream-base {tip}"),
+        "\"$@\"",
+    ] {
+        assert_eq!(
+            actual.matches(required).count(),
+            1,
+            "missing or repeated {required}"
+        );
+    }
 }
 
 fn run_session(
@@ -293,17 +364,12 @@ fn run_session(
         ),
     )
     .unwrap();
-    write_json(&directory.join("handshake.json"), &capture.handshake());
-    write_json(&directory.join("environment.json"), &capture.environment());
-    let exchanges: Vec<_> = capture
-        .operations()
-        .iter()
-        .filter_map(|op| {
-            op.response()
-                .map(|answer| (op.request().clone(), answer.clone()))
-        })
-        .collect();
-    write_json(&directory.join("journal.json"), &exchanges);
+    let exchanges = retain_exchanges(directory, &capture);
+    if let Err(error) = &result
+        && let Some(message) = unsupported_operation_message(error, &capture)
+    {
+        panic!("{message}; partial evidence retained");
+    }
     let transcript = result.expect("native transport; partial evidence retained");
     transcript
         .provenance_agreement()
@@ -402,29 +468,39 @@ pub(super) fn offline_transport(
     target: CaptureTarget,
     session: &retained::SessionArchive,
 ) -> ExecutorHandshake {
-    offline_transport_control(target, session, false)
+    offline_transport_control(target, session, false, false)
 }
 
 pub(super) fn watchdog_control() {
     let archive = retained::mock_archive(CaptureTarget::Cost);
-    offline_transport_control(CaptureTarget::Cost, &archive.sessions[0], true);
+    offline_transport_control(CaptureTarget::Cost, &archive.sessions[0], true, false);
     assert_eq!(
         2 * SESSION_TIMEOUT.as_secs() + 2 * DEFAULT_EXECUTOR_CLEANUP_GRACE.as_secs(),
         1210
     );
 }
 
-fn scripted_peer(directory: &Path, session: &retained::SessionArchive, stall: bool) -> PathBuf {
+fn scripted_peer(
+    directory: &Path,
+    session: &retained::SessionArchive,
+    stall: bool,
+    missing: bool,
+) -> PathBuf {
     let responses: Vec<_> = session
         .exchanges
         .iter()
         .map(|(_, response)| serde_json::to_string(response).unwrap())
         .collect();
     let mut peer = crate::common::scripted_adapter(
-        &[
-            "test_sponsor_authorization",
-            "target_transaction_submission",
-        ],
+        if missing {
+            &[]
+        } else {
+            &[
+                "test_funding_ceremony",
+                "test_sponsor_authorization",
+                "target_transaction_submission",
+            ]
+        },
         if stall { &responses[..1] } else { &responses },
     )
     .replace("framework-tip", &"1".repeat(40))
@@ -446,9 +522,10 @@ fn offline_transport_control(
     target: CaptureTarget,
     session: &retained::SessionArchive,
     stall: bool,
+    missing: bool,
 ) -> ExecutorHandshake {
     let directory = tempfile::tempdir().unwrap();
-    let adapter = scripted_peer(directory.path(), session, stall);
+    let adapter = scripted_peer(directory.path(), session, stall, missing);
     let target_definition = reviewed_elements_tapscript().unwrap();
     let deployment = validate_reviewed_development_binding(
         &target_definition,
@@ -465,7 +542,7 @@ fn offline_transport_control(
     let configuration = ExecutorConfiguration::new(
         &adapter,
         ExecutorTrust::Mock,
-        Duration::from_secs(if stall { 2 } else { 10 }),
+        Duration::from_secs(if stall { 2 } else { 30 }),
         ExecutorDiagnostics::in_directory(&directory.path().join("diagnostics")),
     );
     let mut planner = Planner::new(session.key, target, directory.path());
@@ -480,10 +557,15 @@ fn offline_transport_control(
     );
     drop(planner);
     println!(
-        "capture transport {target:?} key={} wall={:.6}s guard=10s",
+        "capture transport {target:?} key={} wall={:.6}s guard={}s",
         crate::common::hex_bytes(&session.key),
-        started.elapsed().as_secs_f64()
+        started.elapsed().as_secs_f64(),
+        if stall { 2 } else { 30 }
     );
+    if missing {
+        assert_unsupported(directory.path(), &capture, &result);
+        return capture.handshake().unwrap().clone();
+    }
     let durable: Vec<serde_json::Value> =
         std::fs::read_to_string(directory.path().join("completed-exchanges.jsonl"))
             .unwrap()
@@ -500,7 +582,7 @@ fn offline_transport_control(
             Some(CaptureTerminalState::Timeout)
         );
         assert!(
-            started.elapsed() < Duration::from_secs(10),
+            started.elapsed() < Duration::from_secs(30),
             "in-process watchdog before outer guard"
         );
         assert_eq!(durable.len(), 1);
@@ -566,4 +648,42 @@ fn assert_submissions(
             *bytes
         );
     }
+}
+
+pub(super) fn capability_control() {
+    let archive = retained::mock_archive(CaptureTarget::Cost);
+    offline_transport_control(CaptureTarget::Cost, &archive.sessions[0], false, false);
+    offline_transport_control(CaptureTarget::Cost, &archive.sessions[0], false, true);
+}
+
+fn assert_unsupported(
+    directory: &Path,
+    capture: &NativeOperationCapture,
+    result: &Result<ExecutionTranscript, NativeConformanceError>,
+) {
+    assert_eq!(retain_exchanges(directory, capture), []);
+    let retained: Vec<(NativeOperationRequest, NativeOperationResponse)> =
+        serde_json::from_slice(&std::fs::read(directory.join("journal.json")).unwrap()).unwrap();
+    assert_eq!(retained, []);
+    let handshake: Option<ExecutorHandshake> =
+        serde_json::from_slice(&std::fs::read(directory.join("handshake.json")).unwrap()).unwrap();
+    assert_eq!(handshake.as_ref(), capture.handshake());
+    assert!(
+        matches!(
+            result,
+            Err(NativeConformanceError::OperationStepUnsupported(
+                OperationStepKind::FundSponsor
+            ))
+        ),
+        "{result:?}"
+    );
+    assert_eq!(capture.operations(), []);
+    assert!(!directory.join("completed-exchanges.jsonl").exists());
+    assert!(!directory.join("subject-rows.jsonl").exists());
+    let message = unsupported_operation_message(result.as_ref().unwrap_err(), capture).unwrap();
+    let names = "[\"test_funding_ceremony\",\"target_transaction_submission\",\"test_sponsor_authorization\"]";
+    assert!(message.contains(&format!("needed={names}")), "{message}");
+    assert!(message.contains("offered=[]"), "{message}");
+    assert!(message.contains(&format!("missing={names}")), "{message}");
+    println!("{message}");
 }
