@@ -93,9 +93,35 @@ pub enum Finality {
     Hypothetical(HypotheticalDeclaration),
     Assumed(DeploymentDeclaration),
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum CryptographicCondition {
+    /// The reviewed NUMS point has no known discrete logarithm; discrete logs are hard.
+    NumsAndDiscreteLog,
+    /// Alternative committed paths cannot be obtained by finding a hash preimage.
+    PreimageResistance,
+    /// Byte and key identities rely on second-preimage and collision resistance.
+    SecondPreimageAndCollisionResistance,
+    /// Authentication and execution use the reviewed target semantics.
+    ReviewedTargetSemantics,
+}
+/// Fixed conditions of the reviewed recipe, not measured cryptographic facts.
+#[must_use]
+pub fn cryptographic_conditions() -> BTreeSet<CryptographicCondition> {
+    BTreeSet::from([
+        CryptographicCondition::NumsAndDiscreteLog,
+        CryptographicCondition::PreimageResistance,
+        CryptographicCondition::SecondPreimageAndCollisionResistance,
+        CryptographicCondition::ReviewedTargetSemantics,
+    ])
+}
 /// Every report carries these assumptions, never as byte-proven facts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Assumption {
+    /// Bound to this reading's supplied keys; no unconditional separation claim.
+    Cryptographic {
+        supplied_keys: BTreeSet<Key>,
+        conditions: BTreeSet<CryptographicCondition>,
+    },
     Parent {
         obligation: Obligation,
         source: EvidenceSource,
@@ -134,6 +160,10 @@ pub fn assumptions(
         inclusion_source: sources.inclusion.clone(),
     });
     result.push(Assumption::Finality(finality.clone()));
+    result.push(Assumption::Cryptographic {
+        supplied_keys: keys.clone(),
+        conditions: cryptographic_conditions(),
+    });
     result
 }
 pub fn finality(

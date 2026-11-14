@@ -25,6 +25,9 @@ vectors_source_files = files(
   'src/keyed_constructor.rs',
   'src/keyed_final_manifest.rs',
   'src/keyed_final_capture.rs',
+  'src/keyed_final_corpus.rs',
+  'src/keyed_final_corpus/history.rs',
+  'src/keyed_final_corpus/reproduction.rs',
   'src/keyed_final_selection.rs',
   'src/keyed_final_native.rs',
   'src/keyed_final_manifest/pins.rs',
@@ -45,6 +48,7 @@ vectors_source_files = files(
   'src/keyed_evidence/family_execution.rs',
   'src/keyed_evidence/family_resources.rs',
   'src/keyed_evidence/family_types.rs',
+  'src/keyed_evidence/final_native.rs',
   'src/keyed_evidence/mod.rs',
   'src/keyed_evidence/premises.rs',
   'src/keyed_evidence/refusal.rs',
@@ -153,6 +157,13 @@ vectors_doc_files = files('README.md', 'TRACING.md')
 # `include_bytes!`; timing sidecars and the predecessor setup transcript
 # remain audit-only bytes.
 vectors_fixture_files = files(
+  'fixtures/keyed-final-native/CENSUS.json',
+  'fixtures/keyed-final-native/birth.json.lzma',
+  'fixtures/keyed-final-native/continuation.json.lzma',
+  'fixtures/keyed-final-native/commitment.json.lzma',
+  'fixtures/keyed-final-native/cost.json.lzma',
+  'fixtures/keyed-final-native/funding.json.lzma',
+  'fixtures/keyed-final-native/scaling.json.lzma',
   'fixtures/keyed-scaling-run-of-record/5910802756ef.report.capture.lzma',
   'fixtures/keyed-scaling-run-of-record/5910802756ef.report.timing',
   'fixtures/keyed-scaling-run-of-record/5910802756ef.report.capture.timing',
@@ -412,6 +423,7 @@ vectors_fixture_files = files(
 # subjects. The census audit accepts the exclusion only because it is
 # declared here.
 vectors_excluded_files = vectors_fixture_files + files(
+  'tools/extract-keyed-final.py',
   'tests/common/legacy.rs',
   'tests/common/mod.rs',
   'tests/compact_ash_operation.rs',
@@ -435,6 +447,7 @@ vectors_excluded_files = vectors_fixture_files + files(
   'tests/keyed_bridge/mod.rs',
   'tests/keyed_bridge/fixture.rs',
   'tests/keyed_final_capture/mod.rs',
+  'tests/keyed_final_admission.rs',
   'tests/keyed_final_capture/driver.rs',
   'tests/keyed_final_capture/envelope.rs',
   'tests/keyed_final_capture/mutations.rs',

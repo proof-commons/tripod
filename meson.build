@@ -790,6 +790,7 @@ vector_test_targets = [
   'test:compact_ash_operation', 'test:compact_native', 'test:ctf_materializer',
   'test:guide13_live_native', 'test:guide13_live_resources',
   'test:guide13_live_transfer', 'test:guide13_preflight',
+  'test:keyed_final_admission',
   'test:guide13_sponsor_signing', 'test:maturity_abi', 'test:maturity_closure',
   'test:maturity_confidential', 'test:maturity_continuity',
   'test:maturity_diagnostic', 'test:maturity_native', 'test:maturity_observer',

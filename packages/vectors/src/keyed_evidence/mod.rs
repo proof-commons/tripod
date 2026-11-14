@@ -25,9 +25,9 @@ pub use family_types::{
     ResourceComparison, ResourcesBody, Schedule, ScheduleResources,
 };
 pub use premises::{
-    Assumption, Declaration, DeclarationOffer, Deployment, DeploymentDeclaration, EvidenceSource,
-    Finality, FinalityRequest, FinalityRule, HistoryAnchor, HypotheticalDeclaration, PolicyVersion,
-    PremiseSources, Provenance,
+    Assumption, CryptographicCondition, Declaration, DeclarationOffer, Deployment,
+    DeploymentDeclaration, EvidenceSource, Finality, FinalityRequest, FinalityRule, HistoryAnchor,
+    HypotheticalDeclaration, PolicyVersion, PremiseSources, Provenance, cryptographic_conditions,
 };
 pub use refusal::{Boundary, Field, MissingEvents, MissingHandles, ProvenanceField, Refusal};
 pub use report::{

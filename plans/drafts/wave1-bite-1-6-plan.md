@@ -18,7 +18,7 @@ The six-step sequence and three recommendations are adopted for bite 1.6, with t
 
 **Reviews.** Independent review follows step 1 (generic argument, freeze manifest and two-key controls, before capture), step 2 (bridge and subject provenance), steps 3 and 4 together if landed close together, otherwise each (boundaries, endpoints, fee and policy evidence), step 5 (independent reconstruction, joins and resource units), and the step-6 packet before a separate closing disposition.
 
-**Test time.** Offline subjects retain the reviewed 40-second subject and 300-second family hang guards and split-or-report rule. Native captures are never fitted into those bounds. The plan's wall allowances are planning figures, not limits.
+**Test time.** Existing offline subjects retain the reviewed 40-second subject and 300-second family hang guards and split-or-report rule. The new `keyed_final_admission` target has its own measured-unit bounds, recorded at (`rec:w1b16:admit`). Native captures are never fitted into those bounds. The plan's wall allowances are planning figures, not limits.
 
 **Closure scope.** Wave 1 may claim one parameterized reviewed realization with conditional authentication and per-instance evidence, observed natively under two representative keys. It may not claim successful commitment for every key, proof of cryptographic separation, deployment finality or quantities the instrument cannot observe. If a wave gate requires more, reopen and decide it before closure rather than satisfy it by wording.
 
@@ -1130,3 +1130,91 @@ The subsequent code landing closes F2, E4 and F7 only. Preparation excludes the 
 `runtime-measurements.json` labels `trust` as `declared preparation mode`. The `observed-provenance.json` side file mirrors the typed provenance and so carries no trust coordinate; without its `origins` key it equals the expected provenance. The controls reuse the bounded runtime child and preparation stand-in; no guard, native target meaning, pin or prior evidence byte changes. The preparation filter is the only wrapper behaviour changed here.
 
 Steps 3 and 4 remain evidenced by their runs of record, from `0.7.136-dev` and `0.7.138-dev` respectively; later landings, including the post-run capture repairs, change none of those bytes or their meaning, and step 5 and the closure read them offline from later commits. A pilot authorizes only its own commit (`rule:w1b16:pilot-comparison`), so any later native run needs its own reviewed pilot. Buffering has no measured native speedup; a later scaling campaign still requires its own-wall review under the four-times rule.
+
+## Final evidence admission · `rec:w1b16:admit`
+
+This implements offline admission of the retained final evidence. The covering gate `/var/home/tripod/loops/tmp/gate-w20b1-20261114T210500Z.log` completed green, exit zero, in 601 seconds (601.959 seconds for the complete round), with all 730 timing rows below one tenth of their bounds. Independent review `refs/handoff/w20b1/b16-admit-review` reproduced every fixture member byte for byte from the sealed archives with the committed extractor and checked the recorded figures. Its import-after-changes disposition required cause-specific incomplete controls and precise validator scope; the refinements below implement those findings and the optional binding checks. The Wave-1 closing disposition remains step 6's obligation.
+
+**Fixture choice.** `packages/vectors/fixtures/keyed-final-native/` holds six target files and one JSON census. Each target file is a concatenation of independently compressed LZMA-alone members, one per native case, in campaign order. The precedent is `packages/vectors/fixtures/keyed-scaling-run-of-record/5910802756ef.report.capture.lzma`. A member contains compact UTF-8 JSON with a trailing newline; transaction bytes are lowercase hexadecimal. `CENSUS.json` gives every member's offset, compressed length, decoded length and digest, manifest digest, sealed archive digest and row count, together with each target file's length and digest. Independent members let a timed child decode one case without inflating all scaling histories. Compression changes no submitted byte and omits no wide ancestor.
+
+**Extraction choice.** `packages/vectors/tools/extract-keyed-final.py` reads one archive at a time on the evidence node. It checks the target seal before parsing, checks each submitted hash and the complete manifest hash before projection, and checks mined readback bytes equal submitted bytes before retaining only the readback identity and height. The projection retains typed archive provenance and handshake, ordinary funding-parent bytes, ordered observations, route, relay verdict and reason, block-level classification, template membership, produced-block inclusion, node resource fields and exact policy readings. Absent detail keys project as null. Signing exchanges are omitted because their witnesses remain in the submitted bytes. Diagnostic lines are retained for every target with their separate sealed file digest; readiness diagnostics are excluded. Startup paths and ports, block identities, templates and node load are not comparison bases. The independent review reproduced every member using the committed extractor against the sealed archives.
+
+The extraction invocation is `python3 packages/vectors/tools/extract-keyed-final.py /var/home/tripod/loops/evidence/wave1/final OUTPUT`, where OUTPUT is a new directory on the evidence node. The two campaigns named in the extractor are the retained clause and envelope campaigns; their reviewed pilot comparison remains (`rule:w1b16:pilot-comparison`). No archive code is evaluated and no native process is launched.
+
+The retained extraction command was `python3 /var/home/tripod/loops/tmp/w20b1-admit-extract/extract04.py /var/home/tripod/loops/evidence/wave1/final /var/home/tripod/loops/tmp/w20b1-admit-extract/fixtures-04`; `extract04.py` was transferred from the repository extractor. The completed round log is `/var/home/tripod/loops/tmp/w20b1-admit-extract/round-05.log`, with zero queue wait, 9.033 s extraction and 0.374 s census inspection. Earlier draft extraction rounds and preliminary verification failures remain in the step report; they are not admission gates.
+
+| Fixture under `packages/vectors/fixtures/keyed-final-native/` | Bytes |
+|---|---:|
+| `birth.json.lzma` | 8732 |
+| `continuation.json.lzma` | 9345 |
+| `commitment.json.lzma` | 7953 |
+| `cost.json.lzma` | 6565 |
+| `funding.json.lzma` | 141052 |
+| `scaling.json.lzma` | 2489287 |
+| `CENSUS.json` | 12122 |
+| Total | 2675056 |
+
+The subject census below is identical for each representative key. It counts admitted native observation records, including setup SOURCEs and controls; an accepted observation is not automatically an admitted construction.
+
+| Target | Submitted | Relay-and-template accepted | Direct-block accepted | Native refused |
+|---|---:|---:|---:|---:|
+| Birth | 8 | 6 | 0 | 2 |
+| Continuation | 10 | 5 | 0 | 5 |
+| Commitment | 8 | 5 | 0 | 3 |
+| Cost | 4 | 4 | 0 | 0 |
+| Funding | 69 | 55 | 6 | 8 |
+| Scaling | 4427 | 4426 | 1 | 0 |
+| Total per key | 4526 | 4501 | 7 | 18 |
+
+Scaling retains complete cases of 1, 2, 3, 253, 254, 783, 1565 and 1566 submitted transactions per key for counts zero, one, two, 252, 253, 782, 1564 and 1565 respectively. The last case's MERGE is structural, not admitted construction; its 1565 SOURCE preparations remain distinct submitted subjects.
+
+**Integrity choice.** `keyed_final_corpus` pins the census, checks compressed and decoded identities before semantic use, restores submitted byte arrays into the original typed manifest and recomputes the row and manifest digests. The archive digest is provenance for the projection, not a claim that the omitted archive bytes can be recovered from it. Re-running the extractor against the sealed archive provides that independent acquisition check. Wrong submitted bytes and a wrong manifest digest are separate refusal subjects beside the unchanged control.
+
+Canonical manifest reserialization runs in the dedicated acquisition child for each case. Semantic children authenticate their complete compact case and submitted rows, then decode hexadecimal bytes directly into the typed manifest without building intermediate JSON number arrays. Each child reuses that decoded manifest for its input and row lookup. This removes repeated projection work without omitting an integrity test or changing the protected reader.
+
+Family checks derive expected record sets and keyed-member counts from the unchanged graph model over decoded transaction edges. A separately timed preparation worker constructs one unchanged family context for the same case and key; validators reuse that immutable context rather than repeating preparation. Separate history workers compare the full reader result with the graph and literals and perform exact native joins in groups of at most 128 accepted transactions, using one immutable native history for that case and key. Preparation uses this target's 120-second worker hang bound and its own print-only reporting threshold.
+
+Loading, input decoding, graph expectations and reader preparation have separate bounded timings, all included in their parent wall. Fresh-process reproduction indexes accepted parent bytes by retained readback identity, then verifies the actual transaction identity of every parent it consumes. This avoids decoding and cloning every unrelated parent for each reproduction chunk; it does not omit any submitted row or wide ancestor from reconstruction.
+
+**Scope of reconstruction.** New final histories use submitted bytes, ordinary funding parents and mined identities. The graph model, byte reader and six family validators remain unchanged. Existing cut subjects remain incomplete; new complete subjects do not supply their missing ancestors retroactively. Concrete requests still take a supplied key; symbolic plans, declaration laws and template identity remain key-free. Native evidence remains closed over the two representative keys. A further supplied key receives its own reader checks, without borrowing native observations.
+
+**Absent dimensions handed forward.** No deployment declaration or deployment finality is produced. Finite observations do not prove NUMS unspendability, cryptographic separation or successful commitment for every key. Native interpreter main/alternate stack peaks, largest element and validation charge remain absent. Per-clause wall, CPU, stalls and opcode timing are not supplied by this projection; retained campaign aggregate measurements keep their original scopes. No native observations are added for a further supplied key, other assets, confidential envelopes or annex/extra witness forms. The retained flagged refusal is not supported issuance/peg-in history coverage. An unchanged member in a refused transaction is not separately claimed to have executed. No constant native cost, universal fee floor, universal scaling law, post-buffering native speedup or new build-cost comparison is inferred. Step 6 still owes its baseline disposition, full repository gate, document verification and independent closing disposition.
+
+All six family reports and validators run per live handle on every clause, cost and funding history for both representative keys, inside the existing bounded history children, and on each of the eight scaling histories for both keys. The further-key subject runs the acceptance validator only. No small-history family is omitted as inapplicable. The missing-ancestor control names the removed parent and its spending SOURCE; the premise control names the last event's missing inclusion assertion. Neither passes merely because some membership is incomplete.
+
+Native binding additionally requires absent block errors for other refused rows, and exact diagnostic transaction identities for zero-successor and flagged rows. All observations lack `script_bytes` and `initial_stack_items`; both are checked as absent alongside the four previously checked resource fields. Provenance binding checks the repository's executor pin, protocol schema and handshake, recomputed per-key freeze digest, and equality of every other typed field against the first session of the same run, across keys, cases and targets. Handshakes also match that baseline. Capture commit, binary and environment identities remain retained observations checked for presence and run-wide consistency, not identities recomputed from unavailable build artifacts or equated to the later admission checkout.
+
+### Admission review checklist · `tab:w1b16:admit-handoff`
+
+The following mappings name the implemented checks; they are not an independent review disposition.
+
+| Finding | Implemented check / limit |
+|---|---|
+| C3 | Exact submitted digest, native layer, route, relay reason, verdict reason, template membership and produced-block inclusion in `keyed_evidence/final_native.rs`; only identical reader bytes can receive joint member/relation evidence. |
+| C4 | A further supplied key receives its own commitment and byte-reader checks; native observations remain restricted to the representative pair. |
+| C7 | Fresh child processes rebuild sealed public constructions using recorded ordinary witnesses; structural 1565 uses structural construction and a separate admission refusal. Raw negative subjects retain canonical byte reproduction without being promoted to sealed constructions. |
+| B5 | Boundary `structural_envelope`, not a marker or native success, identifies the 1565 subject; native direct-block acceptance never satisfies construction admission. |
+| F4 | Zero and imbalance bind separate `block_script_error` values and sealed diagnostic text; both retain their shared relay reason. |
+| N1 | Typed provenance is decoded from each archive session and preserved in the compact projection; no origins-bearing side file supplies it. |
+| E1 | Extraction loads one archive at a time; offline children load one compact subject case plus a small canonical-run baseline for provenance comparison. |
+| E2 | Refusal classes, funding acceptance routes and the 1564/1565 relay/direct-block pair are bound per final subject, with structural origin kept explicit. |
+
+| Step-5 row received from (`tab:w1b16:handoff`) | Implementation / retained obligation |
+|---|---|
+| History recognition and evidence | Complete byte histories are compared with the unchanged graph model; no production reader export is added. |
+| Four parent facts and per-key inclusion | Retained parent bytes and mined identities provide scoped assertions; unspentness, retrieval and finality retain their declared premise boundaries. Unsupplied-key assumptions remain. |
+| SOURCE four/MERGE three rows and member relations | All six family validators run per live handle on clause, cost and funding histories and on all eight scaling histories, for both keys; the further-key subject uses acceptance only. Final native joins name the same event, input, member, leaf, control and submitted bytes. |
+| Multi-member and one-wrong-member | Complete wide histories and refused prefixes are separate subjects; the historical two/253-member cuts remain incomplete. |
+| Later same-key outputs | Both byte reader and graph model return `NotHandle` for later outputs, not an empty membership. |
+| Public-input packets, bytes, fee/census | Fresh-process reconstruction uses public parent/output data and recorded ordinary witnesses; no deterministic-signing claim is made. |
+| Cryptographic/target assumptions | Typed key-bound cryptographic conditions appear in headers, with independently changed condition/key/absence controls; no deployment declaration is created. |
+| Member execution, including structural results | Joint evidence requires the exact accepted native subject and its reader relations; unsupported forms remain unsupported. |
+| Final policy, a–f, funding/scaling | Per-subject policy and exact native weight/route readings remain distinct from the unchanged offline resource comparisons and from every absent measurement. |
+
+**Control census.** These are 506 test instantiations beside unchanged accepted controls, not counts of unique transaction digests: 194 acquisition/native-binding mutations (two manifest/subject digest, 128 birth-row observation, twenty block-field/text, four structural-origin, 32 resource-presence, two unexpected-block-field and six diagnostic-identity controls); 164 family-report refusals (148 header/unit and sixteen relation/member); 124 incomplete outcomes from one removed ancestor or inclusion premise; twenty clause-prefix reader refusals; two further-key query controls; and two structural construction-policy refusals at 1565. The sixteen refused native funding subjects deliberately remain byte-reader successes: sponsor authorization and transaction balance are native debts, not invented reader clauses. All 36 native refusal observations remain admissible records of refusal.
+
+**Test layout choice.** This target declares `CHILD_HANG_SECONDS` as 120 seconds for workers and children and `FAMILY_HANG_SECONDS` as 900 seconds for family parents. They end hangs and exceed ten times the largest measured units: semantic workers 7.472411 seconds at the covering gate and 6.302373 seconds unoptimised; parents 24.361811 seconds at the gate and 77.836237 seconds unoptimised. No conformance verdict depends on elapsed time. Each scaling case has separate history, per-key reproduction, per-key validator and per-key rule parents. Preparation, model comparisons, native joins, each validator and each all/fixed/changing comparison run as separately timed bounded worker threads inside the bounded family process. Their immutable contexts belong only to that case and key; no policy guarantee is cached across subjects. Reproduction uses chunks of at most 128 submitted transactions in fresh processes with empty inherited environments. Small histories retain fresh processes and split by clause target and SOURCE/MERGE funding halves. The three ignored process entry points are invoked by bounded parents; they are not omitted subjects. Reporting thresholds are one tenth of the bounds and only print, with every wall beside its bound. Full wide cases are retained; preparation walls include decompression and reader work, and parent walls include every setup and check.
+
+The corpus runs as the dedicated `keyed_final_admission` integration target, registered in the root Meson target census, and consumes the existing public owners without a reader export or validator extension. Eight process-local family slots limit concurrent corpus children. Slot wait is printed separately and included in the parent's reported wall, never removed to meet a reporting threshold. Other suites and every existing guard remain unchanged. Preliminary library-hosted timings exceeded the reporting fraction under the covering gate and are retained in the lane report.
+
+**Implementation choices.** Compact JSON plus indexed LZMA-alone members reuses an existing fixture kind; the corpus module is test-only; native joins are a separate addition beside the unchanged six validators; `Cryptographic` is the new header kind; no deployment declaration is produced. The existing public linker test helper is included unchanged with a narrowly scoped duplicate-module allowance because its other owner is private in the protected model. Long test-only comparison procedures retain scoped line-count allowances to keep each mutation beside its accepted control. The census has an exact-path hash-audit registration and its top-level digest has an exact-token registration. No existing archive, fixture, pin, capture wrapper or hang guard changes.

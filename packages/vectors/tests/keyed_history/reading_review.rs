@@ -74,6 +74,10 @@ fn literals(input: &r::Input, request: &e::Request) {
         inclusion_source: e::EvidenceSource("hypothetical valid-history inclusion".into()),
     });
     expected.push(e::Assumption::Finality(e::Finality::Nonfinal));
+    expected.push(e::Assumption::Cryptographic {
+        supplied_keys: input.keys.clone(),
+        conditions: e::cryptographic_conditions(),
+    });
     assert_eq!(report.header.assumptions, Some(expected));
 }
 fn non_handle(input: &r::Input, request: &e::Request) {
