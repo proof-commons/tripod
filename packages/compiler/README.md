@@ -1,5 +1,11 @@
 # `tripod-compiler`
 
+## Wave-1 independence evidence
+
+The moved seam is semantic ownership: opaque per-position keys, owner encoders/restoration and the stable `keyed_plan` facade let keyed declarations use the same seven analysis stages and fresh independent revalidation. The shared kernels acquire no new operation-identity semantic decision; the seven-site baseline and separate six-site ledger remain unchanged. SOURCE/MERGE/joint scope publishes 4/5/9 relation nodes and 28/33/61 coverage nodes, while complete eligibility controls, ten attestation projection pins and canonical publication remain exact (`[PLAN-rec:w1b12:gate]`). Final construction and native joins are downstream evidence at (`[PLAN-rec:w1b16:packet]`), not compiler verdicts.
+
+The retained default-consumer campaign measures an approximately threefold attestation-derivation regression, including independent validation. Profiling remains open without an invented threshold or established cause; the final default-consumer campaign's 7.239723-second maximum has no attributed delivery failure. Historical build walls remain valid while build CPU/stall deltas remain unadmitted because their cgroup identities were not retained. The baseline disposition at (`[PLAN-rec:w1b16:baseline]`) makes no new build-cost comparison and preserves the runner-repair prerequisite.
+
 `compiler` analyzes a validated realization into a deterministic
 target-independent compilation plan. It emits no target program.
 

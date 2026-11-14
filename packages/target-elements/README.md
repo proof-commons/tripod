@@ -1,5 +1,11 @@
 # `tripod-target-elements`
 
+## Wave-1 independence evidence
+
+The keyed target form and assessment expose the introspection, encoding and resource facts required by the emitted clauses. They reuse reviewed V2 semantics and resource contracts; no KPC membership predicate, reader rule or finite member law enters the target. Existing target/conformance expectations remain preserved by the emission and construction gates (`[PLAN-rec:w1b13:closed]`), (`[PLAN-rec:w1b14:closed]`).
+
+Final a–f observations are (`[PLAN-rec:state-constructor:keyed-final-measurements]`): node weights bind exact transactions and the 1564-member bound belongs to one measured policy envelope. Structural 1565 consensus acceptance beside relay `tx-size` refusal distinguishes target validity from construction admission. Native stack peaks and validation charge remain absent, and the typed/model resource projections do not replace them. Changing target or policy reopens affected evidence under (`[PLAN-sec:w1b16:packet-domain]`).
+
 `target_elements` states the typed, reviewed Elements tapscript target compatibility contract. It states target facts, with two explicitly named project-choice vocabularies carried beside them.
 
 That widening is deliberate and is named here rather than left to be discovered. Target facts remain separate from project vocabulary: `ceremony` and the explicitly named keyed `transaction_form::KeyedConstructionChoice` set carry project choices. `ceremony::ReproducibilityContract` states no target fact at all: it is first-party candidate vocabulary, and it lives here because the wire record in `target-elements-conformance` and the materializer profiles in `transaction` must name the same value, those two packages share no library edge in either direction, and this is the only package both already depend on. One enum in each package, held equal by a census test, would be two authored spellings of one closed vocabulary. Nothing else about the attestation contract is stated here, and the crate still serializes nothing: a package that speaks the contract on a wire owns its own encoding of it.

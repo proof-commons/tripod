@@ -1,5 +1,11 @@
 # `tripod-tapscript`
 
+## Wave-1 independence evidence
+
+Keyed schedule, bundle, member binding and resource projections add a two-clause consumer of the existing typed stack, encoding and resource machinery. The attestation emission sources stayed unchanged through the keyed emission bite; model and exact-byte controls, rather than coupled self-comparisons alone, support preservation (`[PLAN-rec:w1b13:closed]`). The final two-key native evidence is indexed at (`[PLAN-rec:state-constructor:keyed-final-measurements]`).
+
+The reviewed keyed leaf has sixteen instructions and 52 bytes, with one canonical push32 operand dropped before either clause. Its fixed suffix gives the conditional generic size/stack argument under authenticated substitution; native timing is not constant by that argument. Per member, 88 script-stack bytes and 91 full witness bytes are distinct dimensions. No per-clause native stack peak or validation charge is supplied. The one reviewed template, exceptional commitment outcomes and per-key checks are (`[PLAN-sec:w1b16:packet-domain]`).
+
 `tapscript` adapts compiler-owned abstract target requirements to target-owned
 primitive contracts, backend-pattern obligations, structural obligations, and
 external evidence requirements.

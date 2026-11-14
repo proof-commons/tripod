@@ -1,5 +1,13 @@
 # `tripod-vectors`
 
+## Wave-1 final evidence packet
+
+The final packet is (`[PLAN-rec:w1b16:packet]`), with requirements/families, six decisions and old-nine mapping, eight-package seams, baseline disposition and all named follow-ups. The new graph model, byte reader, reports and final corpus test independent meanings without replacing existing archives. Historical revision-eight replay remains distinct from live protocol nine; the reviewed bridge binds canonical funding parents and session-owned signing authority. Shared decoding, hashing, curve/evaluator substrate and replay are consistency dependencies, not independent implementations of those primitives.
+
+Final admission binds 4526 native observations per representative key, with all six validators on every live handle of small histories and all eight scaling histories. Complete wide histories supply ancestors; old cut histories stay incomplete. Native execution discharges member/relation evidence only for identical accepted transaction bytes. Structural 1565, sponsor failures, raw negatives and reader filtering keep their separate boundaries. A further key has its own commitment/reader checks, with the acceptance validator only and no borrowed native observations (`[PLAN-rec:w1b16:admit]`).
+
+Current capture launch documentation uses direct transient units, without the retired node queue or its 2700-second allowance: preparation 2100 s, clause/funding 1920 s and scaling 3720 s unit limits, retaining the 1800/3600 s capture guards. Historical queue lines remain part of sealed runs. No native capture is implicit in the ordinary gate, and this packet starts none. The accepted scaling run's fourfold-headroom shortfall remains reported; no buffered-writer native speedup is claimed. All domain and absent-instrument limits remain explicit at (`[PLAN-sec:w1b16:packet-domain]`).
+
 Owns the canonical evidence substrate for compact ASH, live transfer, and the maturity announcement: semantic fixtures, independently derived expectations, the mutation registry, the relation-indexed coverage matrix, and the plan binding compact ASH to one exact linked bundle and transaction ABI (Guide-12 §16–§19). Its twenty-two `maturity_` modules include the run-of-record corpora, the five candidate-scope safety, continuity, root-history, public-recovery, and resource reports, and `maturity_refinement` (Guide-14).
 
 The package owns evidence, not semantics. Every expectation it states is

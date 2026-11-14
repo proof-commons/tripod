@@ -1,5 +1,11 @@
 # `tripod-transaction`
 
+## Wave-1 independence evidence
+
+Schema-1 keyed commitment, canonical parent/outpoint binding, sealed requests and separate structural construction/policy admission supply the authenticated byte boundary needed by SOURCE/MERGE. They reuse serialization, resource accounting and ordinary funding/signing owners. Independent conformance arithmetic predicts the commitment, while fresh public reconstruction and native sighash/weight comparisons supply separately scoped checks (`[PLAN-rec:w1b14:closed]`), (`[PLAN-rec:w1b16:admit]`). Replayed recorded ordinary witnesses establish byte reproduction, not deterministic signing.
+
+The 1564-member policy bound applies to the recorded explicit-asset, one-P2WPKH-sponsor, successor/change/fee envelope with a ≤72-byte signature. Typed 1565 refusal is separate from the structural neighbor's direct-block acceptance and relay refusal (`[PLAN-rec:w1b16:envelope]`). Every 32-byte key is public data; above-order tweaks and infinity results retain typed refusal without reduction or retry. Per-instance parent/policy checks remain necessary; the two observed keys confer no chain facts on another key (`[PLAN-sec:w1b16:packet-domain]`).
+
 Derives the compact-ASH candidate transaction ABI from a candidate linked bundle and the exact reviewed target (Guide-12 §15), and the maturity-announcement candidate ABI from a validated current-STATE view of its linked bundle and the exact reviewed target (Guide-14 §12), then constructs ABI-valid target transactions from those ABIs.
 
 The package owns the canonical role layout, the typed operation request

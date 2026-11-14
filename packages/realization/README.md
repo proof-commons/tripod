@@ -1,5 +1,11 @@
 # `tripod-realization`
 
+## Wave-1 independence evidence
+
+Keyed declarations and sealed owner binding express permissionless SOURCE/MERGE and their external reading obligations beside the attestation declaration set. The compiler consumes those declarations through shared analysis; keyed identity is not an extra attestation operation. SOURCE's four and MERGE's three evidence rows remain explicit, while the two runtime clauses apply to consumed keyed members. Existing attestation projections stay exact under the ten realization/compiler pins and complete eligibility controls (`[PLAN-rec:w1b12:gate]`).
+
+The final public pipeline, six families and exact-byte native joins have the evidence indexed at (`[PLAN-rec:w1b16:packet]`). The reader reconstructs SOURCE singleton and MERGE union sets; no record is introduced by MERGE, no accumulator is carried and no reader predicate becomes a covenant clause. One reviewed template accepts any 32-byte key as data with conditional commitment success or typed refusal; per-key premises are never inherited from the representative native pair. This is the bounded realization account in (`[PLAN-sec:w1b16:packet-domain]`), not unconditional security or deployment finality.
+
 `realization` is the target-independent typed semantic layer between the finite
 attestation architecture and two separate consumers:
 

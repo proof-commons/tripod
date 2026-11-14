@@ -1,5 +1,11 @@
 # `tripod-architecture`
 
+## Wave-1 independence evidence
+
+The Wave-1 seam adds a separate keyed manifest and profile-qualified identities so SOURCE and MERGE need no fictitious attestation objects or clauses. It reuses validation-before-identity and preserves attestation schema 18, the 13-operation/14-object census, canonical bytes and publication. Independent keyed grammar and unchanged publication controls support that preservation; a second manifest does not replace the first contract. The complete seam and regression account is (`[PLAN-tab:w1b16:packet-seams]`).
+
+The semantic key remains symbolic in declarations; concrete public 32-byte data is supplied downstream. Exactly born-first and continue-first are clauses. Funding, reader rules, finality and input bounds are outside this manifest. The final-subject evidence and conditional supplied-key domain are (`[PLAN-tab:w1b16:packet-requirements]`) and (`[PLAN-sec:w1b16:packet-domain]`); they establish no deployment release.
+
 `architecture` is the typed normative architecture manifest of the attestation realization: its finite identifier vocabulary includes the maturity announcement's `OperationId::AnnounceMaturity`, STATE data identifiers and lead bounds; its static declaration, validation, canonical semantic hashing, and Serde export model under schema 18 stand behind the published `architecture.json` and `architecture.toml` artifacts.
 
 ## Position and boundary

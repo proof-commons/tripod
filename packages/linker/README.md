@@ -1,5 +1,11 @@
 # `tripod-linker`
 
+## Wave-1 independence evidence
+
+The keyed consumer links a completed grammar with zero mandatory byte relocations. Emission has already instantiated the sole public-key operand; linking neither substitutes it again nor solves a self-hash fixed point. Existing link discipline and attestation routes remain, while SOURCE/MERGE/joint scopes, offer permutations and two-key controls establish the added route's closure (`[PLAN-rec:w1b14:link]`), (`[PLAN-rec:w1b16:freeze]`).
+
+The freeze fresh replay compares linked bytes, projections, closure, commitment and complete bytes (`[PLAN-rec:w1b16:freeze]`); final admission reconstructs commitment from the linked fixture and compares final transaction bytes (`[PLAN-rec:w1b16:admit]`). This reuses the link boundary without treating a linked program as chain inclusion, execution or finality evidence. New supplied key data needs its own dependent commitment and authentication checks, but no key-specific campaign as an API precondition under the unchanged template/target/policy/envelope (`[PLAN-sec:w1b16:packet-domain]`).
+
 Resolves typed relocatable backend bundles into three candidate links: `CandidateLinkedBundle` for compact ASH (Guide-12 §14), `CandidateLinkedLiveTransferBundle` for live transfer (Guide-13 §11), and `CandidateLinkedMaturityBundle` for the maturity announcement (Guide-14 Wave 6).
 
 The linker owns symbol resolution, typed reference graphs and cycle policy, structured relocation, deterministic taptree assembly, relation-carrier closure, and linked resource projection; it constructs no complete transaction and decides no semantics, since its semantic facts arrive in the validated operation plans carried by the bundles.
