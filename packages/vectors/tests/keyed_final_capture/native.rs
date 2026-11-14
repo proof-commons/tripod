@@ -181,38 +181,128 @@ fn measurement(prepared: &serde_json::Value, key: [u8; 32]) -> CaptureProvenance
         daemon: Some(text(prepared, "daemon").into()),
     }
 }
-fn prepare_runtime(prepared: &serde_json::Value) {
+fn runtime_measurements(
+    prepared: &serde_json::Value,
+    running: &Path,
+    read: impl Fn(&Path) -> Vec<u8>,
+) -> serde_json::Value {
     assert_eq!(text(prepared, "trust"), "reviewed_non_mock");
+    // The retained object labels every coordinate; carried preparation data is
+    // not a runtime observation. The typed archive still uses the same reader.
+    let mut observed = prepared.clone();
     for (path, field) in [
-        (
-            PathBuf::from("/capture-build/maturity_native"),
-            "capture_binary",
-        ),
-        (
-            PathBuf::from("/capture-build/Cargo.lock"),
-            "dependency_lock",
-        ),
-        (
-            PathBuf::from("/src/scripts/elements-native-executor.py"),
-            "executor",
-        ),
-        (PathBuf::from("/usr/bin/python3"), "interpreter_digest"),
-        (PathBuf::from("/elements/bin/elementsd"), "daemon_digest"),
+        ("/capture-build/maturity_native", "capture_binary"),
+        ("/capture-build/Cargo.lock", "dependency_lock"),
+        ("/src/Cargo.lock", "dependency_lock"),
+        ("/src/scripts/elements-native-executor.py", "executor"),
+        ("/usr/bin/python3", "interpreter_digest"),
+        ("/elements/bin/elementsd", "daemon_digest"),
     ] {
-        assert_eq!(
-            sha256(&std::fs::read(path).unwrap()),
-            hex32(text(prepared, field)),
-            "runtime {field}"
+        let digest = sha256(&read(Path::new(path)));
+        assert_eq!(digest, hex32(text(prepared, field)), "runtime {path}");
+        observed[field] = crate::common::hex_bytes(&digest).into();
+    }
+    let digest = sha256(&read(running));
+    assert_eq!(digest, hex32(text(prepared, "capture_binary")));
+    observed["capture_binary"] = crate::common::hex_bytes(&digest).into();
+    let commit = String::from_utf8(read(Path::new("/src/.git/HEAD"))).unwrap();
+    assert_eq!(commit.trim(), text(prepared, "repository_commit"));
+    observed["repository_commit"] = commit.trim().into();
+    for (field, digest) in [
+        ("interpreter", "interpreter_digest"),
+        ("daemon", "daemon_digest"),
+    ] {
+        let value = text(prepared, field).replace(text(prepared, digest), text(&observed, digest));
+        observed[field] = value.into();
+    }
+    let mut origins = serde_json::Map::new();
+    for field in prepared.as_object().unwrap().keys() {
+        let origin = match field.as_str() {
+            "repository_commit" | "capture_binary" | "dependency_lock" | "executor"
+            | "interpreter_digest" | "daemon_digest" => "remeasured file bytes at runtime",
+            "interpreter" | "daemon" => {
+                "preparation version text with remeasured executable digest"
+            }
+            _ => "carried preparation measurement",
+        };
+        origins.insert(field.clone(), origin.into());
+    }
+    observed["origins"] = origins.into();
+    observed
+}
+
+fn retained_provenance(observed: &CaptureProvenance) -> serde_json::Value {
+    let mut value = serde_json::to_value(observed).unwrap();
+    let mut origins = serde_json::Map::new();
+    for field in value.as_object().unwrap().keys() {
+        let origin = match field.as_str() {
+            "repository_commit" | "dependency_lock" | "executor" | "capture_binary" => {
+                "remeasured file bytes at runtime"
+            }
+            "executable" | "framework" | "protocol" => "session handshake",
+            "interpreter" | "daemon" => {
+                "preparation version text with remeasured executable digest"
+            }
+            "freeze" => "computed for supplied key",
+            "key" => "supplied public input",
+            _ => "carried preparation measurement",
+        };
+        origins.insert(field.clone(), origin.into());
+    }
+    value["origins"] = origins.into();
+    value
+}
+
+pub(super) fn runtime_control() {
+    let bytes = b"measured artifact".to_vec();
+    let digest = crate::common::hex_bytes(&sha256(&bytes));
+    let prepared = serde_json::json!({
+        "trust":"reviewed_non_mock", "capture_binary":digest, "dependency_lock":digest,
+        "executor":digest, "interpreter_digest":digest, "daemon_digest":digest,
+        "repository_commit":"synthetic commit", "interpreter":"once-only interpreter version",
+        "daemon":"once-only daemon version",
+    });
+    let read = |path: &Path| {
+        if path == Path::new("/src/.git/HEAD") {
+            b"synthetic commit\n".to_vec()
+        } else {
+            bytes.clone()
+        }
+    };
+    let mut runtime = runtime_measurements(&prepared, Path::new("/running"), read);
+    let origins = runtime.as_object_mut().unwrap().remove("origins").unwrap();
+    assert_eq!(runtime, prepared);
+    assert_eq!(
+        origins.as_object().unwrap().len(),
+        prepared.as_object().unwrap().len()
+    );
+    assert_eq!(origins["trust"], "carried preparation measurement");
+    assert_eq!(
+        origins["dependency_lock"],
+        "remeasured file bytes at runtime"
+    );
+    for changed in [
+        "/src/Cargo.lock",
+        "/capture-build/Cargo.lock",
+        "/running",
+        "/src/.git/HEAD",
+    ] {
+        assert!(
+            std::panic::catch_unwind(|| runtime_measurements(
+                &prepared,
+                Path::new("/running"),
+                |path| {
+                    if path == Path::new(changed) {
+                        b"changed".to_vec()
+                    } else {
+                        read(path)
+                    }
+                }
+            ))
+            .is_err(),
+            "runtime drift {changed}"
         );
     }
-    assert_eq!(
-        sha256(&std::fs::read(std::env::current_exe().unwrap()).unwrap()),
-        hex32(text(prepared, "capture_binary"))
-    );
-    assert_eq!(
-        std::fs::read_to_string("/src/.git/HEAD").unwrap().trim(),
-        text(prepared, "repository_commit")
-    );
 }
 
 fn binding() -> ReviewedDevelopmentBinding {
@@ -323,6 +413,7 @@ fn run_session(
     key: [u8; 32],
     directory: &Path,
     prepared: &serde_json::Value,
+    runtime: &serde_json::Value,
 ) -> (retained::SessionArchive, Vec<CaptureRow>) {
     std::fs::create_dir(directory).unwrap();
     sync_directory(directory.parent().unwrap());
@@ -376,12 +467,15 @@ fn run_session(
         .expect("expected provenance supplied")
         .expect("handshake provenance agrees");
     let handshake = capture.handshake().unwrap().clone();
-    let mut observed = expected.clone();
+    let mut observed = measurement(runtime, key);
     observed.executable = Some(handshake.node_version.clone());
     observed.framework.clone_from(&handshake.framework_revision);
     observed.protocol = Some(handshake.protocol_schema);
     bind_capture_provenance(&expected, &observed).unwrap();
-    write_json(&directory.join("observed-provenance.json"), &observed);
+    write_json(
+        &directory.join("observed-provenance.json"),
+        &retained_provenance(&observed),
+    );
     let rows = std::fs::read_to_string(directory.join("subject-rows.jsonl"))
         .unwrap()
         .lines()
@@ -415,7 +509,10 @@ pub fn run(target: CaptureTarget) {
     );
     let prepared: serde_json::Value =
         serde_json::from_slice(&std::fs::read("/capture-build/prepared.json").unwrap()).unwrap();
-    prepare_runtime(&prepared);
+    let runtime = runtime_measurements(&prepared, &std::env::current_exe().unwrap(), |path| {
+        std::fs::read(path).unwrap()
+    });
+    write_json(Path::new("/capture/runtime-measurements.json"), &runtime);
     let mut sessions = vec![];
     let mut rows = vec![];
     let mut expected = vec![];
@@ -424,7 +521,7 @@ pub fn run(target: CaptureTarget) {
         .enumerate()
     {
         let directory = PathBuf::from(format!("/capture/work/key-{i}"));
-        let (session, subjects) = run_session(target, key, &directory, &prepared);
+        let (session, subjects) = run_session(target, key, &directory, &prepared, &runtime);
         expected.push(measurement(&prepared, key));
         sessions.push(session);
         rows.extend(subjects);
@@ -435,6 +532,10 @@ pub fn run(target: CaptureTarget) {
         rows,
     };
     let costs = (target == CaptureTarget::Cost).then(|| super::cost::derive(&sessions));
+    let observed: Vec<_> = sessions
+        .iter()
+        .map(|session| session.provenance.clone())
+        .collect();
     let archive = retained::Archive {
         manifest_digest: manifest_digest(&manifest).unwrap(),
         manifest,
@@ -448,7 +549,7 @@ pub fn run(target: CaptureTarget) {
     );
     write_json(
         Path::new("/capture/run-provenance.json"),
-        &serde_json::json!({"manifest_digest":archive.manifest_digest,"sessions":expected}),
+        &serde_json::json!({"manifest_digest":archive.manifest_digest,"sessions":observed}),
     );
     write_json(Path::new("/capture/capture.json"), &archive);
     retained::read(

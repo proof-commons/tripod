@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import tempfile
 import time
@@ -91,6 +92,12 @@ def unit_controls(root, env):
         run_root = root / name
         (run_root / 'build').mkdir(parents=True)
         (run_root / 'build/prepared.json').write_text(json.dumps(dict(image=IMAGE)))
+        source = run_root / 'source/scripts/keyed-final-capture'
+        source.mkdir(parents=True)
+        for name in ('run-one', 'capture-unit'):
+            shutil.copy2(WRAPPERS / (name+'.sh'), source / (name+'.sh'))
+            shutil.copy2(WRAPPERS / (name+'.sh'), run_root / name)
+        (run_root/'prepare.log').write_text('B16_PREPARE_DONE run='+run_root.name+' exit=0\n')
         directory = run_root / 'birth'
         directory.mkdir()
         (directory / 'capture.env').write_text('TRIPOD_FINAL_CAPTURE_DIR=/capture\n')
@@ -105,6 +112,57 @@ def unit_controls(root, env):
     assert 'capture-state=ended-and-sealed' in output
     assert (directory/'container-final-state.json').exists()
     assert (directory/'tools.txt').exists()
+    command_text = (directory/'command.shell').read_text()
+    assert '--cgroups=split' in command_text and '--cgroupns=host' in command_text
+    assert '--init' in command_text
+    before = json.loads((directory/'before-resources.json').read_text())
+    after = json.loads((directory/'after-resources.json').read_text())
+    assert before['cgroup_path'] == after['cgroup_path']
+    assert 'inclusion unverified' in after['scope']
+    # Execute the actual snapshot body with synthetic membership that moves.
+    # Only the two operating-system paths are relocated in this internal control.
+    body = (WRAPPERS/'capture-unit.sh').read_text().split('<<\'PY\'\n',1)[1].split('\nPY',1)[0]
+    membership = tools/'membership'
+    groups = tools/'groups'
+    (groups/'original').mkdir(parents=True)
+    (groups/'moved').mkdir()
+    (groups/'original/cpu.stat').write_text('usage_usec 1\n')
+    snapshot = tools/'snapshot.py'
+    snapshot.write_text(body.replace("'/proc/self/cgroup'", repr(str(membership))).replace("'/sys/fs/cgroup'", repr(str(groups))))
+    membership.write_text('0::/original\n')
+    before_path = tools/'before.json'
+    run('resource-before', ['python3',str(snapshot),str(before_path),str(before_path),'before'], env, lambda c:c==0)
+    membership.write_text('0::/moved\n')
+    (groups/'original/cpu.stat').write_text('usage_usec 2\n')
+    after_path = tools/'after.json'
+    run('resource-after-move', ['python3',str(snapshot),str(after_path),str(before_path),'after'], env, lambda c:c==0)
+    sampled = json.loads(after_path.read_text())
+    assert sampled['cgroup_path'] == str(groups/'original')
+    assert sampled['cgroup_membership'] == '0::/moved\n'
+    assert sampled['counters']['cpu.stat'] == 'usage_usec 2\n'
+    # Watch is about settled evidence, not the later state of the source copy.
+    shutil.rmtree(directory.parent/'source')
+    (directory.parent/'prepare.log').write_text('changed after completion\n')
+    output = run('watch-changed-source', [command[0], '--check', *command[1:]], selected, lambda c:c==0)
+    assert 'capture-state=ended-and-sealed' in output
+    # Restore launch authority for the reuse refusal controls below.
+    source = directory.parent/'source/scripts/keyed-final-capture'
+    source.mkdir(parents=True)
+    for name in ('run-one','capture-unit'):
+        shutil.copy2(WRAPPERS/(name+'.sh'), source/(name+'.sh'))
+    (directory.parent/'prepare.log').write_text('B16_PREPARE_DONE run=success exit=0\n')
+    d, cmd, e = case('never-started')
+    output = run('check-not-started', [cmd[0], '--check', *cmd[1:]], e, lambda c:c==76)
+    assert 'capture-state=not-started' in output and not (d/'retention.sha256').exists()
+    for changed in ('prepare', 'run-one', 'capture-unit'):
+        d, cmd, e = case('untrusted-'+changed)
+        file = d.parent/'prepare.log' if changed=='prepare' else (d.parent/'run-one' if changed=='run-one' else d.parent/'source/scripts/keyed-final-capture/capture-unit.sh')
+        file.write_text('changed\n')
+        run('untrusted-'+changed, cmd, e, lambda c:c!=0)
+        assert not (d/'start.utc').exists()
+    d, cmd, e = case('outside-root')
+    run('outside-evidence-root', cmd, dict(e,TRIPOD_CAPTURE_STANDIN='0'), lambda c:c==64)
+
     original = (directory/'unit.log').read_bytes()
     run('relaunch-refused', command, selected, lambda c:c==73)
     assert (directory/'unit.log').read_bytes() == original
@@ -116,6 +174,11 @@ def unit_controls(root, env):
     (directory/'capture.env').write_text('TRIPOD_FINAL_CAPTURE_DIR=/capture\nTRIPOD_CAPTURE_STANDIN=1\nTRIPOD_CAPTURE_TEST_ROOT=/capture\n')
     run('tampered-environment', command, selected, lambda c:c!=0)
     assert not (directory/'test.exit').exists()
+    d, cmd, e = case('standin-evidence')
+    relocated = tools/'relocated-unit'
+    relocated.write_text((WRAPPERS/'capture-unit.sh').read_text().replace('/var/home/tripod/loops/evidence/wave1/final', str(d.parent.parent)))
+    relocated.chmod(0o755)
+    run('standin-inside-evidence-root', [str(relocated), *cmd[1:]], e, lambda c:c==64)
     directory, command, selected = case('running')
     output = run('check-starting', [command[0], '--check', *command[1:]], dict(selected,CAPTURE_ACTIVE='activating'), lambda c:c==75)
     assert 'awaiting-start=yes' in output
@@ -126,6 +189,7 @@ def unit_controls(root, env):
     run('check-old-start', [command[0], '--check', *command[1:]], dict(selected,CAPTURE_ACTIVE='active'), lambda c:c not in (0,75))
     directory, command, selected = case('missing-marker')
     (directory/'unit.log').write_text('')
+    (directory/'start.utc').write_text('2026-11-14T00:00:00Z\n')
     run('missing-marker', [command[0], '--check', *command[1:]], selected, lambda c:c==74)
     assert (directory/'retention.sha256').exists()
     cases = [('missing-admission',cleanup+f'if [ "$1" = image ]; then echo {IMAGE}; fi\n',74),
@@ -137,6 +201,15 @@ def unit_controls(root, env):
         assert f'B16_CAPTURE_DONE target=birth exit={status}' in (directory/'unit.log').read_text()
         run('seal-'+name, [command[0], '--check', *command[1:]], selected, lambda c:c==74)
         assert (directory/'retention.sha256').exists()
+    directory, command, selected = case('cleanup-still-present', passing_runtime.replace('container) exit 1', 'container) exit 0'))
+    run('cleanup-unverified', command, selected, lambda c:c==74)
+    assert 'B16_CAPTURE_DONE' not in (directory/'unit.log').read_text()
+    directory, command, selected = case('terminated', cleanup + f'if [ "$1" = image ]; then echo {IMAGE}; exit 0; fi\nkill -TERM "$CAPTURE_WRAPPER_PID"\nexit 0\n')
+    signal_launcher = tools/'signal-launch'
+    executable(signal_launcher, 'export CAPTURE_WRAPPER_PID=$$\nexec "$@"\n')
+    run('unit-term', [str(signal_launcher), *command], selected, lambda c:c==143)
+    assert 'B16_CAPTURE_DONE target=birth exit=143' in (directory/'unit.log').read_text()
+    assert 'stop --time 10 tripod-terminated-birth' in (directory/'cleanup.log').read_text()
     directory, command, selected = case('timeout')
     executable(tools/'timeout', 'if [ "$1" = --kill-after=10 ]; then exit 124; fi\nif [ "$1" = --kill-after=5 ]; then shift; fi\nshift\nexec "$@"\n')
     run('unit-timeout', command, selected, lambda c:c==124)
@@ -147,6 +220,10 @@ def unit_controls(root, env):
     executable(tools/'timeout', 'if [ "$1" = --kill-after=5 ] && [ "$2" = 60 ]; then exit 124; fi\nexec /usr/bin/timeout "$@"\n')
     run('seal-timeout', [command[0], '--check', *command[1:]], selected, lambda c:c==124)
     assert not (directory/'retention.sha256').exists()
+    for target, allowance in (('funding',120),('scaling',240)):
+        executable(tools/'timeout', f'if [ "$1" = --kill-after=5 ] && [ "$2" = {allowance} ]; then exit 124; fi\nexec /usr/bin/timeout "$@"\n')
+        changed = [command[0], '--check', command[1], target, '3600' if target=='scaling' else '1800', IMAGE]
+        run('seal-allowance-'+target, changed, selected, lambda c:c==124)
 
 
 def preparation_controls(root, env):
@@ -176,7 +253,7 @@ import json, os, pathlib, sys
 a=sys.argv[1:]
 if a[0]=='image': print(os.environ['CAPTURE_IMAGE']); sys.exit(0)
 if a[0] in ('stop','inspect','rm'): print('{}'); sys.exit(0)
-if a[0]=='container': sys.exit(1)
+if a[0]=='container': sys.exit(0 if os.environ.get('CAPTURE_STILL_PRESENT') else 1)
 if 'cargo' in a:
     if os.environ.get('CAPTURE_BUILD_FAIL'): sys.exit(int(os.environ['CAPTURE_BUILD_FAIL']))
     mounts={}
@@ -205,6 +282,17 @@ else:
     measured=json.loads((root/'control/build/prepared.json').read_text())
     assert measured['trust']=='mock' and measured['framework']=='d'*40
     assert (root/'control/build/Cargo.lock').exists()
+    for directory in (root/'control', root/'control/build'):
+        import hashlib
+        for line in (directory/'retention.sha256').read_text().splitlines():
+            digest, name = line.split('  ',1)
+            assert hashlib.sha256((directory/name).read_bytes()).hexdigest() == digest
+    root_seal = (root/'control/retention.sha256').read_text()
+    for target in ('birth','continuation','commitment','cost','funding','scaling'):
+        assert '  '+target+'/capture.env\n' in root_seal
+
+    run('prepare-cleanup-unverified', [*command,'unremoved'], dict(env,CAPTURE_STILL_PRESENT='1'), lambda c:c==74, guard=PREPARATION_GUARD)
+    assert not (root/'unremoved/prepare.log').exists()
     run('prepare-image-drift', [*command,'drift'], dict(env,CAPTURE_IMAGE='wrong'), lambda c:c==65, guard=PREPARATION_GUARD)
     run('prepare-build-failure', [*command,'failed'], dict(env,CAPTURE_BUILD_FAIL='9'), lambda c:c==9, guard=PREPARATION_GUARD)
     assert (root/'failed/build/build.exit').read_text().strip()=='9'
@@ -218,6 +306,10 @@ else:
     assert not (root/'extra/build/prepared.json').exists()
     run('prepare-dirty-checkout', [*command,'dirty'], dict(env,CAPTURE_DIRTY_SOURCE='1'), lambda c:c!=0, guard=PREPARATION_GUARD)
     run('prepare-wrong-commit', [command[0], '2'*40, 'wrong'], env, lambda c:c!=0, guard=PREPARATION_GUARD)
+    executable(tools/'timeout', 'if [ "$1" = --kill-after=5 ] && [ "$2" = 60 ] && [ "$3" = python3 ]; then exit 124; fi\nexec /usr/bin/timeout "$@"\n')
+    for name, extra, status, original in (('seal-only',{},74,0),('double-failure',{'CAPTURE_BUILD_FAIL':'9'},9,9)):
+        run('prepare-'+name, [*command,name], dict(env,**extra), lambda c:c==status, guard=PREPARATION_GUARD)
+        assert f'B16_PREPARE_DONE run={name} exit={original} seal=failed\n' in (root/name/'prepare.log').read_text()
 
 
 def main():

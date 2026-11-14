@@ -93,6 +93,7 @@ pub fn derive(sessions: &[SessionArchive]) -> Costs {
             },
         };
         let mut subjects = BTreeMap::new();
+        let mut witness_counts = BTreeMap::new();
         for (request, response) in &session.exchanges {
             if response.observed_layer != ObservedOutcomeLayer::Accepted {
                 continue;
@@ -131,6 +132,7 @@ pub fn derive(sessions: &[SessionArchive]) -> Costs {
                             })
                         })
                         .collect();
+                    witness_counts.insert(event, witnesses.len());
                     for witness in &witnesses {
                         assert_eq!(witness.stack().len(), 2);
                         assert_eq!(witness.stack()[1].len(), control_bytes);
@@ -155,6 +157,17 @@ pub fn derive(sessions: &[SessionArchive]) -> Costs {
         // Assertions state only the retained readback premise. The reader still
         // carries inclusion, retrieval, unspentness and finality as obligations.
         let reading = r::read(&input).unwrap();
+        for (event, count) in witness_counts {
+            assert_eq!(
+                count,
+                reading
+                    .leaves()
+                    .iter()
+                    .filter(|row| row.event == event)
+                    .count(),
+                "matched witnesses must cover every reader member"
+            );
+        }
         for row in reading.relations() {
             let (index, phase) = match row.relation {
                 r::Relation::BornFirst => (0, "birth"),

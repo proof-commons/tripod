@@ -14,14 +14,35 @@ image=${4:?immutable image required}
 case "$target" in birth|continuation|commitment|cost|funding|scaling) ;; *) exit 64;; esac
 [[ $guard =~ ^[1-9][0-9]*$ ]] || exit 64
 [[ -d "$run_dir" ]] || exit 66
+run_dir=$(realpath -e "$run_dir")
+evidence_root=/var/home/tripod/loops/evidence/wave1/final
+if [[ ${TRIPOD_CAPTURE_STANDIN:-0} == 1 ]]; then
+    [[ $run_dir != "$evidence_root" && $run_dir != "$evidence_root/"* ]] || exit 64
+else
+    [[ $run_dir == "$evidence_root/"* ]] || exit 64
+fi
 root=$(dirname "$run_dir")
 run=$(basename "$root")
 unit="tripod-$run-$target"
 container_started=0
+if [[ $mode == run ]]; then
+python3 - "$root/prepare.log" "$run" <<'PREPARED'
+import pathlib, sys
+lines = pathlib.Path(sys.argv[1]).read_text().splitlines()
+assert lines and lines[-1] == 'B16_PREPARE_DONE run=' + sys.argv[2] + ' exit=0', 'successful preparation marker required'
+assert sum(line.startswith('B16_PREPARE_DONE ') for line in lines) == 1
+PREPARED
+cmp "$root/run-one" "$root/source/scripts/keyed-final-capture/run-one.sh"
+cmp "$0" "$root/source/scripts/keyed-final-capture/capture-unit.sh"
+fi
 if [[ $mode != run ]]; then
     trap 'status=$?; printf "capture-watch wall=%ss exit=%s\n" "$((SECONDS-started))" "$status"; exit "$status"' EXIT
     while :; do
         state=$(timeout 10 systemctl --user show "$unit" --property=ActiveState --value)
+        if [[ ! -e "$run_dir/start.utc" && $state == inactive ]]; then
+            printf 'capture-state=not-started\n'
+            exit 76
+        fi
         case "$state" in
             active|activating|deactivating)
                 # A poll may precede the wrapper's first instruction. Do not
@@ -48,8 +69,11 @@ BOUND
     absent=$?
     set -e
     [[ $absent == 1 ]] || exit 74
-    # A single-pass call is bounded below two minutes even when hashing stalls.
-    timeout --kill-after=5 60 python3 - "$run_dir" <<'SEAL'
+    # Envelope journals are larger: these new actions have their own bounds.
+    # Scaling allows 120 s for 1.2 GB at 10 MB/s, plus 120 s file-walk margin.
+    seal_guard=60
+    case "$target" in funding) seal_guard=120;; scaling) seal_guard=240;; esac
+    timeout --kill-after=5 "$seal_guard" python3 - "$run_dir" <<'SEAL'
 import hashlib, os, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 partial = root/'retention.sha256.partial'
@@ -80,14 +104,18 @@ for prior in start.utc unit.pid test.exit end.utc; do [[ ! -e "$run_dir/$prior" 
 if [[ -f "$run_dir/unit.log" ]] && grep -q '^B16_CAPTURE_DONE ' "$run_dir/unit.log"; then exit 73; fi
 
 snapshot() {
-    python3 - "$run_dir/$1-resources.json" <<'PY'
+    python3 - "$run_dir/$1-resources.json" "$run_dir/before-resources.json" "$1" <<'PY'
 import json, pathlib, time, sys
 proc = pathlib.Path('/proc/self/cgroup').read_text()
 rows = [line[3:] for line in proc.splitlines() if line.startswith('0::')]
-data = dict(epoch_ns=time.time_ns(), cgroup_membership=proc, scope='capture-unit cgroup, not daemon or clause cost', loadavg=pathlib.Path('/proc/loadavg').read_text(), counters={})
-if len(rows) == 1:
-    group = pathlib.Path('/sys/fs/cgroup') / rows[0].lstrip('/')
-    data['cgroup_path'] = str(group)
+data = dict(epoch_ns=time.time_ns(), cgroup_membership=proc, scope='fixed before-sample cgroup; container inclusion unverified until native placement check; aggregate, not clause cost', loadavg=pathlib.Path('/proc/loadavg').read_text(), counters={})
+if sys.argv[3] == 'before':
+    fixed = str(pathlib.Path('/sys/fs/cgroup') / rows[0].lstrip('/')) if len(rows) == 1 else None
+else:
+    fixed = json.loads(pathlib.Path(sys.argv[2]).read_text())['cgroup_path']
+data['cgroup_path'] = fixed
+if fixed is not None:
+    group = pathlib.Path(fixed)
     for name in ('cpu.stat','cpu.pressure','memory.pressure','io.pressure','memory.current','memory.peak'):
         path = group/name
         data['counters'][name] = path.read_text() if path.is_file() else None
@@ -150,7 +178,7 @@ assert int(sys.argv[3]) == (3600 if sys.argv[2] == 'scaling' else 1800), 'pilot 
 PY
 mkdir -p "$run_dir/tmp" "$run_dir/work"
 snapshot before
-command=(timeout --kill-after=10 "$guard" podman run --init --name "$unit" --network=none --userns=keep-id \
+command=(timeout --kill-after=10 "$guard" podman run --init --cgroups=split --cgroupns=host --name "$unit" --network=none --userns=keep-id \
     -v "$root/source:/src:ro,z" -v "$root/build:/capture-build:ro,z" \
     -v "$root/run-one:/run-one:ro,z" -v "$run_dir:/capture:z" \
     -v /var/home/tripod/loops/toolchains/elements/b7fc5d08:/elements:ro,z \

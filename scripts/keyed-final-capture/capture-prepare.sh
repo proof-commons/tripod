@@ -21,8 +21,33 @@ finish() {
         [[ $absent == 1 ]] || exit 74
     fi
     if [[ $owned_destination == 1 ]]; then
-        printf 'B16_PREPARE_DONE run=%s exit=%s\n' "$run" "$status" >>"$destination/prepare.log"
-        printf 'B16_PREPARE_DONE run=%s exit=%s\n' "$run" "$status"
+        seal_status=ok
+        # Seal settled preparation data, including dot-paths. The append-only
+        # end-marker log and the source checkout are explicitly outside this seal.
+        if ! timeout --kill-after=5 60 python3 - "$destination" <<'SEAL'
+import hashlib, os, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+def seal(directory, paths):
+    partial = directory/'retention.sha256.partial'
+    with partial.open('w') as output:
+        for path in sorted(paths):
+            if path.is_file() and path.name not in ('retention.sha256','retention.sha256.partial'):
+                output.write(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + str(path.relative_to(directory)) + '\n')
+        output.flush(); os.fsync(output.fileno())
+    partial.replace(directory/'retention.sha256')
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try: os.fsync(fd)
+    finally: os.close(fd)
+build = root/'build'
+if build.is_dir(): seal(build, build.rglob('*'))
+seal(root, [p for p in root.iterdir() if p.is_file() and p.name != 'prepare.log'] + list(root.glob('*/capture.env')) + ([build/'retention.sha256'] if build.is_dir() else []))
+SEAL
+        then seal_status=failed; fi
+        detail=
+        if [[ $seal_status == failed ]]; then detail=' seal=failed'; fi
+        printf 'B16_PREPARE_DONE run=%s exit=%s%s\n' "$run" "$status" "$detail" >>"$destination/prepare.log"
+        printf 'B16_PREPARE_DONE run=%s exit=%s%s\n' "$run" "$status" "$detail"
+        if [[ $seal_status == failed && $status == 0 ]]; then status=74; fi
     fi
     printf 'capture-prepare wall=%ss exit=%s\n' "$((SECONDS-started))" "$status"
     exit "$status"

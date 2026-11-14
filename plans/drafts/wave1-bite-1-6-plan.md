@@ -853,3 +853,79 @@ The probe's two startup RPC failures were readiness probes (`getblockchaininfo`:
 The first fast check returned a formatting patch and four Clippy findings (one helper length and three empty-value assertions); the formatter patch was applied mechanically and the assertions extracted into a helper. The second fast check passed in 72 s; its remaining formatting patch was applied before the covering gate. The covering gate used the unchanged `w20-code-gate.sh w20b1` with architecture, realization, compiler, model, target-elements, tapscript, linker, transaction, target-elements-conformance and vectors, plus the same lint, plans and wrapper/script scope as (`rec:w1b16:capture-offline-guards`). It ran 2026-11-13T23:44:06Z–23:49:39Z, queue 0 s, wall 333 s, exit 0, `== green`, log `/var/home/tripod/loops/tmp/gate-w20b1-20261113T234406Z.log`. It ran in the gate wrapper's own transient unit, with foreground SSH and the wrapper waiting through its end marker and log-writer completion. Its scoped cgroup deltas were CPU 3,045.308480 s, CPU some/full stalls 29.709209/5.610636 s, memory some/full stalls 0.071458/0.041953 s, I/O some/full stalls 0.248101/0.212005 s, peak memory 9,565,732,864 bytes. These are gate costs, not native subject measurements.
 
 The two new children completed in 0.013115 s (`command`) and 0.592542 s (`capabilities`); the twenty-child family completed in 9.175875 s (outer process 9.182182 s). The largest child was the intentional watchdog, 2.299771 s; every child reported `split_or_report=false`. Journals were copied before replacement to `/var/home/tripod/loops/evidence/wave1/w20b1-b16capture7/gate1/`, with file digests and sizes retained in the lane's receipt. The code gate passed preservation controls; the diff contains only the capture test module, its native test-support file and this plan. The verification transcription is the only edit after that gate and receives a documents-scope confirmation against its full-gated code tree. No native run was made.
+
+## Step-3 native evidence and review dispositions · `rec:w1b16:clauses`
+
+The pilot of record is `20261114t0825z-birth-pilot`, prepared from `0.7.136-dev`, retained on the hub at `refs/evidence/w1b16/20261114t0825z-birth-pilot` (paths under `run/`). Preparation took 195 s; its birth unit passed and was admitted in 5 s, with session walls 1.294080 / 1.668338 s. The review at `refs/handoff/w20b1/b16-pilot-review`, `review/w20b1/b16-pilot-review.md`, accepts the pilot for both keys. The two earlier exploratory runs and failed preparation remain failures/explorations as recorded above, never substitute pilots.
+
+Campaigns a–d share preparation `20261114t0850z-campaign-ad`, 214 s, at `refs/evidence/w1b16/20261114t0850z-campaign-ad`. The review at `refs/handoff/w20b1/b16-campaign-review`, `review/w20b1/b16-campaign-review.md`, accepts all four targets for both keys. The capture executable was byte-identical across three preparations. These refs are data, not merged source. All campaign seal entries, including dot-paths, were independently rehashed from the supplied evidence here; the pilot packet omits the one sealed `work/.elements/liquidv1/settings.json`, as its review reports. Its on-node seal and accepted verdict do not imply that the incomplete pilot packet alone reproduces that seal. Preserve this gap; do not regenerate an archive. Future packaging must include every sealed dot-path.
+
+| Campaign target | Transport/session walls, key 0 / key 1 (s) | Unit wall (s) | Four times unit wall (s) / guard (s) | Verified seal files |
+|---|---|---|---|---|
+| birth | 1.312481 / 1.183145 | 4 | 16 / 1800 | 63 |
+| continuation | 1.280817 / 1.308942 | 4 | 16 / 1800 | 67 |
+| commitment | 1.031023 / 1.042110 | 3 | 12 / 1800 | 63 |
+| cost | 0.920965 / 0.910903 | 2 | 8 / 1800 | 55 |
+
+### Comparison and pilot authority · `rule:w1b16:pilot-comparison`
+
+Before each campaign unit, the orchestrator compares the parsed `build/prepared.json` objects on all fourteen keys (including node and trust); `build/Cargo.lock`, `build/image.id`, `build/toolchain.txt`, `run-one`, `capture-unit` and `tools.txt` byte for byte; and `build/build-command.shell` after substituting only the run name. It verifies exactly one selected successful build artifact and exactly one zero preparation marker. After each unit, before accepting it, compare each key's `work/key-N/handshake.json`, `environment.json`, `expected-provenance.json` and `executor` byte for byte to the pilot's same-key files; compare the container image with the prepared image, network mode `none`, init enabled and the reviewed read-only mounts. Any mismatch stops: no waiver, no substituted binary or lock, and no repeated preparation to select a matching binary. Keep the shared offline cargo cache unchanged during that comparison campaign. This is a stated orchestrator procedure, not an additional script. The orchestrator performed it successfully before and after this campaign; this landing also rechecked the retained preparation and same-key file equalities.
+
+A pilot authorizes only its own commit's shared preparation, transport, retention and admission path. Each other target's first native run is judged at review by its own completed wall under the four-times rule. Censored or over-budget runs split and report, never pass by widening. Every landing changes the commit: step 4 requires a fresh funding pilot on its own landing and independent review before campaigns. It cannot use the step-3 pilot by waiver. Scaling retains its 3600 s unit guard, subject to its own first-run wall.
+
+### Measurement scope and provenance · `tab:w1b16:clauses-measurement-scope`
+
+| Figure | Meaning and limit |
+|---|---|
+| Exchange `elapsed_seconds`, session wall | Transport, construction, node execution and I/O context, not per-clause cost |
+| `load_five_minutes` | Node context, not subject stalls |
+| Template weight | Block template's weight, not this transaction |
+| `transaction_weight`, `native_weight_units` | Node serialized-size accounting, compared with local serializer and independent Elements decoding |
+| Primitive counts, stack peaks/widths | Byte-model observations and grammar predictions, never native costs |
+| Step-3 unit CPU/memory/pressure counters | Wrapper and runtime client only: container scope was a sibling; no subject-resource claim |
+| Per-clause native wall/CPU/stalls/validation charge | Absent, never zero |
+
+The wrapper now requests `--cgroups=split --cgroupns=host` alongside `--init`. Both resource samples read the single cgroup path retained in `before-resources.json`, while each separately retains its current `/proc/self/cgroup` membership; inclusion of the split container is unverified until native placement is checked; `container-cgroup.txt` will retain the host path. The node-free runtime-argv control proves these requests only. Until the new landing's pilot confirms placement, retain the old figures' wrapper-scope label and do not claim subject counters. Even aggregate inclusive counters cannot be called per-clause measurements.
+
+Runtime re-measurements populate observed provenance. Both `runtime-measurements.json` and `observed-provenance.json` carry an `origins` entry for every coordinate, distinguishing remeasured bytes, handshake observations, carried preparation measurements and computed or supplied values. The typed archive and its admission reader are unchanged. Repository identity is read from the source HEAD; capture binary is hashed both at its copy and current executable; dependency lock is hashed at both `/src/Cargo.lock` and `/capture-build/Cargo.lock`; executor, interpreter and daemon bytes are hashed from their executed locations. Each is compared with preparation; any mismatch refuses. The node-free runtime control changes each lock location, executing binary and source identity separately beside the accepted reading. Handshake daemon version, framework and protocol remain independently observed and retained. Image is measured by preparation and rechecked by the unit; the runtime provenance carries that preparation identity and labels its origin. Toolchain text, node identity and interpreter version text are preparation-only measurements; their carried values are labelled as such, even when paired with a remeasured executable digest. Key and freeze digest are computed, not measured. Runtime hashing attests file bytes, not the compiler's consumption of the lock or a new reproducible-build proof.
+
+Preparation seals the settled `build/` tree, root files and all six per-target `capture.env` files with fsynced atomic digest lists, including dot-paths. Its source checkout and append-only preparation marker log are explicitly outside the root seal; the build seal is included by the root seal. The final preparation marker follows sealing, retains the original exit status beside `seal=failed` on seal failure, and only a clean `exit=0` authorizes launch. A seal failure also makes an otherwise successful preparation exit nonzero. Watch mode does not depend on later source-copy or preparation-log changes; launch mode still verifies the preparation marker and both wrapper copies. Existing target seals keep 60 s. New funding/scaling seal actions use 120/240 s: scaling budgets 120 s for a conservative 1.2 GB at 10 MB/s plus 120 s for traversal and file overhead; funding reserves half that allowance. These are hang guards, not measured throughput claims. The review's default-directory attribution is supported by the earlier provenance-container permission failure on `/.elements/wallets` during the version call, and by the pilot seal naming only `settings.json` under `.elements`, not blocks or chainstate. This supports the version-call explanation without changing the adapter.
+
+### Review disposition · `tab:w1b16:clauses-findings`
+
+| Finding | Closure and evidence |
+|---|---|
+| F1 | Exact comparison and non-waivable stop procedure at (`rule:w1b16:pilot-comparison`); passed for this campaign. |
+| F2 | Same-commit shared-path authority, first-target own-wall review and fresh-pilot rule stated there. |
+| F3 | Split cgroups and host namespace requested by unit; argv control; old counters explicitly wrapper scope pending native placement confirmation. |
+| F4 | Runtime measurements populate observed provenance, both lock locations checked; once/twice/computed inventory above. |
+| F5 | Preparation build/root seals and node-free digest checks; campaign dot-path packaging verifies fully; pilot packet's missing file remains stated. |
+| F6 | Default-directory explanation cites the actual failed version call and lone sealed settings file. |
+| C1 | Fresh independently reviewed step-4 funding pilot on its landing, no earlier-commit waiver. |
+| C2 | `changed_member` fails at changed input 0. Unchanged input 2's pass is established by construction and the accepted control, not observed in that refused transaction. No subject changed. |
+| C3 | Owed to step 5: join native error class and observation route to identical bytes, as below; no premature closure claimed. |
+| C4 | This admission is closed over the representative pair. Further supplied keys reuse construction but get per-instance checks in step 5's reader, not this closed campaign admission. |
+| C5 | Each resource-like value labelled in (`tab:w1b16:clauses-measurement-scope`). |
+| C6 | Cost derivation asserts each subject's matched witness count equals the reader's whole-leaf member rows. |
+| C7 | Birth bytes/requests reproduce across pilot and campaign fresh chains; common SOURCE and MERGE subjects reproduce across all targets. Step 5 may use them as fresh-process pins; reruns add verdict stability, not byte coverage. |
+| C8 | Corrected attribution: pilot diagnostic records 4 and 6 both concern `flagged`, before and after its failed direct-block attempt, not the two refusals separately. |
+| R1 | Closed in `0.7.135-dev`: landing-tag checkout and preparation zero-marker wait specified. |
+| R2 | Node-free still-present-container controls for unit and preparation refuse without marker; TERM-to-wrapper control checks cleanup precedes its exit-143 marker. |
+| R3 | Real run/check paths must be under canonical evidence root; stand-in is refused there; zero preparation marker and byte-equal run-one/self copies required before launch. Each mismatch has a control. The inside-root refusal control relocates only the fixed root in a test copy, to avoid writing the real evidence directory. |
+| R4 | Inactive unit without a start file reports `capture-state=not-started`, exit 76, no seal; activating without a start still reports 75. |
+
+Step 5 must bind refused rows' `relay_detail` classes: `Witness program hash mismatch` for commitment, `Invalid Schnorr signature` for key path, and `Script failed an OP_EQUALVERIFY operation` for birth/continuation. Those script/commitment/key-path observations are mandatory-prefix `testmempoolaccept` refusals plus exclusion from the template; only `flagged` reached direct block validity. No finite observation proves key unspendability or absence of other leaves: NUMS, discrete-log and preimage assumptions remain. Neither review nor this record claims deployment finality or native clause costs. Model relations and native verdicts still need step 5's exact-byte join before the later discharge.
+
+
+Landing A's covering gate passed `== green` at `/var/home/tripod/loops/tmp/gate-w20b1-20261114T120826Z.log`, 2026-11-14T12:08:26Z–12:16:43Z, wall 497 s, queue zero, exit zero. Its 21 capture children passed (largest 3.159382 s against 40; family 13.240533 s against 300), as did 55 wrapper controls (family 8.591900 s against 300). Retained cargo journals are under `/var/home/tripod/loops/evidence/wave1/w20b1-b16envelope/envelope-review-a/`; the lint journal is retained beside the gate log. Fast check passed in 92 s. The full landing package/lint/plans/wrapper scope is unchanged. All server rounds use foreground SSH through the gate's transient unit and end marker. This landing runs no native target.
+
+### Envelope review: clause landing
+
+| Finding | Disposition |
+|---|---|
+| A1 | Fixed before-sample cgroup for both counter reads; current membership retained separately. `resource-after-move` proves a membership change cannot select another counter source. Native container inclusion remains unverified. |
+| A2 | Every coordinate in both retained provenance objects has an explicit origin; typed archive readers remain unchanged. `runtime_control` checks origin coverage and independent runtime drift. |
+| A3 | Preparation marker and wrapper comparisons run only at launch. `watch-changed-source` seals completed evidence after source removal and a changed preparation log. |
+| A4 | Seal failure preserves the original exit in its marker and cannot authorize a launch. `prepare-seal-only` and `prepare-double-failure` pin both cases. |
+| A5 | Root preparation seal includes each target's environment file; `prepare-complete` verifies all six entries and their digests. |
+| A6 | Clause record keeps its design, scope, review dispositions and one boundary gate; intermediate verification remains in retained journals, not duplicated here. |

@@ -338,7 +338,7 @@ fn capture_support_has_bounded_offline_controls() {
 fn family_child() {
     let family = std::time::Instant::now();
     let retained = tempfile::tempdir().unwrap();
-    for subject in ["pins", "watchdog", "command", "capabilities"] {
+    for subject in ["pins", "watchdog", "command", "capabilities", "runtime"] {
         run_child(subject, retained.path());
     }
     for target in ["birth", "continuation", "commitment", "cost"] {
@@ -415,6 +415,10 @@ fn offline_child() {
             manifest_controls(&manifest, &journal);
             observation_controls(&manifest, &journal);
             tracing_control(&manifest, &journal);
+            return;
+        }
+        "runtime" => {
+            native::runtime_control();
             return;
         }
         "command" => {
