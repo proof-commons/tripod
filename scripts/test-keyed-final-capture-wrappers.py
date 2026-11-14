@@ -288,6 +288,8 @@ else:
             digest, name = line.split('  ',1)
             assert hashlib.sha256((directory/name).read_bytes()).hexdigest() == digest
     root_seal = (root/'control/retention.sha256').read_text()
+    build_seal = root/'control/build/retention.sha256'
+    assert hashlib.sha256(build_seal.read_bytes()).hexdigest() + '  build/retention.sha256\n' in root_seal
     for target in ('birth','continuation','commitment','cost','funding','scaling'):
         assert '  '+target+'/capture.env\n' in root_seal
 

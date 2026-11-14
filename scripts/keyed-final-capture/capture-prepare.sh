@@ -31,7 +31,7 @@ def seal(directory, paths):
     partial = directory/'retention.sha256.partial'
     with partial.open('w') as output:
         for path in sorted(paths):
-            if path.is_file() and path.name not in ('retention.sha256','retention.sha256.partial'):
+            if path.is_file() and path not in (directory/'retention.sha256', partial):
                 output.write(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + str(path.relative_to(directory)) + '\n')
         output.flush(); os.fsync(output.fileno())
     partial.replace(directory/'retention.sha256')

@@ -1098,24 +1098,35 @@ Never bind readiness-probe diagnostics, block hashes, templates, node load, RPC 
 | Finding | Disposition |
 |---|---|
 | F1 | Closed: observed base above, full manifest digests and comparison procedure bound without waiver; campaign matched every line and every request. |
-| F2 | Record corrected to two independent preparation seals; path-filter repair and node-free nested-digest control belong to the subsequent capture-path landing. |
+| F2 | Closed in two parts: historical record corrected to independent seals; subsequent path-based filter includes the build seal and `prepare-complete` checks its entry and digest. |
 | F3 | Closed: envelope aggregate scope and measured figures above, distinct from step 3. |
 | F4 | Owed to step 5 at (`tab:w1b16:envelope-handoff`), including both block-level fields. |
 | F5 | Closed: placement judged by host cgroup file and sample membership, not inspect fields. |
 | F6 | Closed: regtest trees excluded from target seals, packet and volume estimates. |
-| F7 | Recorded: trust is a declared preparation mode; label correction belongs to the subsequent capture-path landing. |
+| F7 | Closed in the subsequent capture-path landing: `runtime-measurements.json` labels trust as a declared preparation mode, with runtime controls. |
 | F8 | Closed as a limitation: rounding established by bracketing, node numeric reject details not retained; no adapter change. |
 | E1 | Owed to step 5: typed archive provenance and one-at-a-time reads. |
 | E2 | Owed to step 5: C3/B5/F4 joins, structural boundary rather than marker decides origin. |
 | E3 | Closed: 468 s outside session guards, 1082 s report, failed four-times rule and prerequisites for another run stated. |
-| E4 | Cause recorded; buffered pretty writer with explicit flush and byte/error controls belongs to the subsequent capture-path landing. Native wall remains unmeasured after that repair. |
+| E4 | Closed offline in the subsequent capture-path landing: buffered pretty writer, explicit flush and byte/error controls. Native wall remains unmeasured after that repair. |
 | E5 | Closed: native 0.05–0.07 s/SOURCE replaces planning range; 252 key-0 used 47% of its guard under load. |
 | E6 | Closed: actual seals and inclusive resource scope/figures recorded, writing attribution explicit. |
 | E7 | Closed: volatile exclusions stated above and never included in the base. |
 | E8 | Closed: evidence admission is not policy admission of the structural MERGE. |
 | E9 | All three exchange representations and the pretty form remain because changing retention format after the runs of record would change later packet shape relative to that evidence and its comparison bases. Redundancy costs volume and writing time, not correctness; the subsequent buffered writer addresses writing time. |
 | N1 | Owed with E1 to step 5; typed provenance comes from the archive. |
-| N2 | Same declared-mode label correction as F7, subsequent landing. |
+| N2 | Closed with F7 in the subsequent capture-path landing. |
 | N3 | Closed for successful runs: retained queue line, end marker and zero unit status; failed native status propagation not claimed. |
 | N4 | Closed: native host placement under fixed service path observed in pilot and both campaign units. |
 | N5 | Recorded diagnosis limit for in-flight non-submission requests; durable stream permits reconstruction. |
+
+
+### Post-run capture-path corrections
+
+The record-only landing passed the documents-scope gate at `/var/home/tripod/loops/tmp/gate-w20b1-b16envelope-record-doc-20261114T162748Z.log`: 2026-11-14T16:27:48Z–16:27:53Z, wall 5 s, round-queue wait 1420 s, exit zero, `== green`. Scope was the plan and vectors README; labels, plans, census, forbidden text, hash citations, generated artifacts and attestation stamps passed. The queue recipe ran inside the transient unit, with foreground SSH waiting through its completion marker.
+
+The subsequent code landing closes F2, E4 and F7 only. Preparation excludes the current seal and its partial file by full path, so the root list now includes `build/retention.sha256`; `prepare-complete` asserts that entry and its computed digest beside the existing complete-seal checks. Historical seals are not rewritten. The JSON writer buffers the same pretty serialization and trailing newline, explicitly flushes before file and directory synchronization, and propagates flush failures; the result is unwrapped before the file and directory syncs, so failure is fatal at the same point as before. `native::runtime_control` exercises `writer_control`: a small escaped value written to disk equals the prior unbuffered form, and a writer that accepts all bytes but refuses flush returns that exact error. The durable completed-exchange stream and redundant journal remain because changing packet shape after the runs of record would break comparison with that evidence and its bases.
+
+`runtime-measurements.json` labels `trust` as `declared preparation mode`. The `observed-provenance.json` side file mirrors the typed provenance and so carries no trust coordinate; without its `origins` key it equals the expected provenance. The controls reuse the bounded runtime child and preparation stand-in; no guard, native target meaning, pin or prior evidence byte changes. The preparation filter is the only wrapper behaviour changed here.
+
+Steps 3 and 4 remain evidenced by their runs of record, from `0.7.136-dev` and `0.7.138-dev` respectively; later landings, including the post-run capture repairs, change none of those bytes or their meaning, and step 5 and the closure read them offline from later commits. A pilot authorizes only its own commit (`rule:w1b16:pilot-comparison`), so any later native run needs its own reviewed pilot. Buffering has no measured native speedup; a later scaling campaign still requires its own-wall review under the four-times rule.

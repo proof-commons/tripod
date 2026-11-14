@@ -176,16 +176,54 @@ fn sync_directory(path: &Path) {
     std::fs::File::open(path).unwrap().sync_all().unwrap();
 }
 fn write_json(path: &Path, value: &impl serde::Serialize) {
-    let mut file = std::fs::OpenOptions::new()
+    let file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(path)
         .unwrap();
-    serde_json::to_writer_pretty(&mut file, value).unwrap();
-    writeln!(file).unwrap();
+    write_json_contents(&file, value).unwrap();
     file.sync_all().unwrap();
     sync_directory(path.parent().unwrap());
 }
+// Explicit flush propagates errors that BufWriter's destructor cannot report.
+// Keep the historical pretty form and trailing newline byte-for-byte.
+fn write_json_contents(
+    destination: impl std::io::Write,
+    value: &impl serde::Serialize,
+) -> std::io::Result<()> {
+    let mut writer = std::io::BufWriter::new(destination);
+    serde_json::to_writer_pretty(&mut writer, value).map_err(std::io::Error::other)?;
+    writeln!(writer)?;
+    writer.flush()
+}
+
+fn writer_control() {
+    struct FailsOnFlush(Vec<u8>);
+    impl std::io::Write for FailsOnFlush {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::other("synthetic flush refusal"))
+        }
+    }
+    let value = serde_json::json!({"escaped": "line\nquote\"", "rows": [1, 2, 3]});
+    let mut previous = Vec::new();
+    serde_json::to_writer_pretty(&mut previous, &value).unwrap();
+    writeln!(previous).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("pretty.json");
+    write_json(&path, &value);
+    assert_eq!(std::fs::read(path).unwrap(), previous);
+
+    let mut failing = FailsOnFlush(Vec::new());
+    let error = write_json_contents(&mut failing, &value).unwrap_err();
+    assert_eq!(failing.0, previous);
+    assert_eq!(error.kind(), std::io::ErrorKind::Other);
+    assert_eq!(error.to_string(), "synthetic flush refusal");
+}
+
 fn measurement(prepared: &serde_json::Value, key: [u8; 32]) -> CaptureProvenance {
     CaptureProvenance {
         repository_commit: Some(text(prepared, "repository_commit").into()),
@@ -246,6 +284,7 @@ fn runtime_measurements(
             "interpreter" | "daemon" => {
                 "preparation version text with remeasured executable digest"
             }
+            "trust" => "declared preparation mode",
             _ => "carried preparation measurement",
         };
         origins.insert(field.clone(), origin.into());
@@ -256,6 +295,7 @@ fn runtime_measurements(
 
 fn retained_provenance(observed: &CaptureProvenance) -> serde_json::Value {
     let mut value = serde_json::to_value(observed).unwrap();
+    // Diagnostic side-file metadata only; the typed archive remains unchanged.
     let mut origins = serde_json::Map::new();
     for field in value.as_object().unwrap().keys() {
         let origin = match field.as_str() {
@@ -277,6 +317,7 @@ fn retained_provenance(observed: &CaptureProvenance) -> serde_json::Value {
 }
 
 pub(super) fn runtime_control() {
+    writer_control();
     for target in [
         CaptureTarget::Birth,
         CaptureTarget::Continuation,
@@ -329,7 +370,11 @@ pub(super) fn runtime_control() {
         origins.as_object().unwrap().len(),
         prepared.as_object().unwrap().len()
     );
-    assert_eq!(origins["trust"], "carried preparation measurement");
+    assert_eq!(origins["trust"], "declared preparation mode");
+    let provenance = super::packet();
+    let mut retained = retained_provenance(&provenance);
+    retained.as_object_mut().unwrap().remove("origins");
+    assert_eq!(retained, serde_json::to_value(provenance).unwrap());
     assert_eq!(
         origins["dependency_lock"],
         "remeasured file bytes at runtime"
