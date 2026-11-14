@@ -289,21 +289,46 @@ fn observation_controls(
 
 #[test]
 fn capture_support_has_bounded_offline_controls() {
+    bounded_family("keyed_final_capture::family_child", "clauses", None);
+}
+
+#[test]
+fn envelope_support_has_bounded_offline_controls() {
+    let retained = tempfile::tempdir().unwrap();
+    for phase in [
+        "scale-0-low",
+        "scale-0-mid",
+        "scale-0-high",
+        "scale-0-end",
+        "scale-1-low",
+        "scale-1-mid",
+        "scale-1-high",
+        "scale-1-end",
+        "joined",
+    ] {
+        bounded_family(
+            "keyed_final_capture::envelope_family_child",
+            phase,
+            Some(retained.path()),
+        );
+    }
+}
+
+fn bounded_family(test: &str, phase: &str, directory: Option<&std::path::Path>) {
     let started = std::time::Instant::now();
-    let output = std::process::Command::new("/usr/bin/timeout")
+    let mut command = std::process::Command::new("/usr/bin/timeout");
+    command
         .args(["--kill-after=1", "300"])
         .arg(std::env::current_exe().unwrap())
-        .args([
-            "--ignored",
-            "--exact",
-            "keyed_final_capture::family_child",
-            "--nocapture",
-        ])
-        .output()
-        .unwrap();
+        .args(["--ignored", "--exact", test, "--nocapture"])
+        .env("TRIPOD_CAPTURE_PHASE", phase);
+    if let Some(directory) = directory {
+        command.env("TRIPOD_ENVELOPE_DIRECTORY", directory);
+    }
+    let output = command.output().unwrap();
     writeln!(
         std::io::stdout().lock(),
-        "final capture family process wall={:.6}s guard=300s exit={}",
+        "final capture family process wall={:.6}s guard=300s phase={phase} exit={}",
         started.elapsed().as_secs_f64(),
         output.status
     )
@@ -352,6 +377,67 @@ fn family_child() {
     writeln!(
         std::io::stdout().lock(),
         "final capture family wall={wall:.6}s guard=300s"
+    )
+    .unwrap();
+    assert!(wall < 300.0);
+}
+
+#[test]
+#[ignore = "bounded envelope family parent"]
+fn envelope_family_child() {
+    let family = std::time::Instant::now();
+    let phase = std::env::var("TRIPOD_CAPTURE_PHASE").unwrap();
+    let retained = std::path::PathBuf::from(std::env::var("TRIPOD_ENVELOPE_DIRECTORY").unwrap());
+    if let Some((key, begin, counts)) = match phase.as_str() {
+        "scale-0-low" => Some((0, 0, &[1, 2, 252, 253][..])),
+        "scale-0-mid" => Some((0, 253, &[782][..])),
+        "scale-0-high" => Some((0, 782, &[1174][..])),
+        "scale-0-end" => Some((0, 1174, &[1564, 1565][..])),
+        "scale-1-low" => Some((1, 0, &[1, 2, 252, 253][..])),
+        "scale-1-mid" => Some((1, 253, &[782][..])),
+        "scale-1-high" => Some((1, 782, &[1174][..])),
+        "scale-1-end" => Some((1, 1174, &[1564, 1565][..])),
+        "joined" => None,
+        _ => panic!("closed envelope phase"),
+    } {
+        let directory = retained.join(format!("scaling-{key}"));
+        if begin == 0 {
+            std::fs::create_dir(&directory).unwrap();
+        } else {
+            assert!(directory.is_dir());
+        }
+        let mut prepared = begin;
+        for &count in counts {
+            while prepared < count {
+                prepared = (prepared + 16).min(count);
+                run_child(&format!("scale-{key}-{prepared}-prepare"), &directory);
+            }
+            // 1174 is only a process checkpoint, never another native subject.
+            if count != 1174 {
+                run_child(&format!("scale-{key}-{count}-merge"), &directory);
+            }
+            if count == 1 {
+                run_child(&format!("scale-{key}-0-merge"), &directory);
+            }
+        }
+    } else {
+        for count in [0, 1, 2, 252, 253, 782, 1564, 1565] {
+            run_child(&format!("scale-join-{count}"), &retained);
+        }
+        for point in 0..=23 {
+            run_child(&format!("funding-{point}"), &retained);
+        }
+        for name in ["source", "merge", "wideform"] {
+            for key in 0..2 {
+                run_child(&format!("envelope-wire-{name}-{key}"), &retained);
+            }
+        }
+    }
+
+    let wall = family.elapsed().as_secs_f64();
+    writeln!(
+        std::io::stdout().lock(),
+        "final capture envelope family phase={phase} wall={wall:.6}s guard=300s"
     )
     .unwrap();
     assert!(wall < 300.0);
@@ -409,6 +495,32 @@ fn run_child(subject: &str, directory: &std::path::Path) {
 #[ignore = "bounded offline parent"]
 fn offline_child() {
     let subject = std::env::var("TRIPOD_CAPTURE_CONTROL").unwrap();
+    let dir = std::path::PathBuf::from(std::env::var("TRIPOD_CAPTURE_DIRECTORY").unwrap());
+    if let Some(tail) = subject.strip_prefix("envelope-wire-") {
+        let (name, key) = tail.rsplit_once('-').unwrap();
+        driver::envelope::transport(&dir, name, key.parse().unwrap());
+        return;
+    }
+    if let Some(point) = subject.strip_prefix("funding-") {
+        driver::envelope::funding_control(&dir, point.parse().unwrap());
+        return;
+    }
+    if let Some(count) = subject.strip_prefix("scale-join-") {
+        driver::envelope::joined(&dir, count.parse().unwrap());
+        return;
+    }
+    if subject.starts_with("scale-") {
+        let pieces: Vec<_> = subject.split('-').collect();
+        let directory =
+            std::path::PathBuf::from(std::env::var("TRIPOD_CAPTURE_DIRECTORY").unwrap());
+        driver::envelope::staged(
+            &directory,
+            pieces[1].parse().unwrap(),
+            pieces[2].parse().unwrap(),
+            pieces[3] == "merge",
+        );
+        return;
+    }
     match subject.as_str() {
         "pins" => {
             let (manifest, journal) = cost_control();
@@ -525,4 +637,15 @@ fn commitment() {
 #[ignore = "orchestrator-only native pilot/campaign; prepared isolated unit required"]
 fn cost() {
     native::run(CaptureTarget::Cost);
+}
+
+#[test]
+#[ignore = "orchestrator-only native funding pilot/campaign; prepared isolated unit required"]
+fn funding() {
+    native::run_envelope(true);
+}
+#[test]
+#[ignore = "orchestrator-only native scaling campaign; prepared isolated unit required"]
+fn scaling() {
+    native::run_envelope(false);
 }

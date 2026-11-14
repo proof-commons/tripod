@@ -436,6 +436,7 @@ vectors_excluded_files = vectors_fixture_files + files(
   'tests/keyed_bridge/fixture.rs',
   'tests/keyed_final_capture/mod.rs',
   'tests/keyed_final_capture/driver.rs',
+  'tests/keyed_final_capture/envelope.rs',
   'tests/keyed_final_capture/mutations.rs',
   'tests/keyed_final_capture/mock.rs',
   'tests/keyed_final_capture/retained.rs',

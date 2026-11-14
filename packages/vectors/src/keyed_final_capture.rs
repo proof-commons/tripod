@@ -26,10 +26,14 @@ pub enum CaptureTarget {
     Commitment,
     /// Available observations of the exact final transactions.
     Cost,
+    /// One independently retained scaling session, within the reviewed finite census.
+    Scaling(u16),
+    /// One funding coordinate on its own fresh chain.
+    Funding(u8),
 }
 
 /// Reviewed schema identity. A schema is not a transaction digest.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CaptureSchema {
     /// First SOURCE, then its change is spent in the single-member event.
@@ -68,6 +72,14 @@ pub enum CaptureSchema {
     KeyPathAttempt,
     /// Unadmitted single-input script-path twin of the key-path probe.
     KeyPathControl,
+    /// A disjoint SOURCE prepared for this scaling session.
+    ScalingSource(u16),
+    /// Final MERGE with the stated member count; 1565 is structural only.
+    ScalingMerge(u16),
+    /// Sealed funding control.
+    FundingControl,
+    /// Raw one-coordinate funding subject, index defined by the reviewed census.
+    FundingPoint(u8),
 }
 
 /// Boundary the reviewed subject intends to reach, not an executor assertion.
@@ -76,6 +88,8 @@ pub enum CaptureSchema {
 pub enum CaptureBoundary {
     /// A complete target acceptance, still conditional on external premises.
     Acceptance,
+    /// Raw over-envelope transaction: native observation is not constructor admission.
+    StructuralEnvelope,
     /// The birth-position predicate.
     Birth,
     /// Target transaction form before script evaluation.
@@ -86,6 +100,10 @@ pub enum CaptureBoundary {
     Commitment,
     /// Key-path verification, where no covenant clause executes.
     KeyPath,
+    /// Observed funding/fee policy, with consensus and relay kept distinct.
+    FundingPolicy,
+    /// Ordinary sponsor verification, not a covenant predicate.
+    SponsorAuthorization,
 }
 
 impl CaptureSchema {
@@ -93,6 +111,7 @@ impl CaptureSchema {
     #[must_use]
     pub const fn boundary(self) -> CaptureBoundary {
         match self {
+            Self::ScalingMerge(1565) => CaptureBoundary::StructuralEnvelope,
             Self::SourceA
             | Self::SourceB
             | Self::SingleOrdinaryEdge
@@ -100,9 +119,14 @@ impl CaptureSchema {
             | Self::ForeignSource
             | Self::LaterParent
             | Self::LaterControl
-            | Self::KeyPathControl => CaptureBoundary::Acceptance,
+            | Self::KeyPathControl
+            | Self::ScalingSource(_)
+            | Self::ScalingMerge(_)
+            | Self::FundingControl => CaptureBoundary::Acceptance,
+            Self::FundingPoint(1 | 2 | 13 | 14) | Self::Flagged => CaptureBoundary::TransactionForm,
+            Self::FundingPoint(4 | 5 | 16 | 17) => CaptureBoundary::SponsorAuthorization,
+            Self::FundingPoint(_) => CaptureBoundary::FundingPolicy,
             Self::LaterBorn => CaptureBoundary::Birth,
-            Self::Flagged => CaptureBoundary::TransactionForm,
             Self::WrongKey
             | Self::WrongScript
             | Self::WrongVersion
@@ -112,15 +136,21 @@ impl CaptureSchema {
             Self::KeyPathAttempt => CaptureBoundary::KeyPath,
         }
     }
-    /// Expected protocol layer; a diagnostic does not replace this target verdict.
+    /// Native maturity-observation layer. Relay-refused, consensus-valid subjects
+    /// are accepted via direct block; `route`, `relay_allowed` and `relay_detail` keep
+    /// that policy observation separate. `RelayPolicyRejection` is not this path.
+    /// A diagnostic never replaces the separately retained target verdict.
     #[must_use]
     pub const fn outcome(self) -> ObservedOutcomeLayer {
         match self.boundary() {
-            CaptureBoundary::Acceptance => ObservedOutcomeLayer::Accepted,
+            CaptureBoundary::Acceptance
+            | CaptureBoundary::FundingPolicy
+            | CaptureBoundary::StructuralEnvelope => ObservedOutcomeLayer::Accepted,
             CaptureBoundary::TransactionForm => {
                 ObservedOutcomeLayer::ConsensusRejectionBeforeScript
             }
-            CaptureBoundary::Birth
+            CaptureBoundary::SponsorAuthorization
+            | CaptureBoundary::Birth
             | CaptureBoundary::Continuation
             | CaptureBoundary::Commitment => ObservedOutcomeLayer::ScriptPathRejection,
             CaptureBoundary::KeyPath => ObservedOutcomeLayer::KeyPathRejection,
@@ -129,9 +159,41 @@ impl CaptureSchema {
 }
 
 /// Reviewed census, identical for mock and native runs under each public key.
+/// Returns an empty census for an unsupported envelope coordinate; binding refuses it.
 #[must_use]
 pub fn schemas(target: CaptureTarget) -> Vec<CaptureSchema> {
     use CaptureSchema as S;
+    if let CaptureTarget::Scaling(count) = target {
+        if ![0, 1, 2, 252, 253, 782, 1564, 1565].contains(&count) {
+            return vec![];
+        }
+        return if count == 0 {
+            vec![S::ScalingSource(0)]
+        } else {
+            (0..count)
+                .map(S::ScalingSource)
+                .chain([S::ScalingMerge(count)])
+                .collect()
+        };
+    }
+    if let CaptureTarget::Funding(point) = target {
+        if point > 23 {
+            return vec![];
+        }
+        let mut rows = vec![];
+        if point >= 12 {
+            rows.push(S::SourceA);
+        }
+        rows.push(S::FundingControl);
+        if point % 12 != 0 {
+            if point >= 12 {
+                rows.push(S::SourceB);
+            }
+            rows.push(S::FundingPoint(point));
+        }
+        return rows;
+    }
+
     let mut result = vec![
         S::SourceA,
         S::SingleOrdinaryEdge,
@@ -154,7 +216,7 @@ pub fn schemas(target: CaptureTarget) -> Vec<CaptureSchema> {
             S::KeyPathControl,
             S::KeyPathAttempt,
         ],
-        CaptureTarget::Cost => &[],
+        CaptureTarget::Cost | CaptureTarget::Funding(_) | CaptureTarget::Scaling(_) => &[],
     });
     result
 }
@@ -207,6 +269,8 @@ pub enum CaptureRefusal {
     Version,
     /// The manifest names a different dispatched target.
     Target,
+    /// An envelope count or funding coordinate is outside the reviewed finite census.
+    UnsupportedEnvelopeCoordinate,
     /// The completed manifest differs from its retained provenance digest.
     ManifestDigest,
     /// A reviewed (schema,key) row is absent.
@@ -252,6 +316,7 @@ impl CaptureRefusal {
         match self {
             Self::Version => "version",
             Self::Target => "target",
+            Self::UnsupportedEnvelopeCoordinate => "unsupported_envelope_coordinate",
             Self::ManifestDigest => "manifest_digest",
             Self::MissingSchema => "missing_schema",
             Self::DuplicateSchema => "duplicate_schema",
@@ -330,21 +395,27 @@ fn check_manifest(
         return Err(R::ManifestDigest);
     }
     let reviewed = schemas(target);
+    if reviewed.is_empty() {
+        return Err(R::UnsupportedEnvelopeCoordinate);
+    }
     let keys = [[42; 32], crate::keyed_final_manifest::SECOND_KEY];
-    let mut identities = Vec::new();
-    let mut digests = Vec::new();
+    // Each source-bound freeze identity is invariant within this admission.
+    // Compute it once per key, not once for every prepared SOURCE row.
+    let freezes = keys.map(|key| capture_freeze_digest(key).ok());
+    let mut identities = std::collections::BTreeSet::new();
+    let mut digests = std::collections::BTreeSet::new();
+    let reviewed: std::collections::BTreeSet<_> = reviewed.into_iter().collect();
     for row in &manifest.rows {
         if !reviewed.contains(&row.schema) {
             return Err(R::Schema);
         }
-        if !keys.contains(&row.key) {
+        let Some(key_index) = keys.iter().position(|key| key == &row.key) else {
             return Err(R::Key);
-        }
-        if identities.contains(&(row.schema, row.key)) {
+        };
+        if !identities.insert((row.schema, row.key)) {
             return Err(R::DuplicateSchema);
         }
-        identities.push((row.schema, row.key));
-        if capture_freeze_digest(row.key).ok() != Some(row.freeze) {
+        if freezes[key_index] != Some(row.freeze) {
             return Err(R::Freeze);
         }
         if row.boundary != row.schema.boundary() {
@@ -357,7 +428,10 @@ fn check_manifest(
             != (row.boundary == CaptureBoundary::Acceptance
                 && !matches!(
                     row.schema,
-                    CaptureSchema::LaterParent | CaptureSchema::KeyPathControl
+                    CaptureSchema::LaterParent
+                        | CaptureSchema::KeyPathControl
+                        | CaptureSchema::ScalingMerge(1565)
+                        | CaptureSchema::FundingPoint(_)
                 ))
         {
             return Err(R::Origin);
@@ -365,10 +439,9 @@ fn check_manifest(
         if sha256(&row.submitted) != row.digest {
             return Err(R::SubmittedDigest);
         }
-        if digests.contains(&row.digest) {
+        if !digests.insert(row.digest) {
             return Err(R::DuplicateDigest);
         }
-        digests.push(row.digest);
     }
     if keys.iter().any(|key| {
         reviewed
@@ -385,21 +458,18 @@ fn check_joins(
     exchanges: &[(NativeOperationRequest, NativeOperationResponse)],
 ) -> Result<(), CaptureRefusal> {
     use CaptureRefusal as R;
-    let mut seen = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    let rows: std::collections::BTreeMap<_, _> =
+        manifest.rows.iter().map(|row| (row.digest, row)).collect();
     for (index, (request, response)) in exchanges.iter().enumerate() {
         let OperationSubject::Submission(subject) = &request.subject else {
             continue;
         };
         let digest = sha256(&subject.transaction_bytes);
-        let row = manifest
-            .rows
-            .iter()
-            .find(|row| row.digest == digest)
-            .ok_or(R::ObservationWithoutRow)?;
-        if seen.contains(&digest) {
+        let row = rows.get(&digest).ok_or(R::ObservationWithoutRow)?;
+        if !seen.insert(digest) {
             return Err(R::DuplicateObservation);
         }
-        seen.push(digest);
         if response.observed_layer != row.expected {
             return Err(R::ObservedOutcome);
         }

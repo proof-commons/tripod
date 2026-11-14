@@ -29,6 +29,7 @@ struct Session<I> {
     finals: Vec<FinalSubject>,
     target: CaptureTarget,
     foreign: Option<Vec<u8>>,
+    policy: Option<vectors::maturity_native::sponsored::Policy>,
 }
 const fn output(asset: AssetId, value: u64, program: Vec<u8>) -> TargetOutput {
     TargetOutput::new(
@@ -112,7 +113,11 @@ impl<I: Exchange> Session<I> {
                 },
             )
             .sum();
-        let fee = 10_000;
+        let fee = if matches!(schema, CaptureSchema::ScalingMerge(_)) {
+            20_000
+        } else {
+            10_000
+        };
         let successor = 1_000;
         let change = total - fee - successor;
         let point = Outpoint::new(
@@ -122,6 +127,7 @@ impl<I: Exchange> Session<I> {
         .unwrap();
         let cap = Replay {
             point,
+            fee,
             change,
             program: self.program.clone(),
             offers: Cell::new(0),
@@ -162,6 +168,33 @@ impl<I: Exchange> Session<I> {
             additional_outputs: vec![output(self.asset, change, self.program.clone())],
             fee: Some(fee),
         };
+        if schema == CaptureSchema::ScalingMerge(1565) {
+            assert!(matches!(
+                admit_keyed(
+                    &target,
+                    request,
+                    offer.clone(),
+                    &KeyedPolicy::new(
+                        "preflight before structural serialization".into(),
+                        self.asset,
+                        [100; 3],
+                        vec![100, 100, 1],
+                        [400_000; 3],
+                        0,
+                        72
+                    )
+                    .unwrap()
+                ),
+                Err(KeyedConstructionError::HandleCountExceedsPolicy {
+                    offered: 1565,
+                    maximum: 1564
+                })
+            ));
+            assert_eq!(cap.signs.get(), 0);
+            println!(
+                "scaling preflight members=1565 maximum=1564 refused-before-serialization=true"
+            );
+        }
         let structure = construct_keyed(&target, request, offer.clone()).unwrap();
         let frozen = freeze_final_subject(request, &structure, signer).unwrap();
         assert_eq!(
@@ -181,6 +214,28 @@ impl<I: Exchange> Session<I> {
             72,
         )
         .unwrap();
+        if schema == CaptureSchema::ScalingMerge(1565) {
+            let witness = cap.witness.borrow().clone();
+            transaction::keyed_sponsor::verify_keyed_sponsor(
+                frozen.frozen_bytes(),
+                signer,
+                frozen.inputs()[signer].parent().output(),
+                &witness,
+            )
+            .unwrap();
+            let tx = structure.transaction();
+            let mut witnesses = tx.witnesses().to_vec();
+            witnesses[signer] = InputWitness::new(witness);
+            let tx = TargetTransaction::new(
+                tx.version(),
+                tx.inputs().to_vec(),
+                tx.outputs().to_vec(),
+                tx.lock_time(),
+                witnesses,
+            )
+            .unwrap();
+            return self.raw_submission(key, schema, tx.encode());
+        }
         let admitted = admit_keyed(&target, request, offer, &policy).unwrap();
         assert_eq!(cap.offers.get(), 1);
         assert_eq!(cap.signs.get(), 1);
@@ -195,6 +250,19 @@ impl<I: Exchange> Session<I> {
     }
 
     fn submit(&mut self, subject: FinalSubject, _script: &[u8], schema: CaptureSchema) -> Vec<u8> {
+        if let CaptureTarget::Funding(point) = self.target
+            && (schema == CaptureSchema::FundingControl
+                || matches!(schema, CaptureSchema::FundingPoint(_)))
+        {
+            return self.funding_submission(
+                &subject,
+                if schema == CaptureSchema::FundingControl {
+                    0
+                } else {
+                    point
+                },
+            );
+        }
         self.mutants(&subject, schema);
         if schema == CaptureSchema::LaterParent {
             return self.later_parent(&subject);
@@ -255,6 +323,42 @@ pub fn controls<I: Exchange>(io: I, key: [u8; 32]) -> I {
 /// # Panics
 /// Panics if construction or a transport response violates the reviewed subject.
 pub fn campaign<I: Exchange>(io: I, key: [u8; 32], target: CaptureTarget) -> I {
+    if let CaptureTarget::Funding(point) = target {
+        let mut s = Session {
+            io,
+            program: vec![],
+            asset: AssetId::from_internal([0; 32]),
+            serial: 0,
+            finals: vec![],
+            target,
+            foreign: None,
+            policy: None,
+        };
+        let mut parents = vec![];
+        if point >= 12 {
+            let (bytes, vout) = s.fund();
+            let parent = s.event(key, &[(bytes, vout, false)], CaptureSchema::SourceA);
+            parents.push((parent, 0, true));
+        }
+        let (bytes, vout) = s.fund();
+        parents.push((bytes, vout, false));
+        s.event(key, &parents, CaptureSchema::FundingControl);
+        if point % 12 != 0 {
+            let mut parents = vec![];
+            if point >= 12 {
+                let (bytes, vout) = s.fund();
+                let parent = s.event(key, &[(bytes, vout, false)], CaptureSchema::SourceB);
+                parents.push((parent, 0, true));
+            }
+            let (bytes, vout) = s.fund();
+            parents.push((bytes, vout, false));
+            s.event(key, &parents, CaptureSchema::FundingPoint(point));
+        }
+        return s.io;
+    }
+    if let CaptureTarget::Scaling(count) = target {
+        return envelope::campaign(io, key, count);
+    }
     let mut s = Session {
         io,
         program: vec![],
@@ -263,6 +367,7 @@ pub fn campaign<I: Exchange>(io: I, key: [u8; 32], target: CaptureTarget) -> I {
         finals: vec![],
         target,
         foreign: None,
+        policy: None,
     };
     let (funding, index) = s.fund();
     let a = s.event(key, &[(funding, index, false)], CaptureSchema::SourceA);
@@ -315,6 +420,7 @@ pub fn campaign<I: Exchange>(io: I, key: [u8; 32], target: CaptureTarget) -> I {
 mod mutations;
 struct Replay {
     point: Outpoint,
+    fee: u64,
     change: u64,
     program: Vec<u8>,
     offers: Cell<usize>,
@@ -328,7 +434,7 @@ impl SponsorCapability for Replay {
         self.offers.set(self.offers.get() + 1);
         SponsorOffer::new(
             [self.point],
-            10_000,
+            self.fee,
             Some(ValueField::Explicit(self.change)),
         )
         .unwrap()
@@ -351,3 +457,6 @@ impl SponsorCapability for Replay {
         ))
     }
 }
+
+#[path = "envelope.rs"]
+pub(super) mod envelope;

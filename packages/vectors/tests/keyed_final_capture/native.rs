@@ -18,6 +18,29 @@ use target_elements_conformance::provenance::ExpectedExecutorProvenance;
 use vectors::keyed_final_capture::*;
 use vectors::keyed_final_native::*;
 
+struct RetentionWall {
+    target: CaptureTarget,
+    key: [u8; 32],
+    started: Instant,
+}
+impl Drop for RetentionWall {
+    fn drop(&mut self) {
+        println!(
+            "native capture {:?} key={} post-transport-retention wall={:.6}s",
+            self.target,
+            crate::common::hex_bytes(&self.key),
+            self.started.elapsed().as_secs_f64()
+        );
+    }
+}
+
+const fn retains_debug(target: CaptureTarget) -> bool {
+    !matches!(
+        target,
+        CaptureTarget::Funding(_) | CaptureTarget::Scaling(_)
+    )
+}
+
 struct Wire {
     steps: mpsc::Sender<Option<OperationStep>>,
     answers: mpsc::Receiver<NativeOperationResponse>,
@@ -254,6 +277,36 @@ fn retained_provenance(observed: &CaptureProvenance) -> serde_json::Value {
 }
 
 pub(super) fn runtime_control() {
+    for target in [
+        CaptureTarget::Birth,
+        CaptureTarget::Continuation,
+        CaptureTarget::Commitment,
+        CaptureTarget::Cost,
+    ] {
+        assert!(retains_debug(target));
+    }
+    for target in [
+        CaptureTarget::Funding(0),
+        CaptureTarget::Funding(23),
+        CaptureTarget::Scaling(0),
+        CaptureTarget::Scaling(1565),
+    ] {
+        assert!(!retains_debug(target));
+    }
+    let cleanup = DEFAULT_EXECUTOR_CLEANUP_GRACE.as_secs();
+    assert_eq!(
+        2 * (0..=23)
+            .map(|p| session_timeout(CaptureTarget::Funding(p)).as_secs() + cleanup)
+            .sum::<u64>(),
+        1680
+    );
+    assert_eq!(
+        2 * [0, 1, 2, 252, 253, 782, 1564, 1565]
+            .into_iter()
+            .map(|n| session_timeout(CaptureTarget::Scaling(n)).as_secs() + cleanup)
+            .sum::<u64>(),
+        3500
+    );
     let bytes = b"measured artifact".to_vec();
     let digest = crate::common::hex_bytes(&sha256(&bytes));
     let prepared = serde_json::json!({
@@ -321,6 +374,15 @@ fn binding() -> ReviewedDevelopmentBinding {
         ),
     )
     .unwrap()
+}
+
+const fn session_timeout(target: CaptureTarget) -> Duration {
+    Duration::from_secs(match target {
+        CaptureTarget::Funding(_) | CaptureTarget::Scaling(0..=2) => 30,
+        CaptureTarget::Scaling(252 | 253) => 90,
+        CaptureTarget::Scaling(782) => 240,
+        _ => 600,
+    })
 }
 
 fn executor(directory: &Path, prepared: &serde_json::Value) -> PathBuf {
@@ -424,7 +486,7 @@ fn run_session(
     let configuration = ExecutorConfiguration::new(
         &adapter,
         ExecutorTrust::ReviewedNonMock,
-        SESSION_TIMEOUT,
+        session_timeout(target),
         ExecutorDiagnostics::in_directory(&directory.join("diagnostics")),
     )
     .with_expected_provenance(
@@ -445,16 +507,25 @@ fn run_session(
         &mut planner,
         &mut capture,
     );
+    let retention_wall = RetentionWall {
+        target,
+        key,
+        started: Instant::now(),
+    };
     drop(planner);
     // Retain partial evidence before interpreting any success or failure.
-    std::fs::write(
-        directory.join("capture.debug"),
-        format!(
-            "{capture:#?}\nresult={result:?}\nwall={:?}\n",
-            started.elapsed()
-        ),
-    )
-    .unwrap();
+    // Envelope captures keep the complete journals and transactions without
+    // the much larger duplicate Debug rendering. Existing targets keep it.
+    if retains_debug(target) {
+        std::fs::write(
+            directory.join("capture.debug"),
+            format!(
+                "{capture:#?}\nresult={result:?}\nwall={:?}\n",
+                started.elapsed()
+            ),
+        )
+        .unwrap();
+    }
     let exchanges = retain_exchanges(directory, &capture);
     if let Err(error) = &result
         && let Some(message) = unsupported_operation_message(error, &capture)
@@ -481,6 +552,7 @@ fn run_session(
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect();
+    drop(retention_wall);
     println!(
         "native capture {target:?} key={} wall={:.6}s",
         crate::common::hex_bytes(&key),
@@ -513,6 +585,52 @@ pub fn run(target: CaptureTarget) {
         std::fs::read(path).unwrap()
     });
     write_json(Path::new("/capture/runtime-measurements.json"), &runtime);
+    run_at(target, Path::new("/capture"), &prepared, &runtime);
+}
+
+/// Independent fresh chains per envelope coordinate, with one retained manifest per case.
+/// # Panics
+/// Panics on preparation, any session, or exact offline admission failure.
+pub(super) fn run_envelope(funding: bool) {
+    let _span =
+        tracing::info_span!(target:"vectors::native_test","keyed_final_envelope",funding).entered();
+    assert_eq!(
+        std::env::var("TRIPOD_FINAL_CAPTURE_DIR").unwrap(),
+        "/capture"
+    );
+    let prepared: serde_json::Value =
+        serde_json::from_slice(&std::fs::read("/capture-build/prepared.json").unwrap()).unwrap();
+    let runtime = runtime_measurements(&prepared, &std::env::current_exe().unwrap(), |p| {
+        std::fs::read(p).unwrap()
+    });
+    write_json(Path::new("/capture/runtime-measurements.json"), &runtime);
+    let targets: Vec<_> = if funding {
+        (0..=23).map(CaptureTarget::Funding).collect()
+    } else {
+        [0, 1, 2, 252, 253, 782, 1564, 1565]
+            .into_iter()
+            .map(CaptureTarget::Scaling)
+            .collect()
+    };
+    for (index, target) in targets.iter().enumerate() {
+        let root = PathBuf::from(format!("/capture/case-{index}"));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(root.join("work")).unwrap();
+        run_at(*target, &root, &prepared, &runtime);
+    }
+    write_json(Path::new("/capture/cases.json"), &targets);
+    std::fs::write(
+        "/capture/admitted",
+        "all per-case offline admissions passed; no deployment premises discharged\n",
+    )
+    .unwrap();
+}
+fn run_at(
+    target: CaptureTarget,
+    root: &Path,
+    prepared: &serde_json::Value,
+    runtime: &serde_json::Value,
+) {
     let mut sessions = vec![];
     let mut rows = vec![];
     let mut expected = vec![];
@@ -520,12 +638,13 @@ pub fn run(target: CaptureTarget) {
         .into_iter()
         .enumerate()
     {
-        let directory = PathBuf::from(format!("/capture/work/key-{i}"));
-        let (session, subjects) = run_session(target, key, &directory, &prepared, &runtime);
-        expected.push(measurement(&prepared, key));
+        let directory = root.join(format!("work/key-{i}"));
+        let (session, subjects) = run_session(target, key, &directory, prepared, runtime);
+        expected.push(measurement(prepared, key));
         sessions.push(session);
         rows.extend(subjects);
     }
+    let writing = Instant::now();
     let manifest = CaptureManifest {
         schema: 1,
         target,
@@ -543,23 +662,31 @@ pub fn run(target: CaptureTarget) {
         native_clause_dimensions: None,
         costs,
     };
+    write_json(&root.join("subject-manifest.json"), &archive.manifest);
     write_json(
-        Path::new("/capture/subject-manifest.json"),
-        &archive.manifest,
-    );
-    write_json(
-        Path::new("/capture/run-provenance.json"),
+        &root.join("run-provenance.json"),
         &serde_json::json!({"manifest_digest":archive.manifest_digest,"sessions":observed}),
     );
-    write_json(Path::new("/capture/capture.json"), &archive);
-    retained::read(
+    write_json(&root.join("capture.json"), &archive);
+    println!(
+        "native capture {target:?} case={} archive-writing wall={:.6}s",
+        root.display(),
+        writing.elapsed().as_secs_f64()
+    );
+    let admission = Instant::now();
+    let result = retained::read(
         target,
         &expected,
-        &std::fs::read("/capture/capture.json").unwrap(),
-    )
-    .expect("same offline admission as the typed mock");
+        &std::fs::read(root.join("capture.json")).unwrap(),
+    );
+    println!(
+        "native capture {target:?} case={} admission wall={:.6}s",
+        root.display(),
+        admission.elapsed().as_secs_f64()
+    );
+    result.expect("same offline admission as the typed mock");
     std::fs::write(
-        "/capture/admitted",
+        root.join("admitted"),
         "offline capture evidence admitted; no finality or deployment premise discharged\n",
     )
     .unwrap();

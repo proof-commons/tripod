@@ -2,7 +2,12 @@
 use super::*;
 
 impl<I: Exchange> Session<I> {
-    fn raw_submission(&mut self, key: [u8; 32], schema: CaptureSchema, bytes: Vec<u8>) -> Vec<u8> {
+    pub(super) fn raw_submission(
+        &mut self,
+        key: [u8; 32],
+        schema: CaptureSchema,
+        bytes: Vec<u8>,
+    ) -> Vec<u8> {
         self.io.before_submission(CaptureRow {
             schema,
             key,
@@ -23,13 +28,13 @@ impl<I: Exchange> Session<I> {
             })),
         );
         let response = self.io.exchange(step);
-        assert_eq!(
-            response.observed_layer,
-            schema.outcome(),
+        assert!(
+            response.observed_layer == schema.outcome(),
             "{schema:?}: {:?}",
             response.observed_detail
         );
-        if schema.outcome() == ObservedOutcomeLayer::Accepted {
+
+        if response.observed_layer == ObservedOutcomeLayer::Accepted {
             assert_eq!(response.mined_readback.unwrap().raw_transaction, bytes);
         }
         bytes
@@ -37,7 +42,7 @@ impl<I: Exchange> Session<I> {
 
     // A negative that changes non-witness bytes needs a new ordinary signature.
     // It cannot masquerade as a FinalSubject; only its accepted twin has that type.
-    fn resign(&mut self, control: &FinalSubject, tx: &mut elements::Transaction) {
+    pub(super) fn resign(&mut self, control: &FinalSubject, tx: &mut elements::Transaction) {
         let OperationSubject::SponsorSigning(mut request) =
             control.frozen().signing_step().subject().clone()
         else {

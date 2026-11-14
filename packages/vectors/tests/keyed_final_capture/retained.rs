@@ -42,6 +42,12 @@ pub enum Refusal {
     CostSubjects,
     CostNativeDimensions,
     ObservedWeight,
+    EnvelopeWeightMissing,
+    EnvelopeWeightMismatch,
+    EnvelopePolicyMissing,
+    EnvelopePolicyExchangeMissing,
+    EnvelopePolicyEncoding(String),
+    EnvelopePolicyForm(Box<vectors::maturity_native::MaturityNativePlanRefusal>),
     HandshakeExecutable,
     HandshakeFramework,
     HandshakeIntended,
@@ -80,6 +86,28 @@ pub fn admit(
     expected: &[CaptureProvenance],
     archive: &Archive,
 ) -> Result<(), Refusal> {
+    admit_core(target, expected, archive, true)
+}
+
+// Test-only decomposition: segment children prove every replay operation; this
+// function checks their joint envelope without rebuilding the prefix per child.
+pub(super) fn admit_framing(
+    target: CaptureTarget,
+    expected: &[CaptureProvenance],
+    archive: &Archive,
+) -> Result<(), Refusal> {
+    admit_core(target, expected, archive, false)
+}
+#[allow(
+    clippy::too_many_lines,
+    reason = "Owner precedence, byte checks and replay remain in one admission path."
+)]
+fn admit_core(
+    target: CaptureTarget,
+    expected: &[CaptureProvenance],
+    archive: &Archive,
+    replay_enabled: bool,
+) -> Result<(), Refusal> {
     if archive.sessions.len() != 2
         || expected.len() != 2
         || archive.sessions.iter().map(|s| s.key).collect::<Vec<_>>()
@@ -111,36 +139,75 @@ pub fn admit(
         &exchanges,
     )
     .map_err(Refusal::Manifest)?;
-    let replay = std::panic::catch_unwind(|| {
-        let mut rows = vec![];
-        for session in &archive.sessions {
-            let pending = session
-                .exchanges
-                .iter()
-                .map(|(request, response)| {
-                    (
-                        OperationStep::new(&request.case.step, request.subject.clone()),
-                        response.clone(),
-                    )
-                })
-                .collect();
-            let io = Recorded {
-                pending,
-                journal: vec![],
-                rows: vec![],
-            };
-            let io = driver::campaign(io, session.key, target);
-            assert!(
-                io.pending.is_empty(),
-                "extra exchange after final public reconstruction"
-            );
-            rows.extend(io.rows);
+    if matches!(
+        target,
+        CaptureTarget::Scaling(_) | CaptureTarget::Funding(_)
+    ) {
+        for (request, response) in &exchanges {
+            if let OperationSubject::Submission(subject) = &request.subject {
+                let weight = response
+                    .resources
+                    .transaction_weight
+                    .ok_or(Refusal::EnvelopeWeightMissing)?;
+                let tx: elements::Transaction =
+                    elements::encode::deserialize(&subject.transaction_bytes)
+                        .map_err(|_| Refusal::EnvelopeWeightMismatch)?;
+                if weight != u64::try_from(tx.weight()).unwrap() {
+                    return Err(Refusal::EnvelopeWeightMismatch);
+                }
+            }
         }
-        rows
-    })
-    .map_err(|_| Refusal::Replay)?;
-    if replay != archive.manifest.rows {
-        return Err(Refusal::ReconstructedManifest);
+    }
+    if matches!(target, CaptureTarget::Funding(_)) {
+        for row in archive
+            .manifest
+            .rows
+            .iter()
+            .filter(|r| r.schema == CaptureSchema::FundingControl)
+        {
+            let response = policy_response(&exchanges, &row.submitted)?;
+            let raw = response
+                .observed_detail
+                .as_deref()
+                .ok_or(Refusal::EnvelopePolicyMissing)?;
+            let detail: serde_json::Value = serde_json::from_str(raw)
+                .map_err(|e| Refusal::EnvelopePolicyEncoding(e.to_string()))?;
+            vectors::maturity_native::sponsored::Policy::parse(detail["policy"].clone())
+                .map_err(|e| Refusal::EnvelopePolicyForm(Box::new(e)))?;
+        }
+    }
+    if replay_enabled {
+        let replay = std::panic::catch_unwind(|| {
+            let mut rows = vec![];
+            for session in &archive.sessions {
+                let pending = session
+                    .exchanges
+                    .iter()
+                    .map(|(request, response)| {
+                        (
+                            OperationStep::new(&request.case.step, request.subject.clone()),
+                            response.clone(),
+                        )
+                    })
+                    .collect();
+                let io = Recorded {
+                    pending,
+                    journal: vec![],
+                    rows: vec![],
+                };
+                let io = driver::campaign(io, session.key, target);
+                assert!(
+                    io.pending.is_empty(),
+                    "extra exchange after final public reconstruction"
+                );
+                rows.extend(io.rows);
+            }
+            rows
+        })
+        .map_err(|_| Refusal::Replay)?;
+        if replay != archive.manifest.rows {
+            return Err(Refusal::ReconstructedManifest);
+        }
     }
     if archive.costs.is_some() != (target == CaptureTarget::Cost) {
         return Err(Refusal::CostPresence);
@@ -175,6 +242,21 @@ pub fn admit(
         }
     }
     Ok(())
+}
+
+pub(super) fn policy_response<'a>(
+    exchanges: &'a [(NativeOperationRequest, NativeOperationResponse)],
+    submitted: &[u8],
+) -> Result<&'a NativeOperationResponse, Refusal> {
+    exchanges
+        .iter()
+        .find_map(|(request, response)| match &request.subject {
+            OperationSubject::Submission(subject) if subject.transaction_bytes == submitted => {
+                Some(response)
+            }
+            _ => None,
+        })
+        .ok_or(Refusal::EnvelopePolicyExchangeMissing)
 }
 
 fn handshake_provenance(
@@ -239,7 +321,7 @@ pub fn mock_archive(target: CaptureTarget) -> Archive {
     let mut rows = vec![];
     let mut sessions = vec![];
     for key in [[42; 32], vectors::keyed_final_manifest::SECOND_KEY] {
-        let mock = driver::campaign(super::mock::Mock::new(), key, target);
+        let mock = driver::campaign(super::mock::Mock::for_target(target), key, target);
         rows.extend(mock.rows);
         let mut provenance = super::packet();
         provenance.key = Some(key);
