@@ -83,6 +83,15 @@ pub fn check() {
         }
     }
     assert_eq!(pins::SECOND_KEY, vectors::keyed_final_manifest::SECOND_KEY);
+    // Each path re-frozen since the retained capture is a pinned source whose
+    // capture-time digest is not its current pin.
+    for (path, captured) in pins::RETAINED_CAPTURE {
+        let pinned = pins::SOURCES
+            .iter()
+            .find(|(_, source, _, _)| source == path)
+            .map(|(_, _, _, digest)| digest);
+        assert!(pinned.is_some_and(|digest| digest != captured), "{path}");
+    }
     let path = "packages/compiler/src/engine_keyed.rs";
     let control = "pub mod program;";
     assert_eq!(children(path, control, &known), Ok(()));

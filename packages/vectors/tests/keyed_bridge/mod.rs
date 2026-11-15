@@ -363,6 +363,7 @@ fn tracing_control() {
     tracing::subscriber::with_default(subscriber, || {
         let session = fixture::history([42; 32]);
         provenance();
+        assert!(vectors::keyed_final_native::retained_capture_freeze_digest([42; 32]).is_ok());
         replay(&session);
         fixture::pairing_controls();
     });
@@ -401,6 +402,11 @@ fn tracing_control() {
             "{text}"
         );
     }
+    capture_event_counts(&rows);
+}
+
+/// Capture provenance, freeze and journal event counts of the bridge tracing control.
+fn capture_event_counts(rows: &[&str]) {
     assert_eq!(
         rows.iter()
             .filter(|r| r.contains("capture provenance completed"))
@@ -418,6 +424,12 @@ fn tracing_control() {
             .filter(|r| r.contains("capture freeze completed"))
             .count(),
         3
+    );
+    assert_eq!(
+        rows.iter()
+            .filter(|r| r.contains("retained freeze completed"))
+            .count(),
+        1
     );
     assert_eq!(
         rows.iter()

@@ -23,6 +23,10 @@ pub const LEAF_SUFFIX: [u8; 19] = [
 
 pub use pins::SECOND_KEY;
 
+/// Paths re-frozen since the retained final native corpus was captured, each with
+/// the digest it had at that capture. The literal freeze history checks every entry.
+pub const RETAINED_CAPTURE_PINS: &[(&str, [u8; 32])] = pins::RETAINED_CAPTURE;
+
 /// Reviewed once, with exact source identities in each offered row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum FrozenItem {
@@ -253,6 +257,27 @@ impl FreezeManifest {
                 outputs: 3,
             },
         }
+    }
+
+    /// The offer the retained final native corpus was captured under: the current
+    /// pins, with each path in [`RETAINED_CAPTURE_PINS`] at its capture-time digest.
+    ///
+    /// It describes that capture's freeze and is never itself validated against the
+    /// included sources, which carry the current bytes. It covers digest re-pins only:
+    /// a path added to or removed from the inventory after the capture yields an offer
+    /// that differs from the capture's, which the retained corpus then refuses.
+    #[must_use]
+    pub fn retained_capture_offer(key: [u8; 32]) -> Self {
+        let mut offer = Self::offer(key);
+        for identity in offer.frozen.values_mut().flatten() {
+            if let Some(&(_, digest)) = RETAINED_CAPTURE_PINS
+                .iter()
+                .find(|(path, _)| identity.path == *path)
+            {
+                identity.digest = digest;
+            }
+        }
+        offer
     }
 }
 

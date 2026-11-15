@@ -459,12 +459,13 @@ credentials, or production authority.
 |Item|Status|Required next evidence|
 |---|---|---|
 |Attestation derivation profiling|TODO|Profile the roughly threefold attestation-derivation regression between `0.7.96-dev` and the bite-1.2 candidate. Retain both runs, w20b1-keyed-cost-20261110T171100Z and w20b1-keyed-default-20261110T183600Z, at (`rec:w1b12:cost-results`) and (`rec:w1b12:default-cost`); compare only within each campaign because identical-code baseline medians moved. No numerical threshold or causal explanation is adopted. The wave-baseline effect is disposed at (`rec:w1b16:baseline`): no delivery failure is attributed to the final default-consumer campaign's 7.239723 s maximum, so the delivery-regression reopen trigger is not met; profiling remains open.|
-|Runner cgroup identity retention|TODO|Before any future build-cost comparison, correct `scripts/keyed-cost-kranich.py` to retain each counter sample's cgroup path and inode and establish that start/end counters share a scope. Review the correction before measurement. Current build CPU/stall deltas remain unadmitted, never clamped; both campaign records retain the raw defect.|
+|Runner cgroup identity retention|TODO|Before any future build-cost comparison, correct `scripts/keyed-cost-kranich.py` to retain each counter sample's cgroup path and inode and establish that start/end counters share a scope. Review the correction before measurement. Current build CPU/stall deltas remain unadmitted, never clamped; both campaign records retain the raw defect. A comparison against `0.7.96-dev` also needs equal external dependency sets, which the runner requires (`scripts/keyed-cost-kranich.py:251`–`252`) and which the dependency-line moves no longer provide.|
 |Bite-1.3 concrete-member controls|DONE|Model controls at (`rec:w1b13:closed`), serialized counterparts at (`rec:w1b14:reproduce`) and final native twins/complete histories at (`rec:w1b16:clauses`) and (`rec:w1b16:admit`) cover every member and one changed member beside controls. Exact-byte joins distinguish relations from native execution; an unchanged member in a refused whole transaction is not separately claimed to execute.|
 |Cryptographic report assumptions|DONE|The key-bound `Cryptographic` header carries conditional NUMS/discrete-log, preimage, second-preimage/collision and reviewed-target premises, with changed-condition/key/absence controls and independent review (`rec:w1b16:admit`). The typed-form obligation closes; the assumptions are carried, never proven.|
 |Gate-of-record journal retention|DONE|The loop-owned gate now copies each run’s per-test journals into its evidence directory as `cargo-test-json.tar.gz`, retaining digest, file count and size in the gate log; the `0.7.123-dev` journals were saved before replacement. This preserves future passing durations; the first `0.7.121-dev` timing gap remains explicitly unavailable under (`rec:w1b15:gate-review`).|
 |History phase tracing|TODO|Convert test-only printed phase timers to scoped tracing spans while preserving flushed diagnostics when a child times out; the current exception and its reason are recorded in `packages/vectors/TRACING.md` and (`rec:w1b15:gate-review`).|
 |Test-directory collision|REPAIRED|The shared vectors allocator uses exclusive temporary-directory creation with collision retry; an eight-thread, 512-directory same-label control checks distinct empty owned directories (`rec:w1b16:test-directory`). The `0.7.124-dev` gate remains RED; the repair's covering gate is separate evidence.|
+|Keyed freeze identity admission|TODO|The capture freeze digest (`keyed-capture-freeze-v1` over the `FreezeManifest` debug rendering), bound in capture provenance and capture rows, has no record under (`[ADR021-req:identity:admission-record]`) or (`rule:backlog:identity-admission`). Its walk of (`[ADR021-alg:identity:adjudication]`) decides its class, recipe and canonical encoding, its stale condition (any re-pin of an inventoried path), the migration behaviour stated at (`tab:vectors:dependency-refreeze`), and whether the Dependencies category binds whole manifest bytes or the typed requirements and roles it freezes; or records a stop.|
 
 ### Wave-1 final packet evidence · `rec:backlog:wave1-packet`
 
@@ -999,23 +1000,27 @@ hard predicates independently of the production helper it verifies.
 
 ### 8.1 Current and deferred dependencies · `tab:backlog:dependencies`
 
-| Dependency | Status | Role |
-|---|---|---|
-| `petgraph = 0.8.3` | Adopted and reviewed; `serde-1` only | Graph storage and standard algorithms |
-| `num-bigint` | Existing | Exact arbitrary-size integers |
-| `num-integer` | Existing | Exact integer helpers |
-| `num-traits` | Existing | Numeric traits |
-| `proptest` | Existing | Property and independent-oracle testing |
-| `sha2` | Existing | tagged SHA-256 for taproot leaf, branch and tweak commitments |
-| `lzma-rust2 = 0.24.0` | Reviewed; decoder-only `std`, no default features | Test-only bounded scaling archive admission; (`rec:backlog:scaling-decoder-review`) |
-| `num-rational` | Deferred | Future exact-rational consumer |
-| `faer` | Deferred | Future certified numerical diagnostics |
-| `fixedbitset` | Deferred | Dense local coverage sets if measured |
-| Elements libraries | Phase-3 review | Target transaction and consensus types |
-| SAT/LP/MILP solver | Deferred | Larger exact planning only after measured need |
-| `salsa` | Deferred | Incremental compiler queries |
-| `egg` | Deferred | Equality saturation |
-| `rayon` | Removed and deferred | Requires measured need and schedule-independent results |
+| Dependency | Class | Status | Role |
+|---|---|---|---|
+| `petgraph = 0.8.3` | Pinned | Adopted and reviewed; `serde-1` only | Graph storage and standard algorithms |
+| `num-bigint = 0.5` | Tracked | Existing | Exact arbitrary-size integers |
+| `num-integer` | Tracked | Existing | Exact integer helpers |
+| `num-traits` | Tracked | Existing | Numeric traits |
+| `proptest` | Tracked | Existing | Property and independent-oracle testing |
+| `sha2 = 0.11` | Tracked | Existing | tagged SHA-256 for taproot leaf, branch and tweak commitments |
+| `toml = 1` | Tracked | Existing | Architecture TOML publication rendering and parsing |
+| `lzma-rust2 = 0.25.0` | Tracked | Reviewed; decoder-only `std`, no default features | Test-only bounded scaling archive admission; (`rec:backlog:scaling-decoder-review`) |
+| `num-rational` | — | Deferred | Future exact-rational consumer |
+| `faer` | — | Deferred | Future certified numerical diagnostics |
+| `fixedbitset` | — | Deferred | Dense local coverage sets if measured |
+| Elements libraries (`elements = 0.27.0`, `secp256k1-zkp = 0.11.2`) | Slow | Phase-3 review | Target transaction and consensus types |
+| `bitcoin_hashes = 0.14.101` | Slow | Existing; reviewed at (`rec:w1b14:construct`) | Production sponsor HASH160 on the 0.14 copy that `bitcoin`, `secp256k1` and `base58ck` resolve; `elements` resolves its own copy on the 1.1 line |
+| SAT/LP/MILP solver | — | Deferred | Larger exact planning only after measured need |
+| `salsa` | — | Deferred | Incremental compiler queries |
+| `egg` | — | Deferred | Equality saturation |
+| `rayon` | — | Removed and deferred | Requires measured need and schedule-independent results |
+
+The other workspace entries are in the tracked class and are not listed here: each names one release line and resolves within it as that class states; whether each line is still the newest is the wave-boundary re-measurement of (`rule:backlog:dependency-currency`).
 
 The latest static review excluded `Cargo.lock`; no lockfile claim is made by
 that review.
@@ -1036,11 +1041,31 @@ A deferred dependency enters only when:
 
 Unused dependencies are not added to advertise intent.
 
+### 8.3 Dependency-currency rule · `rule:backlog:dependency-currency`
+
+An admitted dependency stays on a current release line, because the floating resolution of (`[ADR011-rule:toolchain:locked]`) only surfaces an outgrown dependency when the manifest names the dependency's current release line. Every workspace entry belongs to one of three classes.
+
+1. **Tracked.** The requirement names the dependency's current release line, which is its major version, or its minor version while the major is 0, and resolves to the newest release of that line that the declared Rust floor admits: under `resolver = "3"` Cargo prefers such a release and takes a newer one only when the line has none. When a newer line is published, the next maintenance step moves the workspace to it and adapts the call sites. A bare `"0"` is not a line: under a zero major each minor is a breaking line, so such a requirement does not say which API the code was written against.
+2. **Slow.** `elements`, `secp256k1-zkp` and the Rust Bitcoin crates they resolve, `bitcoin_hashes` among them, change only together with a renewed review of record, because the target conformance evidence was examined against exactly these versions and an upgrade reopens that examination. `bitcoin_hashes` is held on its 0.14 line because the resolved graph carries two copies: `bitcoin`, `secp256k1` and `base58ck` resolve the 0.14 copy, and the production sponsor HASH160 shares that copy with them, as (`rec:w1b14:construct`) records; `elements` requires the 1.1 line and resolves its own copy, which no first-party edge names. Moving the direct edge would compute the sponsor HASH160 with the copy `elements` uses, so it moves only with those crates, under a renewed review.
+3. **Pinned.** Any other entry that is not on its newest line, or that is pinned exactly, carries a comment beside its line in `Cargo.toml` naming the concrete reason and what would lift it. A new line that needs a newer compiler than the declared floor is pinned for that reason unless the floor is raised deliberately, because (`[ADR011-rule:toolchain:msrv]`) does not let a dependency update raise it incidentally.
+
+A move to a new line keeps the review a reviewed entry carries: the entry's record is renewed against the new release in the same change as its range, as (`rec:backlog:scaling-decoder-review`) requires of its own range. A move that would change a pinned digest, fixture, generated publication or census count is a finding about the upgrade and stops that move. A move that brings a crate into the resolved graph names it with its licence in the move's record, because (`[ADR011-rule:toolchain:licenses]`) admits only permissive licences into the first-party build graph and leaves that check to dependency review.
+
+At each wave boundary every entry is re-measured: the registry's newest stable release against the workspace line and the node's resolution. A tracked entry behind its newest line becomes the next maintenance step, and a slow or pinned entry is checked against the reason its comment states.
+
+The first moves under this rule (`lzma-rust2` 0.25, `num-bigint` 0.5, `toml` 1, `sha2` 0.11) brought these crates into the node's resolution: `block-buffer` 0.12.1, `crypto-common` 0.2.2, `digest` 0.11.3, `hybrid-array` 0.4.15, `num-bigint` 0.5.1, `serde_spanned` 1.1.3, `sha2` 0.11.1, `toml` 1.2.1+spec-1.1.0 and `toml_writer` 1.2.0+spec-1.1.0 under MIT OR Apache-2.0, `const-oid` 0.10.3 under Apache-2.0 OR MIT, and `lzma-rust2` 0.25.0 under Apache-2.0; and removed: `block-buffer` 0.10.4, `cpufeatures` 0.2.17, `crypto-common` 0.1.7, `digest` 0.10.7, `generic-array` 0.14.7, `lzma-rust2` 0.24.0, `num-bigint` 0.4.8, `serde_spanned` 0.6.9, `sha2` 0.10.9, `toml` 0.8.23, `toml_datetime` 0.6.11, `toml_edit` 0.22.27, `toml_write` 0.1.2, `version_check` 0.9.5 and `winnow` 0.7.15. Each entering licence is permissive. The entering crates declare Rust versions from 1.60 to 1.88, with `sha2` 0.11.1 at exactly 1.88 and every other at most 1.85, all within the workspace's 1.88 floor; this was checked from declared metadata, not by an additional compiler run at that floor, since no gate lane builds with Rust 1.88.
+
+| Item | Status | Required next evidence |
+|---|---|---|
+| Dependency-currency re-measurement | TODO | At each wave boundary, the newest stable registry release, the workspace line and the node's resolution for every workspace entry, with each tracked entry behind its line moved or pinned with its reason. The row returns to TODO after each boundary's measurement is recorded. |
+
 ### Scaling archive decoder review · `rec:backlog:scaling-decoder-review`
 
 Purpose and home: `packages/vectors/src/keyed_scaling_corpus.rs` is a test-only admission reader for a 164,375,392-byte native capture retained as a compressed original. `lzma-rust2` is declared in workspace dependencies and inherited only by vectors' dev-dependencies; the module is under `cfg(test)`, so neither the codec nor its types enter the public library API. A maintained LZMA implementation is a substantial algorithm and is not clearer as new first-party code. The independent encoder is XZ Utils 5.8.2 on kranich, with `xz --format=lzma --threads=1 -6 -c`; LZMA-Alone carries no timestamp or filename. The independently pinned original SHA-256 is the round-trip oracle. Capture framing and wire JSON are unchanged.
 
-Source and maintained status: the reviewed crates.io release is `lzma-rust2` 0.24.0 from [hasenbanck/lzma-rust2](https://github.com/hasenbanck/lzma-rust2), a maintained continuation of lzma-rust; its [release history](https://github.com/hasenbanck/lzma-rust2/blob/master/CHANGELOG.md) records ongoing decoder hardening and bounded worker fixes. The published crate's `Cargo.toml`, `src/lib.rs` and `src/lzma_reader.rs` were read, rather than relying on its description. The Cargo range is `0.24.0`, allowing patch updates within that minor under (`[ADR011-rule:toolchain:locked]`); no lockfile is committed. Future feature or range changes require renewed review.
+Source and maintained status: the reviewed crates.io release is `lzma-rust2` 0.25.0 from [hasenbanck/lzma-rust2](https://github.com/hasenbanck/lzma-rust2), a maintained continuation of lzma-rust; its [release history](https://github.com/hasenbanck/lzma-rust2/blob/master/CHANGELOG.md) records ongoing decoder hardening and bounded worker fixes. The published crate's `Cargo.toml`, `src/lib.rs` and `src/lzma_reader.rs` were read, rather than relying on its description. The Cargo range is `0.25.0`, allowing patch updates within that minor under (`[ADR011-rule:toolchain:locked]`); no lockfile is committed. Future feature or range changes require renewed review.
+
+Renewal from 0.24.0 to 0.25.0: the two published crates were compared file by file. The manifest differs only in its version: features, the optional SHA-2 dependency of the disabled XZ feature, Rust 1.85 and edition 2024 are as reviewed, and `forbid(unsafe_code)` still applies without `optimization`. The LZ decoder, range decoder and LZMA decoder modules are unchanged. In `src/lzma_reader.rs` the `std` build of `LzmaReader`, including `new_mem_limit` and its memory check before allocation, `set_relaxed_end_condition` and `read`, is unchanged; the `no_std` refill now retries an interrupted read, and the push-style `LzmaStream`, which this module does not call, gains `memory_usage`, `mem_limit` and `set_mem_limit` and no longer fails permanently on a memory-limit error. The remaining changes are in the XZ and lzip paths, which are disabled, and in the LZMA2 reader and stream, which this module does not call. The call sites, bounds and pinned digests are unchanged, so the admission evidence below carries over. Advisory review on 2026-11-15: a search of the RustSec advisory database found no lzma-rust2 entry at any version, so no advisory affects 0.25.0; the gate's cargo-audit lane remains the check of the resolved graph.
 
 License, graph and unsafe boundary: Apache-2.0 is permissive and compatible with this repository's AGPL-3.0-only distribution. `default-features = false, features = ["std"]` excludes `encoder`, `optimization`, `xz` and `lzip`; the optional SHA-2 dependency belongs to the disabled XZ feature, so this selected graph adds no transitive crates, build script, C library or native compiler. The crate applies `forbid(unsafe_code)` when `optimization` is disabled. Only its single-threaded `LzmaReader` is called; its encoder and unsafe assembly paths are not enabled. The external compression tool is not linked into the Rust graph.
 

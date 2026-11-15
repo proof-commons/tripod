@@ -745,7 +745,7 @@ pub fn capture_freeze_digest(
             .entered();
     let manifest = crate::keyed_final_manifest::FreezeManifest::offer(key);
     let result = crate::keyed_final_manifest::validate_manifest(&manifest, key)
-        .map(|()| sha256(format!("keyed-capture-freeze-v1:{manifest:?}").as_bytes()));
+        .map(|()| freeze_rendering_digest(&manifest));
     match &result {
         Ok(_) => tracing::debug!(target: "vectors::keyed_final_native", "capture freeze completed"),
         Err(error) => {
@@ -753,6 +753,41 @@ pub fn capture_freeze_digest(
         }
     }
     result
+}
+
+/// Digest of the freeze the retained final native corpus was captured under.
+///
+/// The current inventory is validated first, so included-source drift still refuses;
+/// the digest is then taken over the capture-time offer with the rendering of
+/// [`capture_freeze_digest`]. The retained corpus stays bound to the freeze of its
+/// capture, while a new capture carries the current freeze.
+/// # Errors
+/// Preserves the manifest owner's refusal before producing any digest.
+pub fn retained_capture_freeze_digest(
+    key: [u8; 32],
+) -> Result<[u8; 32], crate::keyed_final_manifest::FreezeRefusal> {
+    let _span = tracing::debug_span!(
+        target: "vectors::keyed_final_native",
+        "retained_capture_freeze_digest"
+    )
+    .entered();
+    let current = crate::keyed_final_manifest::FreezeManifest::offer(key);
+    let captured = crate::keyed_final_manifest::FreezeManifest::retained_capture_offer(key);
+    let result = crate::keyed_final_manifest::validate_manifest(&current, key)
+        .map(|()| freeze_rendering_digest(&captured));
+    match &result {
+        Ok(_) => {
+            tracing::debug!(target: "vectors::keyed_final_native", "retained freeze completed");
+        }
+        Err(error) => {
+            tracing::debug!(target: "vectors::keyed_final_native", refusal_kind = error.refusal_kind(), "retained freeze refused");
+        }
+    }
+    result
+}
+
+fn freeze_rendering_digest(manifest: &crate::keyed_final_manifest::FreezeManifest) -> [u8; 32] {
+    sha256(format!("keyed-capture-freeze-v1:{manifest:?}").as_bytes())
 }
 
 /// A journal-binding refusal, not an execution verdict or a chain assertion.

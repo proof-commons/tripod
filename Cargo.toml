@@ -49,6 +49,11 @@ anyhow = "1"
 # Existing Rust Bitcoin dependency, exact pin, no default features requested.
 # HASH160 includes this crate's SHA-256 and RIPEMD-160; signing-message SHA-256
 # remains sha2. Forward graph and unsafe/advisory review: rec:w1b14:construct.
+# Slow class (rule:backlog:dependency-currency): held on the 0.14 copy that
+# `bitcoin`, `secp256k1` and `base58ck` resolve, which the sponsor HASH160
+# shares with them; `elements` requires the 1.1 line and resolves its own copy.
+# Moving this edge would compute the sponsor HASH160 with the copy `elements`
+# uses, so it moves with those crates, under a renewed review of that record.
 bitcoin_hashes = { version = "=0.14.101", default-features = false }
 clap = { version = "4", features = ["derive"] }
 # Reference-implementation oracles and production keyed commitment/ECDSA verification:
@@ -70,10 +75,13 @@ clap = { version = "4", features = ["derive"] }
 # `elements` pinned to the version the Wave-5 review of record examined
 # (packages/target-elements/src/transaction_form.rs); the default
 # `json-contract` feature is not needed by an oracle role.
+# Slow class (rule:backlog:dependency-currency): the target conformance
+# evidence was examined against exactly these versions, so they move only
+# together with a renewed review of record.
 elements = { version = "=0.27.0", default-features = false }
 secp256k1-zkp = { version = "=0.11.2", default-features = false, features = ["std"] }
-nix = { version = "0", features = ["process", "signal", "fs", "term"] }
-num-bigint = "0.4"
+nix = { version = "0.32", features = ["process", "signal", "fs", "term"] }
+num-bigint = "0.5"
 num-integer = "0.1"
 num-traits = "0.2"
 # Only `serde-1` is enabled, retained deliberately for anticipated raw
@@ -86,18 +94,20 @@ num-traits = "0.2"
 # crates into the first-party build graph, which ADR-011's dependency rule
 # does not admit without a separate policy decision, and `rayon` added
 # nondeterministic parallelism. Consumers use only core petgraph
-# (DiGraph / NodeIndex / Direction / visit).
+# (DiGraph / NodeIndex / Direction / visit). The pin is exact because the
+# review of record examined that version; a renewed review of a newer release
+# lifts it.
 petgraph = { version = "=0.8.3", features = ["serde-1"] }
 proptest = "1"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.10"
-lzma-rust2 = { version = "0.24.0", default-features = false, features = ["std"] }
+sha2 = "0.11"
+lzma-rust2 = { version = "0.25.0", default-features = false, features = ["std"] }
 tempfile = "3"
-textwrap = "0"
+textwrap = "0.16"
 thiserror = "2"
-toml = "0.8"
+toml = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = "2"

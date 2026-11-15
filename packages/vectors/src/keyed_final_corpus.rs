@@ -166,12 +166,13 @@ fn manifest_coordinates(manifest: &CaptureManifest) {
     use std::collections::{BTreeMap, BTreeSet};
     assert_eq!(manifest.schema, 1);
     let keys = [[42; 32], crate::keyed_final_manifest::SECOND_KEY];
+    // The retained corpus carries the freeze of its capture, not the current one.
     let freezes: BTreeMap<_, _> = keys
         .into_iter()
         .map(|key| {
             (
                 key,
-                crate::keyed_final_native::capture_freeze_digest(key).unwrap(),
+                crate::keyed_final_native::retained_capture_freeze_digest(key).unwrap(),
             )
         })
         .collect();
@@ -208,7 +209,10 @@ fn manifest_coordinates(manifest: &CaptureManifest) {
 )]
 fn joins(case: &Value, manifest: &CaptureManifest, target: usize) {
     use crate::final_native::{JoinRefusal, bind_native};
-    use crate::keyed_final_native::{CaptureProvenance, bind_capture_provenance};
+    use crate::keyed_final_native::{
+        CaptureProvenance, ProvenanceRefusal, bind_capture_provenance, capture_freeze_digest,
+        retained_capture_freeze_digest,
+    };
     let rows: std::collections::BTreeMap<_, _> = manifest
         .rows
         .iter()
@@ -226,10 +230,18 @@ fn joins(case: &Value, manifest: &CaptureManifest, target: usize) {
         assert_eq!(provenance.key, Some(key));
         let mut expected = run_provenance.clone();
         expected.key = Some(key);
-        expected.freeze = Some(crate::keyed_final_native::capture_freeze_digest(key).unwrap());
+        expected.freeze = Some(retained_capture_freeze_digest(key).unwrap());
         expected.protocol = Some(target_elements_conformance::protocol::NATIVE_PROTOCOL_SCHEMA);
         // The binder checks field presence and the executor pin; other run-wide fields match the run's first session.
         bind_capture_provenance(&expected, &provenance).unwrap();
+        // Paths re-frozen since this capture give the current freeze another digest,
+        // which this retained session refuses at exactly that coordinate.
+        let mut current = expected;
+        current.freeze = Some(capture_freeze_digest(key).unwrap());
+        assert_eq!(
+            bind_capture_provenance(&current, &provenance),
+            Err(ProvenanceRefusal::Freeze)
+        );
         let handshake: target_elements_conformance::protocol::ExecutorHandshake =
             serde_json::from_value(session["handshake"].clone()).unwrap();
         assert_eq!(Some(handshake.protocol_schema), provenance.protocol);

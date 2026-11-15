@@ -8,7 +8,7 @@ const SIGNING_INITIALIZER_DIGEST: [u8; 32] = [
     110, 243, 216, 65, 11, 144, 145, 108, 99, 224, 174, 195, 179, 244, 144, 50, 208, 215, 103, 140,
     237, 248, 173, 194, 203, 221, 37, 253, 140, 174, 54, 65,
 ];
-use vectors::keyed_final_manifest::FreezeManifest;
+use vectors::keyed_final_manifest::{FreezeManifest, RETAINED_CAPTURE_PINS};
 
 struct Row {
     path: &'static str,
@@ -375,6 +375,48 @@ const REVIEW: &[Row] = &[
     },
 ];
 
+/// A history that does not replay onto the live pins.
+#[derive(Debug, PartialEq, Eq)]
+enum HistoryRefusal {
+    /// A re-freeze row's previous digest is not the value it replaces, at this path.
+    Previous(&'static str),
+    /// The replayed digests differ from the live pins.
+    Current,
+}
+
+/// Replay the review rows and then each re-freeze, in order, onto the live pins.
+fn replay(
+    refreezes: &[Refreeze],
+    live: &std::collections::BTreeMap<&str, [u8; 32]>,
+) -> Result<(), HistoryRefusal> {
+    let mut history: std::collections::BTreeMap<_, _> = REVIEW
+        .iter()
+        .filter_map(|row| row.current.map(|digest| (row.path, digest)))
+        .collect();
+    for row in refreezes {
+        if history.insert(row.path, row.current) != Some(row.previous) {
+            return Err(HistoryRefusal::Previous(row.path));
+        }
+    }
+    if history != *live {
+        return Err(HistoryRefusal::Current);
+    }
+    Ok(())
+}
+
+/// Capture-time digests: each path re-frozen from row `after` on, at the previous
+/// digest of its first such row.
+fn captured_pins(
+    refreezes: &[Refreeze],
+    after: usize,
+) -> std::collections::BTreeMap<&'static str, [u8; 32]> {
+    let mut captured = std::collections::BTreeMap::new();
+    for row in &refreezes[after..] {
+        captured.entry(row.path).or_insert(row.previous);
+    }
+    captured
+}
+
 /// Every current pin must have a literal history row, including additions/removal.
 pub fn check() {
     let offered = FreezeManifest::offer([0; 32]);
@@ -384,19 +426,47 @@ pub fn check() {
         .flatten()
         .map(|p| (p.path.as_str(), p.digest))
         .collect();
-    let mut history: std::collections::BTreeMap<_, _> = REVIEW
-        .iter()
-        .filter_map(|row| row.current.map(|digest| (row.path, digest)))
-        .collect();
-    for row in REFREEZES {
-        assert_eq!(
-            history.insert(row.path, row.current),
-            Some(row.previous),
-            "{} previous freeze",
-            row.path
-        );
-    }
-    assert_eq!(history, current);
+    assert_eq!(replay(REFREEZES, &current), Ok(()));
+    // The newest row is accepted beside its one-coordinate subjects: a previous
+    // digest that is not the value replaced, and a current digest that is not the pin.
+    let newest = REFREEZES.len() - 1;
+    let mut rows = REFREEZES.to_vec();
+    rows[newest].previous[31] ^= 1;
+    assert_eq!(
+        replay(&rows, &current),
+        Err(HistoryRefusal::Previous("Cargo.toml"))
+    );
+    let mut rows = REFREEZES.to_vec();
+    rows[newest].current[31] ^= 1;
+    assert_eq!(replay(&rows, &current), Err(HistoryRefusal::Current));
+    // The retained native corpus is bound to the freeze of its capture: each path
+    // re-frozen since then is held at the previous digest of its first later row.
+    let retained: std::collections::BTreeMap<_, _> =
+        RETAINED_CAPTURE_PINS.iter().copied().collect();
+    assert_eq!(
+        retained.len(),
+        RETAINED_CAPTURE_PINS.len(),
+        "one entry per path"
+    );
+    assert_eq!(captured_pins(REFREEZES, AFTER_RETAINED_CAPTURE), retained);
+    // The marker one row either side gives another table.
+    assert_ne!(
+        captured_pins(REFREEZES, AFTER_RETAINED_CAPTURE - 1),
+        retained
+    );
+    assert_ne!(
+        captured_pins(REFREEZES, AFTER_RETAINED_CAPTURE + 1),
+        retained
+    );
+    // A second later row for the same path keeps the first row's previous digest.
+    let first = REFREEZES[AFTER_RETAINED_CAPTURE];
+    let mut twice = REFREEZES.to_vec();
+    twice.push(Refreeze {
+        path: first.path,
+        previous: first.current,
+        current: [0; 32],
+    });
+    assert_eq!(captured_pins(&twice, AFTER_RETAINED_CAPTURE), retained);
     assert_eq!(REVIEW.len(), 36);
     assert_eq!(
         REVIEW.iter().filter(|row| row.previous.is_some()).count(),
@@ -421,11 +491,14 @@ pub fn check() {
     }
 }
 
+#[derive(Clone, Copy)]
 struct Refreeze {
     path: &'static str,
     previous: [u8; 32],
     current: [u8; 32],
 }
+/// Rows from this index were frozen after the retained final native corpus was captured.
+const AFTER_RETAINED_CAPTURE: usize = 2;
 const REFREEZES: &[Refreeze] = &[
     // Behavioural: select recorded replay grammar; scaling archive admission reopened.
     Refreeze {
@@ -441,5 +514,20 @@ const REFREEZES: &[Refreeze] = &[
         path: "packages/vectors/src/keyed_scaling.rs",
         previous: REPLAY_DIGEST,
         current: SIGNING_INITIALIZER_DIGEST,
+    },
+    // Build graph: dependency release lines and their comments, the frozen dependency
+    // versions of rec:w1b16:adoption; no template, target, policy or envelope source
+    // change. Reopened: source identity and byte equivalence on the new graph, shown by
+    // the unchanged byte pins; native observations stand.
+    Refreeze {
+        path: "Cargo.toml",
+        previous: [
+            207, 49, 5, 177, 126, 211, 49, 179, 74, 216, 245, 158, 8, 115, 63, 200, 2, 149, 149,
+            68, 64, 172, 68, 60, 23, 250, 82, 135, 133, 90, 127, 63,
+        ],
+        current: [
+            159, 54, 98, 67, 237, 234, 207, 116, 198, 107, 188, 202, 219, 223, 151, 199, 23, 79,
+            78, 98, 211, 61, 223, 80, 101, 200, 155, 236, 95, 57, 116, 66,
+        ],
     },
 ];

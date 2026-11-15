@@ -199,7 +199,7 @@ fn preserve_engine_base() -> Result<(), Box<dyn Error>> {
             Some(format!("states:{PLACEMENT_STATES},candidates:{PLACEMENT_CANDIDATES}").as_str())
         );
         let result = capture(subject, proof_limits, placement_limits);
-        let digest = format!("{:x}", Sha256::digest(result.bytes.as_bytes()));
+        let digest = architecture::canonical::hex(&Sha256::digest(result.bytes.as_bytes()));
         let length = fields
             .get("bytes")
             .ok_or("missing byte length")?

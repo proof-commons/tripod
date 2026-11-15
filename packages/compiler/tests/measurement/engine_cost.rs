@@ -140,7 +140,7 @@ fn measured<T>(phase: &str, samples: &mut Vec<Sample>, f: impl FnOnce() -> T) ->
 }
 fn finish(name: &str, result: &str, stage: &str, value: &impl Debug, samples: &mut Vec<Sample>) -> Result<(), Box<dyn Error>> {
     let bytes = measured("format", samples, || format!("result: {result}\nstage: {stage}\n{value:#?}\n"));
-    let digest = measured("digest", samples, || format!("{:x}", Sha256::digest(bytes.as_bytes())));
+    let digest = measured("digest", samples, || architecture::canonical::hex(&Sha256::digest(bytes.as_bytes())));
     if !name.starts_with("keyed-") {
         let manifest = include_str!("../../tests/fixtures/engine_base/MANIFEST");
         let fields = manifest.split("\n\n").find_map(|entry| {

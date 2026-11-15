@@ -257,8 +257,8 @@ pub(super) const SOURCES: &[SourcePin] = &[
         "Cargo.toml",
         include_bytes!("../../../../Cargo.toml"),
         [
-            207, 49, 5, 177, 126, 211, 49, 179, 74, 216, 245, 158, 8, 115, 63, 200, 2, 149, 149,
-            68, 64, 172, 68, 60, 23, 250, 82, 135, 133, 90, 127, 63,
+            159, 54, 98, 67, 237, 234, 207, 116, 198, 107, 188, 202, 219, 223, 151, 199, 23, 79,
+            78, 98, 211, 61, 223, 80, 101, 200, 155, 236, 95, 57, 116, 66,
         ],
     ),
     (
@@ -325,3 +325,15 @@ pub(super) const SOURCES: &[SourcePin] = &[
         ],
     ),
 ];
+
+/// Root manifest identity under which the retained final native corpus was captured.
+const ROOT_MANIFEST_AT_CAPTURE: [u8; 32] = [
+    207, 49, 5, 177, 126, 211, 49, 179, 74, 216, 245, 158, 8, 115, 63, 200, 2, 149, 149, 68, 64,
+    172, 68, 60, 23, 250, 82, 135, 133, 90, 127, 63,
+];
+
+type CapturePin = (&'static str, [u8; 32]);
+/// Paths re-frozen since the retained final native corpus was captured, each at its
+/// capture-time digest: the `previous` digest of the path's first re-freeze row after
+/// that capture in the literal freeze history, which checks this table against it.
+pub(super) const RETAINED_CAPTURE: &[CapturePin] = &[("Cargo.toml", ROOT_MANIFEST_AT_CAPTURE)];
