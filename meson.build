@@ -77,6 +77,19 @@ attestation_section_files = attestation_proj.get_variable('attestation_section_f
 # against the on-disk tree, so a missed file is a build failure, never
 # a silent omission.
 # ---------------------------------------------------------------------------
+# The capture-contract family's 1800s Meson timeout is a hang guard,
+# separate from the budget and tolerance recorded beside a lane. In the full
+# gate of 2026-11-15 on kranich at 0.7.147-dev (gate evidence
+# wave2/record-0.7.147-dev), under load 54-79 on 30 threads, passing r7/r8
+# cases took 33-57s and both 180s lanes were killed. 1800s matches the
+# per-target Cargo guard and leaves fourfold headroom over the censored 180s
+# and every wall recorded beside these lanes; see rec:w1b15:wide-bound. A
+# completed run above 450s is a duration finding to report or split, never a
+# reason to widen the guard. A real hang costs its battery up to 1800s
+# before Meson reports TIMEOUT, or less where the gate's own bound ends the
+# battery first.
+capture_contract_hang_timeout = 1800
+
 subdir('adr')
 subdir('docs')
 subdir('plans')
@@ -1083,8 +1096,7 @@ live_native_capture_test = find_program('scripts/test-live-native-v2-r7-capture.
 # Full suite: earlier 55.19s; split round 102.02s. That round reached
 # load 153.59, while its full-suite battery ran from load 21.07 to 45.29.
 # Unchanged warm full-suite repeat: 70.49s, battery load 16.26 to 23.82.
-# Full-suite operating budget 2:00, tolerance 2:30 on the shared node;
-# harness timeout 3:00, well above the measured 102.02s full-suite wall.
+# Full-suite operating budget 2:00, tolerance 2:30 on the shared node.
 # Four isolated cases run at a time; mock Cargo encodes common fields once
 # per case. The driver still hashes and parses 79 artifacts per complete
 # capture. Pure shell with synthetic Git suites; no Rust toolchain, target
@@ -1095,7 +1107,7 @@ test(
   priority: 1,
   args: [meson.project_source_root()],
   suite: 'integration',
-  timeout: 180,
+  timeout: capture_contract_hang_timeout,
 )
 
 live_native_r8_capture_test = find_program('scripts/test-live-native-v2-r8-capture.sh')
@@ -1105,8 +1117,7 @@ live_native_r8_capture_test = find_program('scripts/test-live-native-v2-r8-captu
 # Full suite: earlier 55.74s; split round 103.20s. That round reached
 # load 153.59, while its full-suite battery ran from load 21.07 to 45.29.
 # Unchanged warm full-suite repeat: 70.57s, battery load 16.26 to 23.82.
-# Full-suite operating budget 2:00, tolerance 2:30 on the shared node;
-# harness timeout 3:00, well above the measured 103.20s full-suite wall.
+# Full-suite operating budget 2:00, tolerance 2:30 on the shared node.
 # Four isolated cases run at a time; mock Cargo encodes common fields once
 # per case. The driver still hashes and parses 85 artifacts per complete
 # capture. Pure shell with synthetic Git suites; no Rust toolchain, target
@@ -1117,7 +1128,7 @@ test(
   priority: 1,
   args: [meson.project_source_root()],
   suite: 'integration',
-  timeout: 180,
+  timeout: capture_contract_hang_timeout,
 )
 
 live_native_maturity_capture_test = find_program('scripts/test-live-native-maturity-capture.sh')
@@ -1129,17 +1140,21 @@ test(
   live_native_maturity_capture_test,
   args: [meson.project_source_root()],
   suite: 'integration',
-  timeout: 180,
+  timeout: capture_contract_hang_timeout,
 )
 
 live_native_maturity_mutant_capture_test = find_program('scripts/test-live-native-maturity-mutant-capture.sh')
 
+# The observer, native, confidential, diagnostic, retained and sponsored
+# capture contracts below carry no recorded budget or tolerance; their walls
+# are in each gate's meson-logs/testlog.json. The family timeout is a hang
+# guard, not a budget, and a measured budget belongs beside each lane.
 test(
   'live-native-maturity-observer-capture-contract',
   find_program('scripts/test-live-native-maturity-observer-capture.sh'),
   args: [meson.project_source_root()],
   suite: 'integration',
-  timeout: 300,
+  timeout: capture_contract_hang_timeout,
 )
 
 test(
@@ -1147,7 +1162,7 @@ test(
   find_program('scripts/test-live-native-maturity-native-capture.sh'),
   args: [meson.project_source_root()],
   suite: 'integration',
-  timeout: 300,
+  timeout: capture_contract_hang_timeout,
 )
 
 test(
@@ -1155,7 +1170,7 @@ test(
   find_program('scripts/test-live-native-maturity-confidential-capture.sh'),
   args: [meson.project_source_root()],
   suite: 'integration',
-  timeout: 300,
+  timeout: capture_contract_hang_timeout,
 )
 
 test(
@@ -1163,7 +1178,7 @@ test(
   find_program('scripts/test-live-native-maturity-diagnostic-capture.sh'),
   args: [meson.project_source_root()],
   suite: 'integration',
-  timeout: 300,
+  timeout: capture_contract_hang_timeout,
 )
 
 test(
@@ -1171,7 +1186,7 @@ test(
   find_program('scripts/test-live-native-maturity-retained-capture.sh'),
   args: [meson.project_source_root()],
   suite: 'integration',
-  timeout: 300,
+  timeout: capture_contract_hang_timeout,
 )
 
 test(
@@ -1179,7 +1194,7 @@ test(
   find_program('scripts/test-live-native-maturity-sponsored-capture.sh'),
   args: [meson.project_source_root()],
   suite: 'integration',
-  timeout: 300,
+  timeout: capture_contract_hang_timeout,
 )
 
 # Budget: 2:10, tolerance 3:00. Both profiles use a synthetic Git suite and
@@ -1189,19 +1204,21 @@ test(
   live_native_maturity_mutant_capture_test,
   args: [meson.project_source_root()],
   suite: 'integration',
-  timeout: 300,
+  timeout: capture_contract_hang_timeout,
 )
 
 attestation_stamps_test = find_program('scripts/test-attestation-stamps.sh')
 
 # Budget: 1:00, tolerance 3:00. Real cargo and git, no TeX; pinned serial
 # because it drives cargo against the shared target directory.
+# Its isolated release build can stretch with CPU contention; 1800s is a
+# hang guard separate from the recorded budget and tolerance.
 test(
   'attestation-stamps-scopes',
   attestation_stamps_test,
   args: [meson.project_source_root()],
   suite: 'integration',
-  timeout: 600,
+  timeout: 1800,
   is_parallel: false,
 )
 
@@ -1297,13 +1314,14 @@ test(
 # Seventy-six adapter processes across four test workers; signing stand-ins
 # exit on stop rather than a fixed sleep, with a bounded lifetime as fallback.
 # Two failed-startup cases retain the stand-in node's bounded lifetime.
+# The 1800s Meson guard leaves room for loaded subprocess startup and teardown.
 test(
   'executor-boundaries',
   python3,
   priority: 1,
   args: [meson.project_source_root() / 'scripts' / 'test-executor-boundaries.py'],
   suite: 'lint',
-  timeout: 60,
+  timeout: 1800,
 )
 
 gate_cargo_audit = find_program('scripts/gate-cargo-audit.sh')

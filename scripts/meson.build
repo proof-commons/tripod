@@ -40,12 +40,14 @@ test(
   timeout: 300,
 )
 
+# A capture contract (README, Gate): it shares the family's hang guard from
+# the root meson.build, which is not a budget.
 test(
   'compact-native-capture-contract',
   find_program('compact-native-capture-test.sh'),
   args: [meson.project_source_root()],
   suite: 'lint',
-  timeout: 120,
+  timeout: capture_contract_hang_timeout,
 )
 
 test(
