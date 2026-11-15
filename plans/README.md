@@ -2,6 +2,8 @@
 
 This directory contains non-normative implementation planning for Tripod, the contract closure compiler, and for the attestation contract that proves its build-out. Plans sit below the specification, the typed architecture, and the executable model, and are not protocol, compiler, target, bundle, ABI, evidence, or release inputs.
 
+`plans/` is dedicated under CC0 1.0 ([root](../README.md)).
+
 ## Authority · `rule:plans:authority`
 
 When artifacts disagree:

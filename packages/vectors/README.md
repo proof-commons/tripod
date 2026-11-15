@@ -10,6 +10,8 @@ Current capture launch documentation uses direct transient units, without the re
 
 Owns the canonical evidence substrate for compact ASH, live transfer, and the maturity announcement: semantic fixtures, independently derived expectations, the mutation registry, the relation-indexed coverage matrix, and the plan binding compact ASH to one exact linked bundle and transaction ABI (Guide-12 §16–§19). Its twenty-two `maturity_` modules include the run-of-record corpora, the five candidate-scope safety, continuity, root-history, public-recovery, and resource reports, and `maturity_refinement` (Guide-14).
 
+Recorded data under `fixtures/` is dedicated to the public domain under CC0 1.0 Universal as stated in the [root README](../../README.md); the package's `license` field covers the crate's code.
+
 The package owns evidence, not semantics. Every expectation it states is
 derived from the layer that defines the thing being expected — relation
 identities come from `realization`, coverage requirements come from
