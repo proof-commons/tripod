@@ -2,8 +2,8 @@
 
 > **Status:** ACTIVE
 > **Current gate:** Phase 7 — Burn, ASH, and clear
-> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. Phase 3 then delivered the Guide-8 target foundation, the Guide-9 native primitive gate, the Guide-10 constructor and wide-floor prototypes, and the Guide-11 declassification result, each with its own gate record. Public declassification is no longer an open blocker: an initial policy is selected — an explicit boundary reached by owner-authorized normalization, with the direct and public-committed paths deferred against three named target blockers — and the gate record is in §2.4. Phase-3 exit is recorded: the Guide-12 preflight register closed all sixteen seventh-review rows, and (`gate:phase3:exit`) was checked green on that tree with the record in §2.6. Phase-4 exit is recorded in §2.8: compact ASH ran end to end against a live target with twelve accepted and matched submissions and honest coverage stated at 100 of 211. Phase-5 exit is recorded in §2.20 and §2.21: the live-transfer campaign closed with the amended exit gate met on a countersigned assessment. Phase 6 — the STATE constructor and maturity announcement — was chartered against Guide 14 as the owner supplied it and archived it verbatim (`T6-001`), with Wave 0 — the tenth static review's disposition and the Phase-5 handoff revalidation — run and closed out in the required order (`T6-002`, `T6-031`) and the owner-issued conceptual preflight register binding Waves 1–13 (`T8-001`), with Wave 13 closed under `T11-147` and the gate record at (`sec:phase6:gate-record`) reading §23 NOT PASSED on five conditional conjuncts and the register fully discharged. Phase-6 exit is recorded in §2.26 and on the Phase-6 card's exit assessment at (`sec:phase6:exit-assessment`): the gate met on its amended text. The current phase is Phase 7 — burn, public ASH and permissionless clear — with Guide 15 chartered at `plans/guides/guide_fifteen.md`; Wave 0 is closed at (`rec:backlog:wave0-baseline`) and Wave 1 at (`rec:w1b16:wave1-exit`). Wave 2's typed burn and clear realization is next for planning under (`task:guide15-exec:wave2`); no later-wave delivery is claimed.
-> **Next gate:** Phase 7 — Wave 2 typed burn and clear realization (`gate:guide15-exec:wave2-gate`); planning opens under (`task:guide15-exec:wave2`) after the recorded Wave-1 exit.
+> **Current condition:** Phases 1 and 2 are complete. The target-independent compiler constructs one deterministic, validated scoped analyzed program for the complete pilot scope, factorized per operation, with relation-owned requirements, a corruption-resistant assembly validator, and independent assembly oracles; the Phase-2 exit gate record is in §2.11, including passed document reproducibility. Phase 3 then delivered the Guide-8 target foundation, the Guide-9 native primitive gate, the Guide-10 constructor and wide-floor prototypes, and the Guide-11 declassification result, each with its own gate record. Public declassification is no longer an open blocker: an initial policy is selected — an explicit boundary reached by owner-authorized normalization, with the direct and public-committed paths deferred against three named target blockers — and the gate record is in §2.4. Phase-3 exit is recorded: the Guide-12 preflight register closed all sixteen seventh-review rows, and (`gate:phase3:exit`) was checked green on that tree with the record in §2.6. Phase-4 exit is recorded in §2.8: compact ASH ran end to end against a live target with twelve accepted and matched submissions and honest coverage stated at 100 of 211. Phase-5 exit is recorded in §2.20 and §2.21: the live-transfer campaign closed with the amended exit gate met on a countersigned assessment. Phase 6 — the STATE constructor and maturity announcement — was chartered against Guide 14 as the owner supplied it and archived it verbatim (`T6-001`), with Wave 0 — the tenth static review's disposition and the Phase-5 handoff revalidation — run and closed out in the required order (`T6-002`, `T6-031`) and the owner-issued conceptual preflight register binding Waves 1–13 (`T8-001`), with Wave 13 closed under `T11-147` and the gate record at (`sec:phase6:gate-record`) reading §23 NOT PASSED on five conditional conjuncts and the register fully discharged. Phase-6 exit is recorded in §2.26 and on the Phase-6 card's exit assessment at (`sec:phase6:exit-assessment`): the gate met on its amended text. The current phase is Phase 7 — burn, public ASH and permissionless clear — with Guide 15 chartered at `plans/guides/guide_fifteen.md`; Wave 0 is closed at (`rec:backlog:wave0-baseline`) and Wave 1 at (`rec:w1b16:wave1-exit`). Wave 2's typed burn and clear realization has its bounded execution contract adopted under (`task:guide15-exec:wave2`); no later-wave delivery is claimed.
+> **Next gate:** Phase 7 — Wave 2 typed burn and clear realization (`gate:guide15-exec:wave2-gate`); the bounded sequence is adopted at (`rec:backlog:wave2-closure`) under (`task:guide15-exec:wave2`) after the recorded Wave-1 exit.
 > **Authority:** Current execution queue only. The specification, the realization document, typed architecture, implemented ADRs, accepted decisions, package contracts, phase cards, and accepted research results take precedence.
 
 This file contains only:
@@ -483,9 +483,156 @@ The corrected bite-1.6 packet is `0.7.142-dev`, independently reviewed through `
 | Bite 1.5 | DONE | Reader, premise form and six report families: (`rec:w1b15:closed`). |
 | Bite 1.6 | DONE | Final native subjects, admission, reviewed packet, full gate and separate closure: (`rec:w1b16:closed`). |
 | Wave 1 | CLOSED | Three criteria and exact domain: (`rec:w1b16:wave1-exit`), ruling 181 at (`rule:phase7:wave1-exit-ruling`). |
-| Wave 2 | PLANNING OPEN | Next in the guide's sequence: (`task:guide15-exec:wave2`); no plan or implementation is supplied here. |
+| Wave 2 | EXECUTION CONTRACT ADOPTED | Twelve packet gates at (`rec:backlog:wave2-closure`); implementation and Wave-2 delivery remain open. |
 
 The realized domain is one once-reviewed template with conditional authentication, observed under two representative public keys. Every 32-byte key is data; commitment succeeds or returns its reviewed typed refusal. Per-key construction, reading and premises remain necessary, but a key-specific campaign is not a precondition of use under unchanged frozen conditions. There is no deployment activation/finality, calibration, universal-security or constant-native-cost claim (`sec:w1b16:packet-domain`). All seven follow-ups above have named dispositions at (`tab:w1b16:packet-followups`); profiling, runner counter identity and history phase tracing remain open with their reasons.
+
+### Wave-2 adopted sequence and closure · `rec:backlog:wave2-closure`
+
+Under (`rule:phase7:wave2-rulings`), (`sec:realization:burn-clear`) owns the clause/identity/graph/witness/six-interface census. The twelve packets in (`sec:wave2:execution`), with the path/consumer corrections below, govern execution. This record adopts the drafts without rewriting them. The documents gate opens code, not Wave-2 delivery acceptance.
+
+The join covers twelve packet gates, eight deliverables, seven entry rows, dispositions 1/7/10/12, two compact reopenings, ruling 133's three subjects, six ledgers, comparable baselines, full gate logs and absent dimensions. Wave-3 plan proofs, Wave-4 carrier measurements, linked constructor equality, Wave-7 STATE generation, target signatures, native execution and Waves-10–12 reports remain owed. Results update implementation standing, not historical preflight findings.
+
+**Table (Wave-2 task packets)** · `tab:backlog:wave2-tasks`
+
+| Task reference | Status | Closing criterion |
+|---|---|---|
+| (`step:wave2:bite-2-0`) | TODO | Adopted rulings, complete clause census and exact path lists; (`gate:wave2:bite-2-0`). Adoption documents gate: green, gate-w20b1-20261115T175549Z.log, node 10s; review corrections require their own receipt. |
+| (`step:wave2:bite-2-1`) | TODO | Typed Clear assignment and exhaustive refusal/field tests; (`gate:wave2:bite-2-1`) |
+| (`step:wave2:bite-2-2`) | TODO | Bound internal projections and independent record-credit verdict; (`gate:wave2:bite-2-2`) |
+| (`step:wave2:bite-2-3a`) | TODO | Evaluated law bodies and frozen vocabulary design; (`gate:wave2:bite-2-3a`) |
+| (`step:wave2:bite-2-3b`) | TODO | Activated vocabulary, injective engine-key codes and compiler/vector compatibility; (`gate:wave2:bite-2-3b`) |
+| (`step:wave2:bite-2-4`) | TODO | Complete Burn declaration and weld; (`gate:wave2:bite-2-4`) |
+| (`step:wave2:bite-2-5`) | TODO | Independent Burn conformance; (`gate:wave2:bite-2-5`) |
+| (`step:wave2:bite-2-6`) | TODO | Complete Clear declaration/weld and immediate ruling-133/138 reopenings; (`gate:wave2:bite-2-6`) |
+| (`step:wave2:bite-2-7`) | TODO | Independent Clear conformance and six-field comparison; (`gate:wave2:bite-2-7`) |
+| (`step:wave2:bite-2-8`) | TODO | Joint region/projection/public-dependency evidence; (`gate:wave2:bite-2-8`) |
+| (`step:wave2:bite-2-9`) | TODO | Both compact dispositions, ruling-133 subjects and inherited compatibility reconciled; (`gate:wave2:bite-2-9`) |
+| (`step:wave2:bite-2-10`) | TODO | Frozen wave packet, full gate, baseline figures and explicit Wave-3 receiver; (`gate:wave2:closing`) |
+
+DONE requires a performed packet gate. Adoption comprises this record, (`rule:phase7:wave2-rulings`), (`rule:guide15-exec:wave2-settings`), (`rec:guide15-exec:wave2-carrier`), the Wave-3 assumption and (`sec:realization:burn-clear`); its documents-gate receipt is recorded with bite 2.0's standing in this record. Each code packet meets (`def:wave2:packet`), then its lane and full import gates before advancement.
+
+**Table (Delivery and entry join)** · `tab:backlog:wave2-join`
+
+| Adopted rows | Producer and acceptance boundary | Retained receiver |
+|---|---|---|
+| All eight rows of (`tab:wave2:deliverables`) | Producers/closing evidence: 2.1 transition, 2.2 projections, 2.3a/2.3b vocabulary, 2.4/2.6 complete declarations/welds, 2.5/2.7 independent adapters, 2.8 joint evidence. | Each row's missing compiler, target, constructor and report evidence remains later work. |
+| All seven rows of (`tab:wave2:preflight`) | Adopt every Wave-2 packet and unchanged/later boundary; preserve historical findings. | Typed-record reports remain Wave 10; assignment/destruction execution remains Wave 7. |
+| Every row of (`tab:wave2:obligations`) | Adopt dispositions 1/7/10/12, rulings 133/138/157, consume-pipeline and baseline/gate obligations and producers, with these six ledgers and expanded census. | No model evidence replaces declaration acceptance; no typed projection replaces a report, native evidence or measured carrier. |
+| Ruling 138's two missing-clear-exit-emitted keys | Reopen separately at 2.6; 2.9 retains sponsorless and sponsored control/removal subjects, observed boundary and all 74 compact identities. | No emitted Clear credit; later plan/emission closure remains owed. |
+| Ruling 133's three subjects | Reopen at 2.6; 2.9 separately disposes announced-state premise, 16.6 / wrong-control-recipe finality and conjunct-5 RETIRED successor recipe. Retain both named candidate/dispatch tests, old/new premises, controls, boundary and standing under (`cond:wave0:baseline-freeze`). | Declaration dispatch is not candidate-leaf admission; no automatic finality or retirement. |
+| Witnesses and interfaces | (`tab:realization:burn-clear-witnesses`) and (`tab:realization:burn-clear-interfaces`) replace the draft proposals. | Each external requirement and later receiver remains owed. |
+
+At 2.10 recount the same identities under (`tab:wave2:baseline`): Safety 206/177/29; observed/final/retired/waiting 177/27/2/0; classes 81/12/39/15/16/14; relation links 14/108/84 and reasons 55/9/9/0/11; conjunct parts 10 MET/9 RETIRED/0 WAITING. Keep T11-064/T11-063/T4-009/T11-110 on their own criteria; dispose reopened regressions. Enumerate new declarations, relations, graphs, fields, roles, controls and premises separately. Retain logs/exits/walls/load/own CPU/cgroup scope/deltas and absent dimensions; runner/profiling/tracing follow-ups stay at (`tab:backlog:wave1-followups`).
+
+**Table (Verified bite path lists)** · `tab:backlog:wave2-paths`
+
+The original lists contain 71 distinct paths: 58 existing, 13 deliberately new; none moved or unexpectedly absent. Compiler test basenames in 2.3b resolve under packages/compiler/src/tests. Bite 2.5's raw-model test depends on a missing control; 2.9's planning records mean this record and the phase register; 2.10 rewrites no proposal. New Rust files require package meson.build/module registration at creation. Census inclusion grants no edit authority.
+
+The Files paragraphs in (`sec:wave2:execution`), expanded above, are the exact lists. Counts distinguish adoption-existing paths from declared new files; new files are named at creation and cited by creating bite thereafter.
+
+| Bite / source list | Existing / new | New files or earlier creating bite |
+|---|---|---|
+| (`step:wave2:bite-2-0`) | 7 / 0 | Four governing records, both drafts and plans/drafts/README.md; the last three expand the draft's “these drafts for adoption records”. |
+| (`step:wave2:bite-2-1`) | 8 / 1 | `packages/realization/src/tests/clear_state_tests.rs` |
+| (`step:wave2:bite-2-2`) | 7 / 3 | `packages/realization/src/burn_clear_observation.rs`; `packages/realization/src/burn_clear_projection.rs`; `packages/realization/src/tests/burn_clear_projection_tests.rs` |
+| (`step:wave2:bite-2-3a`) | 6 / 4 | `packages/realization/src/burn_clear_laws.rs`; `packages/realization/src/tests/burn_clear_relation_tests.rs`; plus two created in 2.2. |
+| (`step:wave2:bite-2-3b`) | 25 / 4 | Previously allocated in 2.2/2.3a. |
+| (`step:wave2:bite-2-4`) | 13 / 2 | `packages/realization/src/declarations/burn.rs`; `packages/realization/src/tests/burn_tests.rs` |
+| (`step:wave2:bite-2-5`) | 7 / 1 | `packages/model/src/tests/burn_realization_conformance_tests.rs` |
+| (`step:wave2:bite-2-6`) | 11 / 2 | `packages/realization/src/declarations/clear.rs`; `packages/realization/src/tests/clear_tests.rs` |
+| (`step:wave2:bite-2-7`) | 8 / 1 | `packages/model/src/tests/clear_realization_conformance_tests.rs` |
+| (`step:wave2:bite-2-8`) | 3 / 3 | `packages/model/src/tests/burn_clear_composition_tests.rs`; plus two created in 2.2/2.3a. |
+| (`step:wave2:bite-2-9`) | 8 / 0 | None. |
+| (`step:wave2:bite-2-10`) | 4 / 0 | None. |
+
+The 2.3b disposition/reaching-subject packet adds packages/compiler/src/case.rs and packages/compiler/src/tests/case_tests.rs. Other census-only paths retain no-change/later-wave dispositions; a necessary edit to such a path is a required additional path and stops the bite for a revised packet under (`rule:guide15-exec:wave2-settings`). Lexical discovery authorizes no target algorithm, interface or seventh ledger.
+
+**Table (Adopted consumer census and sweep)** · `tab:backlog:wave2-consumers`
+
+Sweep command: `rg -n '\b(Relation|RelationKind|RelationSubject|RelationEdge|ExpressionNode|FactId|StateField|StateMetadata|OperationObservation|ConstructibilityClass|RepresentationMode)\b' packages --glob '*.rs'`: 3,561 reference lines in 180 files (includes constructors/imports, not a semantic-match count). The broader inventory includes the inspected match/let/matches! sites, Self, local Kind/Subject aliases and wildcards via defining/importing files, notably identity.rs, expression.rs, validate.rs and compiler fold.rs. Each file's disposition covers all sites; inclusion grants no edit authority.
+
+packages/realization/src/declarations/mod.rs:16–20 refuses Burn/Clear as UnsupportedOperationDeclaration. packages/compiler/src/input.rs:196–231 revalidates membership but has no Burn/Clear plan refusal. Admitted Burn therefore cannot reach expected_case_ids today; 2.3b must add the refusal before 2.4/2.6 dispatch. Moreover packages/compiler/src/case.rs:244–282 accepts relation analyses and candidates inside the compiler crate and calls expected_case_ids at line 259. Both case and relation modules are private (packages/compiler/src/lib.rs:9, packages/compiler/src/lib.rs:48); exports include RelationCycleComponent but no case API or CompilerRelationAnalysis (packages/compiler/src/lib.rs:55–76). In-crate synthetic tests such as packages/compiler/src/tests/case_tests.rs can bypass bind_input. expected_case_ids skips non-Representation bodies at lines 375–377; derive_execution_cases takes candidate modes at lines 215–220. Binder refusal alone is insufficient: 2.3b owes an in-crate reaching subject and explicit new-law refusal/disposition; Wave 3 owns execution-case meaning. No present refusal at those in-crate entry points is claimed.
+
+Other silent selectors: compiler carrier.rs:595 (Cardinality), case.rs:128/181/375 (conservation, sponsor, representation), sponsor_region.rs:80/210 (envelope/open flow), operation_plan.rs:985 and the operation-specific selectors in live_transfer_plan.rs and maturity_announcement_plan.rs. Existing-operation selectors supply no Burn/Clear plans. Fact/STATE consumers additionally include realization declassification.rs:117 and expression.rs:183/202, compiler disclosure.rs:52 and maturity_announcement_requirements.rs:212–248, and vectors maturity_report.rs field rendering. Constructibility owns compiler engine_attestation/case_facts.rs:94's ConstructibilityClass selector. Preserve these vocabularies with regressions; expression additions also activate fold.rs:67. Realization validate.rs:1525 and evaluate.rs:634 select only ExpressionPredicate: 2.3b must extend the evaluated-expression ownership/collection path to ClearAssignment, and engine_attestation/foundation.rs:29 receives its explicit unsupported handling. These stay in the relation/STATE ledgers. The bound-extension entry lives in burn_clear_observation.rs/evaluate.rs, outside derive.rs; legacy public evaluation at packages/realization/src/derive.rs:216–240 must refuse Burn/Clear through evaluate.rs. Editing derive.rs requires a revised path packet. At packages/vectors/src/maturity_mutants/native_staging.rs:2866, 2.4 adds Burn to the non-STATE list; at lines 2875–2912, 2.3b classifies new STATE-reading bodies as mentioning STATE, preserving ruling 133's executable subject.
+
+Dispositions cover all sites, wildcards and tests. ACTIVE: 2.3b bodies/keys and unsupported-plan refusals; 2.4/2.6 dispatch pins. CASE: 2.3b case disposition/reaching subject; Wave 3 meaning. ADAPTER: 2.5/2.7 bound observations; raw model unchanged. SILENT: 2.3b direct-entry/refusal disposition; Wave 3 meaning. COMPILER: 2.3b preserves scoped selectors/forwarding with explicit refusal; Wave 3 plans. CONDITIONAL: vocabulary unchanged; 2.3a names expression-change paths before 2.3b. OWNER: 2.1–2.4/2.6 declaration/transition owners preserve constructors. TEST: preserve controls/scopes; 2.3b exhaustive matches, 2.9 candidates. EVIDENCE: 2.3b preserves scoped fields/reports/fixtures; 2.9 reopens premises. DOWNSTREAM: 2.3b preserves observations/STATE/representation/fixtures; target work later. SEPARATE: preserve keyed/shared-engine identities and 2.3b controls, not attestation semantics. SUPPLEMENT: 2.3b reviews unchanged graph/proof/value/side vocabulary, errors/forwarding; input.rs owns admission refusal, declarations/mod.rs 2.4/2.6 dispatch; value.rs depends on expression changes; architecture/frontend homonyms stay unchanged.
+
+| Disposition | Directory prefix | Rust file stems (append stem + .rs to prefix) |
+|---|---|---|
+| ACTIVE | `packages/compiler/src/` | coverage, engine_attestation, layout, placement |
+| ACTIVE | `packages/compiler/src/engine_attestation/` | foundation, requirement, source |
+| ACTIVE | `packages/realization/src/` | evaluate, expression, identity, relation, validate |
+| ACTIVE | `packages/vectors/src/` | maturity_safety |
+| ACTIVE | `packages/vectors/src/maturity_mutants/` | native_staging |
+| ADAPTER | `packages/model/src/` | conformance |
+| CASE | `packages/compiler/src/` | case |
+| COMPILER | `packages/compiler/src/` | carrier, coverage_graph, error, expression, lifecycle, live_transfer_plan, maturity_announcement_plan, maturity_announcement_requirements, operation_plan, proof, relation, requirement, source, sponsor_region |
+| COMPILER | `packages/compiler/src/engine_attestation/` | identity, operation, placement |
+| DOWNSTREAM | `packages/linker/src/` | carrier, live_carrier, state_bundle |
+| DOWNSTREAM | `packages/tapscript/src/` | bundle, maturity_assessment, pattern, state_announcement, state_constructor, upstream |
+| DOWNSTREAM | `packages/target-elements-conformance/src/bin/` | check-target-elements-prototypes |
+| DOWNSTREAM | `packages/target-elements/src/` | transaction_form |
+| DOWNSTREAM | `packages/transaction/src/` | state_abi, state_construct, state_signing, state_view |
+| EVIDENCE | `packages/vectors/src/` | compact_campaign, compact_campaign_second, first_party, live_safety, maturity_branch, maturity_closure, maturity_continuity, maturity_continuity_report, maturity_evidence, maturity_first_party, maturity_fixture, maturity_native, maturity_nonce_corpus, maturity_operator, maturity_recovery, maturity_recovery_report, maturity_refinement, maturity_report, plan, violation |
+| OWNER | `packages/realization/src/` | domain, error, lib, lifecycle, observation, state, state_codec |
+| OWNER | `packages/realization/src/declarations/` | announce_maturity, compact_ash, transfer_live |
+| SEPARATE | `packages/compiler/src/` | engine_coverage_graph, engine_coverage_join, engine_foundation, engine_requirement, keyed_plan |
+| SEPARATE | `packages/compiler/src/engine_keyed/program/` | refusal_tests, restore |
+| SEPARATE | `packages/compiler/src/tests/` | engine_coverage_graph_tests, engine_foundation_tests, engine_keyed_tests |
+| SEPARATE | `packages/realization/src/tests/` | keyed_profile_tests |
+| SEPARATE | `packages/vectors/src/` | keyed_history_reader |
+| SEPARATE | `packages/vectors/src/keyed_evidence/` | families, family_execution, family_resources, family_types |
+| SEPARATE | `packages/vectors/src/keyed_final_corpus/` | history |
+| SEPARATE | `packages/vectors/src/keyed_history_reader/` | authentication, evidence |
+| SEPARATE | `packages/vectors/tests/keyed_final_capture/` | cost |
+| SEPARATE | `packages/vectors/tests/keyed_history/` | families, reader, reader_review |
+| SILENT | `packages/compiler/src/engine_attestation/` | lifecycle, proof |
+| SUPPLEMENT | `packages/architecture/src/` | ids, validate |
+| SUPPLEMENT | `packages/architecture/src/tests/` | validation_tests |
+| SUPPLEMENT | `packages/compiler/src/` | analyzed, analyzed_operation, analyzed_validate, constructibility, engine_cases, engine_identity, engine_keyed, engine_records, foundation, input, instrumentation, lib, target |
+| SUPPLEMENT | `packages/compiler/src/engine_attestation/` | cases, coverage, coverage_join, program |
+| SUPPLEMENT | `packages/compiler/src/engine_keyed/` | program |
+| SUPPLEMENT | `packages/compiler/src/engine_keyed/program/` | assignment_tests, tests |
+| SUPPLEMENT | `packages/compiler/src/tests/` | engine_cases_tests, engine_program_tests, engine_proof_tests, guide13_reproductions, target_tests, tracing_boundary_tests, tracing_capture |
+| SUPPLEMENT | `packages/compiler/tests/` | keyed_plan |
+| SUPPLEMENT | `packages/flatten-latex-main/src/tests/` | mod |
+| SUPPLEMENT | `packages/linker/src/` | backend, bundle, state_carrier, state_error |
+| SUPPLEMENT | `packages/linker/src/tests/` | tracing_tests |
+| SUPPLEMENT | `packages/model/src/` | lib, manifest |
+| SUPPLEMENT | `packages/model/src/tests/` | tracing_boundary_tests, tracing_capture |
+| SUPPLEMENT | `packages/realization/src/` | binding, scope, value |
+| SUPPLEMENT | `packages/realization/src/declarations/` | keyed, mod |
+| SUPPLEMENT | `packages/realization/src/tests/` | mod, tracing_evaluation_tests, tracing_tests |
+| SUPPLEMENT | `packages/tapscript/src/` | keyed_bundle, lib |
+| SUPPLEMENT | `packages/tapscript/src/keyed_bundle/` | tests |
+| SUPPLEMENT | `packages/target-elements-conformance/src/` | declassification |
+| SUPPLEMENT | `packages/transaction/src/` | abi, live_request, operator_signing |
+| SUPPLEMENT | `packages/vectors/src/` | compact_corpus, error, fixture, keyed_cost, live_evidence, live_minimality_report, maturity_mutants, projection, report |
+| TEST | `packages/compiler/src/tests/` | analyzed_corruption_tests, analyzed_operation_tests, analyzed_program_oracle_tests, analyzed_program_tests, carrier_tests, case_tests, compact_validation_tests, constructibility_tests, coverage_graph_tests, coverage_oracle_tests, coverage_tests, disclosure_tests, expression_tests, fold_tests, layout_tests, lifecycle_tests, live_transfer_plan_tests, maturity_announcement_corruption_tests, maturity_announcement_oracle_tests, maturity_announcement_plan_tests, maturity_announcement_requirements_tests, operation_plan_tests, oracle_tests, pilot_coverage_tests, pilot_placement_tests, pilot_program_tests, placement_oracle_tests, placement_tests, proof_tests, relation_tests, requirement_tests, source_tests |
+| TEST | `packages/compiler/tests/` | public_api |
+| TEST | `packages/linker/src/tests/` | carrier_tests, mod, state_bundle_tests, state_carrier_tests, state_taptree_tests |
+| TEST | `packages/model/src/tests/` | realization_conformance_tests, state_metadata_conformance_tests |
+| TEST | `packages/realization/src/tests/` | announce_maturity_tests, compact_ash_tests, constructibility_tests, derivation_tests, disclosure_tests, expression_tests, guide11_reproductions, lifecycle_tests, live_transfer_tests, open_flow_tests, operator_vocabulary_tests, relation_identity_tests, root_policy_tests, state_codec_tests, state_tests, tracing_refusal_tests, type_tests |
+| TEST | `packages/realization/tests/` | public_api |
+| TEST | `packages/tapscript/src/tests/` | abstract_oracle_tests, compact_validation_tests, maturity_assessment_tests, state_announcement_tests, state_constructor_tests |
+| TEST | `packages/target-elements-conformance/src/tests/` | constructor_tests |
+| TEST | `packages/target-elements/src/tests/` | transaction_form_tests |
+| TEST | `packages/transaction/src/tests/` | state_abi_validation_tests, state_construct_tests, state_support, state_view_tests |
+| TEST | `packages/vectors/tests/` | maturity_operator |
+| CONDITIONAL | `packages/compiler/src/` | disclosure, fold |
+| CONDITIONAL | `packages/compiler/src/engine_attestation/` | case_facts, constructibility |
+| CONDITIONAL | `packages/realization/src/` | constructibility, declassification, derive |
+
+Supplement: `rg -n '\b(ExprId|ExpressionRole|SemanticType|ExpressionValue|ProtocolAmount|Count|ObservedSide|TransactionSide|ObservedObjectRef|ObservedObjectKind|ObservedValue|ObservedRootEffectKind|ConformanceProjectionError|RealizationError|CompileError|ExternalEvidenceRequirement|RelationStatus|RelationFailure|ProofKind|ProofAlternativeId|AvailabilityClass|ConstructibilityNodeId|ConstructibilityEdgeRole|RequirementStrength|WitnessRole|LifecycleNodeId|LifecycleEdge|DisclosureNodeId|DisclosureEdge|DisclosureReason)\b' packages --glob '*.rs'`: 5,377 reference lines in 210 files, 145 shared and 65 additional, hence 245 distinct files. Shared files inherit their primary disposition. Error/diagnostic/tracing Self matches stay with scoped error.rs/conformance.rs owners. Graph/proof/side/value/external-evidence members stay unchanged; expression additions require 2.3a activation.
+
+SUPPLEMENT lists the 65 additional files; the 145 shared files retain primary dispositions.
+
+The implementation packet has 73 paths (original 71 plus two case paths): 60 existing, 13 new. Census preservation/later-receiver dispositions authorize no downstream edits. Clamp-driven changes to value.rs, fold.rs or other conditional consumers stop 2.3a for a revised exact path packet before 2.3b.
+
+Six ledgers cover the lexical superset, separate keyed/engine identities and unchanged downstream constructors/common observations, without migration. Test public and in-crate case entries at their actual boundaries; wildcard fallthrough/planned guards prove no refusal. Bite 2.3b atomically integrates kind/body/subject matches with injectivity/old-code controls. New interfaces, undefined laws, lifecycle-contract changes or unsupported ruling evidence stop the owning packet.
+
+Divergences are recorded at (`tab:drafts:index`): expanded consumers, admission/case distinctions, two added 2.3b paths, exact identities/codes, witness/graph expansions and interface clarifications. Draft proposals and historical references stay untouched. Adoption supplies no code result, target evidence or completed Wave-2 gate.
 
 ## 4. Compact historical record · `sec:backlog:history`
 
@@ -500,7 +647,7 @@ The realized domain is one once-reviewed template with conditional authenticatio
 | Phase 4 | HISTORICAL | exit recorded in §2.8, the Phase-4 card, [the Guide-12 completion record](history/guide-12-completion-report.md), and the [closed task rows](history/backlog-history.md#exited-phase-task-rows) |
 | Phase 5 | HISTORICAL | exit recorded in §2.20 and §2.21, the countersigned assessment on the Phase-5 card, [the review archive](reviews/review-9-0.5.17-dev.md), and the [closed task rows](history/backlog-history.md#exited-phase-task-rows) |
 | Phase 6 | HISTORICAL | exit recorded in §2.26, the exit assessment on the Phase-6 card, the gate record at (`sec:phase6:gate-record`), and the [closed task rows](history/backlog-history.md#phase-6-closed-task-rows) |
-| Phase 7 | Active | Waves 0 and 1 are closed at (`rec:backlog:wave0-baseline`) and (`rec:w1b16:wave1-exit`). The independently reviewed corrected packet `0.7.142-dev` and its full repository gate support the separate bite-1.6 closure (`rec:w1b16:closed`) and ruling 181 (`rule:phase7:wave1-exit-ruling`). The result is one parameterized realization with conditional authentication and per-instance evidence, observed under two representative keys; commitment may succeed or return its typed refusal, and new keys require no template review or key-specific campaign under unchanged conditions. Funding's final-byte acceptance condition is met; the reader rule's deployment condition remains outside the closure scope. Earlier bite closures remain indexed at (`tab:backlog:wave1-exit`); historical probe refusals and provisional measurements retain their own meanings. Open receivers are (`tab:w1b16:exit-receivers`). Wave 2 — typed burn and clear realization — is next for planning under (`task:guide15-exec:wave2`), while the remaining Phase-7 deliverables and phase exit stay open. |
+| Phase 7 | Active | Waves 0 and 1 are closed at (`rec:backlog:wave0-baseline`) and (`rec:w1b16:wave1-exit`). The independently reviewed corrected packet `0.7.142-dev` and its full repository gate support the separate bite-1.6 closure (`rec:w1b16:closed`) and ruling 181 (`rule:phase7:wave1-exit-ruling`). The result is one parameterized realization with conditional authentication and per-instance evidence, observed under two representative keys; commitment may succeed or return its typed refusal, and new keys require no template review or key-specific campaign under unchanged conditions. Funding's final-byte acceptance condition is met; the reader rule's deployment condition remains outside the closure scope. Earlier bite closures remain indexed at (`tab:backlog:wave1-exit`); historical probe refusals and provisional measurements retain their own meanings. Open receivers are (`tab:w1b16:exit-receivers`). Wave 2 — typed burn and clear realization — has its bounded execution contract adopted under (`task:guide15-exec:wave2`), while the remaining Phase-7 deliverables and phase exit stay open. |
 
 ### 4.2 Historical finding families · `tab:backlog:historical-findings`
 
@@ -1292,7 +1439,7 @@ correctness check, not malicious-code containment.
 
 The Phase-2 gate is **passed** (§2.11), the Phase-3 gate is **passed** (§2.6 with the Phase-3 card), and the Phase-4 gate is **passed** (§2.8). The Guide-13 batch gate is §2.9: at that historical gate Phase 5 had not exited, because the batch stopped honestly on the two typed blockers the intermediate confidential-funding guide owned; the live-transfer campaign subsequently closed and Phase 5 exited in §2.20 and §2.21 with the amended gate met on a countersigned assessment. Phase 6 exited in §2.26 with its exit gate met on its amended text at the Phase-6 card's exit assessment (`sec:phase6:exit-assessment`), and Phase 7 is current. Guide 15 is chartered as the Phase-7 execution guide at `plans/guides/guide_fifteen.md`, with inherited debt and preflight in Wave 0, the Keyed Provenance Covenant in Wave 1 (`[A-abst:kpc:abstract]`), and the remaining phase delivery in Waves 2–14.
 
-The Phase-7 task state retains the Guide-15 import and Wave-0 closures below; (`tab:backlog:wave1-exit`) records the completed second-contract wave and its bite evidence. The next planning receiver is Wave 2 (`task:guide15-exec:wave2`), with no new plan or implementation supplied by this closing.
+The Phase-7 task state retains the Guide-15 import and Wave-0 closures below; (`tab:backlog:wave1-exit`) records the completed second-contract wave and its bite evidence. Wave 2's execution contract is adopted at (`rec:backlog:wave2-closure`); no compiler plan or implementation is supplied by adoption.
 
 | ID | Status | Task |
 |---|---|---|

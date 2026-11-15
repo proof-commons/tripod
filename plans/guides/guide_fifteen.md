@@ -1010,6 +1010,14 @@ The retained semantic and delivery reference is (`task:guide15:wave1`); the impl
 
 - model and realization conformance. (`task:guide15:wave1`).
 
+**Rule (Wave 2 files and packages)** · `rule:guide15-exec:wave2-settings`
+
+Wave 2 comprises twelve bites: 2.0, 2.1, 2.2, 2.3a, 2.3b, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9 and 2.10 at (`sec:wave2:execution`). Each bite is limited to its named package/file list, new test modules and nearest census registrations; the verified paths and consumer corrections are recorded at (`tab:backlog:wave2-paths`) and (`tab:backlog:wave2-consumers`). Architecture is read-only unless a concrete missing fact and all eight consume-pipeline items are separately accepted. Model transition acceptance, target lowering, constructor generation, signing and external interchange remain outside these bites. A required additional path or nonmechanical compiler algorithm stops the bite for a revised packet.
+
+**Record (Wave 2 closure carrier)** · `rec:guide15-exec:wave2-carrier`
+
+The Wave-2 closure record (`rec:backlog:wave2-closure`) in `plans/backlog.md` joins the twelve packet gates in the adopted strategy (`sec:wave2:execution`), the eight deliverables, seven consuming entry rows, dispositions 1/7/10/12, both compact reopenings, ruling 133's three reopening subjects, the six interface ledgers, baseline comparisons, full gate logs and absent dimensions. It closes no Wave-3 plan proof, Wave-4 carrier measurement, linked constructor equality, Wave-7 STATE generation, target signature, native execution, or Waves-10–12 report-production obligation. A consuming result updates current implementation standing without rewriting the historical preflight finding.
+
 **Assumption (wave2 — Inherited inputs)** · `assum:guide15-exec:wave2-inherited-inputs`
 
 Wave 0 supplies the model-law census, region-refit evidence, and accepted generation/record dispositions from bites 0.2 and 0.7; Wave 1 supplies the validated architecture-to-realization boundary and declaration weld from 1.1, never the attestation declarations themselves. (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave1`).
@@ -1063,6 +1071,8 @@ The retained semantic and delivery reference is (`task:guide15:wave2`); the impl
 **Assumption (wave3 — Inherited inputs)** · `assum:guide15-exec:wave3-inherited-inputs`
 
 Wave 0 supplies the closure-exact audit and region evidence from 0.2 and 0.3; Wave 1 supplies the validated placement and carrier assignment from 1.2 separating reader-owned from emitted relations, without supplying burn/clear plan proofs. (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave2`).
+
+Wave 2 supplies complete validated Burn/Clear declarations, assignment/projection/flow laws, public dependency and lifecycle censuses, independent model conformance, exact changed-interface ledgers and ruling-133/138 reopening records, and the rule that an explicit-only Burn does not discharge the PrivateCommitted live-receipt Burn exit; these are inputs to compiler plans and do not supply their proofs. The exact declaration, witness and graph census is (`sec:realization:burn-clear`); silent consumers and their reaching-subject obligations are (`tab:backlog:wave2-consumers`).
 
 **Gate (wave3 — Gate)** · `gate:guide15-exec:wave3-gate`
 
