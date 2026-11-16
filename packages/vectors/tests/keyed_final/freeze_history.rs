@@ -419,6 +419,7 @@ fn captured_pins(
 
 /// Every current pin must have a literal history row, including additions/removal.
 pub fn check() {
+    check_encoding_history();
     let offered = FreezeManifest::offer([0; 32]);
     let current: std::collections::BTreeMap<_, _> = offered
         .frozen
@@ -491,6 +492,50 @@ pub fn check() {
     }
 }
 
+fn check_encoding_history() {
+    use vectors::keyed_final_manifest::SECOND_KEY;
+    use vectors::keyed_final_native::{capture_freeze_digest, retained_capture_freeze_digest};
+
+    assert_eq!(ENCODING_DIGESTS.len(), REFREEZES.len() + 1);
+    for (key_index, key) in [[42; 32], SECOND_KEY].into_iter().enumerate() {
+        let mut offered = FreezeManifest::offer(key);
+        let current = ENCODING_DIGESTS.last().unwrap()[key_index];
+        check_encoding(&offered, current);
+        assert_eq!(capture_freeze_digest(key), Ok(current));
+        for (row, expected) in REFREEZES
+            .iter()
+            .rev()
+            .zip(ENCODING_DIGESTS[..REFREEZES.len()].iter().rev())
+        {
+            let source = offered
+                .frozen
+                .values_mut()
+                .flatten()
+                .find(|source| source.path == row.path)
+                .unwrap();
+            assert_eq!(source.digest, row.current);
+            source.digest = row.previous;
+            check_encoding(&offered, expected[key_index]);
+        }
+        let retained = ENCODING_DIGESTS[AFTER_RETAINED_CAPTURE][key_index];
+        check_encoding(&FreezeManifest::retained_capture_offer(key), retained);
+        assert_eq!(retained_capture_freeze_digest(key), Ok(retained));
+    }
+}
+
+fn check_encoding(manifest: &FreezeManifest, expected: [u8; 32]) {
+    use target_elements_conformance::constructor::tagged::sha256;
+
+    let encoded = manifest.capture_encoding().unwrap();
+    assert_eq!(sha256(encoded.as_bytes()), expected);
+    // Compatibility aid only: the explicit grammar, not Debug, owns the recipe.
+    assert_eq!(
+        encoded,
+        format!("keyed-capture-freeze-v1:{manifest:?}"),
+        "former Debug rendering drifted"
+    );
+}
+
 #[derive(Clone, Copy)]
 struct Refreeze {
     path: &'static str,
@@ -530,4 +575,54 @@ const REFREEZES: &[Refreeze] = &[
             78, 98, 211, 61, 223, 80, 101, 200, 155, 236, 95, 57, 116, 66,
         ],
     },
+];
+
+// Literal digests reconstructed from the former rendering for both retained keys.
+// Rows 0 and 1 have no contemporaneous artifact; they check history replay.
+// Row AFTER_RETAINED_CAPTURE is anchored to the sealed capture session digests;
+// the last row pins the current freeze. The independent ASCII reconstruction
+// is in the appendix of review/w20b1/freeze-encoder-review.md in the review
+// handoff (not part of this tree); it reproduces all eight literals without
+// calling this encoder. The literal checks above are the in-tree evidence.
+const ENCODING_DIGESTS: [[[u8; 32]; 2]; 4] = [
+    [
+        [
+            162, 164, 202, 223, 163, 252, 188, 69, 248, 178, 42, 141, 180, 107, 158, 181, 162, 184,
+            219, 130, 228, 163, 3, 44, 251, 40, 138, 184, 118, 42, 51, 68,
+        ],
+        [
+            212, 240, 137, 231, 164, 15, 217, 53, 149, 59, 218, 194, 63, 235, 82, 165, 214, 84,
+            131, 220, 94, 43, 171, 78, 127, 231, 105, 71, 150, 97, 116, 38,
+        ],
+    ],
+    [
+        [
+            161, 138, 178, 82, 195, 78, 176, 139, 36, 89, 205, 187, 189, 211, 172, 134, 44, 20,
+            168, 20, 161, 38, 246, 119, 122, 253, 196, 134, 81, 56, 227, 8,
+        ],
+        [
+            126, 146, 159, 139, 42, 55, 141, 0, 110, 121, 137, 46, 94, 139, 215, 86, 144, 99, 144,
+            227, 152, 216, 69, 74, 166, 215, 41, 28, 255, 187, 175, 175,
+        ],
+    ],
+    [
+        [
+            221, 247, 242, 150, 159, 109, 217, 117, 95, 115, 22, 145, 159, 104, 52, 142, 58, 28,
+            247, 155, 28, 15, 28, 251, 215, 229, 119, 74, 219, 100, 246, 251,
+        ],
+        [
+            168, 169, 220, 105, 137, 216, 57, 46, 128, 164, 120, 25, 20, 160, 124, 62, 223, 208,
+            96, 25, 71, 203, 84, 140, 91, 172, 127, 44, 87, 92, 145, 198,
+        ],
+    ],
+    [
+        [
+            171, 202, 209, 74, 213, 216, 200, 20, 229, 237, 104, 192, 110, 2, 25, 208, 1, 7, 33,
+            157, 131, 170, 205, 223, 202, 141, 136, 158, 167, 170, 119, 85,
+        ],
+        [
+            62, 159, 233, 231, 219, 248, 108, 237, 146, 92, 49, 116, 198, 228, 109, 119, 81, 70,
+            18, 36, 21, 163, 233, 121, 75, 21, 22, 90, 174, 88, 162, 71,
+        ],
+    ],
 ];

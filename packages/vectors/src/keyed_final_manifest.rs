@@ -11,6 +11,7 @@
 use std::collections::BTreeMap;
 use target_elements_conformance::constructor::tagged::sha256;
 
+mod encoding;
 mod pins;
 
 /// Exact ASCII bytes fixed by the adoption before generating any new fixture.
@@ -166,7 +167,8 @@ pub enum FreezeRefusal {
     KeyEncoding,
     /// An included source has drifted from the reviewed pin.
     SourceDrift(String),
-    /// Offered source inventory differs from the reviewed rows.
+    /// Offered source inventory differs from the reviewed rows or its paths
+    /// contain scalars outside the capture recipe's alphabet.
     FrozenInventory,
     /// Variable inventory is missing or substitutes a frozen fact.
     ComputedInventory,
@@ -232,6 +234,18 @@ pub fn predicted_leaf(key: [u8; 32]) -> Vec<u8> {
 }
 
 impl FreezeManifest {
+    /// Canonical UTF-8 preimage of `keyed-capture-freeze-v1`, including its prefix.
+    ///
+    /// Grammar and primitive encodings are owned by the explicit encoder in
+    /// `keyed_final_manifest/encoding.rs`. No diagnostic formatter participates.
+    /// Rendering checks the path alphabet, not full manifest validity.
+    /// # Errors
+    /// Returns [`FreezeRefusal::FrozenInventory`] for a path scalar outside
+    /// `[A-Za-z0-9/._-]`, agreeing with validation's inventory refusal.
+    pub fn capture_encoding(&self) -> Result<String, FreezeRefusal> {
+        encoding::render(self)
+    }
+
     /// Construct an untrusted offer from the retained review pins, not a verdict.
     #[must_use]
     pub fn offer(key: [u8; 32]) -> Self {

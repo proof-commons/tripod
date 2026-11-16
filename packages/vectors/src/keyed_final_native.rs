@@ -731,10 +731,11 @@ fn provenance_equality(
     Ok(())
 }
 
-/// Digest a checked freeze inventory using its diagnostic Rust rendering.
+/// Digest a checked freeze inventory using its owned canonical encoding.
 ///
-/// This join is explicitly test-local: a rendering change requires a new capture;
-/// it is neither a protocol identity nor a maintained descriptor format.
+/// The encoding preserves the historical diagnostic bytes without depending on
+/// `Debug`. An encoding change requires a new recipe and explicit transition;
+/// this conformance provenance is neither protocol identity nor an executable digest.
 /// # Errors
 /// Preserves the manifest owner's refusal before producing any digest.
 pub fn capture_freeze_digest(
@@ -745,7 +746,7 @@ pub fn capture_freeze_digest(
             .entered();
     let manifest = crate::keyed_final_manifest::FreezeManifest::offer(key);
     let result = crate::keyed_final_manifest::validate_manifest(&manifest, key)
-        .map(|()| freeze_rendering_digest(&manifest));
+        .and_then(|()| freeze_rendering_digest(&manifest));
     match &result {
         Ok(_) => tracing::debug!(target: "vectors::keyed_final_native", "capture freeze completed"),
         Err(error) => {
@@ -774,7 +775,7 @@ pub fn retained_capture_freeze_digest(
     let current = crate::keyed_final_manifest::FreezeManifest::offer(key);
     let captured = crate::keyed_final_manifest::FreezeManifest::retained_capture_offer(key);
     let result = crate::keyed_final_manifest::validate_manifest(&current, key)
-        .map(|()| freeze_rendering_digest(&captured));
+        .and_then(|()| freeze_rendering_digest(&captured));
     match &result {
         Ok(_) => {
             tracing::debug!(target: "vectors::keyed_final_native", "retained freeze completed");
@@ -786,8 +787,10 @@ pub fn retained_capture_freeze_digest(
     result
 }
 
-fn freeze_rendering_digest(manifest: &crate::keyed_final_manifest::FreezeManifest) -> [u8; 32] {
-    sha256(format!("keyed-capture-freeze-v1:{manifest:?}").as_bytes())
+fn freeze_rendering_digest(
+    manifest: &crate::keyed_final_manifest::FreezeManifest,
+) -> Result<[u8; 32], crate::keyed_final_manifest::FreezeRefusal> {
+    Ok(sha256(manifest.capture_encoding()?.as_bytes()))
 }
 
 /// A journal-binding refusal, not an execution verdict or a chain assertion.

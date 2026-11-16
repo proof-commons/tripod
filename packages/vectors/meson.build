@@ -31,6 +31,8 @@ vectors_source_files = files(
   'src/keyed_final_selection.rs',
   'src/keyed_final_native.rs',
   'src/keyed_final_manifest/pins.rs',
+  'src/keyed_final_manifest/encoding.rs',
+  'src/keyed_final_manifest/encoding/tests.rs',
   'src/keyed_corpus.rs',
   'src/keyed_cost.rs',
   'src/keyed_cost_corpus.rs',
