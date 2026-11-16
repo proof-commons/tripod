@@ -20,6 +20,8 @@ pub mod evaluate;
 pub mod expression;
 pub mod identity;
 pub mod keyed;
+pub mod keyed_fixed;
+pub mod keyed_fixed_relation;
 pub mod lifecycle;
 pub mod observation;
 pub mod operation;

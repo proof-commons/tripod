@@ -7,6 +7,7 @@ use crate::{OperationRealization, RealizationError};
 pub mod announce_maturity;
 pub mod compact_ash;
 pub mod keyed;
+pub mod keyed_fixed;
 pub mod transfer_live;
 
 fn derive_attestation_operation(
@@ -25,9 +26,10 @@ mod sealed {
     pub trait Sealed {}
     impl Sealed for architecture::Architecture {}
     impl Sealed for architecture::keyed::KeyedManifest {}
+    impl Sealed for architecture::keyed_fixed::KeyedFixedManifest {}
 }
 
-/// Both declaration families enter through the existing semantic owner seam.
+/// Declaration families enter through the existing semantic owner seam.
 pub trait OperationDeclaration: sealed::Sealed {
     type Id;
     type Declaration;
@@ -65,4 +67,17 @@ pub fn derive_operation<A: OperationDeclaration>(
     operation: A::Id,
 ) -> Result<A::Declaration, A::Error> {
     architecture.declare_operation(operation)
+}
+
+impl OperationDeclaration for architecture::keyed_fixed::KeyedFixedManifest {
+    type Id = architecture::keyed_fixed::KeyedFixedOperationId;
+    type Declaration = crate::keyed_fixed::KeyedFixedOperationRealization;
+    type Error = crate::keyed_fixed::KeyedFixedRealizationError;
+    fn declare_operation(&self, operation: Self::Id) -> Result<Self::Declaration, Self::Error> {
+        architecture::validate_draft(self).map_err(Self::Error::InvalidManifest)?;
+        match operation {
+            Self::Id::Source => Ok(keyed_fixed::source()),
+            Self::Id::Merge => Ok(keyed_fixed::merge()),
+        }
+    }
 }

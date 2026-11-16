@@ -104,3 +104,7 @@ Assert identical returned defects, hashes, canonical bytes, and JSON/TOML artifa
 ## Keyed declarations · `sec:tracing-architecture:keyed-probe`
 
 The keyed entry spans are DEBUG and carry operation or byte counts. Owner validation emits a completed/refused outcome and a payload-free refusal kind; span-close records supply timing. The keyed validation test compares traced and untraced control/refusal results. No key contents, history contents or native evidence is emitted. Existing attestation entry instrumentation remains unchanged.
+
+## Fixed-form declarations · `sec:tracing-architecture:keyed-fixed`
+
+DEBUG span validate_keyed_fixed_draft on architecture::validate records operation_count and one completed/refused event with refusal_kind. DEBUG keyed_fixed_binding on architecture::keyed_fixed records byte_count on completion. Span closes supply timings; no deployment parameters are logged. Legacy tracing is unchanged.

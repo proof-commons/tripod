@@ -10,6 +10,7 @@ use crate::{ObjectId, OperationId};
 pub enum SemanticProfileId {
     Attestation = 1,
     KeyedProvenance = 2,
+    KeyedFixedForm = 3,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

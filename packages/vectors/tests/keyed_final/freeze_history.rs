@@ -436,7 +436,7 @@ pub fn check() {
     assert_eq!(
         replay(&rows, &current),
         Err(HistoryRefusal::Previous(
-            "packages/realization/src/relation.rs"
+            "packages/architecture/src/semantic.rs"
         ))
     );
     let mut rows = REFREEZES.to_vec();
@@ -598,6 +598,20 @@ const REFREEZES: &[Refreeze] = &[
             244, 51, 249, 181, 247, 138, 190, 7, 115, 147, 202, 39, 100, 207, 186,
         ],
     },
+    // Behavioural: additive profile 3; legacy discriminants and encoders unchanged,
+    // not editorial.
+    // Reopens source identity and equivalence; exact-byte native evidence retained.
+    Refreeze {
+        path: "packages/architecture/src/semantic.rs",
+        previous: [
+            120, 165, 166, 100, 246, 194, 175, 190, 200, 88, 240, 31, 230, 154, 159, 162, 179, 71,
+            213, 214, 63, 22, 121, 168, 1, 171, 18, 77, 119, 210, 183, 96,
+        ],
+        current: [
+            221, 40, 250, 100, 110, 219, 0, 72, 202, 196, 219, 104, 194, 16, 34, 102, 179, 39, 97,
+            247, 20, 171, 4, 159, 254, 205, 126, 105, 11, 225, 211, 58,
+        ],
+    },
 ];
 
 // The first four digest pairs were reconstructed from the former rendering.
@@ -607,8 +621,9 @@ const REFREEZES: &[Refreeze] = &[
 // is in the appendix of review/w20b1/freeze-encoder-review.md in the review
 // handoff (not part of this tree); it reproduces those eight literals without
 // calling this encoder. The attestation vocabulary re-freeze adds the pair
-// produced by the owned capture encoder. Literal checks above cover every row.
-const ENCODING_DIGESTS: [[[u8; 32]; 2]; 5] = [
+// produced by the owned capture encoder. Fixed-form S3 adds the profile-3
+// source re-freeze pair from that same encoder. Literal checks above cover every row.
+const ENCODING_DIGESTS: [[[u8; 32]; 2]; 6] = [
     [
         [
             162, 164, 202, 223, 163, 252, 188, 69, 248, 178, 42, 141, 180, 107, 158, 181, 162, 184,
@@ -657,6 +672,16 @@ const ENCODING_DIGESTS: [[[u8; 32]; 2]; 5] = [
         [
             124, 46, 235, 162, 37, 206, 117, 237, 27, 190, 239, 183, 69, 207, 196, 191, 2, 29, 37,
             178, 78, 81, 210, 101, 0, 99, 242, 74, 94, 20, 136, 88,
+        ],
+    ],
+    [
+        [
+            212, 39, 43, 213, 224, 2, 11, 241, 183, 253, 204, 60, 170, 21, 224, 132, 112, 233, 234,
+            3, 101, 121, 176, 28, 111, 52, 160, 118, 153, 67, 82, 171,
+        ],
+        [
+            161, 179, 240, 198, 206, 162, 80, 180, 144, 243, 67, 18, 183, 249, 106, 104, 55, 3, 25,
+            157, 203, 11, 64, 146, 100, 95, 207, 230, 72, 73, 27, 167,
         ],
     ],
 ];

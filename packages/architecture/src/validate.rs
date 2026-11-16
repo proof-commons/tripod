@@ -224,6 +224,7 @@ mod semantic_sealed {
     pub trait Sealed {}
     impl Sealed for &crate::Architecture {}
     impl Sealed for &crate::keyed::KeyedManifest {}
+    impl Sealed for &crate::keyed_fixed::KeyedFixedManifest {}
 }
 
 /// Closed input vocabulary of the architecture validation entry.
@@ -286,6 +287,68 @@ impl<'a> DraftManifest for &'a crate::keyed::KeyedManifest {
                 return Err(Error::ClauseCensus);
             }
             Ok(ValidatedKeyedManifest(self))
+        })();
+        tracing::debug!(target: "architecture::validate", outcome = if result.is_ok() { "completed" } else { "refused" }, refusal_kind = result.as_ref().err().map(|error| error.kind()), "keyed manifest validation completed");
+        result
+    }
+}
+
+impl<'a> DraftManifest for &'a crate::keyed_fixed::KeyedFixedManifest {
+    type Validated = crate::keyed_fixed::ValidatedKeyedFixedManifest<'a>;
+    type Error = crate::keyed_fixed::KeyedFixedManifestError;
+
+    fn validate_owned(self) -> Result<Self::Validated, Self::Error> {
+        use crate::keyed_fixed::{FixedParameterId, KeyedFixedObjectId, KeyedFixedOperationId};
+        use crate::keyed_fixed::{
+            KEYED_FIXED_SCHEMA_VERSION, KeyedFixedClause, KeyedFixedDocumentBinding,
+            KeyedFixedManifestError as Error, ValidatedKeyedFixedManifest,
+        };
+        use crate::semantic::SemanticProfileId;
+        let span = tracing::debug_span!(target: "architecture::validate", "validate_keyed_fixed_draft", operation_count = crate::trace_count(self.operations.len()));
+        let _entered = span.enter();
+        let result = (|| {
+            if self.profile != SemanticProfileId::KeyedFixedForm {
+                return Err(Error::ProfileBinding);
+            }
+            if self.schema_version != KEYED_FIXED_SCHEMA_VERSION {
+                return Err(Error::SchemaVersion);
+            }
+            if self.document
+                != KeyedFixedDocumentBinding::paper().map_err(|_| Error::PaperBinding)?
+            {
+                return Err(Error::PaperBinding);
+            }
+            let mut parameters = self.parameters.clone();
+            parameters.sort();
+            if parameters
+                != [
+                    FixedParameterId::Key,
+                    FixedParameterId::Asset,
+                    FixedParameterId::Value,
+                ]
+            {
+                return Err(Error::ParameterCensus);
+            }
+            if self.objects != [KeyedFixedObjectId::Handle] {
+                return Err(Error::ObjectCensus);
+            }
+            let mut operations = self.operations.clone();
+            operations.sort();
+            if operations != [KeyedFixedOperationId::Source, KeyedFixedOperationId::Merge] {
+                return Err(Error::OperationCensus);
+            }
+            let mut clauses = self.clauses.clone();
+            clauses.sort();
+            if clauses
+                != [
+                    KeyedFixedClause::BornFirst,
+                    KeyedFixedClause::OwnQualification,
+                    KeyedFixedClause::SuccessorQualification,
+                ]
+            {
+                return Err(Error::ClauseCensus);
+            }
+            Ok(ValidatedKeyedFixedManifest(self))
         })();
         tracing::debug!(target: "architecture::validate", outcome = if result.is_ok() { "completed" } else { "refused" }, refusal_kind = result.as_ref().err().map(|error| error.kind()), "keyed manifest validation completed");
         result

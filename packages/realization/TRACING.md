@@ -108,3 +108,7 @@ The shared `cli-common` subscriber and amended ADR-010 are in force. Executable 
 ## Keyed declarations · `sec:tracing-realization:keyed-probe`
 
 The keyed declaration and validation spans are DEBUG and carry operation counts. Validation emits a completed/refused outcome and a payload-free refusal kind; span-close records supply timing. No key contents, history contents or native evidence is emitted. Existing attestation entry instrumentation remains unchanged.
+
+## Fixed-form declarations · `sec:tracing-realization:keyed-fixed`
+
+DEBUG spans derive_keyed_fixed and validate_keyed_fixed on realization::keyed_fixed retain operation_count. Derivation records completion; invalid-manifest refusal is recorded by its architecture validation entry. Validation records one completion/refusal outcome with refusal_kind. admit_positive_value records outcome and zero/none refusal_kind without the value. classify_member records the resulting member boolean without supplied key, program or field bytes. Span closes supply timings; pure projection and declaration helpers add no per-row events.

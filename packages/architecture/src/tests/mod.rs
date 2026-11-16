@@ -19,6 +19,7 @@
 //!   hash may move only with a `realization_version` bump.
 
 use crate::spec::Architecture;
+mod keyed_fixed_profile_tests;
 mod keyed_profile_tests;
 use crate::validate::{ValidatedDraftArchitecture, validate_draft};
 

@@ -26,6 +26,7 @@ pub mod deployment;
 pub mod export;
 pub mod ids;
 pub mod keyed;
+pub mod keyed_fixed;
 pub mod semantic;
 pub mod spec;
 pub mod validate;

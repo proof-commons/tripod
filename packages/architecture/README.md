@@ -345,3 +345,9 @@ architecture this crate declares.
 - **`tripod-artifacts`** owns the generated `architecture.json` and
   `architecture.toml` publications, rendering them through
   `PublishedArchitecture`.
+
+## Fixed-form declarations · `sec:architecture:keyed-fixed`
+
+The sibling `keyed_fixed` owner binds paper 2.1.0 at papers/lineage-fixed-form/ under schema 3 and profile `SemanticProfileId::KeyedFixedForm`. Its sealed validation entry admits exactly the symbolic Key/Asset/Value parameters, one Handle, SOURCE/MERGE and BornFirst/OwnQualification/SuccessorQualification. Deployment values and target bounds are absent. Legacy schema 2 and attestation publication remain unchanged.
+
+Canonical bytes are the domain `tripod keyed provenance fixed-form manifest schema 3\n`, big-endian u32 schema and u16 profile, u64 byte-length-framed paper path and version, the existing anchor-set hash, then parameter, object, operation and clause tables. Each table is sorted and has a u64 count followed by pairs of u16 codes; parameters and clauses use namespace zero, objects and operations use profile 3. The 206-byte grammar and digest are independently pinned by `fixed_form_literal_grammar_and_digest`. Cross-schema, changed-field, permutation and namespace controls accompany it. The manifest and binding feed realization through the existing sealed entries; compiler consumption belongs to S4.

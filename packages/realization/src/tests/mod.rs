@@ -8,6 +8,7 @@ mod derivation_tests;
 mod disclosure_tests;
 mod expression_tests;
 mod guide11_reproductions;
+mod keyed_fixed_profile_tests;
 mod keyed_profile_tests;
 mod lifecycle_tests;
 mod live_transfer_tests;
