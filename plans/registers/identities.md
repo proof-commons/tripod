@@ -1,22 +1,17 @@
 # Identity and Hash Register · `reg:identities:ownership`
 
-This register inventories every identity and digest the current tree actually
-produces, and fixes the ownership boundary of those that do not yet exist. The
+This register records adjudicated identities and digests, names known census gaps,
+and fixes the ownership boundary of identities that do not yet exist. The
 immediate policy owner is the identity adjudication procedure in
 [ADR-021](../../adr/021-identity-adjudication.md). This file
 is a planning aid, not a substitute for typed identity definitions, and is
 never toolchain input.
 
-Admission of any new digest is governed by
-(`[ADR021-req:identity:admission-record]`). Every entry below was walked through the
-adopted adjudication procedure in DI-004: each digest the tree computes was
-found from the owning code, put to the benefit criterion, and recorded either
-as an admission record or as a stop. The classification is per identity class —
-one recipe, one role, one consumer-decision pattern — and never per value.
+Admission of any new digest is governed by (`[ADR021-req:identity:admission-record]`). Every entry below was walked through the adopted adjudication procedure in DI-004 or the keyed capture freeze admission below: each digest recorded was found from the owning code, put to the benefit criterion, and recorded either as an admission record or as a stop. The classification is per identity class — one recipe, one role, one consumer-decision pattern — and never per value.
 
 ## 1. Census · `tab:identities:census`
 
-Every digest and identity the tree computes or carries, one row each. An em
+Adjudicated digest and identity classes, one row each; known gaps follow the table. An em
 dash in the class column is a deliberate absence, not an omission: no identity
 is admitted there, and the stop record says on which branch the walk ended.
 
@@ -28,6 +23,7 @@ is admitted there, and the stop record says on which branch the walk ended.
 | anchor-set hash | semantic | admitted, 2.4 |
 | Architecture semantic hash | semantic | admitted, 2.5 |
 | Architecture behavioural hash | semantic | admitted, 2.6 |
+| Keyed capture freeze | provenance | admitted, (`rec:identities:keyed-capture-freeze`) |
 | Generated-file exact comparison | — | stopped, 3.1 |
 | Field-level digests | — | stopped, 3.2 |
 | Deployment-profile hash | — | pre-admission, 3.3 |
@@ -40,8 +36,7 @@ is admitted there, and the stop record says on which branch the walk ended.
 | Executor wire-frame identity | — | stopped, 3.10 |
 | CI lane outputs | — | stopped, 3.11 |
 
-Six admitted classes, eleven recorded stops. No digest the tree computes is
-outside this table.
+Seven admitted classes, eleven recorded stops. Known gaps remain for the schema-2 keyed declaration binding, confidential fixture transcript digest, operator-right candidate digest, capture-manifest and archive/census/retention/provenance digests, run content addresses, first-party subject/program byte bindings and derived test-material values; their producers and owed walks are recorded at (`tab:backlog:wave1-followups`). These computations have no matching admission or stop here; this search is not a completeness proof, and the pending walks decide which require identities or belong under existing stops.
 
 ### 1.1 Status vocabulary · `tab:identities:status`
 
@@ -58,7 +53,7 @@ evidence of anything.
 
 ## 2. Admission records · `sec:identities:current`
 
-Six identity classes are admitted. Each records its subject, owner, producer,
+Seven identity classes are admitted. Each records its subject, owner, producer,
 consumer, decision, assurance class, stale condition, recipe by identifier,
 migration rule, non-claims, and status — the admission fields the adopted
 procedure requires, in the order
@@ -282,16 +277,24 @@ procedure requires, in the order
   though it identified the architecture.
 - **Status:** active, as a narrow versioning witness only.
 
+### 2.7 Keyed capture freeze · `rec:identities:keyed-capture-freeze`
+
+- **Subject:** the complete validated selected-source `FreezeManifest` and structural `Envelope` in `packages/vectors/src/keyed_final_manifest.rs`: twelve categories of ordered source rows, each relative path and full-file SHA-256; the ordered computed inventory; key and predicted leaf digest; recipe schema; target version; and all five envelope fields. The Dependencies category binds whole `Cargo.toml` and `packages/transaction/Cargo.toml` bytes, including comments and formatting, not a projection of typed requirements or roles and not the resolved lock.
+- **Owner:** vectors; the manifest types and recipe grammar are owned in `packages/vectors/src/keyed_final_manifest.rs` and `packages/vectors/src/keyed_final_manifest/encoding.rs`.
+- **Producer:** `capture_freeze_digest` in `packages/vectors/src/keyed_final_native.rs` validates source bytes and every offered field before hashing. `retained_capture_freeze_digest` validates the current offer first and then renders `retained_capture_offer`; historical pins are established separately by the history checks and sealed corpus, not validated against current source bytes.
+- **Consumer:** capture provenance and rows cross the capture-process and retained-archive boundary. `bind_capture_provenance` refuses an absent freeze as `Missing(Freeze)` and an unequal freeze as `Freeze`; `bind_capture_manifest` in `packages/vectors/src/keyed_final_capture.rs` requires each row's current per-key freeze; the joins in `packages/vectors/src/keyed_final_corpus.rs` require the retained freeze and refuse current-freeze substitution for that session.
+- **Decision:** accept the expected current or retained per-key freeze and refuse missing or unequal bindings. Review does not bind what arrives later, digest comparison is not direct comparison of the source manifest, and the archive digest binds its claim without establishing equality to the expected sources. Neither no-identity branch of (`[ADR021-alg:identity:adjudication]`) applies.
+- **Class:** provenance over the selected input set, locator-grade and not release-bound.
+- **Assurance:** the explicit grammar and specified unsigned decimal primitives make encoding deterministic across toolchains and platforms. Exhaustive struct destructuring and enum matches cover every field and variant; full-file pins cover the selected bytes. Source paths, source formatting and stored vector order are recipe-defined provenance content. Category order is fixed by explicit ranks, independent of the enum's derived order. Distinct names, fixed field order, delimited collections and quoted alphabet-only strings make the encoding injective: equal encodings imply equal manifests. The prefix separates the role and identifies the recipe; SHA-256 supplies collision and second-preimage resistance under its usual assumptions at both source-pin and aggregate layers. Every consumer can recompute from the owned encoder and source/history inputs. `encoding/tests.rs` pins primitive and alphabet grammar, varies every field and stored sequence order, and checks an accepted control against eleven one-scalar inventory refusals and a complete literal mutant encoding. `tests/keyed_final/freeze_history.rs::check_encoding_history` pins both keys across four reviewed snapshots. The sealed corpus anchors the capture marker; the two earlier snapshots are reconstructions with no contemporaneous artifact. Comparisons with the former renderer are regression aids with explicit drift diagnostics, never the definition. These warrant the provenance column of (`[ADR021-tab:identity:class-properties]`).
+- **Stale condition:** any inventoried source-byte change, including an editorial manifest edit, invalidates its current pin; the paired re-pin changes the current freeze. Inventory membership/order, computed inventory, key/leaf, schema, target and envelope are all inputs; a new key has its own value without reopening unrelated observations.
+- **Recipe:** `keyed-capture-freeze-v1` is SHA-256 of `FreezeManifest::capture_encoding`'s UTF-8 bytes, beginning with the literal domain `keyed-capture-freeze-v1:` and ending without a newline. The owned grammar fixes literal struct/field/enum names, exhaustive field order, category ranks, ordered vectors and byte arrays, punctuation and unsigned decimal primitives. Strings contain zero or more characters from ``[A-Za-z0-9/._-]``, copied unchanged between double quotes without escaping or normalization; any other scalar returns `FreezeRefusal::FrozenInventory`, agreeing with validation's inventory refusal. Rendering is not full validation. No field is omitted and no diagnostic formatter or Unicode property table participates. Under (`[ADR021-rule:identity:recipe-permanence]`), the identifier is preserved: inspection establishes the alphabet and integer agreement, while the sealed and pinned digests and independent reconstruction establish the former structural layout for the compiler that emitted the published values; derived Debug layout is not a language stability contract. Every emitted value used paths in this alphabet, including current pins, retained pins and replayed history. Thus no published value or verification outcome changes. The historical producer is `rustc 1.102.0-nightly` dated 2026-11-07; its exact compiler revision is recorded in the sealed session provenance under `packages/vectors/fixtures/keyed-final-native/`, the same revision that `lint/hash-citation-families.tsv` carries for the engine-base capture as `engine-base-capture-rustc`. The capture compiler records who produced those bytes; it does not define the owned grammar.
+- **Migration:** Under (`rule:vectors:keyed-refreeze`) and (`tab:vectors:dependency-refreeze`), retained captures keep each path's first post-capture previous digest in `RETAINED_CAPTURE`; later re-pins never substitute an intermediate digest. Current-source validation still precedes historical reconstruction. History replay checks continuity and the retained mapping; the sealed corpus fixes the capture marker and rejects current-freeze substitution. This migration handles digest replacements only; changed membership needs an explicit retained-reconstruction disposition, not a pin-only repair. No consumer transition or capture rebinding accompanies the byte-preserving encoder. A change of projection, encoding (including the path alphabet), primitive or domain requires a distinct recipe and explicit consumer transition under (`[ADR021-rule:identity:recipe-permanence]`). The distinct fixed-form recipe remains S2's decision.
+- **Non-claims:** matching values establish no source correctness, executable/toolchain/resolved-dependency identity, authenticity, independent implementation, native acceptance, semantic equivalence or deployment readiness. Included bytes are compile-time source provenance; a moved checkout must rebuild vectors. Admission permits dependent re-pins only with their own source/pin/history controls and affected-evidence disposition under (`rule:vectors:keyed-refreeze`).
+- **Status:** active.
+
 ## 3. Stop records · `sec:identities:stops`
 
-A stop is an outcome, not an omission. Each record states the proposal, the
-branch of the adjudication procedure that decided it, the date the walk was
-taken, and the condition under which it is retaken. Until that condition holds,
-the absence of a digest is this repository's decided state and the same
-proposal is not re-adjudicated from nothing. All eleven walks were taken
-2026-08-18, in DI-004, over a tree read from the owning code; where a standing
-policy already refused the digest, the record fixes that refusal in the
-procedure's own terms rather than restating it.
+A stop is an outcome, not an omission. Each record states the proposal, the branch of the adjudication procedure that decided it, the date the walk was taken, and the condition under which it is retaken. Until that condition holds, the absence of a digest is this repository's decided state and the same proposal is not re-adjudicated from nothing. All eleven walks were taken 2026-08-18, in DI-004, over a tree read from the owning code; where a standing policy already refused the digest, the record fixes that refusal in the procedure's own terms rather than restating it.
 
 ### 3.1 Generated-file exact comparison
 
