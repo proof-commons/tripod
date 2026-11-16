@@ -508,8 +508,8 @@ The join covers twelve packet gates, eight deliverables, seven entry rows, dispo
 
 | Task reference | Status | Closing criterion |
 |---|---|---|
-| (`step:wave2:bite-2-0`) | TODO | Adopted rulings, complete clause census and exact path lists; (`gate:wave2:bite-2-0`). Adoption documents gate: green, gate-w20b1-20261115T175549Z.log, node 10s; review corrections require their own receipt. |
-| (`step:wave2:bite-2-1`) | TODO | Typed Clear assignment and exhaustive refusal/field tests; (`gate:wave2:bite-2-1`) |
+| (`step:wave2:bite-2-0`) | DONE | Adopted with review corrections as `0.7.147-dev`; (`gate:wave2:bite-2-0`) is met: every deliverable, preflight and obligation row has its producer and acceptance boundary at (`tab:backlog:wave2-join`); all six eight-item interface ledgers and witness obligations are adopted at (`tab:realization:burn-clear-interfaces`) and (`tab:realization:burn-clear-witnesses`); plans/labels/census lanes passed in the full repository gate on `0.7.151-dev` (receipt below). Adoption and clause census remain at (`sec:realization:burn-clear`) and (`tab:backlog:wave2-paths`). |
+| (`step:wave2:bite-2-1`) | DONE | Typed Clear assignment and exhaustive refusal/field tests; (`gate:wave2:bite-2-1`). Landed as `0.7.151-dev` after independent review, required corrections and re-read; full repository gate green at 2026-11-16T08:41:23Z, 2,844s. Receipt below. |
 | (`step:wave2:bite-2-2`) | TODO | Bound internal projections and independent record-credit verdict; (`gate:wave2:bite-2-2`) |
 | (`step:wave2:bite-2-3a`) | TODO | Evaluated law bodies and frozen vocabulary design; (`gate:wave2:bite-2-3a`) |
 | (`step:wave2:bite-2-3b`) | TODO | Activated vocabulary, injective engine-key codes and compiler/vector compatibility; (`gate:wave2:bite-2-3b`) |
@@ -520,6 +520,10 @@ The join covers twelve packet gates, eight deliverables, seven entry rows, dispo
 | (`step:wave2:bite-2-8`) | TODO | Joint region/projection/public-dependency evidence; (`gate:wave2:bite-2-8`) |
 | (`step:wave2:bite-2-9`) | TODO | Both compact dispositions, ruling-133 subjects and inherited compatibility reconciled; (`gate:wave2:bite-2-9`) |
 | (`step:wave2:bite-2-10`) | TODO | Frozen wave packet, full gate, baseline figures and explicit Wave-3 receiver; (`gate:wave2:closing`) |
+
+Bite 2.1 receipt: `~/loops/evidence/wave2/record-0.7.151-dev/{manifest.txt,gate.log}` on kranich records the candidate, toolchains, commands, clean trees, all per-battery resource deltas and completion. All nine batteries exited 0; `ci.sh` passed 116 Meson lanes with zero failures, and the real-TeX documentation/generated run passed five checks with zero failures. Battery wall seconds / cgroup CPU-use delta microseconds: ci-setup 0/2921033; ci-build-gate 235/1000488118; ci-build-release 1479/7166016557; ci.sh 1110/7758893160; document-setup 1/3570858; document-compile 3/5882668; document-test 2/4848176; fmt 7/9489979; clippy 3/3993301. Resource scope is the gate's own cgroup, service `tripod-record-gate-20261116T075358Z.service`, including its containers; shell-child CPU accounting is separately labelled in the log. This is the performed gate receipt, not a Wave-2 closure claim.
+
+Duration finding under (`rec:w1b15:wide-bound`): the `0.7.151-dev` release build took 1,479s, versus 1,550s on `0.7.142-dev` at (`rec:w1b16:completed-packet-gate`), so it is not a regression against that figure. The 1,800s bound is the gate harness's own bound for that battery and is not set by any text in the tree; 1,479s is above its quarter-bound reporting threshold (450s). The node was shared and loaded (one-minute load 47.31 at release-build entry); gate-owned CPU-use delta was 7,166,016,557µs and CPU-pressure some delta 121,305,580µs. Retain the bound; the comparison establishes no causal attribution or automatic widening.
 
 DONE requires a performed packet gate. Adoption comprises this record, (`rule:phase7:wave2-rulings`), (`rule:guide15-exec:wave2-settings`), (`rec:guide15-exec:wave2-carrier`), the Wave-3 assumption and (`sec:realization:burn-clear`); its documents-gate receipt is recorded with bite 2.0's standing in this record. Each code packet meets (`def:wave2:packet`), then its lane and full import gates before advancement.
 
