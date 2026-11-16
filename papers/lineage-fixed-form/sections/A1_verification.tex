@@ -1,0 +1,39 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Verification Suite}
+\label{app:kpcfixed-verification:suite}
+Evidence for a realization must check the following statements; this appendix claims
+no completed checks. Qualification controls vary the key, asset, value
+and each explicit form separately, on both spent and successor outputs.
+Malformed first-position payments and later program-bearing outputs
+must be classified as nonmembers with no record and refuse spending,
+including attempts using private keys or secret data revealing the contents
+of non-explicit fields. Distinct-triple controls exercise
+\zcref{assum:kpcfixed-model:realization,prop:kpcfixed-model:disjoint-membership}.
+The birth family covers all clauses of
+\zcref{def:kpcfixed-model:first-output} and single birth
+(\zcref{prop:kpcfixed-model:single-birth}). The continuation family covers the
+same clauses at every consumed handle and
+\zcref{thm:kpcfixed-invariants:unique-successor,thm:kpcfixed-invariants:key-isolation}.
+The record family covers SOURCE, MERGE and their exhaustive recurrence
+(\zcref{op:kpcfixed-operations:source,op:kpcfixed-operations:merge,def:kpcfixed-operations:classification})
+with provenance and disjoint growth
+(\zcref{thm:kpcfixed-invariants:source-provenance,thm:kpcfixed-invariants:set-membership-growth}).
+The reading family covers reconstruction, incomplete and invalid evidence,
+the named evidence assumptions, and path reading
+(\zcref{sec:kpcfixed:interface,thm:kpcfixed-interface:membership-correctness,cor:kpcfixed-interface:path-reading}).
+The acceptance family checks the separation in
+\zcref{rem:kpcfixed-interface:record-evidence}.
+Surplus controls vary valid other outputs without changing the record
+union (\zcref{prop:kpcfixed-operations:merge-surplus}). Reading controls
+include omitted merged branches and SOURCE-only attribution
+(\zcref{rem:kpcfixed-interface:dependency-closure,op:kpcfixed-operations:source}).
+Public extension controls use only public recipe and history
+with independently supplied funding; contention observations establish no
+inclusion or finality bound (\zcref{rem:kpcfixed:public-extension}).
+The resource family measures a realization's costs without adding a
+covenant condition or claiming that this specification supplies a cost
+bound (\zcref{sec:kpcfixed:limitations,rem:kpcfixed:policy-floor}).
+
+\end{document}

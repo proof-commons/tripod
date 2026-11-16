@@ -6,7 +6,7 @@
 
 The public library surface includes `RoutingConfig`, `Stream`, `ExecError`, `ExecOutcome`, `Notification`, `preflight_routing`, `safe_open`, `run`, `MockChild`, `run_mock_child`, `Writer`, and `StreamProps`. A nonzero child status is returned in `ExecOutcome`, not treated as a setup error; `data_loss` reports a failed read, log write, reader join, or finalization even if the child exited zero. The binary retains the ADR-010 mapping: child 0 returns success 0, child 1 or 2 returns wrapper failure 1, and child statuses 3–255 are relayed unchanged (`[ADR010-rule:output:exit-codes]`).
 
-Attestation and Lineage Meson callers supply `--redirect` to route both streams to explicit logs (`papers/attestation/meson.build`, `papers/lineage/meson.build`). The library's README example is a caller example, not a shipped command. `cli-common` owns command startup, the JSON subscriber, panic and control records, command spans, terminal records, and exit classes; neither this library nor its `Writer` installs a subscriber.
+Attestation, Lineage and fixed-form Lineage Meson callers supply `--redirect` to route both streams to explicit logs (`papers/attestation/meson.build`, `papers/lineage/meson.build`, `papers/lineage-fixed-form/meson.build`). The library's README example is a caller example, not a shipped command. `cli-common` owns command startup, the JSON subscriber, panic and control records, command spans, terminal records, and exit classes; neither this library nor its `Writer` installs a subscriber.
 
 ## Output inventory · `sec:tracing-execwrap:inventory`
 

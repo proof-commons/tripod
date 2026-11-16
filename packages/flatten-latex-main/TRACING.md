@@ -6,7 +6,7 @@
 
 `src/lib.rs` owns the public `flatten` function and `FlattenOptions`, regular-file validation, suffix matching, line dispatch, recursive processing, and atomic staging and rename; `src/bin/flatten-latex-main.rs` is the sole binary and calls the library through `cli-common`; `src/tests/mod.rs` covers semantics and `tests/subprocess_contract.rs` covers CLI streams and exit classes.
 
-The Attestation and Lineage Meson document targets call the binary at `papers/attestation/meson.build:378` and `papers/lineage/meson.build:172`; the workspace has no other Rust call site for `flatten` outside this package. Its public return is `Result<()>`; the generated TeX is an explicit asset, never a stdout result.
+The Attestation, Lineage and fixed-form Lineage Meson document targets call the binary in `papers/attestation/meson.build`, `papers/lineage/meson.build` and `papers/lineage-fixed-form/meson.build`; the workspace has no other Rust call site for `flatten` outside this package. Its public return is `Result<()>`; the generated TeX is an explicit asset, never a stdout result.
 
 ## Output inventory · `sec:tracing-flatten-latex-main:inventory`
 

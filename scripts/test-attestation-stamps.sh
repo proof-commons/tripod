@@ -29,12 +29,10 @@ binary="$cargo_target/release/attestation-stamps"
 test -x "$binary"
 
 git_program="$(command -v git)"
-for paper in attestation lineage; do
-  repo="$temporary/repo-$paper"
-  other=attestation
-  if [ "$paper" = attestation ]; then
-    other=lineage
-  fi
+for paper in attestation lineage lineage-fixed-form; do
+ for other in attestation lineage lineage-fixed-form; do
+  [ "$paper" != "$other" ] || continue
+  repo="$temporary/repo-$paper-$other"
   mkdir -p "$repo/papers/$paper/sections" "$repo/papers/$other/sections" "$repo/docs/attestation"
   other_main="papers/$other/main.tex"
   other_section="papers/$other/sections/00_title.tex"
@@ -164,4 +162,5 @@ print(value)
   git -C "$repo" checkout -- "$main_tex"
 
   echo "==> all identity-scope assertions passed" >&2
+done
 done

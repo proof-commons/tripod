@@ -10,7 +10,11 @@ The plan tree declares where the work stands: `plans/roadmap.md` in its status s
 
 ## Layout
 
+The `papers` target publishes all three papers with independent committed-source stamps and versioned PDF/flat filenames.
+
 - `packages/` — the sixteen crates of the Cargo workspace, listed under *Packages* below.
+- `papers/lineage/` — Keyed Provenance Covenant version 1.0.0, target `lineage`.
+- `papers/lineage-fixed-form/` — Keyed Provenance Covenant, fixed-form edition, version 2.0.0, target `lineage-fixed-form`.
 - `papers/attestation/` — LaTeX source of the *Attestation* specification, built as the Meson subproject `attestation`.
 - `docs/attestation/` — the realization document `realization.md`, the Elements/Liquid realization contract, and `human.md`, its plain-language companion; they live outside the paper tree so that editing them does not perturb the paper's derived identity.
 - `adr/` — architecture decision records of implemented repository-wide engineering policy, indexed by `adr/README.md`. ADRs are subordinate to the specification, the realization contract, and the typed architecture, and take precedence over planning documents.

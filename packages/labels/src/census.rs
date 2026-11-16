@@ -167,20 +167,22 @@ impl RepositoryCensus {
         census.attestation_sections =
             files_with_extension(&paper.join("sections"), "tex", &mut walk);
         // The specification role retains its historical name while
-        // admitting the second paper under disjoint label areas.
-        let lineage = root.join("papers/lineage");
-        match fs::metadata(&lineage) {
-            Ok(metadata) if metadata.is_dir() => {
-                census.attestation_sections.push(lineage.join("main.tex"));
-                census.attestation_sections.extend(files_with_extension(
-                    &lineage.join("sections"),
-                    "tex",
-                    &mut walk,
-                ));
+        // admitting companion papers under disjoint label areas.
+        for directory in ["papers/lineage", "papers/lineage-fixed-form"] {
+            let lineage = root.join(directory);
+            match fs::metadata(&lineage) {
+                Ok(metadata) if metadata.is_dir() => {
+                    census.attestation_sections.push(lineage.join("main.tex"));
+                    census.attestation_sections.extend(files_with_extension(
+                        &lineage.join("sections"),
+                        "tex",
+                        &mut walk,
+                    ));
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => walk.unreadable(&lineage, &error),
             }
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => walk.unreadable(&lineage, &error),
         }
         census
             .traversal

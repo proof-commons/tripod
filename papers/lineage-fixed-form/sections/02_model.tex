@@ -1,0 +1,124 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Objects and the covenant}
+\label{sec:kpcfixed:model}
+
+\begin{definition}[History and outputs]
+\label{def:kpcfixed-model:history}
+A history $H$ is a finite, dependency-ordered sequence of valid events;
+validity includes the covenant of every spent output. Each event $e$ has
+finitely many inputs and an ordered output sequence $O(e)$. Positions start at zero.
+Each output carries exactly one program, an asset field and a value field.
+Each of the latter two fields is either explicit, publicly stating its
+asset or amount, or in another form.
+Output identities bind their creating event and position; event identities bind
+immutable contents and dependencies. Outputs are fresh and can be consumed
+at most once, by a later event. Every prefix of a history is itself a
+history: dependencies and the validity of each retained event are unchanged.
+Creating an output does not execute its covenant; a payment that cannot
+later satisfy its spending condition may still be created.
+\end{definition}
+
+\begin{definition}[Keyed membership]
+\label{def:kpcfixed-model:keyed-membership}
+Fix a public triple $q=(k,A,v)$ at covenant generation: a key, an asset
+and a positive value that an explicit value field can carry under the
+ordinary validity of the underlying history. Let $P_q$
+be its authenticated program. Write $Q_q(x)$ when output $x$ carries
+$P_q$, its asset field is explicit and states $A$, and its value field
+is explicit and states $v$. A handle in $K_q$ is exactly an output satisfying $Q_q$ at the
+first position in its creating event. No other field, including a nonce,
+is part of this membership predicate.
+A malformed payment is a first-position output bearing $P_q$ that fails $Q_q$.
+Let $I_q(e)$ be the set of handles of $K_q$ that $e$ consumes.
+An unconsumed handle is live, relative to the history or prefix being read.
+\end{definition}
+
+\begin{assumption}[Realization]
+\label{assum:kpcfixed-model:realization}
+A realization supplies immutable authenticated fields and distinct
+programs for distinct triples, under its stated cryptographic assumptions.
+It supplies a public recipe for $P_q$ and enforces exactly the spending
+condition of \zcref{def:kpcfixed-model:first-output}, with no alternative
+spending path. No secret can bypass it, including a private key or secret
+data revealing the contents of a non-explicit field. The covenant can
+authenticate the spent output's birth position, program, asset and value
+fields and forms, and those fields of the first successor output.
+No concrete mechanism or realization byte is presumed.
+\end{assumption}
+
+\begin{proposition}[Disjoint membership]
+\label{prop:kpcfixed-model:disjoint-membership}
+Under the distinct-program premise of \zcref{assum:kpcfixed-model:realization},
+$K_q\cap K_p=\varnothing$ for distinct triples $q\ne p$.
+\end{proposition}
+\begin{proof}
+An output in both classes would carry both $P_q$ and $P_p$ by
+\zcref{def:kpcfixed-model:keyed-membership}. By \zcref{def:kpcfixed-model:history},
+each output carries exactly one program, whereas
+\zcref{assum:kpcfixed-model:realization} makes these programs
+distinct. Thus no output belongs to both classes.
+\end{proof}
+
+\begin{definition}[The whole covenant]
+\label{def:kpcfixed-model:first-output}
+For output $x$ bearing $P_q$, let $b$ be its creating event and $e$ its
+spending event. The exact spending condition is
+\[
+ x=O(b)_0\quad\land\quad Q_q(x)\quad\land\quad Q_q(O(e)_0).
+\]
+An absent first output makes the condition false. The three conjuncts are
+called born-first, own-qualification and successor qualification, respectively.
+Together they require qualified birth first and qualified continuation first. Each program,
+asset and value comparison is against the constant supplied by $q$;
+there is no comparison between inputs and outputs, no sum or resource
+accounting and no authorization. There is no condition on other inputs
+or outputs. Ordinary validity of the underlying history still applies.
+\end{definition}
+
+\begin{remark}[Necessity of qualification]
+\label{rem:kpcfixed-model:qualification-necessity}
+Consider otherwise valid histories with adequate funding and admissible
+alternative values, changing one ingredient at a time. Without born-first
+in the spending condition, a
+later output with $P_q$ and the exact explicit pair can be spent into a
+qualified first output, contrary to nonmember unspendability
+(\zcref{prop:kpcfixed-model:single-birth}). Without
+own-qualification, a malformed payment with explicit asset $A$ and an
+explicit value greater than $v$ can be spent into a qualified first output,
+with the excess elsewhere: its spending event consumes no handle and is
+a SOURCE, again contrary to \zcref{prop:kpcfixed-model:single-birth}. If successor
+qualification checks only the program, a handle can be spent into a
+first output with the wrong explicit value; that nonmember cannot be
+spent under own-qualification. This contradicts the handle successor in
+\zcref{thm:kpcfixed-invariants:unique-successor}, the no-handle case of
+\zcref{def:kpcfixed-operations:classification} and the retained deposit in
+\zcref{prop:kpcfixed-operations:merge-surplus}. Finally, if membership omits the pair while the
+spending condition retains both-end qualification, a malformed payment
+created without consuming a handle becomes a SOURCE handle whose own
+qualification can never hold: its record is stranded, defeating public
+extension as stated in \zcref{rem:kpcfixed:public-extension}. Thus weakening
+the spending condition admits spends of nonmembers or continuation out of
+the class, while weakening membership strands SOURCE records against public
+extension. Membership and the spending condition must agree to retain both
+nonmember unspendability and public extension.
+\end{remark}
+
+\begin{proposition}[Single birth]
+\label{prop:kpcfixed-model:single-birth}
+Every event creates at most one handle of $K_q$. Every output bearing
+$P_q$ that is not a handle is unspendable and has no record set.
+\end{proposition}
+\begin{proof}
+Only position zero can belong to $K_q$, so there is at most one handle.
+A nonmember bearing $P_q$ either has a later birth position or fails
+$Q_q$ through its asset or value field or form. These immutable facts
+falsify respectively the birth or own-qualification clause in every
+attempted spend. Exact enforcement under
+\zcref{assum:kpcfixed-model:realization} makes this refusal exhaustive.
+The recurrence in \zcref{def:kpcfixed-operations:classification} assigns
+sets only to handles; merely creating such a payment introduces no record.
+\end{proof}
+
+\end{document}

@@ -82,7 +82,7 @@ census_args() {
       papers/attestation/stamps.tex.in) continue ;;
       packages/execwrap/tests/*) continue ;;
       papers/attestation/main.tex) emit_tagged --attestation-main "$path" ;;
-      papers/attestation/sections/*.tex) emit_tagged --attestation-section "$path" ;;
+      papers/attestation/sections/*.tex | papers/lineage/main.tex | papers/lineage/sections/*.tex | papers/lineage-fixed-form/main.tex | papers/lineage-fixed-form/sections/*.tex) emit_tagged --attestation-section "$path" ;;
       docs/attestation/realization.md) emit_tagged --realization "$path" ;;
       packages/model/src/*.rs) emit_tagged --model-source "$path" ;;
       *)

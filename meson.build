@@ -56,17 +56,22 @@ attestation_proj = subproject('attestation', default_options: latex_default_opti
 lineage_proj = subproject('lineage', default_options: latex_default_options)
 lineage_pdf = lineage_proj.get_variable('install_pdf')
 lineage_flat = lineage_proj.get_variable('flat_build_target')
+lineage_fixed_proj = subproject('lineage-fixed-form', default_options: latex_default_options)
+lineage_fixed_pdf = lineage_fixed_proj.get_variable('install_pdf')
+lineage_fixed_flat = lineage_fixed_proj.get_variable('flat_build_target')
 
 attestation_dep = attestation_proj.get_variable('document_dep')
 attestation_pdf = attestation_proj.get_variable('install_pdf')
 attestation_flat = attestation_proj.get_variable('flat_build_target')
 
 attestation_main_file = attestation_proj.get_variable('main_tex')
-# The existing specification census role carries both papers; kpc areas
+# The existing specification census role carries all three papers; disjoint areas
 # keep their labels disjoint within its A- citation namespace.
 attestation_section_files = attestation_proj.get_variable('attestation_section_files') \
   + lineage_proj.get_variable('main_tex') \
-  + lineage_proj.get_variable('lineage_section_files')
+  + lineage_proj.get_variable('lineage_section_files') \
+  + lineage_fixed_proj.get_variable('main_tex') \
+  + lineage_fixed_proj.get_variable('lineage_fixed_section_files')
 
 # ---------------------------------------------------------------------------
 # Lint census (ADR-014). Every subject directory declares its files in
@@ -228,7 +233,8 @@ census_exclude_pattern = '(^|/)[.]|^archive/|^scripts/[^/]*[.]sh$|^LICENSE-' \
 
 census_excluded_files = packages_excluded_files + script_excluded_files \
   + attestation_proj.get_variable('attestation_excluded_files') \
-  + lineage_proj.get_variable('lineage_excluded_files')
+  + lineage_proj.get_variable('lineage_excluded_files') \
+  + lineage_fixed_proj.get_variable('lineage_fixed_excluded_files')
 census_excluded_args = []
 foreach f : census_excluded_files
   census_excluded_args += ['--excluded', fs.relative_to(f, source_root)]
@@ -629,11 +635,45 @@ lineage_flatten = custom_target(
   console: false,
 )
 
+lineage_fixed_mirror = custom_target(
+  'mirror-lineage_fixed-pdf',
+  input: lineage_fixed_pdf,
+  output: 'lineage_fixed-pdf.mirrored.stamp',
+  command: [
+    sync_publication,
+    '@INPUT@',
+    publication_archive_root / 'rendered' / fs.name(lineage_fixed_pdf.full_path()),
+    '@OUTPUT@',
+  ],
+  depends: labels_stamp,
+  build_by_default: true,
+  build_always_stale: true,
+  console: false,
+)
+
+lineage_fixed_flatten = custom_target(
+  'flatten-lineage_fixed-mirror',
+  input: lineage_fixed_flat,
+  output: 'lineage_fixed-flat.mirrored.stamp',
+  command: [
+    sync_publication,
+    '@INPUT@',
+    publication_archive_root / 'flattened' / fs.name(lineage_fixed_flat.full_path()),
+    '@OUTPUT@',
+  ],
+  depends: labels_stamp,
+  build_by_default: true,
+  build_always_stale: true,
+  console: false,
+)
+
 alias_target('attestation', attestation_mirror, attestation_flatten)
 alias_target('flatten-attestation', attestation_flatten)
 alias_target('lineage', lineage_mirror, lineage_flatten)
 alias_target('flatten-lineage', lineage_flatten)
-alias_target('papers', attestation_mirror, attestation_flatten, lineage_mirror, lineage_flatten)
+alias_target('lineage-fixed-form', lineage_fixed_mirror, lineage_fixed_flatten)
+alias_target('flatten-lineage-fixed-form', lineage_fixed_flatten)
+alias_target('papers', attestation_mirror, attestation_flatten, lineage_mirror, lineage_flatten, lineage_fixed_mirror, lineage_fixed_flatten)
 
 # ---------------------------------------------------------------------------
 # Meson test surface. The cargo-global lanes stay cargo-tracked

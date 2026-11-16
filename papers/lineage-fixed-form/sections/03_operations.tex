@@ -1,0 +1,80 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Two mechanics}
+\label{sec:kpcfixed:operations}
+
+SOURCE and MERGE define $C_q(x)$ of every handle by recursion in dependency
+order. Their cases depend only on the creating event's consumed handles.
+Validity uses exact enforcement under \zcref{assum:kpcfixed-model:realization}.
+
+\begin{operation}[SOURCE]
+\label{op:kpcfixed-operations:source}
+An event $e$ with $I_q(e)=\varnothing$ that creates a handle
+$s=O(e)_0\in K_q$ is a SOURCE. The handle itself identifies the new record
+$r_q(s)=(q,s)$ and receives $C_q(s)=\{r_q(s)\}$.
+Call $s$ the SOURCE handle of that record. Its fresh identity binds its
+creating event, so no other event introduces that record.
+If a published reader rule requires attributable destruction for a
+record, that destruction belongs in this SOURCE event. A MERGE or an
+event creating no handle introduces no record to which it could be credited.
+\end{operation}
+
+\begin{operation}[MERGE]
+\label{op:kpcfixed-operations:merge}
+If $I_q(e)\ne\varnothing$, continue-first supplies $s=O(e)_0\in K_q$.
+MERGE assigns $C_q(s)=\bigcup_{x\in I_q(e)}C_q(x)$ and introduces no record.
+The consumed handles' covenant places no condition on the event's other
+outputs.
+\end{operation}
+
+\begin{proposition}[Merge surplus]
+\label{prop:kpcfixed-operations:merge-surplus}
+A MERGE consuming $n\ge 1$ handles of $q$ retains one deposit $v$ of $A$ at
+its successor and leaves $(n-1)v$ unconstrained by the covenant, without
+introducing records or constraining that surplus's destination.
+\end{proposition}
+\begin{proof}
+Each of the $n$ handles qualifies against the same constant pair $A,v$.
+Under \zcref{assum:kpcfixed-model:realization}, every continuation clause
+requires the same single output zero to qualify
+against that pair. Thus the handles supply $nv$ and the sole required
+successor retains $v$. No clause constrains another output or demands
+preservation of each deposit; MERGE assigns only the union of input sets.
+The difference is $(n-1)v$. Underlying validity, fees and other inputs'
+conditions remain separate constraints, so this is no promise of profit
+or sufficient fee funding.
+\end{proof}
+
+\begin{definition}[Record sets and classification]
+\label{def:kpcfixed-operations:classification}
+Every event creating a handle $s\in K_q$ satisfies exactly one of these
+two cases, with the defining recurrence
+\[
+ C_q(s)=
+ \begin{cases}
+ \{r_q(s)\},&\text{if }I_q(e)=\varnothing,\\
+ \displaystyle\bigcup_{x\in I_q(e)}C_q(x),&\text{otherwise}.
+ \end{cases}
+\]
+An event creating no handle of $K_q$ has no set to define and cannot
+consume a handle of $K_q$, by continue first. This classifies every event of every valid
+history without imposing any further validity condition.
+\end{definition}
+
+\begin{definition}[Continuation]
+\label{def:kpcfixed-operations:continuation}
+When an event consumes a handle $x$, its first output is the
+\emph{successor} of $x$. Write $x\preceq y$ when $y$ is reached from $x$
+by zero or more successor steps.
+\end{definition}
+
+Record sets and successors are derived from $H$ and are not carried by
+handles. The system has no counter or accumulator and no designated head or terminal.
+The pair is a membership constant, not a measure of the record set or
+an accumulated magnitude; no depth is carried either.
+It defines no burn or destruction law. In particular, it is separate
+from the attestation's Burn and Clear operations; neither operation is
+imported into this covenant or its record recurrence.
+
+\end{document}

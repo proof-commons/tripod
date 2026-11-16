@@ -23,7 +23,7 @@ on.
 ## Inputs
 
 - `architecture::ARCHITECTURE`;
-- Attestation LaTeX and realization Markdown;
+- Attestation and both Keyed Provenance Covenant editions in LaTeX, and realization Markdown;
 - ADR and planning Markdown;
 - model Rust source; and
 - committed label registers and model-label publication.
@@ -307,6 +307,12 @@ audit_census<'a>(tracked: ..., declared: ..., excluded: ..., exclude_pattern: &R
 `attestation_main`, `attestation_sections`, `realization`, `adrs`, `plans`, `docs`,
 `model_sources`, `crate_sources`, the three generated-artifact paths, and
 `traversal`.
+
+Discovery includes `papers/attestation/main.tex` and its sections, plus
+the main and section files of `papers/lineage/` and
+`papers/lineage-fixed-form/` in the historical `attestation_sections` role.
+Macros and stamp templates are excluded. Each companion uses disjoint
+label areas; omitted declarations and unreadable directories are errors.
 
 `CensusGroup` has seven variants and three censuses:
 `CensusGroup::ALL` (every group), `REGISTER_SCOPED` (Attestation and Realization —

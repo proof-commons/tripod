@@ -1,0 +1,27 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+\setversion{v2.0.0}
+\title{Keyed Provenance Covenant\\Fixed-form edition}
+\author{Proof Commons \\ \docversion}
+\date{\LineageDate}
+\maketitle
+\begin{center}
+Specification; no realization claim
+\end{center}
+
+\begin{abstract}
+\label{abst:kpcfixed:abstract}
+A covenant binds a public key, asset and value. A handle is a first
+output bearing its program and that exact explicit pair. Spending checks
+the handle and successor against those constants, with no authorization
+or comparison between inputs and outputs. An event creating a handle
+is a SOURCE if it consumes no handle of the triple: the new handle identifies a record and receives its
+singleton set. Otherwise it is a MERGE, gathering its input sets without
+introducing a record. There is no counter or accumulator. The exported
+reading is membership in a handle's dependency-derived record set.
+We prove single birth, unique source provenance, unique continuation,
+growth with disjoint merge inputs, separation of triples, merge surplus and faithful
+reconstruction.
+\end{abstract}
+
+\end{document}

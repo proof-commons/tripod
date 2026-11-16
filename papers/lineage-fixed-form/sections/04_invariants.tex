@@ -1,0 +1,76 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Invariants}
+\label{sec:kpcfixed:invariants}
+
+Fix a triple $q$ and a history. All handles below have the qualified
+membership of \zcref{def:kpcfixed-model:keyed-membership}; validity uses
+exact enforcement under \zcref{assum:kpcfixed-model:realization}.
+
+\begin{theorem}[Unique source provenance]
+\label{thm:kpcfixed-invariants:source-provenance}
+Every member of $C_q(x)$ is $r_q(c)$ for exactly one SOURCE handle $c$
+with $c\preceq x$. The sets are finite and uniquely determined by the
+dependency history. MERGE introduces no record.
+\end{theorem}
+\begin{proof}
+Induct in dependency order. A SOURCE handle $c$ receives only $r_q(c)$;
+its fresh identity fixes the unique source, and $c\preceq c$.
+At a MERGE every member comes from an input whose successor is the new
+handle, extending the asserted path. The finite union preserves provenance
+and introduces no identity. These two cases uniquely determine each set.
+\end{proof}
+
+\begin{theorem}[Unique continuation]
+\label{thm:kpcfixed-invariants:unique-successor}
+Every handle has at most one successor, and a consumed handle has exactly
+one, itself a handle. For every handle $g$, at every prefix containing
+$g$ exactly one $y$ with $g\preceq y$ is live. For a SOURCE handle $c$,
+$r_q(c)\in C_q(y)$ exactly when $c\preceq y$, so distinct live handles
+have disjoint sets.
+\end{theorem}
+\begin{proof}
+Single consumption gives at most one consuming event; continue-first
+makes its first output a handle, and \zcref{prop:kpcfixed-model:single-birth} makes it the only one.
+Only the SOURCE creating $c$ introduces $r_q(c)$. In dependency order,
+$r_q(c)\in C_q(y)$ exactly when $y=c$ or some input containing $r_q(c)$
+has successor $y$. Induction gives exactly $c\preceq y$. The successor
+path from any handle is unique and finite and ends at an unconsumed,
+hence live, handle; every earlier handle on that path has been consumed.
+Two distinct live handles therefore cannot contain the same record.
+\end{proof}
+
+\begin{theorem}[Growth and disjoint gathering]
+\label{thm:kpcfixed-invariants:set-membership-growth}
+If $x\preceq y$, then $C_q(x)\subseteq C_q(y)$, and the sets a MERGE
+gathers are pairwise disjoint.
+\end{theorem}
+\begin{proof}
+By \zcref{thm:kpcfixed-invariants:unique-successor}, a record at $x$ has its
+SOURCE handle preceding $x$, hence also $y$, so it belongs to $C_q(y)$.
+Immediately before a MERGE its consumed handles are distinct and live;
+the same theorem makes their sets disjoint.
+\end{proof}
+
+\begin{theorem}[Separation of triples]
+\label{thm:kpcfixed-invariants:key-isolation}
+For distinct triples $q\ne p$, handles and records of $p$ contribute neither inputs
+nor new records to the sets $C_q$. A handle of one triple never has a
+successor of the other. This is conditional on the realization's
+distinct-program and authentication assumptions
+(\zcref{assum:kpcfixed-model:realization}).
+\end{theorem}
+\begin{proof}
+Disjoint membership by \zcref{prop:kpcfixed-model:disjoint-membership}
+excludes $K_p$ from $I_q(e)$ and prevents a
+$p$-handle from continuing a $q$-handle. A SOURCE handle belongs to
+only one triple, fixing the triple of its record. Induction on the recurrence
+preserves separation. An event consuming handles of both triples would
+require its first output in both disjoint classes, contrary to validity.
+Separate events can coexist in one history. A difference in any coordinate
+is covered by the same distinct-program premise, not an unconditional
+claim that a finite program encoding is injective over arbitrary data.
+\end{proof}
+
+\end{document}

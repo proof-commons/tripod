@@ -98,6 +98,20 @@ if grep -q '@ATTESTATION_' "$lineage_stamps"; then
   exit 1
 fi
 
+# The third paper uses the same stamp and bibliography chain.
+# Its named target must render and publish through that graph too.
+meson compile -C "$build" lineage-fixed-form >/dev/null
+fixed_pdf="$mock_root/archive/rendered/Tripod_Keyed_Provenance_Covenant_v2.0.0.pdf"
+fixed_flat="$mock_root/archive/flattened/Tripod_Keyed_Provenance_Covenant_v2.0.0_flat.tex"
+test -s "$fixed_flat"
+fixed_stamps="$build/papers/lineage-fixed-form/stamps.tex"
+grep -q 'MOCK TRIPOD ATTESTATION PDF' "$fixed_pdf"
+grep -q 'LineageInstanceUUID' "$fixed_stamps"
+if grep -q '@ATTESTATION_' "$fixed_stamps"; then
+  echo "fixed stamps.tex has an unresolved placeholder" >&2
+  exit 1
+fi
+
 # Byte equality alone cannot tell "the edge did not run" from "the edge
 # reran and restat restored identical bytes". Ninja's build log appends a
 # line every time an output edge executes, so counting an output's lines
@@ -171,6 +185,33 @@ meson compile -C "$build" lineage >/dev/null
 [ "$lineage_flat_before" = "$(ninja_runs_for "$lineage_flat_output")" ] \
   || { echo "lineage no-op reran flatten" >&2; exit 1; }
 
+echo "==> fixed mirror repair and restat" >&2
+fixed_render_output="$(
+  awk -F '\t' '$4 ~ /papers\/lineage-fixed-form\/main[.]pdf$/ { output = $4 } END { print output }' "$ninja_log"
+)"
+fixed_flat_output="$(
+  awk -F '\t' '$4 ~ /papers\/lineage-fixed-form\/Tripod_Keyed_Provenance_Covenant_.*_flat[.]tex$/ { output = $4 } END { print output }' "$ninja_log"
+)"
+test -n "$fixed_render_output"
+test -n "$fixed_flat_output"
+cp "$fixed_pdf" "$mock_root/expected-fixed.pdf"
+cp "$fixed_flat" "$mock_root/expected-fixed.tex"
+printf 'corrupted\n' > "$fixed_pdf"
+printf 'corrupted\n' > "$fixed_flat"
+meson compile -C "$build" lineage-fixed-form >/dev/null
+cmp -s "$fixed_pdf" "$mock_root/expected-fixed.pdf" || { echo "fixed PDF mirror not repaired" >&2; exit 1; }
+cmp -s "$fixed_flat" "$mock_root/expected-fixed.tex" || { echo "fixed flat mirror not repaired" >&2; exit 1; }
+fixed_before="$(sha256sum "$fixed_pdf" "$fixed_flat")"
+fixed_render_before="$(ninja_runs_for "$fixed_render_output")"
+fixed_flat_before="$(ninja_runs_for "$fixed_flat_output")"
+meson compile -C "$build" lineage-fixed-form >/dev/null
+[ "$fixed_before" = "$(sha256sum "$fixed_pdf" "$fixed_flat")" ] \
+  || { echo "fixed no-op changed mirror bytes" >&2; exit 1; }
+[ "$fixed_render_before" = "$(ninja_runs_for "$fixed_render_output")" ] \
+  || { echo "fixed no-op reran render" >&2; exit 1; }
+[ "$fixed_flat_before" = "$(ninja_runs_for "$fixed_flat_output")" ] \
+  || { echo "fixed no-op reran flatten" >&2; exit 1; }
+
 echo "==> generator repair (replaces generator-repair)" >&2
 meson compile -C "$build" generate-artifacts >/dev/null
 artifact="$(find "$mock_root/generated" -type f -name '*.json' | sort | sed -n 1p)"
@@ -233,5 +274,16 @@ if meson compile -C "$build" lineage >/dev/null 2>&1; then
   echo "lineage publication succeeded despite an injected render failure" >&2
   exit 1
 fi
+
+# Both other render failures leave the fixed-form publication independent.
+meson compile -C "$build" lineage-fixed-form >/dev/null
+meson configure "$build" -Dlineage-fixed-form:mock_fail_child=latexmk >/dev/null
+if meson compile -C "$build" lineage-fixed-form >/dev/null 2>&1; then
+  echo "fixed-form publication succeeded despite an injected render failure" >&2
+  exit 1
+fi
+meson configure "$build" -Dattestation:mock_fail_child= -Dlineage:mock_fail_child= >/dev/null
+# Conversely, the fixed-form failure cannot block either existing paper.
+meson compile -C "$build" attestation lineage >/dev/null
 
 echo "==> mocked Meson contract passed" >&2

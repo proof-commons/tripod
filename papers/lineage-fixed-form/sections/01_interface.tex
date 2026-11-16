@@ -1,0 +1,100 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Reading and evidence}
+\label{sec:kpcfixed:interface}
+
+\begin{definition}[Exported membership]
+\label{def:kpcfixed-interface:membership-reading}
+For a handle $x$ the interface answers whether a record belongs to $C_q(x)$.
+Handles are defined in \zcref{def:kpcfixed-model:keyed-membership}; records and
+their sets in \zcref{def:kpcfixed-operations:classification}, and paths in
+\zcref{def:kpcfixed-operations:continuation}.
+\end{definition}
+
+\begin{corollary}[Reading along a path]
+\label{cor:kpcfixed-interface:path-reading}
+For a handle $g$, at each prefix containing $g$ the live handle $y$ with
+$g\preceq y$ is unique, and along extensions of one history the readings
+$C_q(y)$ grow.
+\end{corollary}
+\begin{proof}
+\zcref{thm:kpcfixed-invariants:unique-successor} gives the unique live end at
+each prefix. An earlier end $y$ lies on the same path as a later end $y'$,
+so $y\preceq y'$ and $C_q(y)\subseteq C_q(y')$ by
+\zcref{thm:kpcfixed-invariants:set-membership-growth}; each set is fixed by its
+dependencies (\zcref{thm:kpcfixed-invariants:source-provenance}).
+\end{proof}
+
+\begin{remark}[Record evidence]
+\label{rem:kpcfixed-interface:record-evidence}
+A record exposes its SOURCE handle's creating event; a reader's own
+published recognition rule may read data of that event, such as an amount,
+attribution or eligibility, to decide which records it accepts. These
+predicates are separate from qualification of the handle's constant $A,v$;
+the covenant checks no record-credit or attribution predicate.
+Acceptance filters a reading and changes no set $C_q$; a fixed rule that
+depends only on the SOURCE event's immutable contents keeps accepted
+readings monotone along a path by \zcref{cor:kpcfixed-interface:path-reading}.
+\end{remark}
+
+\paragraph{Named evidence assumptions.}
+\emph{Inclusion} authenticates that the events and dependencies belong
+to one valid history with the identity and single-consumption properties
+of \zcref{sec:kpcfixed:model}.
+\emph{Retrieval} supplies the finite dependency closure, complete input
+classification, birth positions and output order, and authenticated
+program, asset and value fields and their forms for every queried,
+SOURCE and recursively reached handle and every input classified.
+\emph{Finality} assumes that once a read handle lies beyond the depth the
+deployment publishes, no history replacing the one that contains it is
+accepted. That depth is a quantity of the deployment, not of this system.
+A reading claimed final requires that assumption.
+These assumptions concern access to authentic history and its permanence;
+immutable authenticated fields, distinct programs, the public recipe and
+exact enforcement of the spending condition remain the premises of
+\zcref{assum:kpcfixed-model:realization}. Disjoint membership follows by
+\zcref{prop:kpcfixed-model:disjoint-membership}.
+
+\paragraph{Reconstruction.}
+Authenticate the public triple, derive $P_q$ by its public recipe, and
+authenticate the handle $x$. For each reached handle
+$s$, authenticate its creating event $e$, first-output birth position,
+$Q_q(s)$, inclusion and every input's membership. Check all covenant clauses for consumed
+handles. If $I_q(e)=\varnothing$, return the singleton $\{r_q(s)\}$.
+Otherwise recursively reconstruct all handles in $I_q(e)$ and return
+their union. Successive readings may reuse completed handles.
+
+Missing evidence yields \emph{incomplete}, not a set by default.
+Conflicting identities or cyclic dependencies yield \emph{invalid}: they
+establish no valid history. An output bearing $P_q$ at a later position
+or with a wrong asset, value or form yields \emph{not a handle} and has no
+set to read. These are evidence distinctions; the recurrence defines a set
+for every handle of every valid history.
+
+\begin{theorem}[Faithful reading]
+\label{thm:kpcfixed-interface:membership-correctness}
+With inclusion and retrieval evidence, reconstruction terminates and
+returns exactly $C_q(x)$ for every handle $x$.
+\end{theorem}
+\begin{proof}
+Finite acyclic dependencies permit induction. Authenticated fields and
+positions decide exact membership, including malformed payments. At a leaf, complete input
+classification establishes a SOURCE and the reader returns its defined
+singleton. At a MERGE, classification supplies precisely $I_q(e)$ and
+the recursively obtained input sets give exactly the defining union.
+Complete evidence establishes every branch, so the return equals $C_q(x)$.
+\end{proof}
+
+\begin{remark}[Path evidence and complete reading]
+\label{rem:kpcfixed-interface:dependency-closure}
+An authenticated path from a SOURCE handle $c$ to $x$ witnesses membership
+of $r_q(c)$ by \zcref{thm:kpcfixed-invariants:unique-successor}. It does not
+stand for $C_q(x)$: a MERGE on the path can gather another SOURCE's record
+from an input outside the path. Complete reading needs every branch of
+the dependency closure. A path length can grow at each extension; neither
+its size nor its reading cost is an upper bound on the full closure. Reusing
+completed subreadings does not remove the need to authenticate that closure.
+\end{remark}
+
+\end{document}

@@ -9,14 +9,19 @@
 |---|---|---|
 | ``[A-abst:attestation:abstract]`` | ``abst:attestation:abstract`` | `papers/attestation/sections/00_title.tex` |
 | ``[A-abst:kpc:abstract]`` | ``abst:kpc:abstract`` | `papers/lineage/sections/00_title.tex` |
+| ``[A-abst:kpcfixed:abstract]`` | ``abst:kpcfixed:abstract`` | `papers/lineage-fixed-form/sections/00_title.tex` |
 | ``[A-alg:operations:cycle-processing]`` | ``alg:operations:cycle-processing`` | `papers/attestation/sections/03_operations.tex` |
 | ``[A-app:attestation:symbols]`` | ``app:attestation:symbols`` | `papers/attestation/sections/B1_symbols.tex` |
 | ``[A-app:attestation:verification]`` | ``app:attestation:verification`` | `papers/attestation/sections/A1_verification.tex` |
 | ``[A-app:kpc:symbols]`` | ``app:kpc:symbols`` | `papers/lineage/sections/B1_symbols.tex` |
 | ``[A-app:kpc:verification]`` | ``app:kpc:verification`` | `papers/lineage/sections/A1_verification.tex` |
+| ``[A-app:kpcfixed-symbols:index]`` | ``app:kpcfixed-symbols:index`` | `papers/lineage-fixed-form/sections/B1_symbols.tex` |
+| ``[A-app:kpcfixed-verification:suite]`` | ``app:kpcfixed-verification:suite`` | `papers/lineage-fixed-form/sections/A1_verification.tex` |
+| ``[A-assum:kpcfixed-model:realization]`` | ``assum:kpcfixed-model:realization`` | `papers/lineage-fixed-form/sections/02_model.tex` |
 | ``[A-cor:containment:pre-deposit-floor-factor]`` | ``cor:containment:pre-deposit-floor-factor`` | `papers/attestation/sections/06_containment.tex` |
 | ``[A-cor:costliness:supply-fraction-form]`` | ``cor:costliness:supply-fraction-form`` | `papers/attestation/sections/05_costliness.tex` |
 | ``[A-cor:kpc-interface:path-reading]`` | ``cor:kpc-interface:path-reading`` | `papers/lineage/sections/01_interface.tex` |
+| ``[A-cor:kpcfixed-interface:path-reading]`` | ``cor:kpcfixed-interface:path-reading`` | `papers/lineage-fixed-form/sections/01_interface.tex` |
 | ``[A-def:costliness:position-decomposition]`` | ``def:costliness:position-decomposition`` | `papers/attestation/sections/05_costliness.tex` |
 | ``[A-def:costliness:redeemable-cost-ratio]`` | ``def:costliness:redeemable-cost-ratio`` | `papers/attestation/sections/05_costliness.tex` |
 | ``[A-def:interface:address-space]`` | ``def:interface:address-space`` | `papers/attestation/sections/01_interface.tex` |
@@ -28,6 +33,12 @@
 | ``[A-def:kpc-model:keyed-membership]`` | ``def:kpc-model:keyed-membership`` | `papers/lineage/sections/02_model.tex` |
 | ``[A-def:kpc-operations:classification]`` | ``def:kpc-operations:classification`` | `papers/lineage/sections/03_operations.tex` |
 | ``[A-def:kpc-operations:continuation]`` | ``def:kpc-operations:continuation`` | `papers/lineage/sections/03_operations.tex` |
+| ``[A-def:kpcfixed-interface:membership-reading]`` | ``def:kpcfixed-interface:membership-reading`` | `papers/lineage-fixed-form/sections/01_interface.tex` |
+| ``[A-def:kpcfixed-model:first-output]`` | ``def:kpcfixed-model:first-output`` | `papers/lineage-fixed-form/sections/02_model.tex` |
+| ``[A-def:kpcfixed-model:history]`` | ``def:kpcfixed-model:history`` | `papers/lineage-fixed-form/sections/02_model.tex` |
+| ``[A-def:kpcfixed-model:keyed-membership]`` | ``def:kpcfixed-model:keyed-membership`` | `papers/lineage-fixed-form/sections/02_model.tex` |
+| ``[A-def:kpcfixed-operations:classification]`` | ``def:kpcfixed-operations:classification`` | `papers/lineage-fixed-form/sections/03_operations.tex` |
+| ``[A-def:kpcfixed-operations:continuation]`` | ``def:kpcfixed-operations:continuation`` | `papers/lineage-fixed-form/sections/03_operations.tex` |
 | ``[A-def:maturity:conversion]`` | ``def:maturity:conversion`` | `papers/attestation/sections/09_maturity.tex` |
 | ``[A-def:model:bootstrapping-phase]`` | ``def:model:bootstrapping-phase`` | `papers/attestation/sections/02_model.tex` |
 | ``[A-def:model:classes]`` | ``def:model:classes`` | `papers/attestation/sections/02_model.tex` |
@@ -59,6 +70,8 @@
 | ``[A-motto:attestation:motto]`` | ``motto:attestation:motto`` | `papers/attestation/sections/00_title.tex` |
 | ``[A-op:kpc-operations:merge]`` | ``op:kpc-operations:merge`` | `papers/lineage/sections/03_operations.tex` |
 | ``[A-op:kpc-operations:source]`` | ``op:kpc-operations:source`` | `papers/lineage/sections/03_operations.tex` |
+| ``[A-op:kpcfixed-operations:merge]`` | ``op:kpcfixed-operations:merge`` | `papers/lineage-fixed-form/sections/03_operations.tex` |
+| ``[A-op:kpcfixed-operations:source]`` | ``op:kpcfixed-operations:source`` | `papers/lineage-fixed-form/sections/03_operations.tex` |
 | ``[A-open:attestation:leverage-timing]`` | ``open:attestation:leverage-timing`` | `papers/attestation/sections/10_limitations.tex` |
 | ``[A-open:attestation:operator-disambiguation]`` | ``open:attestation:operator-disambiguation`` | `papers/attestation/sections/10_limitations.tex` |
 | ``[A-postc:interface:auditability]`` | ``postc:interface:auditability`` | `papers/attestation/sections/01_interface.tex` |
@@ -83,6 +96,9 @@
 | ``[A-prop:invariants:maturity-preserves-floor]`` | ``prop:invariants:maturity-preserves-floor`` | `papers/attestation/sections/04_invariants.tex` |
 | ``[A-prop:invariants:redemption-preserves-floor]`` | ``prop:invariants:redemption-preserves-floor`` | `papers/attestation/sections/04_invariants.tex` |
 | ``[A-prop:kpc-model:single-birth]`` | ``prop:kpc-model:single-birth`` | `papers/lineage/sections/02_model.tex` |
+| ``[A-prop:kpcfixed-model:disjoint-membership]`` | ``prop:kpcfixed-model:disjoint-membership`` | `papers/lineage-fixed-form/sections/02_model.tex` |
+| ``[A-prop:kpcfixed-model:single-birth]`` | ``prop:kpcfixed-model:single-birth`` | `papers/lineage-fixed-form/sections/02_model.tex` |
+| ``[A-prop:kpcfixed-operations:merge-surplus]`` | ``prop:kpcfixed-operations:merge-surplus`` | `papers/lineage-fixed-form/sections/03_operations.tex` |
 | ``[A-prop:maturity:burn-distribution]`` | ``prop:maturity:burn-distribution`` | `papers/attestation/sections/09_maturity.tex` |
 | ``[A-rem:costliness:dominant-holder-cost]`` | ``rem:costliness:dominant-holder-cost`` | `papers/attestation/sections/05_costliness.tex` |
 | ``[A-rem:costliness:tlock-class-summary]`` | ``rem:costliness:tlock-class-summary`` | `papers/attestation/sections/05_costliness.tex` |
@@ -91,6 +107,11 @@
 | ``[A-rem:interface:clocks]`` | ``rem:interface:clocks`` | `papers/attestation/sections/01_interface.tex` |
 | ``[A-rem:interface:consumption-rule]`` | ``rem:interface:consumption-rule`` | `papers/attestation/sections/01_interface.tex` |
 | ``[A-rem:kpc-interface:record-evidence]`` | ``rem:kpc-interface:record-evidence`` | `papers/lineage/sections/01_interface.tex` |
+| ``[A-rem:kpcfixed-interface:dependency-closure]`` | ``rem:kpcfixed-interface:dependency-closure`` | `papers/lineage-fixed-form/sections/01_interface.tex` |
+| ``[A-rem:kpcfixed-interface:record-evidence]`` | ``rem:kpcfixed-interface:record-evidence`` | `papers/lineage-fixed-form/sections/01_interface.tex` |
+| ``[A-rem:kpcfixed-model:qualification-necessity]`` | ``rem:kpcfixed-model:qualification-necessity`` | `papers/lineage-fixed-form/sections/02_model.tex` |
+| ``[A-rem:kpcfixed:policy-floor]`` | ``rem:kpcfixed:policy-floor`` | `papers/lineage-fixed-form/sections/10_limitations.tex` |
+| ``[A-rem:kpcfixed:public-extension]`` | ``rem:kpcfixed:public-extension`` | `papers/lineage-fixed-form/sections/10_limitations.tex` |
 | ``[A-rem:maturity:announcement-timing]`` | ``rem:maturity:announcement-timing`` | `papers/attestation/sections/09_maturity.tex` |
 | ``[A-rem:maturity:atomic-conversion]`` | ``rem:maturity:atomic-conversion`` | `papers/attestation/sections/09_maturity.tex` |
 | ``[A-rem:maturity:confidence-signal]`` | ``rem:maturity:confidence-signal`` | `papers/attestation/sections/09_maturity.tex` |
@@ -126,6 +147,11 @@
 | ``[A-sec:kpc:limitations]`` | ``sec:kpc:limitations`` | `papers/lineage/sections/10_limitations.tex` |
 | ``[A-sec:kpc:model]`` | ``sec:kpc:model`` | `papers/lineage/sections/02_model.tex` |
 | ``[A-sec:kpc:operations]`` | ``sec:kpc:operations`` | `papers/lineage/sections/03_operations.tex` |
+| ``[A-sec:kpcfixed:interface]`` | ``sec:kpcfixed:interface`` | `papers/lineage-fixed-form/sections/01_interface.tex` |
+| ``[A-sec:kpcfixed:invariants]`` | ``sec:kpcfixed:invariants`` | `papers/lineage-fixed-form/sections/04_invariants.tex` |
+| ``[A-sec:kpcfixed:limitations]`` | ``sec:kpcfixed:limitations`` | `papers/lineage-fixed-form/sections/10_limitations.tex` |
+| ``[A-sec:kpcfixed:model]`` | ``sec:kpcfixed:model`` | `papers/lineage-fixed-form/sections/02_model.tex` |
+| ``[A-sec:kpcfixed:operations]`` | ``sec:kpcfixed:operations`` | `papers/lineage-fixed-form/sections/03_operations.tex` |
 | ``[A-sec:limitations:limitations]`` | ``sec:limitations:limitations`` | `papers/attestation/sections/10_limitations.tex` |
 | ``[A-sec:limitations:open-problems]`` | ``sec:limitations:open-problems`` | `papers/attestation/sections/10_limitations.tex` |
 | ``[A-sec:maturity:announcement-conversion]`` | ``sec:maturity:announcement-conversion`` | `papers/attestation/sections/09_maturity.tex` |
@@ -162,6 +188,11 @@
 | ``[A-thm:kpc-invariants:set-membership-growth]`` | ``thm:kpc-invariants:set-membership-growth`` | `papers/lineage/sections/04_invariants.tex` |
 | ``[A-thm:kpc-invariants:source-provenance]`` | ``thm:kpc-invariants:source-provenance`` | `papers/lineage/sections/04_invariants.tex` |
 | ``[A-thm:kpc-invariants:unique-successor]`` | ``thm:kpc-invariants:unique-successor`` | `papers/lineage/sections/04_invariants.tex` |
+| ``[A-thm:kpcfixed-interface:membership-correctness]`` | ``thm:kpcfixed-interface:membership-correctness`` | `papers/lineage-fixed-form/sections/01_interface.tex` |
+| ``[A-thm:kpcfixed-invariants:key-isolation]`` | ``thm:kpcfixed-invariants:key-isolation`` | `papers/lineage-fixed-form/sections/04_invariants.tex` |
+| ``[A-thm:kpcfixed-invariants:set-membership-growth]`` | ``thm:kpcfixed-invariants:set-membership-growth`` | `papers/lineage-fixed-form/sections/04_invariants.tex` |
+| ``[A-thm:kpcfixed-invariants:source-provenance]`` | ``thm:kpcfixed-invariants:source-provenance`` | `papers/lineage-fixed-form/sections/04_invariants.tex` |
+| ``[A-thm:kpcfixed-invariants:unique-successor]`` | ``thm:kpcfixed-invariants:unique-successor`` | `papers/lineage-fixed-form/sections/04_invariants.tex` |
 | ``[A-thm:seigniorage:bootstrapping-bound]`` | ``thm:seigniorage:bootstrapping-bound`` | `papers/attestation/sections/08_seigniorage.tex` |
 | ``[A-thm:seigniorage:no-finite-lifetime-envelope]`` | ``thm:seigniorage:no-finite-lifetime-envelope`` | `papers/attestation/sections/08_seigniorage.tex` |
 | ``[A-verif:walkthrough:boundary]`` | ``verif:walkthrough:boundary`` | `papers/attestation/sections/A1_verification.tex` |

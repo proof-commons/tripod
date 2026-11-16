@@ -1,0 +1,43 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Limitations and Open Problems}
+\label{sec:kpcfixed:limitations}
+This specification makes no realization claim. Acceptance belongs to the
+reader, and finality is an evidence assumption outside the covenant
+(\zcref{sec:kpcfixed:interface}). The costs of a realization remain open.
+
+\begin{remark}[Public extension and contention]
+\label{rem:kpcfixed:public-extension}
+Extension by any party requires the public authenticated triple and
+program recipe, including any public data required to demonstrate a valid
+spend, authenticated history and live input handles, and the party's own
+adequate funding and any ordinary funding signatures. The pair must be
+consensus-admissible for the target. The event must fit the relay envelope
+the realization declares for the target's policy limits on event form and
+resources, and satisfy other inputs' conditions. Under these premises and
+\zcref{assum:kpcfixed-model:realization}, the covenant asks for no further
+authority or secret: its clauses can be satisfied by placing the fixed
+program and explicit pair at output zero. Public construction does not
+promise inclusion. If a competing extension consumes an input handle, its
+live continuation carries a superset of that input handle's set by
+\zcref{thm:kpcfixed-invariants:set-membership-growth}; a retry against that
+continuation needs the premises again. There is no bound on lost races,
+their cost or waiting time, and no fairness or replacement-policy claim.
+The covenant promises no finality; a reading claimed final rests on the
+Finality assumption of \zcref{sec:kpcfixed:interface}.
+\end{remark}
+
+\begin{remark}[Value and policy]
+\label{rem:kpcfixed:policy-floor}
+The value's admissible floor depends on the target's consensus and relay
+policy, asset and output envelope. A realization must state that envelope
+and derive its floor; the floor is not a constant of this paper. A nonce
+may affect size and policy without changing membership. A deployment
+supplies $k,A,v$ and authenticates them throughout construction and
+reading; this specification selects none of their values. A policy change
+does not change an existing triple. Merge surplus is an incidental value
+consequence, not record credit or a guarantee that gathering pays its costs.
+\end{remark}
+
+\end{document}

@@ -2,9 +2,9 @@
 
 ## Purpose and shape · `sec:tracing-document-stamps:purpose`
 
-`document-stamps` derives the Attestation paper's input-set date, paper-subtree timestamp, document UUID and instance UUID from committed Git state. The public `run(&StampRequest)` returns `AttestationStampValues`; `render(&RenderRequest)` fills a template and publishes `stamps.tex` and `source-date-epoch` with compare-if-changed staging. Neither path changes its derivation rules or result bytes for instrumentation.
+`document-stamps` derives each paper's input-set date, paper-subtree timestamp, document UUID and instance UUID from committed Git state. The public `run(&StampRequest)` returns `AttestationStampValues`; `render(&RenderRequest)` fills a template and publishes `stamps.tex` and `source-date-epoch` with compare-if-changed staging. Neither path changes its derivation rules or result bytes for instrumentation.
 
-`src/lib.rs` is a flat library containing validation, Git access, canonical input loading, digesting, timestamps, rendering and publication. `src/bin/attestation-stamps.rs` is the sole binary, with one-object JSON mode and file-only render mode. `src/tests/mod.rs` uses a fake `GitRunner`; `tests/subprocess_contract.rs` checks command streams and exit classes. `papers/attestation/meson.build` invokes render mode for the TeX build. The only workspace crate this package calls is `cli-common`, which owns the executable's stream and subscriber setup.
+`src/lib.rs` is a flat library containing validation, Git access, canonical input loading, digesting, timestamps, rendering and publication. `src/bin/attestation-stamps.rs` is the sole binary, with one-object JSON mode and file-only render mode. `src/tests/mod.rs` uses a fake `GitRunner`; `tests/subprocess_contract.rs` checks command streams and exit classes. `papers/attestation/meson.build`, `papers/lineage/meson.build` and `papers/lineage-fixed-form/meson.build` invoke render mode for the TeX build. The only workspace crate this package calls is `cli-common`, which owns the executable's stream and subscriber setup.
 
 ## Output inventory · `sec:tracing-document-stamps:inventory`
 

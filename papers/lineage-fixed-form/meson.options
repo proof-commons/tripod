@@ -1,0 +1,6 @@
+option('xelatex_path', type: 'string', value: '', description: 'Path to xelatex')
+option('biber_path', type: 'string', value: '', description: 'Path to biber')
+option('latexmk_path', type: 'string', value: '', description: 'Path to latexmk')
+option('git_path', type: 'string', value: '', description: 'Path to git')
+option('mock_mode', type: 'boolean', value: false, description: 'Mock TeX rendering')
+option('mock_fail_child', type: 'string', value: '', description: 'Injected mock failure')

@@ -477,12 +477,18 @@ fn label_register_generator_publishes_explicit_assets_without_stdout() {
     .expect("realization source");
     let specification_output = root.join("specification.md");
     let realization_output = root.join("realization.md");
+    let fixed = root.join("papers/lineage-fixed-form/main.tex");
+    std::fs::create_dir_all(fixed.parent().expect("fixed-form parent"))
+        .expect("fixed-form directory");
+    std::fs::write(&fixed, "\\label{def:kpcfixed-model:known}\n").expect("fixed-form source");
     let output = Command::new(env!("CARGO_BIN_EXE_generate-label-registers"))
         .args([
             "--repository-root",
             root.to_str().expect("utf8 root"),
             "--attestation-main",
             attestation.to_str().expect("utf8 source"),
+            "--attestation-section",
+            fixed.to_str().expect("utf8 fixed-form source"),
             "--realization",
             realization.to_str().expect("utf8 source"),
             "--specification-register-output",
@@ -500,6 +506,11 @@ fn label_register_generator_publishes_explicit_assets_without_stdout() {
         records(&output)
     );
     assert_eq!(output.stdout, [] as [u8; 0]);
+    assert!(
+        std::fs::read_to_string(&specification_output)
+            .expect("specification text")
+            .contains("def:kpcfixed-model:known")
+    );
     assert_ne!(
         std::fs::read(&specification_output).expect("specification asset"),
         [] as [u8; 0]
@@ -520,6 +531,33 @@ fn label_register_generator_publishes_explicit_assets_without_stdout() {
     assert_eq!(terminal[0]["fields"]["output_mode"], "none");
     assert_eq!(terminal[0]["fields"]["result_published"], false);
     assert_success_terminal(&output, "none", false);
+    let published = std::fs::read(&specification_output).expect("published register");
+    let omitted = Command::new(env!("CARGO_BIN_EXE_generate-label-registers"))
+        .args([
+            "--repository-root",
+            root.to_str().expect("utf8 root"),
+            "--attestation-main",
+            attestation.to_str().expect("utf8 source"),
+            "--realization",
+            realization.to_str().expect("utf8 source"),
+            "--specification-register-output",
+            specification_output.to_str().expect("utf8 output"),
+            "--realization-register-output",
+            realization_output.to_str().expect("utf8 output"),
+        ])
+        .env("RUST_LOG", "info")
+        .output_serialized()
+        .expect("omitted paper generator runs");
+    assert!(!omitted.status.success());
+    assert_eq!(omitted.stdout, [] as [u8; 0]);
+    assert!(records(&omitted).iter().any(|record| {
+        record["fields"]["diagnostic_code"] == "census_stale"
+            && record["fields"]["path"] == "papers/lineage-fixed-form/main.tex"
+    }));
+    assert_eq!(
+        std::fs::read(&specification_output).expect("retained register"),
+        published
+    );
 }
 
 #[test]
