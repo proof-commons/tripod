@@ -59,6 +59,12 @@ pub struct OwnerProgramDefect {
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CompileError {
+    /// The relation vocabulary is available but its compiler plan is not.
+    #[error("unsupported attestation relation plan")]
+    UnsupportedRelationPlan,
+    /// The operation has semantic laws but no compiler plan yet.
+    #[error("unsupported attestation operation plan for {operation:?}")]
+    UnsupportedOperationPlan { operation: OperationId },
     /// Fixed evidence cannot obtain its declared source.
     #[error("fixed proof source unavailable for {relation:?}")]
     FixedProofSource { relation: realization::RelationId },
@@ -1549,6 +1555,8 @@ impl CompileError {
     #[allow(clippy::too_many_lines)] // Exhaustive names must stay beside the enum.
     pub(crate) const fn tracing_kind(&self) -> &'static str {
         match self {
+            Self::UnsupportedRelationPlan => "unsupported_relation_plan",
+            Self::UnsupportedOperationPlan { .. } => "unsupported_operation_plan",
             Self::InvalidOwnerProgramRecords { .. } => "invalid_owner_program_records",
             Self::FixedProofSource { .. } => "fixed_proof_source",
             Self::UnsupportedRealizationSchema { .. } => "unsupported_realization_schema",

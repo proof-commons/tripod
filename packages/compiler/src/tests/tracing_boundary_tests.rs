@@ -25,8 +25,8 @@ fn compile_error_tracing_kinds_are_canonical_snake_case() {
         .expect("end of tracing kind table")
         .0;
     let entries = table.split("Self::").skip(1).collect::<Vec<_>>();
-    // Includes the typed refusal for a missing owner reverse-registry entry.
-    assert_eq!(entries.len(), 142);
+    // Includes typed refusals for unsupported attestation operations and bodies.
+    assert_eq!(entries.len(), 144);
 
     for entry in entries {
         let variant = entry

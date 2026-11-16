@@ -182,6 +182,9 @@ pub enum ArchitectureMismatchField {
 /// realization values.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub enum RealizationError {
+    /// A required Burn/Clear carrier or one of its operands was refused.
+    #[error("Burn/Clear observation refused: {0}")]
+    BurnClearObservation(BurnClearRefusal),
     /// Two operation regions claim the same object.
     #[error("operation regions overlap at {0:?}")]
     ObservedRegionOverlap(ObservedObjectRef),
@@ -744,6 +747,7 @@ impl RealizationError {
     #[allow(clippy::too_many_lines)]
     pub(crate) fn trace_kind(&self) -> &'static str {
         match self {
+            Self::BurnClearObservation(_) => "burn_clear_observation",
             Self::ArchitectureValidationFailed { errors } => errors
                 .first()
                 .map_or("architecture_validation_failed", ManifestError::name),

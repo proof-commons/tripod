@@ -79,6 +79,24 @@ fn validate_relation_identities(
         for relation in &declaration.relations {
             validate_relation_identity(relation)?;
         }
+        if matches!(
+            declaration.operation,
+            OperationId::Burn | OperationId::Clear
+        ) {
+            let laws = declaration
+                .relations
+                .iter()
+                .filter(|row| {
+                    crate::burn_clear_laws::requires_extension(&row.relation)
+                        || row.id.kind() == crate::RelationKind::CanonicalDeltaPolicy
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            crate::burn_clear_laws::validate_activated_relation_census(
+                declaration.operation,
+                &laws,
+            )?;
+        }
     }
 
     Ok(())
@@ -145,6 +163,9 @@ pub fn validate_relation_identity(
         });
     }
 
+    if crate::burn_clear_laws::requires_extension(&declaration.relation) {
+        crate::burn_clear_laws::activated_law(&declaration.id, &declaration.relation)?;
+    }
     Ok(())
 }
 
@@ -156,6 +177,14 @@ const fn expected_relation_kind(relation: &Relation) -> crate::RelationKind {
     use crate::RelationKind as Kind;
 
     match relation {
+        Relation::SideRepresentation { .. } => Kind::SideRepresentation,
+        Relation::DataOutputs { .. } => Kind::DataOutputs,
+        Relation::BurnBinding => Kind::BurnBinding,
+        Relation::ClearClamp => Kind::ClearClamp,
+        Relation::ClearAssignment { .. } => Kind::ClearAssignment,
+        Relation::ClearFloor => Kind::ClearFloor,
+        Relation::ClearFlow => Kind::ClearFlow,
+        Relation::ClearBinding => Kind::ClearBinding,
         Relation::Cardinality { .. } => Kind::Cardinality,
         Relation::AllowedObjectFamilies { .. } => Kind::AllowedObjectFamilies,
         Relation::Recognition { .. } => Kind::Recognition,
@@ -167,7 +196,9 @@ const fn expected_relation_kind(relation: &Relation) -> crate::RelationKind {
         Relation::SponsorEnvelopeMultiplicity { .. } => Kind::SponsorEnvelopeMultiplicity,
         Relation::RootPolicy { .. } => Kind::RootPolicy,
         Relation::ProjectionPolicy { .. } => Kind::ProjectionPolicy,
-        Relation::CanonicalDeltaPolicy { .. } => Kind::CanonicalDeltaPolicy,
+        Relation::CanonicalDeltaPolicy { .. } | Relation::ClearCanonicalDeltaPolicy => {
+            Kind::CanonicalDeltaPolicy
+        }
         Relation::OpenFlowPolicy { .. } => Kind::OpenFlowPolicy,
         Relation::Constructibility { .. } => Kind::Constructibility,
         Relation::Representation { .. } => Kind::Representation,
@@ -193,6 +224,11 @@ fn expected_relation_subject(relation: &Relation) -> crate::RelationSubject {
     };
 
     match relation {
+        Relation::SideRepresentation { side, object, .. } => Subject::SideRepresentation {
+            side: *side,
+            object: *object,
+        },
+        Relation::ClearAssignment { field, .. } => Subject::StateField { field: *field },
         Relation::Cardinality { side, object, .. } | Relation::Recognition { side, object, .. } => {
             family(*side, *object)
         }
@@ -225,7 +261,14 @@ fn expected_relation_subject(relation: &Relation) -> crate::RelationSubject {
         // reason: the subject vocabulary has no expression member, and
         // inventing one for a relation nothing declares yet would be
         // minting identity ahead of need.
-        Relation::PermissionlessAuthorization
+        Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy
+        | Relation::PermissionlessAuthorization
         | Relation::OperatorAuthorization
         | Relation::Constructibility { .. }
         | Relation::RootPolicy { .. }
@@ -645,7 +688,10 @@ fn lifecycle_census(realization: &ScopedRealizationSpec) -> LifecycleCensus {
     for declaration in realization.operations.values() {
         for relation in &declaration.relations {
             match &relation.relation {
-                Relation::Representation { object, allowed } => {
+                Relation::Representation { object, allowed }
+                | Relation::SideRepresentation {
+                    object, allowed, ..
+                } => {
                     census
                         .representations
                         .entry(*object)
@@ -1522,9 +1568,27 @@ fn validate_predicate_bindings(
         .collect::<std::collections::BTreeMap<crate::ExprId, SemanticType>>();
 
     for relation in &declaration.relations {
-        let Relation::ExpressionPredicate { expression } = &relation.relation else {
+        let (Relation::ExpressionPredicate { expression }
+        | Relation::ClearAssignment {
+            expression: Some(expression),
+            ..
+        }) = &relation.relation
+        else {
             continue;
         };
+
+        if let Relation::ClearAssignment { field, .. } = &relation.relation {
+            let expected = crate::burn_clear_laws::copy_expression(*field);
+            if !declaration
+                .expressions
+                .iter()
+                .any(|node| node.id == *expression && node.node == expected)
+            {
+                return Err(RealizationError::ArchitectureRelationMismatch {
+                    relation: relation.id.clone(),
+                });
+            }
+        }
 
         ensure_expression_owner(requested, expression)?;
 
@@ -1721,5 +1785,96 @@ fn seed_reason_relations(reason: &crate::DisclosureReason) -> Vec<&crate::Relati
         | crate::DisclosureReason::PublicRequest
         | crate::DisclosureReason::PublicInterface
         | crate::DisclosureReason::DeploymentPolicy { .. } => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod activated_census_tests {
+    use super::*;
+
+    #[test]
+    #[allow(clippy::too_many_lines)] // Keep operation-level controls beside each census mutation.
+    fn operation_wiring_reports_declaration_census_errors() {
+        for operation in [OperationId::Burn, OperationId::Clear] {
+            let mut control = crate::derive(
+                &architecture::ARCHITECTURE,
+                crate::RealizationScope::phase1_pilots(),
+            )
+            .unwrap();
+            // Only declaration identity validation is under test here.
+            let mut declaration = control.operations[&OperationId::CompactAsh].clone();
+            declaration.operation = operation;
+            declaration.relations = crate::burn_clear_laws::burn_clear_laws(operation)
+                .iter()
+                .map(crate::burn_clear_laws::BurnClearLawDeclaration::relation_declaration)
+                .collect();
+            control.operations.insert(operation, declaration.clone());
+            assert_eq!(validate_relation_identities(&control), Ok(()));
+            for (index, row) in declaration.relations.iter().enumerate() {
+                let mut missing = control.clone();
+                missing
+                    .operations
+                    .get_mut(&operation)
+                    .unwrap()
+                    .relations
+                    .remove(index);
+                assert_eq!(
+                    validate_relation_identities(&missing),
+                    Err(RealizationError::MissingArchitectureRelation {
+                        operation,
+                        kind: row.id.kind(),
+                        subject: row.id.subject().clone(),
+                    })
+                );
+                let mut duplicate = control.clone();
+                duplicate
+                    .operations
+                    .get_mut(&operation)
+                    .unwrap()
+                    .relations
+                    .push(row.clone());
+                assert_eq!(
+                    validate_relation_identities(&duplicate),
+                    Err(RealizationError::SurplusArchitectureRelation {
+                        relation: row.id.clone()
+                    })
+                );
+                let mut proof = control.clone();
+                let alternatives = &mut proof.operations.get_mut(&operation).unwrap().relations
+                    [index]
+                    .proof_alternatives;
+                if alternatives.is_empty() {
+                    alternatives.insert(crate::ProofAlternativeId::new(
+                        row.id.clone(),
+                        crate::ProofKind::ManifestShape,
+                    ));
+                } else {
+                    alternatives.clear();
+                }
+                assert_eq!(
+                    validate_relation_identities(&proof),
+                    Err(RealizationError::ArchitectureRelationMismatch {
+                        relation: row.id.clone()
+                    })
+                );
+                if let Relation::SideRepresentation { .. } = &row.relation {
+                    let mut body = control.clone();
+                    let Relation::SideRepresentation {
+                        allowed: expected, ..
+                    } = &mut body.operations.get_mut(&operation).unwrap().relations[index].relation
+                    else {
+                        unreachable!();
+                    };
+                    expected.clear();
+                    assert_ne!(body.operations[&operation].relations[index], *row);
+                    assert_eq!(
+                        validate_relation_identities(&body),
+                        Err(RealizationError::ArchitectureRelationMismatch {
+                            relation: row.id.clone()
+                        })
+                    );
+                }
+            }
+        }
     }
 }

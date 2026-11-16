@@ -208,6 +208,7 @@ pub enum RelationFailure {
     CanonicalDeltaPolicy,
     OpenFlowPolicy,
     ExpressionPredicate,
+    BurnClearLaw,
 }
 
 /// One stable relation verdict.
@@ -295,6 +296,30 @@ pub(crate) fn evaluate_traced(
     observation: &OperationObservation,
     operator_membership: Option<&ObservedOperatorMembership>,
 ) -> Result<ConformanceReport, RealizationError> {
+    evaluate_traced_with_extension(realization, observation, operator_membership, None)
+}
+
+impl crate::ScopedRealizationSpec {
+    /// Evaluate the bound primitive Burn/Clear carrier through the public relation graph.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RealizationError::OperationOutsideScope`] if the bound operation
+    /// is undeclared, or an operand/evaluation error from the required carrier.
+    pub fn evaluate_operation_with_burn_clear(
+        &self,
+        bound: &crate::BoundBurnClearObservation,
+    ) -> Result<ConformanceReport, RealizationError> {
+        evaluate_traced_with_extension(self, &bound.observation.context.common, None, Some(bound))
+    }
+}
+
+fn evaluate_traced_with_extension(
+    realization: &crate::ScopedRealizationSpec,
+    observation: &OperationObservation,
+    operator_membership: Option<&ObservedOperatorMembership>,
+    bound: Option<&crate::BoundBurnClearObservation>,
+) -> Result<ConformanceReport, RealizationError> {
     let operation_code = observation.operation.code();
     let span = tracing::span!(
         target: "realization::evaluate",
@@ -306,16 +331,32 @@ pub(crate) fn evaluate_traced(
         operator_membership_supplied = operator_membership.is_some()
     );
     let _guard = span.enter();
-    let result = evaluate_operation(
-        &realization.relation_graph,
-        &realization.relation_node_by_id,
-        &realization.relation_evaluation_order,
-        &realization.expression_graph,
-        &realization.expression_node_by_id,
-        &realization.expression_evaluation_order,
-        observation,
-        operator_membership,
-    );
+    let result = if bound.is_none()
+        && matches!(
+            observation.operation,
+            architecture::OperationId::Burn | architecture::OperationId::Clear
+        ) {
+        Err(RealizationError::BurnClearObservation(
+            crate::BurnClearRefusal::MissingExtension,
+        ))
+    } else if bound.is_some() && realization.operation(observation.operation).is_none() {
+        // Keep undeclared bound operations inside the traced refusal boundary.
+        Err(RealizationError::OperationOutsideScope(
+            observation.operation,
+        ))
+    } else {
+        evaluate_operation_with_extension(
+            &realization.relation_graph,
+            &realization.relation_node_by_id,
+            &realization.relation_evaluation_order,
+            &realization.expression_graph,
+            &realization.expression_node_by_id,
+            &realization.expression_evaluation_order,
+            observation,
+            operator_membership,
+            bound,
+        )
+    };
     match &result {
         Ok(report) if tracing::enabled!(target: "realization::evaluate", tracing::Level::DEBUG) => {
             let (
@@ -385,13 +426,49 @@ pub(crate) fn evaluate_operation(
     observation: &OperationObservation,
     operator_membership: Option<&ObservedOperatorMembership>,
 ) -> Result<ConformanceReport, RealizationError> {
+    evaluate_operation_with_extension(
+        relation_graph,
+        relation_node_by_id,
+        relation_evaluation_order,
+        expression_graph,
+        expression_node_by_id,
+        expression_evaluation_order,
+        observation,
+        operator_membership,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)] // Preserve the existing graph boundary while adding the bound carrier.
+fn evaluate_operation_with_extension(
+    relation_graph: &DiGraph<RelationDeclaration, RelationEdge, u32>,
+    relation_node_by_id: &BTreeMap<RelationId, NodeIndex<u32>>,
+    relation_evaluation_order: &[RelationId],
+    expression_graph: &DiGraph<ExpressionDeclaration, DependencyEdge, u32>,
+    expression_node_by_id: &BTreeMap<ExprId, NodeIndex<u32>>,
+    expression_evaluation_order: &[ExprId],
+    observation: &OperationObservation,
+    operator_membership: Option<&ObservedOperatorMembership>,
+    bound: Option<&crate::BoundBurnClearObservation>,
+) -> Result<ConformanceReport, RealizationError> {
     let observation = observation.clone().validate_and_normalize_core()?;
+    if bound.is_none()
+        && relation_graph.node_weights().any(|row| {
+            row.id.operation() == observation.operation
+                && crate::burn_clear_laws::requires_extension(&row.relation)
+        })
+    {
+        return Err(RealizationError::BurnClearObservation(
+            crate::BurnClearRefusal::MissingExtension,
+        ));
+    }
     let evaluated = evaluate_operation_expressions(
         relation_graph,
         expression_graph,
         expression_node_by_id,
         expression_evaluation_order,
         &observation,
+        bound,
     )?;
     let mut status_by_relation = BTreeMap::new();
 
@@ -431,6 +508,7 @@ pub(crate) fn evaluate_operation(
                 &observation,
                 evaluated.as_ref(),
                 operator_membership,
+                bound,
             )?
         } else {
             RelationStatus::Blocked {
@@ -459,8 +537,36 @@ fn evaluate_relation(
     observation: &OperationObservation,
     evaluated: Option<&EvaluatedExpressions>,
     operator_membership: Option<&ObservedOperatorMembership>,
+    bound: Option<&crate::BoundBurnClearObservation>,
 ) -> Result<RelationStatus, RealizationError> {
     match relation {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => {
+            let bound = bound.ok_or(RealizationError::BurnClearObservation(
+                crate::BurnClearRefusal::MissingExtension,
+            ))?;
+            let law = crate::burn_clear_laws::activated_law(id, relation)?;
+            if let Relation::ClearAssignment {
+                expression: Some(expression),
+                ..
+            } = relation
+            {
+                let values = evaluated.ok_or_else(|| {
+                    RealizationError::UnknownEvaluatedExpression {
+                        expression: expression.clone(),
+                    }
+                })?;
+                return status(values.bool(expression)?, RelationFailure::BurnClearLaw);
+            }
+            status(law.evaluate(bound)?, RelationFailure::BurnClearLaw)
+        }
         Relation::OperatorAuthorization => Ok(operator_membership_status(id, operator_membership)),
         Relation::SubstrateConservation { asset } => Ok(RelationStatus::EvidenceRequired {
             requirement: ExternalEvidenceRequirement::SubstrateConservation {
@@ -627,12 +733,17 @@ fn evaluate_operation_expressions(
     expression_node_by_id: &BTreeMap<ExprId, NodeIndex<u32>>,
     expression_evaluation_order: &[ExprId],
     observation: &OperationObservation,
+    bound: Option<&crate::BoundBurnClearObservation>,
 ) -> Result<Option<EvaluatedExpressions>, RealizationError> {
     let predicates = relation_graph
         .node_weights()
         .filter(|declaration| declaration.id.operation() == observation.operation)
         .filter_map(|declaration| match &declaration.relation {
-            Relation::ExpressionPredicate { expression } => Some(expression.clone()),
+            Relation::ExpressionPredicate { expression }
+            | Relation::ClearAssignment {
+                expression: Some(expression),
+                ..
+            } => Some(expression.clone()),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -647,7 +758,11 @@ fn evaluate_operation_expressions(
 
     for id in &scope {
         if let ExprId::Fact(fact) = id {
-            facts.insert(fact.clone(), derive_fact(observation, fact)?)?;
+            let value = match bound.and_then(|bound| bound.resolve_state_fact(fact)) {
+                Some(value) => value,
+                None => derive_fact(observation, fact)?,
+            };
+            facts.insert(fact.clone(), value)?;
         }
     }
 

@@ -5556,6 +5556,17 @@ mod tests {
         assert_eq!(operation.expressions, []);
         for declaration in &operation.relations {
             match &declaration.relation {
+                Relation::SideRepresentation { .. }
+                | Relation::DataOutputs { .. }
+                | Relation::BurnBinding
+                | Relation::ClearClamp
+                | Relation::ClearAssignment { .. }
+                | Relation::ClearFloor
+                | Relation::ClearFlow
+                | Relation::ClearBinding
+                | Relation::ClearCanonicalDeltaPolicy => {
+                    panic!("Burn/Clear law in announcement declaration")
+                }
                 Relation::Cardinality { object, .. } | Relation::Recognition { object, .. } => {
                     assert!(matches!(object, ObjectId::State | ObjectId::PlainLbtc));
                 }

@@ -1,7 +1,6 @@
-//! Staged Burn/Clear bodies. These are not declaration dispatch or engine keys.
-//!
-//! Local identities are deliberately separate from the public relation enums;
-//! bite 2.3b installs those enums and their exhaustive consumers atomically.
+//! Burn/Clear semantic bodies and their public relation declarations.
+//! Operation-local helpers retain independent law evaluation; activated
+//! declarations carry the operation-qualified relation identities.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -136,7 +135,7 @@ fn state_fact(side: TransactionSide, field: StateField) -> FactId {
     }
 }
 
-fn copy_expression(field: StateField) -> ExpressionNode {
+pub(crate) fn copy_expression(field: StateField) -> ExpressionNode {
     ExpressionNode::Equal {
         left: ExprId::fact(state_fact(TransactionSide::Input, field)),
         right: ExprId::fact(state_fact(TransactionSide::Output, field)),
@@ -249,7 +248,136 @@ pub fn validate_burn_clear_law_census(
     Ok(())
 }
 
+/// Validate the activated law subset with exact bodies, proofs and multiplicity.
+pub fn validate_burn_clear_relation_census(
+    operation: OperationId,
+    declarations: &[RelationDeclaration],
+) -> Result<(), BurnClearLawError> {
+    validate_activated_relation_census(operation, declarations)
+        .map_err(|_| BurnClearLawError::Census)
+}
+
+/// Declaration diagnostics for the same exact census used by the staged entry.
+pub(crate) fn validate_activated_relation_census(
+    operation: OperationId,
+    declarations: &[RelationDeclaration],
+) -> Result<(), RealizationError> {
+    let expected = burn_clear_laws(operation)
+        .iter()
+        .map(BurnClearLawDeclaration::relation_declaration)
+        .collect::<Vec<_>>();
+    if expected.is_empty() {
+        return Err(RealizationError::UnsupportedOperationDeclaration(operation));
+    }
+    for row in &expected {
+        let mut matching = declarations.iter().filter(|actual| actual.id == row.id);
+        let Some(actual) = matching.next() else {
+            return Err(RealizationError::MissingArchitectureRelation {
+                operation,
+                kind: row.id.kind(),
+                subject: row.id.subject().clone(),
+            });
+        };
+        if matching.next().is_some() {
+            return Err(RealizationError::SurplusArchitectureRelation {
+                relation: row.id.clone(),
+            });
+        }
+        if actual != row {
+            return Err(RealizationError::ArchitectureRelationMismatch {
+                relation: row.id.clone(),
+            });
+        }
+    }
+    if let Some(row) = declarations
+        .iter()
+        .find(|row| !expected.iter().any(|expected| expected.id == row.id))
+    {
+        return Err(RealizationError::SurplusArchitectureRelation {
+            relation: row.id.clone(),
+        });
+    }
+    Ok(())
+}
+
 impl BurnClearLawDeclaration {
+    /// Project the reviewed law into the public operation-qualified vocabulary.
+    pub fn relation_declaration(&self) -> RelationDeclaration {
+        use crate::{ExpressionRole, ProofAlternativeId};
+        use BurnClearLaw as L;
+        let (kind, subject) = match self.id.key {
+            BurnClearLawKey::CanonicalDeltaPolicy => (
+                RelationKind::CanonicalDeltaPolicy,
+                RelationSubject::Operation,
+            ),
+            BurnClearLawKey::SideRepresentation(side) => (
+                RelationKind::SideRepresentation,
+                RelationSubject::SideRepresentation {
+                    side,
+                    object: ObjectId::ReceiptLive,
+                },
+            ),
+            BurnClearLawKey::ClearAssignment(field) => (
+                RelationKind::ClearAssignment,
+                RelationSubject::StateField { field },
+            ),
+            BurnClearLawKey::DataOutputs => (RelationKind::DataOutputs, RelationSubject::Operation),
+            BurnClearLawKey::BurnBinding => (RelationKind::BurnBinding, RelationSubject::Operation),
+            BurnClearLawKey::ClearClamp => (RelationKind::ClearClamp, RelationSubject::Operation),
+            BurnClearLawKey::ClearFloor => (RelationKind::ClearFloor, RelationSubject::Operation),
+            BurnClearLawKey::ClearFlow => (RelationKind::ClearFlow, RelationSubject::Operation),
+            BurnClearLawKey::ClearBinding => {
+                (RelationKind::ClearBinding, RelationSubject::Operation)
+            }
+        };
+        let id = RelationId::new(self.id.operation, kind, subject);
+        let relation = match &self.body {
+            L::CanonicalDeltaPolicy if self.id.operation == OperationId::Burn => {
+                Relation::CanonicalDeltaPolicy {
+                    expected: BTreeSet::from([ExpectedCanonicalDelta {
+                        asset: AssetId::U,
+                        kind: DeltaKind::Lateral,
+                        destruction_tag: None,
+                    }]),
+                }
+            }
+            L::CanonicalDeltaPolicy => Relation::ClearCanonicalDeltaPolicy,
+            L::SideRepresentation {
+                side,
+                object,
+                allowed,
+            } => Relation::SideRepresentation {
+                side: *side,
+                object: *object,
+                allowed: allowed.clone(),
+            },
+            L::DataOutputs { expected } => Relation::DataOutputs {
+                expected: expected.clone(),
+            },
+            L::BurnBinding => Relation::BurnBinding,
+            L::ClearClamp => Relation::ClearClamp,
+            L::ClearAssignment { field, expression } => Relation::ClearAssignment {
+                field: *field,
+                expression: expression
+                    .as_ref()
+                    .map(|_| ExprId::relation(id.clone(), ExpressionRole::Predicate)),
+            },
+            L::ClearFloor => Relation::ClearFloor,
+            L::ClearFlow => Relation::ClearFlow,
+            L::ClearBinding => Relation::ClearBinding,
+        };
+        RelationDeclaration {
+            proof_alternatives: self
+                .body
+                .proof_kind()
+                .map(|proof| ProofAlternativeId::new(id.clone(), proof))
+                .into_iter()
+                .collect(),
+            id,
+            relation,
+        }
+    }
+
     /// Decide a staged body from an already bound primitive extension.
     /// `false` is a law disagreement; missing facts remain typed errors.
     /// This establishes neither a complete declaration nor model conformance.
@@ -299,6 +427,50 @@ impl BurnClearLawDeclaration {
             BurnClearLaw::ClearFloor => floor(bound),
             BurnClearLaw::ClearFlow => clear_flow(bound),
             BurnClearLaw::ClearBinding => clear_binding(bound),
+        }
+    }
+}
+
+/// Whether the body requires the operation-specific primitive extension.
+pub(crate) const fn requires_extension(relation: &Relation) -> bool {
+    matches!(
+        relation,
+        Relation::SideRepresentation { .. }
+            | Relation::DataOutputs { .. }
+            | Relation::BurnBinding
+            | Relation::ClearClamp
+            | Relation::ClearAssignment { .. }
+            | Relation::ClearFloor
+            | Relation::ClearFlow
+            | Relation::ClearBinding
+            | Relation::ClearCanonicalDeltaPolicy
+    )
+}
+
+/// Find a canonical reviewed law by its complete activated identity and body.
+pub(crate) fn activated_law(
+    id: &RelationId,
+    relation: &Relation,
+) -> Result<BurnClearLawDeclaration, RealizationError> {
+    burn_clear_laws(id.operation())
+        .into_iter()
+        .find(|law| {
+            let expected = law.relation_declaration();
+            expected.id == *id && expected.relation == *relation
+        })
+        .ok_or_else(|| RealizationError::ArchitectureRelationMismatch {
+            relation: id.clone(),
+        })
+}
+
+impl From<BurnClearLawError> for RealizationError {
+    fn from(error: BurnClearLawError) -> Self {
+        match error {
+            BurnClearLawError::Operand(refusal) => Self::BurnClearObservation(refusal),
+            BurnClearLawError::Evaluation(error) => error,
+            BurnClearLawError::Identity | BurnClearLawError::Census => {
+                Self::BurnClearObservation(BurnClearRefusal::Operation)
+            }
         }
     }
 }

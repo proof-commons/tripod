@@ -50,8 +50,8 @@ pub(super) const SOURCES: &[SourcePin] = &[
         "packages/realization/src/relation.rs",
         include_bytes!("../../../../packages/realization/src/relation.rs"),
         [
-            121, 227, 29, 7, 196, 138, 0, 208, 250, 22, 233, 155, 57, 157, 233, 233, 152, 24, 56,
-            9, 229, 178, 226, 55, 53, 212, 69, 11, 106, 109, 170, 187,
+            149, 240, 232, 242, 193, 247, 200, 209, 249, 217, 254, 178, 138, 106, 91, 146, 119,
+            244, 51, 249, 181, 247, 138, 190, 7, 115, 147, 202, 39, 100, 207, 186,
         ],
     ),
     (
@@ -336,4 +336,13 @@ type CapturePin = (&'static str, [u8; 32]);
 /// Paths re-frozen since the retained final native corpus was captured, each at its
 /// capture-time digest: the `previous` digest of the path's first re-freeze row after
 /// that capture in the literal freeze history, which checks this table against it.
-pub(super) const RETAINED_CAPTURE: &[CapturePin] = &[("Cargo.toml", ROOT_MANIFEST_AT_CAPTURE)];
+pub(super) const RETAINED_CAPTURE: &[CapturePin] = &[
+    ("Cargo.toml", ROOT_MANIFEST_AT_CAPTURE),
+    (
+        "packages/realization/src/relation.rs",
+        [
+            121, 227, 29, 7, 196, 138, 0, 208, 250, 22, 233, 155, 57, 157, 233, 233, 152, 24, 56,
+            9, 229, 178, 226, 55, 53, 212, 69, 11, 106, 109, 170, 187,
+        ],
+    ),
+];

@@ -40,6 +40,10 @@ pub fn prepare_from_analyses(
 ) -> Result<Prepared, CompileError> {
     let span = tracing::debug_span!(target: "compiler::engine_attestation", "prepare_requirement_payloads");
     let _entered = span.enter();
+    for node in relations.graph.node_weights() {
+        super::require_supported_plan(node.source.id.operation())?;
+        super::require_supported_relation(&node.source.relation)?;
+    }
     let declarations = relations
         .graph
         .node_weights()
@@ -386,7 +390,20 @@ fn bundle<'a>(
 
 pub fn relation_objects(relation: &Relation) -> BTreeSet<ObjectId> {
     match relation {
-        Relation::Cardinality { object, .. }
+        // These object sets are provisional: the first Wave-3 consumer must
+        // review and pin their semantics before enabling these bodies.
+        // Requirement lowering currently refuses them before any plan or source table.
+        Relation::DataOutputs { .. } => BTreeSet::from([ObjectId::Ash]),
+        Relation::BurnBinding => BTreeSet::from([ObjectId::Ash, ObjectId::ReceiptLive]),
+        Relation::ClearAssignment { .. } | Relation::ClearFloor => {
+            BTreeSet::from([ObjectId::State])
+        }
+        Relation::ClearClamp
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => BTreeSet::from([ObjectId::State, ObjectId::Ash]),
+        Relation::SideRepresentation { object, .. }
+        | Relation::Cardinality { object, .. }
         | Relation::Recognition { object, .. }
         | Relation::OwnerAuthorization { object }
         | Relation::Representation { object, .. }

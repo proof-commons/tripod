@@ -241,12 +241,21 @@ pub fn derive_execution_cases(
 /// [`CompileError::ExecutionCaseCensusMismatch`] when the derived
 /// census differs from the census the relations and the candidate
 /// require.
+/// [`CompileError::UnsupportedOperationPlan`] when the operation has no compiler plan.
+/// [`CompileError::UnsupportedRelationPlan`] when a body has no compiler plan.
 pub fn validate_case_census(
     relations: &CompilerRelationAnalysis,
     candidate: &ProofPlanCandidate,
     cases: &[ExecutionCase],
 ) -> Result<(), CompileError> {
     let mut derived = BTreeSet::new();
+
+    for operation in case_operations(relations) {
+        crate::engine_attestation::require_supported_plan(operation)?;
+    }
+    for node in relations.graph.node_weights() {
+        crate::engine_attestation::require_supported_relation(&node.source.relation)?;
+    }
 
     for case in cases {
         if !derived.insert(case.id.clone()) {

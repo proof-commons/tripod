@@ -7,6 +7,7 @@ use crate::{
 use std::collections::BTreeMap;
 
 pub struct Lowered {
+    unsupported: bool,
     pub records: core::Records,
     relations: BTreeMap<crate::engine_records::RelationKey, realization::RelationId>,
     expressions: BTreeMap<core::ExpressionKey, realization::ExprId>,
@@ -20,12 +21,14 @@ pub fn lower(
     let span = tracing::debug_span!(target: "compiler::engine_attestation", "lower_predicates", relation_count = crate::instrumentation::count(relations.graph.node_count()), expression_count = crate::instrumentation::count(expressions.graph.node_count()));
     let _entered = span.enter();
     let mut lowered = Lowered {
+        unsupported: false,
         records: core::Records::default(),
         relations: BTreeMap::new(),
         expressions: BTreeMap::new(),
         types: BTreeMap::new(),
     };
     for node in relations.graph.node_weights() {
+        lowered.unsupported |= super::require_supported_relation(&node.source.relation).is_err();
         if let realization::Relation::ExpressionPredicate { expression } = &node.source.relation {
             let relation = super::relation_key(&node.source.id);
             let key = expression_key(expression);
@@ -54,6 +57,9 @@ pub fn lower(
 
 impl Lowered {
     pub fn validate(&self) -> Result<(), CompileError> {
+        if self.unsupported {
+            return Err(CompileError::UnsupportedRelationPlan);
+        }
         core::validate_predicates(&self.records).map_err(|error| match error {
             core::Error::UnknownExpression {
                 relation,

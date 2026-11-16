@@ -566,7 +566,7 @@ pub fn validate_coverage_census(
 pub fn relation_mutations(
     relation: &Relation,
     amounts: ConservedAmountVisibility,
-) -> Vec<(CoverageBoundary, RelationMutation)> {
+) -> Result<Vec<(CoverageBoundary, RelationMutation)>, CompileError> {
     // Committed conservation has no carrier to mutate against, so its
     // negatives move with its discharge. Retaining the runtime mismatch
     // as well would require a rejection from a program that does not
@@ -575,7 +575,7 @@ pub fn relation_mutations(
     // relation with no negative at all.
     let runtime = match (relation, amounts) {
         (Relation::AmountConservation { .. }, ConservedAmountVisibility::Committed) => Vec::new(),
-        _ => runtime_mutations(relation),
+        _ => runtime_mutations(relation)?,
     };
 
     let mut mutations = runtime
@@ -583,8 +583,8 @@ pub fn relation_mutations(
         .map(|mutation| (CoverageBoundary::RuntimeCarrier, mutation))
         .collect::<Vec<_>>();
 
-    mutations.extend(static_mutations(relation, amounts));
-    mutations
+    mutations.extend(static_mutations(relation, amounts)?);
+    Ok(mutations)
 }
 
 /// The runtime-target negatives of one relation, if it has any.
@@ -594,10 +594,19 @@ pub fn relation_mutations(
 /// "fewer than zero members" is not a world any evidence package can
 /// build. Every finite maximum has an above-maximum mutation, and an
 /// architecture-owned maximum is cited by its bound rather than copied.
-fn runtime_mutations(relation: &Relation) -> Vec<RelationMutation> {
+fn runtime_mutations(relation: &Relation) -> Result<Vec<RelationMutation>, CompileError> {
     use RelationMutation as Mutation;
 
-    match relation {
+    Ok(match relation {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
         Relation::Cardinality {
             minimum, maximum, ..
         } => {
@@ -661,14 +670,14 @@ fn runtime_mutations(relation: &Relation) -> Vec<RelationMutation> {
         | Relation::LifecycleExit { .. }
         | Relation::OperatorAuthorization
         | Relation::SubstrateConservation { .. } => Vec::new(),
-    }
+    })
 }
 
 /// The negatives one relation requires away from the runtime boundary.
 fn static_mutations(
     relation: &Relation,
     amounts: ConservedAmountVisibility,
-) -> Vec<(CoverageBoundary, RelationMutation)> {
+) -> Result<Vec<(CoverageBoundary, RelationMutation)>, CompileError> {
     use CoverageBoundary as Boundary;
     use RelationMutation as Mutation;
 
@@ -681,7 +690,7 @@ fn static_mutations(
     if let (Relation::AmountConservation { .. }, ConservedAmountVisibility::Committed) =
         (relation, amounts)
     {
-        return vec![
+        return Ok(vec![
             (
                 Boundary::ExternalEvidence,
                 Mutation::ExternalEvidenceMissing,
@@ -691,10 +700,19 @@ fn static_mutations(
                 Boundary::ExternalEvidence,
                 Mutation::ExternalEvidenceIdentityMismatch,
             ),
-        ];
+        ]);
     }
 
-    match relation {
+    Ok(match relation {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
         // A hidden owner or operator gate is a property of the emitted
         // path, not a predicate any carrier evaluates.
         Relation::PermissionlessAuthorization => vec![(
@@ -771,7 +789,7 @@ fn static_mutations(
         | Relation::CanonicalDeltaPolicy { .. }
         | Relation::OpenFlowPolicy { .. }
         | Relation::ExpressionPredicate { .. } => Vec::new(),
-    }
+    })
 }
 
 /// The required mutations of one boundary, canonically ordered.

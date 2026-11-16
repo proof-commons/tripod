@@ -352,7 +352,12 @@ pub fn fact_key(fact: &FactId) -> Vec<u16> {
             operation,
             side,
             field,
-        } => vec![2, operation.code(), super::side_code(*side), *field as u16],
+        } => vec![
+            2,
+            operation.code(),
+            super::side_code(*side),
+            super::state_field_code(*field),
+        ],
         FactId::RequestedAnnouncementCycle { operation } => vec![3, operation.code()],
         FactId::AnnouncementLead { operation, bound } => vec![4, operation.code(), *bound as u16],
         FactId::InputOwners { operation, object } => vec![5, operation.code(), object.code()],

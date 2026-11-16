@@ -33,6 +33,38 @@ fn family(side: TransactionSide, object: ObjectId) -> RelationSubject {
     RelationSubject::ObjectFamily { side, object }
 }
 
+#[test]
+fn activated_bodies_refuse_wrong_kinds_and_subjects() {
+    for operation in [OperationId::Burn, OperationId::Clear] {
+        for law in crate::burn_clear_laws::burn_clear_laws(operation) {
+            let control = law.relation_declaration();
+            assert_eq!(validate_relation_identity(&control), Ok(()));
+            let mut kind = control.clone();
+            kind.id = RelationId::new(
+                operation,
+                RelationKind::Recognition,
+                control.id.subject().clone(),
+            );
+            assert_eq!(
+                validate_relation_identity(&kind),
+                Err(RealizationError::RelationKindMismatch {
+                    declared: kind.id.clone(),
+                    expected: control.id.kind(),
+                })
+            );
+            let mut subject = control.clone();
+            subject.id = RelationId::new(operation, control.id.kind(), RelationSubject::Sponsor);
+            assert_eq!(
+                validate_relation_identity(&subject),
+                Err(RealizationError::RelationSubjectMismatch {
+                    declared: subject.id.clone(),
+                    expected: control.id.subject().clone(),
+                })
+            );
+        }
+    }
+}
+
 fn cardinality_body(side: ObservedSide) -> Relation {
     Relation::Cardinality {
         side,

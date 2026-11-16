@@ -368,6 +368,16 @@ The source census is a literal module/path-declaration check with accepted and m
 
 Historical replay selects operation shape rules from the recorded closed revision set, independently of the live handshake. Revision eight's archives keep their bytes, adapter identities and admissions; revision nine's explicit sponsor funding carries canonical parent readback. A session may not mix revisions. Current request-comparison identity is rendered separately from the old comparison archive. The scaling replay change and its sole source re-pin are recorded at (`tab:w1b16:bridge-refreeze`); no native evidence is reopened. The ordinary-edge signing-authority choice is resolved by (`rec:w1b16:bridge-authority`); its original stop remains a historical record.
 
+### Attestation vocabulary re-freeze · `rec:vectors:burn-clear-refreeze`
+
+The attestation `Relation` vocabulary in `packages/realization/src/relation.rs` adds SideRepresentation, DataOutputs, BurnBinding, ClearClamp, ClearAssignment, ClearFloor, ClearFlow, ClearBinding and ClearCanonicalDeltaPolicy. This is a behaviour change confined to attestation vocabulary; keyed relation types and the selected template are unchanged. Under (`rule:vectors:keyed-refreeze`), source identity reopens and native observations remain retained only if every existing keyed byte pin passes unchanged.
+
+| Source | Previous / capture-time digest | Current digest | History and encoding controls |
+|---|---|---|---|
+| `packages/realization/src/relation.rs` | `REFREEZES[3].previous`; retained in `RETAINED_CAPTURE` | `REFREEZES[3].current` | `packages/vectors/tests/keyed_final/freeze_history.rs`: previous/current continuity, retained mapping, and `ENCODING_DIGESTS[4]` for both keys |
+
+The source diff adds only the nine attestation enum bodies and their fields. Before/after controls are the unchanged keyed source declarations and byte predictions, retained capture reconstruction and sealed corpus comparisons. `check_encoding_history` compares the owned encoding and capture producer against both new literal digests, then reconstructs every earlier row without changing its expectations. The retained source digest remains the previous value of this path's first post-capture row. The new source pin does not replace any native byte pin or capture-time identity, and the full import gate remains the landing condition.
+
 ### Dependency-line re-freeze · `tab:vectors:dependency-refreeze`
 
 The root manifest is pinned in the Dependencies category, so moving the workspace's dependency release lines under (`rule:backlog:dependency-currency`) is a change to pinned source and lands with its re-pin under (`rule:vectors:keyed-refreeze`). The literal row is `REFREEZES[2]` in `packages/vectors/tests/keyed_final/freeze_history.rs`.

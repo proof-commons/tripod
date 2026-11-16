@@ -5,10 +5,360 @@ use architecture::{
 };
 
 use crate::burn_clear_laws::*;
+use crate::validate::{validate_operation_ownership, validate_relation_identity};
 use crate::*;
 
 fn amount(value: u64) -> ProtocolAmount {
     ProtocolAmount::new(value).unwrap()
+}
+
+// Synthetic graph under the public evaluator: complete declaration dispatch
+// remains separate from this law-level activation fixture.
+#[allow(clippy::too_many_lines)] // Keep the synthetic law and dependency census together.
+fn activated_declaration(operation: OperationId) -> OperationRealization {
+    let laws = burn_clear_laws(operation);
+    let rows = laws
+        .iter()
+        .map(BurnClearLawDeclaration::relation_declaration)
+        .collect::<Vec<_>>();
+    let mut expressions = Vec::new();
+    if operation == OperationId::Clear {
+        for field in StateField::ALL {
+            for side in [TransactionSide::Input, TransactionSide::Output] {
+                let fact = FactId::StateField {
+                    operation,
+                    side,
+                    field: *field,
+                };
+                expressions.push(ExpressionDeclaration {
+                    id: ExprId::fact(fact.clone()),
+                    ty: fact.semantic_type(),
+                    node: ExpressionNode::Fact(fact),
+                });
+            }
+        }
+        for row in &rows {
+            if let Relation::ClearAssignment {
+                field,
+                expression: Some(expression),
+            } = &row.relation
+            {
+                expressions.push(ExpressionDeclaration {
+                    id: expression.clone(),
+                    ty: SemanticType::Bool,
+                    node: copy_expression(*field),
+                });
+            }
+        }
+    }
+    let mut dependencies = Vec::new();
+    if operation == OperationId::Clear {
+        let clamp = RelationId::new(
+            operation,
+            RelationKind::ClearClamp,
+            RelationSubject::Operation,
+        );
+        let floor = RelationId::new(
+            operation,
+            RelationKind::ClearFloor,
+            RelationSubject::Operation,
+        );
+        let binding = RelationId::new(
+            operation,
+            RelationKind::ClearBinding,
+            RelationSubject::Operation,
+        );
+        for row in &rows {
+            if matches!(
+                row.id.kind(),
+                RelationKind::ClearAssignment
+                    | RelationKind::ClearFlow
+                    | RelationKind::DataOutputs
+                    | RelationKind::CanonicalDeltaPolicy
+            ) {
+                dependencies.push(RelationDependencyDeclaration {
+                    prerequisite: clamp.clone(),
+                    dependent: row.id.clone(),
+                    edge: RelationEdge::StaticRequirement,
+                });
+            }
+            if row.id.kind() == RelationKind::ClearAssignment {
+                dependencies.push(RelationDependencyDeclaration {
+                    prerequisite: row.id.clone(),
+                    dependent: floor.clone(),
+                    edge: RelationEdge::StaticRequirement,
+                });
+            }
+            if matches!(
+                row.id.kind(),
+                RelationKind::ClearFloor | RelationKind::ClearFlow | RelationKind::DataOutputs
+            ) {
+                dependencies.push(RelationDependencyDeclaration {
+                    prerequisite: row.id.clone(),
+                    dependent: binding.clone(),
+                    edge: RelationEdge::StaticRequirement,
+                });
+            }
+        }
+    }
+    if operation == OperationId::Burn {
+        let ids = [
+            RelationId::new(
+                operation,
+                RelationKind::SideRepresentation,
+                RelationSubject::SideRepresentation {
+                    side: TransactionSide::Input,
+                    object: ObjectId::ReceiptLive,
+                },
+            ),
+            RelationId::new(
+                operation,
+                RelationKind::BurnBinding,
+                RelationSubject::Operation,
+            ),
+            RelationId::new(
+                operation,
+                RelationKind::DataOutputs,
+                RelationSubject::Operation,
+            ),
+        ];
+        for pair in ids.windows(2) {
+            dependencies.push(RelationDependencyDeclaration {
+                prerequisite: pair[0].clone(),
+                dependent: pair[1].clone(),
+                edge: RelationEdge::StaticRequirement,
+            });
+        }
+    }
+    OperationRealization {
+        operation,
+        expressions,
+        relations: rows,
+        relation_dependencies: dependencies,
+        constructibility_nodes: Vec::new(),
+        constructibility_edges: Vec::new(),
+        lifecycle_nodes: Vec::new(),
+        lifecycle_edges: Vec::new(),
+        disclosure_nodes: Vec::new(),
+        disclosure_edges: Vec::new(),
+        disclosure_seeds: Vec::new(),
+    }
+}
+
+fn activated_graph(operation: OperationId) -> ScopedRealizationSpec {
+    let declaration = activated_declaration(operation);
+    let mut realized = derive(
+        &architecture::ARCHITECTURE,
+        RealizationScope::phase1_pilots(),
+    )
+    .unwrap();
+    (
+        realized.relation_graph,
+        realized.relation_node_by_id,
+        realized.relation_evaluation_order,
+    ) = crate::relation::build_relation_graph(
+        declaration.relations.clone(),
+        declaration.relation_dependencies.clone(),
+    )
+    .unwrap();
+    (
+        realized.expression_graph,
+        realized.expression_node_by_id,
+        realized.expression_evaluation_order,
+    ) = crate::expression::build_expression_graph(declaration.expressions.clone()).unwrap();
+    realized.scope = RealizationScope::from_operations([operation]).unwrap();
+    realized.operations = BTreeMap::from([(operation, declaration)]);
+    realized
+}
+
+#[test]
+fn public_copy_expression_validation_refuses_changed_operands() {
+    let control = activated_declaration(OperationId::Clear);
+    assert_eq!(control.relations.len(), 12);
+    assert_eq!(control.expressions.len(), 17);
+    assert_eq!(
+        validate_operation_ownership(OperationId::Clear, &control),
+        Ok(())
+    );
+    for row in &control.relations {
+        let Relation::ClearAssignment {
+            expression: Some(expression),
+            ..
+        } = &row.relation
+        else {
+            continue;
+        };
+        let mut subject = control.clone();
+        let node = subject
+            .expressions
+            .iter_mut()
+            .find(|node| node.id == *expression)
+            .unwrap();
+        let ExpressionNode::Equal { left, right } = &mut node.node else {
+            panic!("copy expression must be Equal");
+        };
+        // Only the right operand's side changes from Output to Input.
+        *right = left.clone();
+        assert_eq!(
+            validate_operation_ownership(OperationId::Clear, &subject),
+            Err(RealizationError::ArchitectureRelationMismatch {
+                relation: row.id.clone()
+            }),
+        );
+    }
+}
+
+#[test]
+fn public_bound_entry_refuses_undeclared_operations() {
+    for (common, extension) in [burn(), clear(10, 6, 3, 6, 0, 4)] {
+        let bound = checked(&common, &extension);
+        let control = activated_graph(common.operation);
+        assert!(
+            control
+                .evaluate_operation_with_burn_clear(&bound)
+                .unwrap()
+                .is_conformant()
+        );
+        let mut subject = control;
+        subject.operations.remove(&common.operation);
+        assert_eq!(
+            subject.evaluate_operation_with_burn_clear(&bound),
+            Err(RealizationError::OperationOutsideScope(common.operation))
+        );
+        let pilot = derive(
+            &architecture::ARCHITECTURE,
+            RealizationScope::phase1_pilots(),
+        )
+        .unwrap();
+        assert_eq!(
+            pilot.evaluate_operation_with_burn_clear(&bound),
+            Err(RealizationError::OperationOutsideScope(common.operation))
+        );
+    }
+}
+
+#[test]
+fn activated_public_laws_accept_controls_and_require_the_extension() {
+    for (common, extension) in [burn(), clear(10, 6, 3, 6, 0, 4), clear(2, 6, 3, 2, 4, 0)] {
+        let realized = activated_graph(common.operation);
+        let report = realized
+            .evaluate_operation_with_burn_clear(&checked(&common, &extension))
+            .unwrap();
+        assert_eq!(
+            report.verdicts.len(),
+            if common.operation == OperationId::Burn {
+                5
+            } else {
+                12
+            }
+        );
+        assert!(
+            report
+                .verdicts
+                .iter()
+                .all(|row| row.status == RelationStatus::Passed)
+        );
+        assert_eq!(
+            realized.evaluate_operation(&common),
+            Err(RealizationError::BurnClearObservation(
+                BurnClearRefusal::MissingExtension
+            ))
+        );
+    }
+}
+
+#[test]
+fn failed_public_clamp_blocks_dependents_instead_of_aborting_the_report() {
+    for (common, mut extension) in [clear(10, 6, 3, 6, 0, 4), clear(10, 2, 0, 1, 1, 9)] {
+        let realized = activated_graph(OperationId::Clear);
+        assert!(
+            realized
+                .evaluate_operation_with_burn_clear(&checked(&common, &extension))
+                .unwrap()
+                .is_conformant()
+        );
+        if let BurnClearPayload::Clear { predecessor, .. } = &mut extension.payload {
+            predecessor.metadata.y_l = amount(0);
+        }
+        let report = realized
+            .evaluate_operation_with_burn_clear(&checked(&common, &extension))
+            .unwrap();
+        let clamp = RelationId::new(
+            OperationId::Clear,
+            RelationKind::ClearClamp,
+            RelationSubject::Operation,
+        );
+        assert_eq!(
+            report.verdict(&clamp).unwrap().status,
+            RelationStatus::Failed {
+                reason: RelationFailure::BurnClearLaw
+            }
+        );
+        for row in report.verdicts.iter().filter(|row| row.relation != clamp) {
+            assert!(matches!(row.status, RelationStatus::Blocked { .. }));
+        }
+        let delta = RelationId::new(
+            OperationId::Clear,
+            RelationKind::CanonicalDeltaPolicy,
+            RelationSubject::Operation,
+        );
+        assert_eq!(
+            report.verdict(&delta).unwrap().status,
+            RelationStatus::Blocked {
+                prerequisites: vec![clamp]
+            }
+        );
+    }
+}
+
+#[test]
+fn activated_census_checks_every_identity_body_and_multiplicity() {
+    for (operation, count) in [(OperationId::Burn, 5), (OperationId::Clear, 12)] {
+        let rows = burn_clear_laws(operation)
+            .iter()
+            .map(BurnClearLawDeclaration::relation_declaration)
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), count);
+        assert_eq!(
+            validate_burn_clear_relation_census(operation, &rows),
+            Ok(())
+        );
+        for (index, row) in rows.iter().enumerate() {
+            validate_relation_identity(row).unwrap();
+            let mut missing = rows.clone();
+            missing.remove(index);
+            assert_eq!(
+                validate_burn_clear_relation_census(operation, &missing),
+                Err(BurnClearLawError::Census)
+            );
+            let mut duplicate = rows.clone();
+            duplicate.push(row.clone());
+            assert_eq!(
+                validate_burn_clear_relation_census(operation, &duplicate),
+                Err(BurnClearLawError::Census)
+            );
+            let mut foreign = row.clone();
+            foreign.id = RelationId::new(
+                OperationId::CompactAsh,
+                row.id.kind(),
+                row.id.subject().clone(),
+            );
+            if requires_extension(&row.relation) {
+                assert_eq!(
+                    validate_relation_identity(&foreign),
+                    Err(RealizationError::ArchitectureRelationMismatch {
+                        relation: foreign.id.clone()
+                    })
+                );
+            }
+        }
+        let mut reversed = rows;
+        reversed.reverse();
+        assert_eq!(
+            validate_burn_clear_relation_census(operation, &reversed),
+            Ok(())
+        );
+    }
 }
 fn reference(side: ObservedSide, ordinal: u32) -> ObservedObjectRef {
     ObservedObjectRef { side, ordinal }
@@ -66,9 +416,18 @@ fn holds(
     common: &OperationObservation,
     extension: &BurnClearObservation,
 ) -> bool {
-    law(common.operation, key)
-        .evaluate(&checked(common, extension))
-        .unwrap()
+    let declaration = law(common.operation, key).relation_declaration();
+    let id = declaration.id.clone();
+    let mut realized = activated_graph(common.operation);
+    (
+        realized.relation_graph,
+        realized.relation_node_by_id,
+        realized.relation_evaluation_order,
+    ) = crate::relation::build_relation_graph([declaration], []).unwrap();
+    let report = realized
+        .evaluate_operation_with_burn_clear(&checked(common, extension))
+        .unwrap();
+    report.verdict(&id).unwrap().status == RelationStatus::Passed
 }
 
 fn burn() -> (OperationObservation, BurnClearObservation) {
@@ -458,6 +817,13 @@ fn structural_binding_refuses_duplicate_recon_wrong_association_and_missing_fact
         law(OperationId::Clear, BurnClearLawKey::ClearClamp)
             .evaluate(&checked(&common, &extension)),
         Err(BurnClearLawError::Operand(
+            BurnClearRefusal::ClearTransition
+        ))
+    );
+    assert_eq!(
+        activated_graph(OperationId::Clear)
+            .evaluate_operation_with_burn_clear(&checked(&common, &extension)),
+        Err(RealizationError::BurnClearObservation(
             BurnClearRefusal::ClearTransition
         ))
     );

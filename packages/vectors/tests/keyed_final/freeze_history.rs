@@ -435,7 +435,9 @@ pub fn check() {
     rows[newest].previous[31] ^= 1;
     assert_eq!(
         replay(&rows, &current),
-        Err(HistoryRefusal::Previous("Cargo.toml"))
+        Err(HistoryRefusal::Previous(
+            "packages/realization/src/relation.rs"
+        ))
     );
     let mut rows = REFREEZES.to_vec();
     rows[newest].current[31] ^= 1;
@@ -497,6 +499,13 @@ fn check_encoding_history() {
     use vectors::keyed_final_native::{capture_freeze_digest, retained_capture_freeze_digest};
 
     assert_eq!(ENCODING_DIGESTS.len(), REFREEZES.len() + 1);
+    assert_eq!(
+        [
+            capture_freeze_digest([42; 32]).unwrap(),
+            capture_freeze_digest(SECOND_KEY).unwrap()
+        ],
+        *ENCODING_DIGESTS.last().unwrap(),
+    );
     for (key_index, key) in [[42; 32], SECOND_KEY].into_iter().enumerate() {
         let mut offered = FreezeManifest::offer(key);
         let current = ENCODING_DIGESTS.last().unwrap()[key_index];
@@ -575,16 +584,31 @@ const REFREEZES: &[Refreeze] = &[
             78, 98, 211, 61, 223, 80, 101, 200, 155, 236, 95, 57, 116, 66,
         ],
     },
+    // Behavioural: activate the attestation Burn/Clear relation vocabulary.
+    // Keyed relation types are unchanged. Source identity reopens; unchanged
+    // keyed byte pins retain the exact-transaction native observations.
+    Refreeze {
+        path: "packages/realization/src/relation.rs",
+        previous: [
+            121, 227, 29, 7, 196, 138, 0, 208, 250, 22, 233, 155, 57, 157, 233, 233, 152, 24, 56,
+            9, 229, 178, 226, 55, 53, 212, 69, 11, 106, 109, 170, 187,
+        ],
+        current: [
+            149, 240, 232, 242, 193, 247, 200, 209, 249, 217, 254, 178, 138, 106, 91, 146, 119,
+            244, 51, 249, 181, 247, 138, 190, 7, 115, 147, 202, 39, 100, 207, 186,
+        ],
+    },
 ];
 
-// Literal digests reconstructed from the former rendering for both retained keys.
+// The first four digest pairs were reconstructed from the former rendering.
 // Rows 0 and 1 have no contemporaneous artifact; they check history replay.
 // Row AFTER_RETAINED_CAPTURE is anchored to the sealed capture session digests;
 // the last row pins the current freeze. The independent ASCII reconstruction
 // is in the appendix of review/w20b1/freeze-encoder-review.md in the review
-// handoff (not part of this tree); it reproduces all eight literals without
-// calling this encoder. The literal checks above are the in-tree evidence.
-const ENCODING_DIGESTS: [[[u8; 32]; 2]; 4] = [
+// handoff (not part of this tree); it reproduces those eight literals without
+// calling this encoder. The attestation vocabulary re-freeze adds the pair
+// produced by the owned capture encoder. Literal checks above cover every row.
+const ENCODING_DIGESTS: [[[u8; 32]; 2]; 5] = [
     [
         [
             162, 164, 202, 223, 163, 252, 188, 69, 248, 178, 42, 141, 180, 107, 158, 181, 162, 184,
@@ -623,6 +647,16 @@ const ENCODING_DIGESTS: [[[u8; 32]; 2]; 4] = [
         [
             62, 159, 233, 231, 219, 248, 108, 237, 146, 92, 49, 116, 198, 228, 109, 119, 81, 70,
             18, 36, 21, 163, 233, 121, 75, 21, 22, 90, 174, 88, 162, 71,
+        ],
+    ],
+    [
+        [
+            255, 192, 219, 245, 100, 247, 73, 141, 211, 40, 119, 35, 37, 183, 9, 100, 218, 26, 223,
+            116, 239, 7, 75, 14, 68, 99, 202, 107, 30, 23, 218, 167,
+        ],
+        [
+            124, 46, 235, 162, 37, 206, 117, 237, 27, 190, 239, 183, 69, 207, 196, 191, 2, 29, 37,
+            178, 78, 81, 210, 101, 0, 99, 242, 74, 94, 20, 136, 88,
         ],
     ],
 ];

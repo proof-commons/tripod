@@ -183,6 +183,7 @@ impl BoundCompilerInput {
 /// owner's re-run validation; [`CompileError::IncompleteRealizationScope`]
 /// when the compiler scope names an operation the realization does not
 /// declare.
+/// [`CompileError::UnsupportedOperationPlan`] when the operation has no compiler plan.
 fn bind_attestation_input(
     architecture: &Architecture,
     realization: ScopedRealizationSpec,
@@ -211,6 +212,7 @@ fn bind_attestation_input(
                     operation: *operation,
                 });
             }
+            crate::engine_attestation::require_supported_plan(*operation)?;
         }
 
         Ok(BoundCompilerInput {

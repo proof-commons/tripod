@@ -41,6 +41,43 @@ fn representation(
     BTreeMap::from([(object, mode)])
 }
 
+#[test]
+fn direct_case_entry_refuses_operations_without_plans() {
+    let (_, candidates) = analysis(&[OperationId::CompactAsh]);
+    let candidate = &candidates[0];
+    let relations_for = |operation| {
+        crate::relation::build_relation_graph(
+            &[operation],
+            &[realization::RelationDeclaration {
+                id: realization::RelationId::new(
+                    operation,
+                    realization::RelationKind::Authorization,
+                    realization::RelationSubject::Operation,
+                ),
+                relation: realization::Relation::PermissionlessAuthorization,
+                proof_alternatives: std::collections::BTreeSet::new(),
+            }],
+            &[],
+        )
+        .expect("synthetic relation graph")
+    };
+    // Only the operation owner changes. No declaration dispatch is needed
+    // to exercise the private case entry's independent admission boundary.
+    let control = relations_for(OperationId::AnnounceMaturity);
+    let cases = execution_cases(&control, candidate).expect("supported owner");
+    assert_eq!(cases.len(), 1);
+    assert_eq!(validate_case_census(&control, candidate, &cases), Ok(()));
+    for operation in [OperationId::Burn, OperationId::Clear] {
+        let subject = relations_for(operation);
+        let expected = Err(CompileError::UnsupportedOperationPlan { operation });
+        assert_eq!(execution_cases(&subject, candidate), expected);
+        assert_eq!(
+            validate_case_census(&subject, candidate, &[]),
+            Err(CompileError::UnsupportedOperationPlan { operation }),
+        );
+    }
+}
+
 // --- pilot case census (§16.1, §4.4) ---
 
 #[test]

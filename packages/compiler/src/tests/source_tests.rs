@@ -36,7 +36,185 @@ fn declaration(
     }
 }
 
+#[test]
+fn source_lowering_refuses_operations_without_plans() {
+    let control = declaration(
+        OperationId::AnnounceMaturity,
+        RelationKind::Authorization,
+        Relation::PermissionlessAuthorization,
+    );
+    assert_eq!(
+        relation_operands(&control).expect("supported owner"),
+        vec![crate::source::OperandId::new(
+            control.id.clone(),
+            OperandRole::ProtocolSignerSet,
+        )],
+    );
+    assert!(derive_source_requirements(&control, ProofKind::PublicConstructibility).is_ok());
+    for operation in [OperationId::Burn, OperationId::Clear] {
+        let mut subject = control.clone();
+        subject.id = RelationId::new(operation, control.id.kind(), control.id.subject().clone());
+        assert_eq!(
+            relation_operands(&subject),
+            Err(CompileError::UnsupportedOperationPlan { operation }),
+        );
+        assert_eq!(
+            derive_source_requirements(&subject, ProofKind::PublicConstructibility),
+            Err(CompileError::UnsupportedOperationPlan { operation }),
+        );
+    }
+}
+
 // --- capability view (§17.1) ---
+
+#[test]
+fn state_field_keys_retain_the_literal_field_codes() {
+    use realization::{FactId, StateField, TransactionSide};
+    let expected = [0, 1, 2, 3, 4, 5];
+    let actual = StateField::ALL
+        .iter()
+        .map(|field| crate::engine_attestation::state_field_code(*field))
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
+    for (field, code) in StateField::ALL.iter().zip(expected) {
+        for (side, side_code) in [(TransactionSide::Input, 0), (TransactionSide::Output, 1)] {
+            let fact = FactId::StateField {
+                operation: OperationId::Clear,
+                side,
+                field: *field,
+            };
+            assert_eq!(
+                crate::engine_attestation::constructibility::fact_key(&fact),
+                vec![2, 12, side_code, code],
+            );
+        }
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // Keep each body's accepted control beside every refusal boundary.
+fn every_activated_body_refuses_synthetic_compiler_entries() {
+    use realization::burn_clear_laws::{BurnClearLawKey, burn_clear_laws};
+    let input = bound_input(&[OperationId::CompactAsh]);
+    let expressions = crate::expression::build_expression_analysis(&input).unwrap();
+    let construction = crate::constructibility::build_constructibility_analysis(&input).unwrap();
+    let candidates =
+        crate::proof::enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).unwrap();
+    let mut candidate = candidates.candidates.into_iter().next().unwrap();
+    // The singleton case fixture declares no representation policy or source rows.
+    candidate.representations.clear();
+    candidate.source_requirements.clear();
+    for operation in [OperationId::Burn, OperationId::Clear] {
+        for law in burn_clear_laws(operation) {
+            if operation == OperationId::Burn && law.id.key == BurnClearLawKey::CanonicalDeltaPolicy
+            {
+                continue;
+            }
+            let mut row = law.relation_declaration();
+            assert_eq!(
+                crate::coverage::relation_mutations(
+                    &row.relation,
+                    crate::case::ConservedAmountVisibility::Readable
+                ),
+                Err(CompileError::UnsupportedRelationPlan)
+            );
+            assert_eq!(
+                relation_operands(&row),
+                Err(CompileError::UnsupportedOperationPlan { operation })
+            );
+            // Retagging only the owner bypasses the operation check, but does
+            // not turn an unsupported body into supported compiler semantics.
+            row.id = RelationId::new(
+                OperationId::CompactAsh,
+                row.id.kind(),
+                row.id.subject().clone(),
+            );
+            assert_eq!(
+                relation_operands(&row),
+                Err(CompileError::UnsupportedRelationPlan)
+            );
+            // These body-boundary fixtures share one owned shape alternative.
+            // Their controls change only the body, retaining the synthetic ID.
+            row.proof_alternatives = BTreeSet::from([realization::ProofAlternativeId::new(
+                row.id.clone(),
+                ProofKind::ManifestShape,
+            )]);
+            let mut control = row.clone();
+            control.relation = Relation::PermissionlessAuthorization;
+            assert!(
+                crate::coverage::relation_mutations(
+                    &control.relation,
+                    crate::case::ConservedAmountVisibility::Readable
+                )
+                .is_ok()
+            );
+            assert!(relation_operands(&control).is_ok());
+            let control_graph = crate::relation::build_relation_graph(
+                &[OperationId::CompactAsh],
+                std::slice::from_ref(&control),
+                &[],
+            )
+            .unwrap();
+            let cases = crate::case::execution_cases(&control_graph, &candidate).unwrap();
+            assert_eq!(cases.len(), 1);
+            assert_eq!(
+                crate::case::validate_case_census(&control_graph, &candidate, &cases),
+                Ok(())
+            );
+            for case in &cases {
+                assert!(
+                    crate::placement::classify_relation_case(
+                        &control,
+                        case,
+                        crate::sponsor_region::OrdinaryLbtcRole::Absent,
+                    )
+                    .is_ok()
+                );
+                assert_eq!(
+                    crate::placement::classify_relation_case(
+                        &row,
+                        case,
+                        crate::sponsor_region::OrdinaryLbtcRole::Absent,
+                    ),
+                    Err(CompileError::UnsupportedRelationPlan)
+                );
+            }
+            assert!(crate::layout::derive_layout_requirements(&control_graph, &[], &[]).is_ok());
+            assert!(
+                crate::engine_attestation::foundation::lower(&control_graph, &expressions)
+                    .validate()
+                    .is_ok()
+            );
+            crate::engine_attestation::requirement::prepare_from_analyses(
+                &control_graph,
+                &construction,
+            )
+            .expect("supported permissionless requirement control");
+            let graph =
+                crate::relation::build_relation_graph(&[OperationId::CompactAsh], &[row], &[])
+                    .unwrap();
+            assert_eq!(
+                crate::case::validate_case_census(&graph, &candidate, &cases),
+                Err(CompileError::UnsupportedRelationPlan)
+            );
+            assert_eq!(
+                crate::layout::derive_layout_requirements(&graph, &[], &[]),
+                Err(CompileError::UnsupportedRelationPlan)
+            );
+            assert_eq!(
+                crate::engine_attestation::foundation::lower(&graph, &expressions).validate(),
+                Err(CompileError::UnsupportedRelationPlan)
+            );
+            assert!(matches!(
+                crate::engine_attestation::requirement::prepare_from_analyses(
+                    &graph,
+                    &construction
+                ),
+                Err(CompileError::UnsupportedRelationPlan)
+            ));
+        }
+    }
+}
 
 #[test]
 fn capability_views_prune_fail_closed() {

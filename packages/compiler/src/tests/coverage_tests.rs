@@ -178,6 +178,9 @@ fn mutations(plan: &RelationCoveragePlan) -> BTreeSet<RelationMutation> {
 /// The Guide-6 §15 matrix restated independently of the derivation, so
 /// a derivation that quietly moved a relation to another boundary
 /// disagrees with this rather than with itself.
+///
+/// # Panics
+/// Panics only for a Burn/Clear body, which the pilot fixture cannot produce.
 fn expected_boundaries(
     relation: &Relation,
     amounts: ConservedAmountVisibility,
@@ -191,6 +194,17 @@ fn expected_boundaries(
     }
 
     match relation {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => {
+            panic!("unsupported relation outside the pilot oracle")
+        }
         Relation::SubstrateConservation { .. }
         | Relation::OperatorAuthorization
         | Relation::Constructibility {
@@ -775,7 +789,7 @@ fn every_relation_variant_requires_at_least_one_mutation_class() {
         ConservedAmountVisibility::Committed,
     ] {
         for relation in every_relation_variant() {
-            let required = relation_mutations(&relation, amounts);
+            let required = relation_mutations(&relation, amounts).expect("supported relation");
 
             assert!(!required.is_empty(), "{relation:?} {amounts:?}");
 
@@ -804,6 +818,7 @@ fn committed_conservation_moves_its_negatives_to_the_evidence_boundary() {
 
     let boundaries = |amounts| {
         relation_mutations(&relation, amounts)
+            .expect("supported relation")
             .into_iter()
             .map(|(boundary, _)| boundary)
             .collect::<BTreeSet<_>>()
@@ -825,6 +840,7 @@ fn committed_conservation_moves_its_negatives_to_the_evidence_boundary() {
     // The committed negatives are the report's own three, matching the
     // substrate obligation discharged at the same boundary.
     let committed = relation_mutations(&relation, ConservedAmountVisibility::Committed)
+        .expect("supported relation")
         .into_iter()
         .map(|(_, mutation)| mutation)
         .collect::<BTreeSet<_>>();
@@ -846,6 +862,7 @@ fn a_permissionless_constructibility_class_adds_a_private_dependency_mutation() 
             &Relation::Constructibility { class },
             ConservedAmountVisibility::Readable,
         )
+        .expect("supported relation")
         .into_iter()
         .map(|(_, mutation)| mutation)
         .collect::<BTreeSet<_>>()
@@ -1924,7 +1941,8 @@ fn operator_authorization_requires_the_substrate_evidence_mutations() {
         ConservedAmountVisibility::Readable,
         ConservedAmountVisibility::Committed,
     ] {
-        let actual = relation_mutations(&Relation::OperatorAuthorization, amounts);
+        let actual = relation_mutations(&Relation::OperatorAuthorization, amounts)
+            .expect("supported relation");
         assert_eq!(
             actual,
             relation_mutations(
@@ -1933,6 +1951,7 @@ fn operator_authorization_requires_the_substrate_evidence_mutations() {
                 },
                 amounts
             )
+            .expect("supported relation")
         );
         assert_eq!(actual.len(), 3);
         assert!(
@@ -1954,7 +1973,8 @@ fn operator_constructibility_requires_the_substrate_evidence_mutations() {
                 class: ConstructibilityClass::Operator,
             },
             amounts,
-        );
+        )
+        .expect("supported relation");
         assert_eq!(
             actual,
             relation_mutations(
@@ -1963,6 +1983,7 @@ fn operator_constructibility_requires_the_substrate_evidence_mutations() {
                 },
                 amounts
             )
+            .expect("supported relation")
         );
         assert_eq!(actual.len(), 3);
         assert!(

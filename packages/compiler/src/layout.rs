@@ -136,11 +136,17 @@ impl LayoutRequirement {
 ///
 /// [`CompileError::SponsorValueRead`] when a derived requirement would
 /// name an erased sponsor amount.
+/// [`CompileError::UnsupportedOperationPlan`] when the operation has no compiler plan.
+/// [`CompileError::UnsupportedRelationPlan`] when a body has no compiler plan.
 pub fn derive_layout_requirements(
     relations: &CompilerRelationAnalysis,
     plans: &[RelationCasePlan],
     eligibility: &[CarrierEligibility],
 ) -> Result<Vec<LayoutRequirement>, CompileError> {
+    for node in relations.graph.node_weights() {
+        crate::engine_attestation::require_supported_plan(node.source.id.operation())?;
+        crate::engine_attestation::require_supported_relation(&node.source.relation)?;
+    }
     let mut requirements = BTreeSet::new();
 
     for analysis in eligibility {
@@ -148,7 +154,7 @@ pub fn derive_layout_requirements(
             carrier_requirements(analysis, entry, &mut requirements);
         }
 
-        scope_requirements(relations, analysis, &mut requirements);
+        scope_requirements(relations, analysis, &mut requirements)?;
     }
 
     for plan in plans {
@@ -344,7 +350,7 @@ fn scope_requirements(
     relations: &CompilerRelationAnalysis,
     analysis: &CarrierEligibility,
     requirements: &mut BTreeSet<LayoutRequirement>,
-) {
+) -> Result<(), CompileError> {
     let relation = analysis.relation.clone();
 
     match analysis.scope {
@@ -373,9 +379,10 @@ fn scope_requirements(
         }
 
         SemanticScope::TransactionGlobal => {
-            global_relation_requirements(relations, analysis, requirements);
+            global_relation_requirements(relations, analysis, requirements)?;
         }
     }
+    Ok(())
 }
 
 /// What one transaction-global relation demands, by relation variant.
@@ -383,13 +390,22 @@ fn global_relation_requirements(
     relations: &CompilerRelationAnalysis,
     analysis: &CarrierEligibility,
     requirements: &mut BTreeSet<LayoutRequirement>,
-) {
+) -> Result<(), CompileError> {
     let relation = analysis.relation.clone();
     let Some(declaration) = declared_relation(relations, &analysis.relation) else {
-        return;
+        return Ok(());
     };
 
     match declaration {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
         // Conservation is a claim about complete family totals on both
         // sides, so a per-member fact can never establish it.
         Relation::AmountConservation {
@@ -455,6 +471,7 @@ fn global_relation_requirements(
         | Relation::OperatorAuthorization
         | Relation::SubstrateConservation { .. } => {}
     }
+    Ok(())
 }
 
 /// The layout side of one relation's backend-structural obligations.

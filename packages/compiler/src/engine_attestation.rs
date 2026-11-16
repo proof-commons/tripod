@@ -26,6 +26,50 @@ use crate::{
 use crate::engine_identity::{ATTESTATION, side_code};
 use crate::input::AttestationOwner;
 
+/// Refuse operations whose compiler plans have not been implemented.
+pub const fn require_supported_plan(operation: OperationId) -> Result<(), CompileError> {
+    if matches!(operation, OperationId::Burn | OperationId::Clear) {
+        return Err(CompileError::UnsupportedOperationPlan { operation });
+    }
+    Ok(())
+}
+
+/// Refuse new law bodies even at synthetic entries that bypass input binding.
+pub const fn require_supported_relation(
+    relation: &realization::Relation,
+) -> Result<(), CompileError> {
+    use realization::Relation;
+    match relation {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => Err(CompileError::UnsupportedRelationPlan),
+        Relation::Cardinality { .. }
+        | Relation::AllowedObjectFamilies { .. }
+        | Relation::Recognition { .. }
+        | Relation::AmountConservation { .. }
+        | Relation::OwnerAuthorization { .. }
+        | Relation::PermissionlessAuthorization
+        | Relation::OperatorAuthorization
+        | Relation::SponsorIsolation
+        | Relation::SponsorEnvelopeMultiplicity { .. }
+        | Relation::RootPolicy { .. }
+        | Relation::ProjectionPolicy { .. }
+        | Relation::CanonicalDeltaPolicy { .. }
+        | Relation::OpenFlowPolicy { .. }
+        | Relation::Constructibility { .. }
+        | Relation::Representation { .. }
+        | Relation::LifecycleExit { .. }
+        | Relation::ExpressionPredicate { .. }
+        | Relation::SubstrateConservation { .. } => Ok(()),
+    }
+}
+
 pub mod case_facts;
 pub mod cases;
 pub mod constructibility;
@@ -87,6 +131,9 @@ impl engine_records::RelationOwner for AttestationOwner {
         Ok(constructibility::lower(self)?.records)
     }
     fn lower_relations(&self) -> Result<Self::Lowered, CompileError> {
+        for operation in self.scope().operations() {
+            require_supported_plan(*operation)?;
+        }
         let source = self.source().project();
         Ok(lower_relations(
             self.scope().operations(),
@@ -301,6 +348,18 @@ pub const fn operation_key(operation: OperationId) -> OperationKey {
     }
 }
 
+/// Shared STATE-field encoding for attestation fact and relation-subject keys.
+pub const fn state_field_code(field: realization::StateField) -> u16 {
+    match field {
+        realization::StateField::Omega => 0,
+        realization::StateField::YL => 1,
+        realization::StateField::YT => 2,
+        realization::StateField::Q => 3,
+        realization::StateField::Cycle => 4,
+        realization::StateField::Maturity => 5,
+    }
+}
+
 // These are identifier encodings, not semantic classifiers. The order of
 // each code follows the existing derived ordering, including subject tags.
 pub fn relation_key(id: &RelationId) -> RelationKey {
@@ -321,6 +380,14 @@ pub fn relation_key(id: &RelationId) -> RelationKey {
         RelationKind::Representation => 13,
         RelationKind::SubstrateConservation => 14,
         RelationKind::ExpressionPredicate => 15,
+        RelationKind::SideRepresentation => 16,
+        RelationKind::DataOutputs => 17,
+        RelationKind::BurnBinding => 18,
+        RelationKind::ClearClamp => 19,
+        RelationKind::ClearAssignment => 20,
+        RelationKind::ClearFloor => 21,
+        RelationKind::ClearFlow => 22,
+        RelationKind::ClearBinding => 23,
     };
     let subject = match id.subject() {
         RelationSubject::Operation => vec![0],
@@ -332,6 +399,10 @@ pub fn relation_key(id: &RelationId) -> RelationKey {
         RelationSubject::Sponsor => vec![6],
         RelationSubject::LifecycleExit { object, exit } => vec![7, object.code(), exit.code()],
         RelationSubject::Representation { object } => vec![8, object.code()],
+        RelationSubject::SideRepresentation { side, object } => {
+            vec![9, side_code(*side), object.code()]
+        }
+        RelationSubject::StateField { field } => vec![10, state_field_code(*field)],
     };
     RelationKey {
         operation: operation_key(id.operation()),
@@ -359,5 +430,137 @@ const fn dependency_kind(edge: RelationEdge) -> DependencyKind {
     DependencyKind {
         namespace: ATTESTATION,
         code,
+    }
+}
+
+#[cfg(test)]
+mod vocabulary_tests {
+    use super::*;
+    use architecture::{AssetId, ObjectId, ProjectionId, RootId};
+    use realization::{StateField, TransactionSide};
+    use std::collections::BTreeSet;
+
+    #[test]
+    #[allow(clippy::too_many_lines)] // Literal vocabulary table keeps every allocated code visible.
+    fn literal_kind_subject_edge_codes_and_owner_namespaces_are_injective() {
+        use RelationEdge as E;
+        use RelationKind as K;
+        use RelationSubject as S;
+        let kinds = [
+            (K::Cardinality, 0),
+            (K::Recognition, 1),
+            (K::Authorization, 2),
+            (K::Conservation, 3),
+            (K::AllowedObjectFamilies, 4),
+            (K::CanonicalDeltaPolicy, 5),
+            (K::OpenFlowPolicy, 6),
+            (K::SponsorEnvelopeMultiplicity, 7),
+            (K::SponsorIsolation, 8),
+            (K::RootPolicy, 9),
+            (K::ProjectionPolicy, 10),
+            (K::Constructibility, 11),
+            (K::Lifecycle, 12),
+            (K::Representation, 13),
+            (K::SubstrateConservation, 14),
+            (K::ExpressionPredicate, 15),
+            (K::SideRepresentation, 16),
+            (K::DataOutputs, 17),
+            (K::BurnBinding, 18),
+            (K::ClearClamp, 19),
+            (K::ClearAssignment, 20),
+            (K::ClearFloor, 21),
+            (K::ClearFlow, 22),
+            (K::ClearBinding, 23),
+        ];
+        let mut subjects = vec![
+            (S::Operation, vec![0]),
+            (
+                S::ObjectFamily {
+                    side: TransactionSide::Input,
+                    object: ObjectId::Ash,
+                },
+                vec![1, 0, 12],
+            ),
+            (
+                S::TransactionSide {
+                    side: TransactionSide::Output,
+                },
+                vec![2, 1],
+            ),
+            (S::Asset { asset: AssetId::U }, vec![3, 2]),
+            (
+                S::Root {
+                    root: RootId::State,
+                },
+                vec![4, 1],
+            ),
+            (
+                S::Projection {
+                    projection: ProjectionId::ClearEvent,
+                },
+                vec![5, 3],
+            ),
+            (S::Sponsor, vec![6]),
+            (
+                S::LifecycleExit {
+                    object: ObjectId::Ash,
+                    exit: OperationId::Clear,
+                },
+                vec![7, 12, 12],
+            ),
+            (
+                S::Representation {
+                    object: ObjectId::Ash,
+                },
+                vec![8, 12],
+            ),
+            (
+                S::SideRepresentation {
+                    side: TransactionSide::Input,
+                    object: ObjectId::ReceiptLive,
+                },
+                vec![9, 0, 6],
+            ),
+            (
+                S::SideRepresentation {
+                    side: TransactionSide::Output,
+                    object: ObjectId::ReceiptLive,
+                },
+                vec![9, 1, 6],
+            ),
+        ];
+        for (field, code) in StateField::ALL.iter().zip([0, 1, 2, 3, 4, 5]) {
+            subjects.push((S::StateField { field: *field }, vec![10, code]));
+        }
+        let mut seen = BTreeSet::new();
+        for (operation, operation_code) in [(OperationId::Burn, 10), (OperationId::Clear, 12)] {
+            for (kind, code) in kinds {
+                for (subject, bytes) in &subjects {
+                    let key = relation_key(&RelationId::new(operation, kind, subject.clone()));
+                    assert_eq!(key.kind, code);
+                    assert_eq!(&key.subject, bytes);
+                    assert_eq!(key.operation.namespace, 1);
+                    assert_eq!(key.operation.code, operation_code);
+                    assert!(seen.insert(key));
+                }
+            }
+        }
+        for (edge, code) in [
+            (E::RecognitionBeforeCardinality, 0),
+            (E::RecognitionBeforeValue, 1),
+            (E::CardinalityBeforeValue, 2),
+            (E::AuthorizationBeforeClosure, 3),
+            (E::AuthorizationBeforeConstructibility, 4),
+            (E::SponsorBeforeConstructibility, 5),
+            (E::SponsorBeforeOperation, 6),
+            (E::OpenFlowPolicyBeforeSponsor, 7),
+            (E::CanonicalDeltaBeforeValue, 8),
+            (E::RepresentationBeforeLifecycle, 9),
+            (E::ProjectionPolicyBeforeOperation, 10),
+            (E::RootPolicyBeforeOperation, 11),
+            (E::StaticRequirement, 12),
+        ] {
+            assert_eq!(dependency_kind(edge), DependencyKind { namespace: 1, code });
+        }
     }
 }

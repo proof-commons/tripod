@@ -262,7 +262,7 @@ fn classify_declared_discharge(
     declaration: &RelationDeclaration,
     ordinary_lbtc: OrdinaryLbtcRole,
     amounts: ConservedAmountVisibility,
-) -> RelationDischarge {
+) -> Result<RelationDischarge, CompileError> {
     if matches!(
         declaration.id.operation(),
         OperationId::CompactAsh | OperationId::TransferLive
@@ -270,11 +270,11 @@ fn classify_declared_discharge(
         declaration.relation,
         Relation::SponsorEnvelopeMultiplicity { .. }
     ) {
-        RelationDischarge {
+        Ok(RelationDischarge {
             boundaries: BTreeSet::from([DischargeBoundary::ModelScope]),
             activation: ActivationCondition::Always,
             runtime: None,
-        }
+        })
     } else {
         classify_discharge(&declaration.relation, ordinary_lbtc, amounts)
     }
@@ -290,14 +290,18 @@ fn classify_declared_discharge(
 ///
 /// [`CompileError::MissingRepresentationChoice`] when a representation
 /// relation's object has no mode fixed by the case.
+/// [`CompileError::UnsupportedOperationPlan`] when the operation has no compiler plan.
+/// [`CompileError::UnsupportedRelationPlan`] when a body has no compiler plan.
+#[allow(clippy::too_many_lines)] // Exhaustive body dispositions remain together.
 pub fn classify_relation_case(
     declaration: &RelationDeclaration,
     case: &ExecutionCase,
     ordinary_lbtc: OrdinaryLbtcRole,
 ) -> Result<RelationCasePlan, CompileError> {
     let operation = declaration.id.operation();
+    crate::engine_attestation::require_supported_plan(operation)?;
     let amounts = conserved_amount_visibility(declaration, &case.id)?;
-    let discharge = classify_declared_discharge(declaration, ordinary_lbtc, amounts);
+    let discharge = classify_declared_discharge(declaration, ordinary_lbtc, amounts)?;
     let activity = resolve_activity(discharge.activation, &case.id);
 
     let mut compiler_requirements = Vec::new();
@@ -305,6 +309,15 @@ pub fn classify_relation_case(
     let mut external_evidence = BTreeSet::new();
 
     match &declaration.relation {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
         Relation::OperatorAuthorization
         | Relation::Constructibility {
             class: realization::ConstructibilityClass::Operator,
@@ -528,11 +541,12 @@ fn selected_representation(
 /// lifecycle, and constructibility leave the runtime boundary
 /// entirely; substrate conservation is external evidence and gets no
 /// runtime carrier at all.
+#[allow(clippy::too_many_lines)] // Exhaustive body dispositions remain together.
 fn classify_discharge(
     relation: &Relation,
     ordinary_lbtc: OrdinaryLbtcRole,
     amounts: ConservedAmountVisibility,
-) -> RelationDischarge {
+) -> Result<RelationDischarge, CompileError> {
     use CarrierMultiplicity as Multiplicity;
     use DischargeBoundary as Boundary;
 
@@ -551,14 +565,23 @@ fn classify_discharge(
     if let (Relation::AmountConservation { .. }, ConservedAmountVisibility::Committed) =
         (relation, amounts)
     {
-        return RelationDischarge {
+        return Ok(RelationDischarge {
             boundaries: BTreeSet::from([Boundary::ExternalEvidence]),
             activation: ActivationCondition::Always,
             runtime: None,
-        };
+        });
     }
 
-    match relation {
+    Ok(match relation {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
         Relation::Cardinality { side, object, .. } => runtime(
             SemanticScope::FamilyGlobal {
                 side: observed_to_transaction(*side),
@@ -661,7 +684,7 @@ fn classify_discharge(
             activation: ActivationCondition::Always,
             runtime: None,
         },
-    }
+    })
 }
 
 /// Relations over the optional sponsor family exist only where that

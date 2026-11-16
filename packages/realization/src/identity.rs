@@ -223,6 +223,14 @@ pub enum RelationKind {
     /// honestly, not because expression-bearing production scope has
     /// begun.
     ExpressionPredicate,
+    SideRepresentation,
+    DataOutputs,
+    BurnBinding,
+    ClearClamp,
+    ClearAssignment,
+    ClearFloor,
+    ClearFlow,
+    ClearBinding,
 }
 
 /// Typed subject distinguishing relations of one family.
@@ -275,6 +283,15 @@ pub enum RelationSubject {
 
     Representation {
         object: ObjectId,
+    },
+    /// A representation constraint for one transaction side and object family.
+    /// Unlike `Representation`, this does not constrain both sides together.
+    SideRepresentation {
+        side: TransactionSide,
+        object: ObjectId,
+    },
+    StateField {
+        field: StateField,
     },
 }
 

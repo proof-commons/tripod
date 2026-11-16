@@ -76,6 +76,9 @@ use crate::{
 /// one by the emitted bundle, an external one by a typed report, and
 /// everything a target actually evaluates is runtime. A representation
 /// or lifecycle relation is genuinely hybrid and states two.
+///
+/// # Panics
+/// Panics only for a Burn/Clear body, which the pilot fixture cannot produce.
 fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<CoverageBoundary> {
     use CoverageBoundary as Boundary;
 
@@ -92,6 +95,17 @@ fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<Co
     }
 
     match relation {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => {
+            panic!("unsupported relation outside the pilot oracle")
+        }
         Relation::SubstrateConservation { .. }
         | Relation::OperatorAuthorization
         | Relation::Constructibility {
@@ -144,6 +158,9 @@ fn oracle_activity(relation: &Relation, case: &ExecutionCaseId) -> RelationActiv
 /// minimum of zero has no below-minimum class, every finite maximum has
 /// an above-maximum class, and an architecture-owned ceiling is cited by
 /// its bound rather than copied as a value.
+///
+/// # Panics
+/// Panics only for a Burn/Clear body, which the pilot fixture cannot produce.
 #[allow(clippy::too_many_lines)]
 fn oracle_mutations(
     relation: &Relation,
@@ -174,6 +191,17 @@ fn oracle_mutations(
     };
 
     match relation {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => {
+            panic!("unsupported relation outside the pilot oracle")
+        }
         Relation::Cardinality {
             minimum, maximum, ..
         } => {
@@ -356,11 +384,25 @@ fn oracle_external_evidence(
 }
 
 /// The representation the case fixed for one relation's object.
+///
+/// # Panics
+/// Panics only for a Burn/Clear body, which the pilot fixture cannot produce.
 fn oracle_representation(
     relation: &Relation,
     case: &ExecutionCaseId,
 ) -> Option<RepresentationMode> {
     match relation {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => {
+            panic!("unsupported relation outside the pilot oracle")
+        }
         Relation::Representation { object, .. } | Relation::LifecycleExit { object, .. } => {
             case.representations.get(object).copied()
         }

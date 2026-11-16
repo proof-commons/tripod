@@ -27,7 +27,7 @@ pub fn derive_relation_coverage(
     let mut mutations = relation_mutations(
         &declaration.relation,
         conserved_amount_visibility(declaration, &plan.case)?,
-    );
+    )?;
     if plan.boundaries.contains(&CoverageBoundary::ModelScope) {
         for (boundary, _) in &mut mutations {
             *boundary = CoverageBoundary::ModelScope;

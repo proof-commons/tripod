@@ -301,6 +301,9 @@ fn oracle_relation_case_keys(
 /// relation: amounts a case holds as commitments are related by the
 /// target rather than by any program, so the relation answers at the
 /// external boundary instead of the runtime one (Guide-13 §10.6).
+///
+/// # Panics
+/// Panics only for a Burn/Clear body, which the pilot fixture cannot produce.
 fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<CoverageBoundary> {
     use CoverageBoundary as Boundary;
 
@@ -317,6 +320,17 @@ fn oracle_boundaries(relation: &Relation, case: &ExecutionCaseId) -> BTreeSet<Co
     }
 
     match relation {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => {
+            panic!("unsupported relation outside the pilot oracle")
+        }
         Relation::SubstrateConservation { .. }
         | Relation::OperatorAuthorization
         | Relation::Constructibility {

@@ -125,6 +125,24 @@ pub struct ExpectedCanonicalDelta {
 /// Runtime-evaluable or declaration-level semantic relation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Relation {
+    SideRepresentation {
+        side: crate::TransactionSide,
+        object: ObjectId,
+        allowed: BTreeSet<RepresentationMode>,
+    },
+    DataOutputs {
+        expected: Vec<architecture::DataOutputSpec>,
+    },
+    BurnBinding,
+    ClearClamp,
+    ClearAssignment {
+        field: crate::StateField,
+        expression: Option<ExprId>,
+    },
+    ClearFloor,
+    ClearFlow,
+    ClearBinding,
+    ClearCanonicalDeltaPolicy,
     Cardinality {
         side: ObservedSide,
         object: ObjectId,

@@ -15,13 +15,24 @@ use std::collections::{BTreeMap, BTreeSet};
 ///
 /// A new realization relation variant makes this match non-exhaustive
 /// at compile time until its source derivation is added.
+#[allow(clippy::too_many_lines)] // Exhaustive body dispositions remain together.
 pub fn relation_operands(
     declaration: &RelationDeclaration,
 ) -> Result<Vec<OperandId>, CompileError> {
     let id = &declaration.id;
+    super::require_supported_plan(id.operation())?;
     let operand = |role: OperandRole| OperandId::new(id.clone(), role);
 
     let mut operands = match &declaration.relation {
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
         Relation::Cardinality {
             side,
             object,
@@ -460,6 +471,8 @@ pub fn lower(owner: &super::AttestationOwner) -> Result<core::SourceRecords, Com
         .collect::<Vec<_>>();
     let mut tables = Vec::new();
     for declaration in &declarations {
+        super::require_supported_plan(declaration.id.operation())?;
+        super::require_supported_relation(&declaration.relation)?;
         for alternative in &declaration.proof_alternatives {
             let rows = derive_rows(declaration, alternative.proof())?;
             tables.push(table(declaration, alternative.proof(), &rows));

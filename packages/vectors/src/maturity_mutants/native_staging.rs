@@ -2856,6 +2856,7 @@ mod tests {
         );
     }
 
+    #[allow(clippy::too_many_lines)] // Keep the complete STATE-read census together.
     fn assert_non_state_operation_declarations() {
         use architecture::{ObjectId, OperationId, RootId, RootUse};
         use realization::{
@@ -2873,7 +2874,15 @@ mod tests {
                 .expect("operation declaration");
             for relation in &declaration.relations {
                 let mentions_state = match &relation.relation {
-                    Relation::Cardinality { object, .. }
+                    Relation::ClearClamp
+                    | Relation::ClearAssignment { .. }
+                    | Relation::ClearFloor
+                    | Relation::ClearFlow
+                    | Relation::ClearBinding
+                    | Relation::ClearCanonicalDeltaPolicy => true,
+                    Relation::DataOutputs { .. } => relation.id.operation() == OperationId::Clear,
+                    Relation::SideRepresentation { object, .. }
+                    | Relation::Cardinality { object, .. }
                     | Relation::Recognition { object, .. }
                     | Relation::OwnerAuthorization { object }
                     | Relation::Representation { object, .. }
@@ -2896,7 +2905,8 @@ mod tests {
                         assert_eq!(expected.get(&RootId::State), Some(&RootUse::Forbidden));
                         false
                     }
-                    Relation::PermissionlessAuthorization
+                    Relation::BurnBinding
+                    | Relation::PermissionlessAuthorization
                     | Relation::OperatorAuthorization
                     | Relation::SponsorIsolation
                     | Relation::SponsorEnvelopeMultiplicity { .. }

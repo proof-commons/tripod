@@ -1685,6 +1685,17 @@ fn no_compact_ash_relation_names_a_sponsor_amount() {
 
     for declaration in realization.relations() {
         match &declaration.relation {
+            crate::Relation::SideRepresentation { .. }
+            | crate::Relation::DataOutputs { .. }
+            | crate::Relation::BurnBinding
+            | crate::Relation::ClearClamp
+            | crate::Relation::ClearAssignment { .. }
+            | crate::Relation::ClearFloor
+            | crate::Relation::ClearFlow
+            | crate::Relation::ClearBinding
+            | crate::Relation::ClearCanonicalDeltaPolicy => {
+                panic!("Burn/Clear law in compact declaration")
+            }
             crate::Relation::AmountConservation {
                 input_objects,
                 output_objects,
