@@ -170,3 +170,11 @@ The shared `cli-common` implementation supplies ADR-010's subscriber, control ro
 - Outer public analysis and planning spans are INFO, nested analysis and repeated searches are DEBUG, and search counts are emitted once per exit with `_count: u64` fields.
 - `cli-common` owns pre-parse subscriber installation, control events, filter reload, and one terminal command record under ADR-010; the compiler library owns no subscriber or stream.
 - The ignored oracle uses assertions and test-harness wall time, with no shared scoped collector crate and no measured-duration event; the subscriber's span close record supplies enabled span timings.
+
+## Fixed-form keyed owner
+
+`compiler::input` adds DEBUG `bind_keyed_fixed_input`, with `scope_operation_count: u64` and one completion event carrying `outcome` and optional payload-free `refusal_kind`. `compiler::engine_keyed_fixed` uses DEBUG `read_declaration_shells`, `lower_predicates`, `lower_sources`, `lower_placements` and `prepare` with `scope_count: u64`; `lower_relations` carries `scope_operation_count`, `lower_coverage` carries `relation_count`, and `publish` carries `plan_count`. Shell and relation completion events retain the existing field-count/source-node-count shapes. Shared stage/search spans and counters are emitted by the existing kernels, with no second analyzer or timer.
+
+`compiler::keyed_fixed_plan` adds DEBUG `plan` (`scope_count: u64`) and `revalidate`; each emits one completion event with `outcome`. The planner's internal fresh validation uses its uninstrumented core, so it adds no duplicate public completion event. No program bytes, keys, concrete parameter values or evidence witnesses are logged. The subscriber supplies enabled span timings.
+
+For this owner, `lower_predicates` is test-oracle only. A clause-census refusal precedes `read_declaration_shells` and emits no owner completion event; only the planner completion records that refusal.

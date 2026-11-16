@@ -460,6 +460,110 @@ fn canonical_eligibility(
 }
 
 #[test]
+fn fixed_form_complete_eligibility_matches_literal_rows_in_every_scope() {
+    use crate::carrier::CarrierQuantification;
+    use crate::engine_identity::{CarrierKey, CaseKey, word};
+    use crate::engine_placement::{EmptyCause, Placed};
+    use crate::engine_records::{OperationKey, RelationKey};
+    use crate::placement::CarrierMultiplicity;
+    use architecture::keyed_fixed::{KeyedFixedManifest, KeyedFixedOperationId as K};
+    use architecture::semantic::SemanticProfileId::KeyedFixedForm;
+    for scope in [vec![K::Source], vec![K::Merge], vec![K::Source, K::Merge]] {
+        let manifest = KeyedFixedManifest::contract().unwrap();
+        let source = realization::keyed_fixed::KeyedFixedRealizationDraft::derive(&manifest)
+            .unwrap()
+            .validate(&manifest)
+            .unwrap();
+        let input = crate::bind_input(&manifest, source, scope.clone(), keyed().policy()).unwrap();
+        let carrier = CarrierKey::new(
+            KeyedFixedForm,
+            vec![word(3u16), word(2u16), word(3u16), word(1u16)],
+        );
+        let entry = (
+            Placed {
+                carrier,
+                quantification: CarrierQuantification::PerMember,
+            },
+            std::collections::BTreeSet::new(),
+        );
+        let expected = if scope.contains(&K::Merge) {
+            [3, 4, 5]
+                .map(|kind| CanonicalEligibility {
+                    key: crate::engine_placement::Key {
+                        relation: RelationKey {
+                            operation: OperationKey {
+                                namespace: 3,
+                                code: 2,
+                            },
+                            kind,
+                            subject: vec![3, 1],
+                        },
+                        case: CaseKey::new(KeyedFixedForm, vec![word(3u16), word(2u16)]),
+                    },
+                    multiplicity: CarrierMultiplicity::EveryMember,
+                    entries: vec![entry.clone()],
+                    options: vec![entry.clone()],
+                    empty_cause: 0,
+                })
+                .to_vec()
+        } else {
+            Vec::new()
+        };
+        let direct = crate::engine_keyed_fixed::lower_placements(input.owner()).eligibility;
+        assert_eq!(canonical_eligibility(&direct), expected);
+        let tables = crate::input::KeyedFixedOwner::lower_cases(&input).unwrap();
+        let (proofs, _) =
+            crate::engine_records::analyze_bound_proofs(&input, &CapabilityView::Unconstrained)
+                .unwrap();
+        assert_ne!(proofs, [] as [crate::engine_proof::Candidate; 0]);
+        for proof in proofs {
+            let selected = core::select(&tables, &proof).unwrap();
+            assert_eq!(
+                canonical_eligibility(&selected.placement.eligibility),
+                expected
+            );
+        }
+        if direct.is_empty() {
+            continue;
+        }
+        for coordinate in 0..9 {
+            let mut subject = direct.clone();
+            let row = &mut subject[0];
+            match coordinate {
+                0 => row.key.relation.operation.namespace = 1,
+                1 => {
+                    row.key.case = CaseKey::new(KeyedFixedForm, vec![word(3u16), word(1u16)]);
+                }
+                2 => row.multiplicity = CarrierMultiplicity::ExactlyOne,
+                3 => row.entries[0].placed.quantification = CarrierQuantification::Single,
+                4 => row.options[0].placed.quantification = CarrierQuantification::Single,
+                5 | 6 => {
+                    let entry = if coordinate == 5 {
+                        &mut row.entries[0]
+                    } else {
+                        &mut row.options[0]
+                    };
+                    entry.placed.carrier = CarrierKey::new(
+                        KeyedFixedForm,
+                        vec![word(3u16), word(2u16), word(1u16), word(1u16)],
+                    );
+                }
+                7 => row.empty_cause = EmptyCause::GlobalOnlyLocal,
+                _ => row.empty_cause = EmptyCause::UnconditionalOptional,
+            }
+            assert_eq!(subject.len(), direct.len());
+            assert_eq!(subject[0].entries.len(), direct[0].entries.len());
+            assert_eq!(subject[0].options.len(), direct[0].options.len());
+            assert_ne!(
+                canonical_eligibility(&subject),
+                expected,
+                "coordinate {coordinate}"
+            );
+        }
+    }
+}
+
+#[test]
 fn keyed_complete_eligibility_matches_direct_lowering_in_every_scope() {
     for scope in [
         vec![KeyedOperationId::Source],

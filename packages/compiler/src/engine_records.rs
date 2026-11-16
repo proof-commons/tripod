@@ -18,6 +18,8 @@ pub enum LoweringError {
     Attestation(#[from] crate::CompileError),
     #[error("keyed lowering refused: {0:?}")]
     Keyed(#[from] crate::engine_keyed::KeyedLoweringError),
+    #[error("fixed-form keyed lowering refused: {0:?}")]
+    KeyedFixed(#[from] crate::engine_keyed_fixed::KeyedFixedLoweringError),
 }
 
 /// Static lowering authority retained by the input binder. This parameter is

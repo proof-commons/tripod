@@ -1,4 +1,4 @@
-//! Compiler-private identity vocabulary shared by both lowering owners.
+//! Compiler-private identity vocabulary shared by every lowering owner.
 //!
 //! Architecture owns semantic namespace and local identifier encodings. These
 //! adapters retain both components; transaction sides have one compiler spelling.
@@ -20,6 +20,14 @@ pub const fn operation(id: SemanticOperationId) -> [u16; 2] {
 }
 
 pub const fn object(id: SemanticObjectId) -> [u16; 2] {
+    id.encoding()
+}
+
+pub const fn fixed_operation(id: architecture::keyed_fixed::KeyedFixedOperationId) -> [u16; 2] {
+    id.encoding()
+}
+
+pub const fn fixed_object(id: architecture::keyed_fixed::KeyedFixedObjectId) -> [u16; 2] {
     id.encoding()
 }
 
@@ -209,6 +217,7 @@ mod tests {
 
     #[test]
     fn namespace_and_side_spellings_equal_the_original_literals() {
+        assert_eq!(namespace(SemanticProfileId::KeyedFixedForm), 3);
         assert_eq!(namespace(SemanticProfileId::Attestation), 1);
         assert_eq!(namespace(SemanticProfileId::KeyedProvenance), 2);
         assert_eq!(ATTESTATION, 1);

@@ -1622,6 +1622,128 @@ fn keyed_plan_surface_locks_reexports_privacy_and_immutability() {
     );
 }
 
+#[test]
+fn keyed_fixed_plan_surface_locks_reexports_privacy_and_immutability() {
+    let code = include_str!("../src/keyed_fixed_plan.rs")
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let exports = code
+        .lines()
+        .filter(|line| line.starts_with("pub use "))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        exports,
+        vec![
+            "pub use crate::carrier::CarrierQuantification;",
+            "pub use crate::coverage::CoverageBoundary;",
+            "pub use crate::coverage_graph::{CoverageEdge, CoverageEdgeClass, CoverageNodeClass};",
+            "pub use crate::engine_keyed_fixed::ShellField as DeclarationField;",
+            "pub use crate::input::ProofSearchLimits;",
+            "pub use crate::placement::{CarrierMultiplicity, PlacementSearchLimits, PlacementSearchReport};",
+            "pub use crate::proof::{LocalProofRejection, ProofSearchReport};",
+        ]
+    );
+    let mut declaration = String::new();
+    let mut type_body = false;
+    for line in code.lines() {
+        let trimmed = line.trim_start();
+        if declaration.is_empty() && trimmed.starts_with("pub") {
+            type_body = line.starts_with("pub enum ") || line.starts_with("pub struct ");
+        }
+        if trimmed.starts_with("pub") || !declaration.is_empty() {
+            declaration.push_str(line);
+            let complete = if type_body {
+                line == "}" || line.ends_with(';') && !declaration.contains('{')
+            } else {
+                line.contains('{') || line.trim_end().ends_with([';', ','])
+            };
+            if complete {
+                assert!(
+                    !declaration.contains("engine_")
+                        || declaration
+                            == "pub use crate::engine_keyed_fixed::ShellField as DeclarationField;",
+                    "engine path in public declaration: {declaration}"
+                );
+                declaration.clear();
+            }
+        }
+    }
+    assert!(declaration.is_empty(), "unterminated public declaration");
+    for banned in [
+        "pub fn new(",
+        "Default",
+        "builder",
+        "Builder",
+        "_mut(",
+        "petgraph",
+        "NodeIndex",
+    ] {
+        assert!(
+            !code.contains(banned),
+            "unexpected public surface: {banned}"
+        );
+    }
+    assert!(code.contains(
+        "pub struct KeyedFixedPlan {\n    pub(crate) projection: KeyedFixedPlanProjection,\n}"
+    ));
+}
+
+#[test]
+fn bound_fixed_form_owner_keeps_its_public_path_and_read_only_surface() {
+    use architecture::keyed_fixed::{KeyedFixedManifest, KeyedFixedOperationId as K};
+    use compiler::input::KeyedFixedOwner;
+    let _: fn(&KeyedFixedOwner) -> &KeyedFixedManifest = KeyedFixedOwner::manifest;
+    let _: fn(&KeyedFixedOwner) -> &realization::keyed_fixed::KeyedFixedScopedRealization =
+        KeyedFixedOwner::source;
+    let _: fn(&KeyedFixedOwner) -> &[K] = KeyedFixedOwner::scope;
+    let manifest = KeyedFixedManifest::contract().expect("manifest");
+    let source = realization::keyed_fixed::KeyedFixedRealizationDraft::derive(&manifest)
+        .expect("declarations")
+        .validate(&manifest)
+        .expect("source");
+    let bound: compiler::BoundCompilerInput<KeyedFixedOwner> =
+        bind_input(&manifest, source, vec![K::Source], test_policy()).expect("fixed-form control");
+    assert_eq!(bound.policy(), test_policy());
+}
+
+#[test]
+fn external_fixed_form_owner_and_sources_cannot_be_substituted() {
+    use compiler::input::{AttestationOwner, InputBinding, KeyedFixedOwner, KeyedOwner};
+    trait FixedOwner<A> {
+        fn check() {}
+    }
+    impl<T> FixedOwner<()> for T {}
+    impl FixedOwner<u8> for compiler::BoundCompilerInput<KeyedFixedOwner> {}
+    trait EarlierOwner<A> {
+        fn check() {}
+    }
+    impl<T> EarlierOwner<()> for T {}
+    impl EarlierOwner<u8> for compiler::BoundCompilerInput<KeyedOwner> {}
+    impl EarlierOwner<u16> for compiler::BoundCompilerInput<AttestationOwner> {}
+    trait FixedSource<A> {
+        fn check() {}
+    }
+    impl<T> FixedSource<()> for T {}
+    impl FixedSource<u8>
+        for <architecture::keyed_fixed::KeyedFixedManifest as InputBinding>::Realization
+    {
+    }
+    trait EarlierSource<A> {
+        fn check() {}
+    }
+    impl<T> EarlierSource<()> for T {}
+    impl EarlierSource<u8> for <architecture::keyed::KeyedManifest as InputBinding>::Realization {}
+    impl EarlierSource<u16> for <architecture::Architecture as InputBinding>::Realization {}
+    <compiler::BoundCompilerInput<KeyedOwner> as FixedOwner<_>>::check();
+    <compiler::BoundCompilerInput<AttestationOwner> as FixedOwner<_>>::check();
+    <compiler::BoundCompilerInput<KeyedFixedOwner> as EarlierOwner<_>>::check();
+    <realization::keyed::KeyedScopedRealization as FixedSource<_>>::check();
+    <realization::ScopedRealizationSpec as FixedSource<_>>::check();
+    <realization::keyed_fixed::KeyedFixedScopedRealization as EarlierSource<_>>::check();
+}
+
 fn default_manifest_is_contained(manifest: &str) -> bool {
     let mut development = false;
     for line in manifest.lines() {
@@ -1719,7 +1841,9 @@ fn owner_surface_is_contained(owner: bool, code: &str) -> bool {
                     || signature.contains("_mut(")
                     || signature.contains("&mut self")
                     || (signature.contains("engine_")
-                        && signature != "pub use crate::engine_keyed::KeyedBindingError;")
+                        && signature != "pub use crate::engine_keyed::KeyedBindingError;"
+                        && signature
+                            != "pub use crate::engine_keyed_fixed::KeyedFixedBindingError;")
                 {
                     return false;
                 }
@@ -1736,6 +1860,13 @@ fn default_owner_and_input_signatures_keep_construction_and_engines_private() {
     let input = include_str!("../src/input.rs");
     assert!(owner_surface_is_contained(true, owner));
     assert!(owner_surface_is_contained(false, input));
+    let fixed_error_export = "pub use crate::engine_keyed_fixed::KeyedFixedBindingError;";
+    assert!(input.contains(fixed_error_export));
+    let fixed_engine_leak = input.replace(
+        fixed_error_export,
+        "pub use crate::engine_keyed_fixed::KeyedFixedOwner;",
+    );
+    assert!(!owner_surface_is_contained(false, &fixed_engine_leak));
     for mutant in [
         owner.replacen("pub(crate) const fn new", "pub const fn new", 1),
         owner.replacen(

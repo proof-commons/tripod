@@ -1,0 +1,375 @@
+//! Fallible restoration through the statically bound keyed owner's registries.
+use super::{Prepared, missing};
+use crate::{
+    engine_coverage as coverage, engine_coverage_graph as graph, engine_operation,
+    engine_placement as placement, engine_program,
+    keyed_fixed_plan::{
+        CoverageDependency, CoverageNode, CoveragePurpose, CoverageRequirement, CoverageSymbol,
+        EvidenceDefect, EvidenceObligation, KeyedFixedPlanError, KeyedFixedPlanProjection,
+        OperationPlan, ProofPlan, RelationPlan, RuntimeCarrier, RuntimeClause, StageCensus,
+    },
+};
+use realization::keyed_fixed_relation::KeyedFixedRelationId;
+use std::collections::BTreeSet;
+
+impl Prepared<'_> {
+    pub(super) fn relation(
+        &self,
+        key: &crate::engine_records::RelationKey,
+    ) -> Result<KeyedFixedRelationId, KeyedFixedPlanError> {
+        self.relations
+            .get(key)
+            .map(|row| row.id)
+            .ok_or_else(missing)
+    }
+    fn case(&self, key: &placement::Key) -> Result<KeyedFixedRelationId, KeyedFixedPlanError> {
+        let relation = self.relation(&key.relation)?;
+        let operation = self
+            .identities
+            .case(&key.case)
+            .map_err(|e| KeyedFixedPlanError::Compiler(Box::new(e)))?;
+        if relation.operation != operation {
+            return Err(missing());
+        }
+        Ok(relation)
+    }
+    fn evidence(
+        &self,
+        key: &crate::engine_source::Evidence,
+    ) -> Result<EvidenceObligation, KeyedFixedPlanError> {
+        self.evidence.get(key).cloned().ok_or_else(missing)
+    }
+    fn carrier(&self, value: &placement::Placed) -> Result<RuntimeCarrier, KeyedFixedPlanError> {
+        let (operation, object) = self
+            .identities
+            .carrier(&value.carrier)
+            .map_err(|e| KeyedFixedPlanError::Compiler(Box::new(e)))?;
+        Ok(RuntimeCarrier {
+            operation,
+            object,
+            quantification: value.quantification,
+        })
+    }
+    fn requirement(
+        &self,
+        value: &coverage::Requirement,
+    ) -> Result<CoverageRequirement, KeyedFixedPlanError> {
+        use super::super::{EvidenceDefect as D, KeyedFixedPurpose as P};
+        let purpose = match &value.purpose {
+            coverage::Purpose::AcceptedProjection => CoveragePurpose::AcceptedProjection,
+            coverage::Purpose::CarrierExecution(value) => {
+                CoveragePurpose::CarrierExecution(self.carrier(value)?)
+            }
+            coverage::Purpose::Owner(key) => match self
+                .identities
+                .purpose(key)
+                .map_err(|e| KeyedFixedPlanError::Compiler(Box::new(e)))?
+            {
+                P::ClauseAccepted => CoveragePurpose::ClauseAccepted,
+                P::ClauseRejected => CoveragePurpose::ClauseRejected,
+                P::Verified(value) => CoveragePurpose::Verified(self.evidence(&value)?),
+                P::Rejected { evidence, defect } => CoveragePurpose::Rejected {
+                    evidence: self.evidence(&evidence)?,
+                    defect: match defect {
+                        D::Missing => EvidenceDefect::Missing,
+                        D::Failed => EvidenceDefect::Failed,
+                        D::IdentityMismatch => EvidenceDefect::IdentityMismatch,
+                    },
+                },
+            },
+        };
+        Ok(CoverageRequirement {
+            relation: self.case(&value.key)?,
+            boundary: value.boundary,
+            purpose,
+            inactive: value.inactive,
+        })
+    }
+    pub(super) fn symbol(&self, key: &graph::Key) -> Result<CoverageSymbol, KeyedFixedPlanError> {
+        Ok(match key {
+            graph::Key::Relation(key) => CoverageSymbol::Relation(self.case(key)?),
+            graph::Key::Requirement(value) => {
+                CoverageSymbol::Requirement(Box::new(self.requirement(value)?))
+            }
+            graph::Key::Evidence(value) => CoverageSymbol::Evidence(self.evidence(value)?),
+            graph::Key::Carrier { key, placed } => CoverageSymbol::Carrier {
+                relation: self.case(key)?,
+                carrier: self.carrier(placed)?,
+            },
+            graph::Key::Layout(_) => {
+                return Err(KeyedFixedPlanError::Refused {
+                    stage: crate::keyed_fixed_plan::Stage::Coverage,
+                    defect: crate::keyed_fixed_plan::Defect::UnexpectedLayout,
+                    relations: Vec::new(),
+                    operations: Vec::new(),
+                    unrestored_key_count: 1,
+                });
+            }
+            #[cfg(test)]
+            graph::Key::Owner(_) => return Err(missing()),
+        })
+    }
+    fn relation_plans(
+        &self,
+        value: &engine_operation::Operation,
+    ) -> Result<std::collections::BTreeMap<KeyedFixedRelationId, RelationPlan>, KeyedFixedPlanError>
+    {
+        let result = value
+            .bundles
+            .iter()
+            .map(|(key, bundle)| {
+                let relation = self.case(key)?;
+                let plan = &bundle.coverage.plan;
+                let alternatives = bundle
+                    .carriers
+                    .iter()
+                    .map(|alternative| {
+                        if !alternative.layout.is_empty() {
+                            return Err(self.refused(
+                                crate::keyed_fixed_plan::Stage::Coverage,
+                                crate::keyed_fixed_plan::Defect::UnexpectedLayout,
+                                vec![key.relation.clone()],
+                            ));
+                        }
+                        alternative
+                            .carriers
+                            .iter()
+                            .map(|placed| self.carrier(placed))
+                            .collect::<Result<BTreeSet<_>, _>>()
+                    })
+                    .collect::<Result<_, _>>()?;
+                Ok((
+                    relation,
+                    RelationPlan {
+                        declaration: self
+                            .relations
+                            .get(&key.relation)
+                            .ok_or_else(missing)?
+                            .relation,
+                        active: plan.active,
+                        runtime: bundle
+                            .facts
+                            .runtime
+                            .iter()
+                            .map(|row| {
+                                let crate::engine_case_facts::Scope::Member { side, object } =
+                                    row.scope
+                                else {
+                                    return Err(self.refused(
+                                        crate::keyed_fixed_plan::Stage::Cases,
+                                        crate::keyed_fixed_plan::Defect::UnsupportedRuntimeScope,
+                                        vec![key.relation.clone()],
+                                    ));
+                                };
+                                let side = super::decode_side(side).map_err(|_| {
+                                    self.refused(
+                                        crate::keyed_fixed_plan::Stage::Cases,
+                                        crate::keyed_fixed_plan::Defect::UnsupportedRuntimeScope,
+                                        vec![key.relation.clone()],
+                                    )
+                                })?;
+                                let carrier_objects = bundle
+                                    .carriers
+                                    .iter()
+                                    .flat_map(|alternative| &alternative.carriers)
+                                    .map(|placed| self.carrier(placed))
+                                    .collect::<Result<Vec<_>, _>>()?;
+                                if !carrier_objects.iter().any(|carrier| {
+                                    crate::engine_identity::fixed_object(carrier.object)
+                                        == [object.namespace, object.code]
+                                }) {
+                                    return Err(self.refused(
+                                        crate::keyed_fixed_plan::Stage::Cases,
+                                        crate::keyed_fixed_plan::Defect::RuntimeObjectMismatch,
+                                        vec![key.relation.clone()],
+                                    ));
+                                }
+                                Ok(RuntimeClause {
+                                    side,
+                                    multiplicity: row.multiplicity,
+                                })
+                            })
+                            .collect::<Result<_, KeyedFixedPlanError>>()?,
+                        boundaries: plan.boundaries.clone(),
+                        positive: plan
+                            .positive
+                            .iter()
+                            .map(|row| self.requirement(row))
+                            .collect::<Result<_, _>>()?,
+                        negative: plan
+                            .negative
+                            .iter()
+                            .map(|row| self.requirement(row))
+                            .collect::<Result<_, _>>()?,
+                        evidence: plan
+                            .evidence
+                            .iter()
+                            .map(|row| self.evidence(row))
+                            .collect::<Result<_, _>>()?,
+                        alternatives,
+                        projections: bundle.coverage.projections.clone(),
+                    },
+                ))
+            })
+            .collect::<Result<_, KeyedFixedPlanError>>()?;
+        Ok(result)
+    }
+    fn operation(
+        &self,
+        value: &engine_operation::Operation,
+    ) -> Result<OperationPlan, KeyedFixedPlanError> {
+        if !value.layout.is_empty() {
+            return Err(self.operation_defect(
+                crate::keyed_fixed_plan::Stage::Coverage,
+                crate::keyed_fixed_plan::Defect::UnexpectedLayout,
+                vec![value.id],
+            ));
+        }
+        let relations = self.relation_plans(value)?;
+        let placements = value
+            .placements
+            .iter()
+            .map(|candidate| {
+                if !candidate.layout.is_empty() {
+                    return Err(self.operation_defect(
+                        crate::keyed_fixed_plan::Stage::Placement,
+                        crate::keyed_fixed_plan::Defect::UnexpectedLayout,
+                        vec![value.id],
+                    ));
+                }
+                candidate
+                    .assignments
+                    .iter()
+                    .map(|row| {
+                        Ok((
+                            self.case(&row.key)?,
+                            row.carriers
+                                .iter()
+                                .map(|value| self.carrier(value))
+                                .collect::<Result<_, _>>()?,
+                        ))
+                    })
+                    .collect::<Result<_, _>>()
+            })
+            .collect::<Result<_, _>>()?;
+        let coverage_nodes = value
+            .coverage
+            .nodes
+            .iter()
+            .map(|node| {
+                Ok(CoverageNode {
+                    id: self.symbol(&node.id)?,
+                    operation: *self.operations.get(&node.operation).ok_or_else(missing)?,
+                    class: node.class,
+                    relation: node
+                        .relation_case
+                        .as_ref()
+                        .map(|key| self.case(key))
+                        .transpose()?,
+                    active: node.active,
+                })
+            })
+            .collect::<Result<_, KeyedFixedPlanError>>()?;
+        let coverage_edges = value
+            .coverage
+            .edges
+            .iter()
+            .map(|edge| {
+                Ok(CoverageDependency {
+                    source: self.symbol(&edge.source)?,
+                    target: self.symbol(&edge.target)?,
+                    edge: edge.edge,
+                })
+            })
+            .collect::<Result<_, KeyedFixedPlanError>>()?;
+        Ok(OperationPlan {
+            relations,
+            placements,
+            coverage_nodes,
+            coverage_edges,
+            search: value.search,
+        })
+    }
+    pub(super) fn publish(
+        &self,
+        value: &engine_program::Program,
+    ) -> Result<KeyedFixedPlanProjection, KeyedFixedPlanError> {
+        let span = tracing::debug_span!(target: "compiler::engine_keyed_fixed", "publish", plan_count = crate::instrumentation::count(value.plans.len()));
+        let _entered = span.enter();
+        if value.source != self.records.source {
+            return Err(KeyedFixedPlanError::PublicationMismatch);
+        }
+        let plans = value
+            .plans
+            .iter()
+            .map(|(candidate, plan)| {
+                let selected_relations = candidate
+                    .proofs
+                    .keys()
+                    .map(|key| self.relation(key))
+                    .collect::<Result<_, _>>()?;
+                let requirements = plan
+                    .requirements
+                    .iter()
+                    .map(|(relation, bundle)| {
+                        Ok((
+                            self.relation(relation)?,
+                            bundle
+                                .evidence
+                                .iter()
+                                .map(|row| self.evidence(row))
+                                .collect::<Result<_, _>>()?,
+                        ))
+                    })
+                    .collect::<Result<_, KeyedFixedPlanError>>()?;
+                let operations = plan
+                    .operations
+                    .iter()
+                    .map(|(operation, value)| {
+                        Ok((
+                            *self.operations.get(operation).ok_or_else(missing)?,
+                            self.operation(value)?,
+                        ))
+                    })
+                    .collect::<Result<_, KeyedFixedPlanError>>()?;
+                Ok(ProofPlan {
+                    selected_relations,
+                    requirements,
+                    operations,
+                })
+            })
+            .collect::<Result<Vec<_>, KeyedFixedPlanError>>()?;
+        let stages = StageCensus {
+            relations: value.relations.nodes.len(),
+            source_tables: value.sources.len(),
+            construction_nodes: value.constructibility.nodes.len(),
+            lifecycle_nodes: value.lifecycle.nodes.len(),
+            proof_plans: plans.len(),
+            placement_assignments: plans
+                .iter()
+                .flat_map(|plan| plan.operations.values())
+                .flat_map(|operation| &operation.placements)
+                .map(std::collections::BTreeMap::len)
+                .sum(),
+            coverage_nodes: plans
+                .iter()
+                .flat_map(|plan| plan.operations.values())
+                .map(|operation| operation.coverage_nodes.len())
+                .sum(),
+        };
+        Ok(KeyedFixedPlanProjection {
+            binding: self.input.owner().source().binding().clone(),
+            scope: self.input.owner().scope().to_vec(),
+            plans,
+            evidence: value
+                .evidence
+                .iter()
+                .map(|row| self.evidence(row))
+                .collect::<Result<_, _>>()?,
+            stages,
+            proof_limits: value.proof_limits,
+            placement_limits: value.placement_limits,
+            proof_search: value.proof_search.clone(),
+        })
+    }
+}

@@ -14,7 +14,9 @@ use realization::{ArchitectureBinding, RealizationError, ScopedRealizationSpec};
 use crate::CompileError;
 mod owner;
 pub use crate::engine_keyed::KeyedBindingError;
+pub use crate::engine_keyed_fixed::KeyedFixedBindingError;
 pub use owner::AttestationOwner;
+pub use owner::KeyedFixedOwner;
 pub use owner::KeyedOwner;
 
 /// Explicit, canonical compiler operation scope.
@@ -257,6 +259,7 @@ mod owner_sealed {
     pub trait Sealed {}
     impl Sealed for architecture::Architecture {}
     impl Sealed for architecture::keyed::KeyedManifest {}
+    impl Sealed for architecture::keyed_fixed::KeyedFixedManifest {}
 }
 
 /// Closed manifest vocabulary of the binding seam. The associated owner is
@@ -331,6 +334,48 @@ impl InputBinding for architecture::keyed::KeyedManifest {
             })
         })();
         tracing::debug!(target: "compiler::input", outcome = if result.is_ok() { "completed" } else { "refused" }, refusal_kind = result.as_ref().err().map(KeyedBindingError::kind), "keyed input binding completed");
+        result
+    }
+}
+
+impl InputBinding for architecture::keyed_fixed::KeyedFixedManifest {
+    type Realization = realization::keyed_fixed::KeyedFixedScopedRealization;
+    type Scope = Vec<architecture::keyed_fixed::KeyedFixedOperationId>;
+    type Owner = KeyedFixedOwner;
+    type Error = KeyedFixedBindingError;
+    fn bind_owned(
+        &self,
+        realization: Self::Realization,
+        mut scope: Self::Scope,
+        policy: AnalysisPolicy,
+    ) -> Result<BoundCompilerInput<Self::Owner>, Self::Error> {
+        let span = tracing::debug_span!(target: "compiler::input", "bind_keyed_fixed_input", scope_operation_count = crate::instrumentation::count(scope.len()));
+        let _entered = span.enter();
+        let result = (|| {
+            realization
+                .validate_against(self)
+                .map_err(KeyedFixedBindingError::InvalidRealization)?;
+            scope.sort();
+            if scope.is_empty() {
+                return Err(KeyedFixedBindingError::EmptyScope);
+            }
+            if let Some(operation) = scope
+                .windows(2)
+                .find_map(|pair| (pair[0] == pair[1]).then_some(pair[0]))
+            {
+                return Err(KeyedFixedBindingError::DuplicateOperation(operation));
+            }
+            for operation in &scope {
+                if !self.operations.contains(operation) {
+                    return Err(KeyedFixedBindingError::ForeignOperation(*operation));
+                }
+            }
+            Ok(BoundCompilerInput {
+                owner: KeyedFixedOwner::new(self.clone(), realization, scope),
+                policy,
+            })
+        })();
+        tracing::debug!(target: "compiler::input", outcome = if result.is_ok() { "completed" } else { "refused" }, refusal_kind = result.as_ref().err().map(KeyedFixedBindingError::kind), "keyed input binding completed");
         result
     }
 }

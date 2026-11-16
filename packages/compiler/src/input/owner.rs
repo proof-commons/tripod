@@ -4,9 +4,11 @@
 //! engine owner modules. Accessors never expose mutable state or engine records.
 
 use architecture::OperationId;
+use architecture::keyed_fixed::{KeyedFixedManifest, KeyedFixedOperationId};
 use architecture::{keyed::KeyedManifest, semantic::SemanticOperationId};
 use realization::ScopedRealizationSpec;
 use realization::keyed::KeyedScopedRealization;
+use realization::keyed_fixed::KeyedFixedScopedRealization;
 
 /// The statically selected attestation owner retained by the input binder.
 #[derive(Clone, Debug)]
@@ -80,6 +82,46 @@ impl KeyedOwner {
     /// The explicit compiler scope, distinct from the realization scope.
     #[must_use]
     pub fn scope(&self) -> &[SemanticOperationId] {
+        &self.scope
+    }
+}
+
+/// The statically selected fixed-form keyed owner retained by the input binder.
+#[derive(Clone, Debug)]
+pub struct KeyedFixedOwner {
+    manifest: KeyedFixedManifest,
+    source: KeyedFixedScopedRealization,
+    scope: Vec<KeyedFixedOperationId>,
+}
+
+impl KeyedFixedOwner {
+    pub(crate) const fn new(
+        manifest: KeyedFixedManifest,
+        source: KeyedFixedScopedRealization,
+        scope: Vec<KeyedFixedOperationId>,
+    ) -> Self {
+        Self {
+            manifest,
+            source,
+            scope,
+        }
+    }
+
+    /// The declaration owner and paper binding retained at binding.
+    #[must_use]
+    pub const fn manifest(&self) -> &KeyedFixedManifest {
+        &self.manifest
+    }
+
+    /// The validated declaration source, with no mutable accessor.
+    #[must_use]
+    pub const fn source(&self) -> &KeyedFixedScopedRealization {
+        &self.source
+    }
+
+    /// The explicit compiler scope, distinct from the realization scope.
+    #[must_use]
+    pub fn scope(&self) -> &[KeyedFixedOperationId] {
         &self.scope
     }
 }
