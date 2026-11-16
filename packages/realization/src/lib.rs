@@ -8,6 +8,8 @@
 )]
 
 pub mod binding;
+pub mod burn_clear_observation;
+pub mod burn_clear_projection;
 pub mod constructibility;
 pub mod declassification;
 pub mod derive;
@@ -34,6 +36,16 @@ pub(crate) fn trace_count(count: usize) -> u64 {
 }
 
 pub use binding::ArchitectureBinding;
+pub use burn_clear_observation::{
+    BoundBurnClearObservation, BurnClearContext, BurnClearObservation, BurnClearPayload,
+    BurnRecord, Destruction, ObservedState, validate_burn_clear_observation,
+};
+pub use burn_clear_projection::{
+    AccountingProjection, AccountingValues, BurnEventProjection, ClearEventProjection,
+    CompactSilenceProjection, RecordCredit, StateSuccessionProjection, evaluate_record_credit,
+    validate_accounting, validate_burn_event, validate_clear_event, validate_compact_silence,
+    validate_state_succession,
+};
 pub(crate) use constructibility::validate_constructibility;
 pub use constructibility::{
     AvailabilityClass, ConstructibilityAuthorization, ConstructibilityDependencyDeclaration,
@@ -58,9 +70,9 @@ pub use derive::{
     ScopedRealizationProjection, ScopedRealizationSpec, derive, project_scoped_realization,
 };
 pub use domain::{
-    Count, Cycle, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RepresentationMode,
+    BurnAddress, Count, Cycle, PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE, ProtocolAmount, RepresentationMode,
 };
-pub use error::{ArchitectureMismatchField, RealizationError};
+pub use error::{ArchitectureMismatchField, BurnClearRefusal, RealizationError};
 #[cfg(test)]
 pub(crate) fn evaluate_operation(
     relation_graph: &petgraph::graph::DiGraph<RelationDeclaration, RelationEdge, u32>,

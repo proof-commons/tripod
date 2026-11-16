@@ -1,6 +1,135 @@
 use architecture::{AssetId, BoundId, ManifestError, ObjectId, OperationId, RootId};
 use thiserror::Error;
 
+/// Closed binding/projection refusals, separate from operation acceptance and
+/// record-credit overclaim.
+///
+/// Check order is missing input, common snapshot,
+/// transaction, certificate, operation, then the operation's carriers.
+#[derive(Clone, Copy, Debug, Error, PartialEq, Eq, Hash)]
+pub enum BurnClearRefusal {
+    /// No primitive extension was supplied.
+    #[error("missing-extension")]
+    MissingExtension,
+    /// The common observation cannot be normalized.
+    #[error("malformed-observation")]
+    MalformedObservation,
+    /// The normalized common snapshot differs from the bound snapshot.
+    #[error("common-observation")]
+    CommonObservation,
+    /// The transaction context differs.
+    #[error("transaction")]
+    Transaction,
+    /// The certificate is absent or its identity differs.
+    #[error("certificate")]
+    Certificate,
+    /// The payload belongs to another operation.
+    #[error("operation")]
+    Operation,
+    /// The ASH family, reference, asset or readable positive amount differs.
+    #[error("ash-binding")]
+    AshBinding,
+    /// The STATE pair is not the exact selected-region pair of PID units.
+    #[error("state-binding")]
+    StateBinding,
+    /// The record bound is absent or exceeded.
+    #[error("record-bound")]
+    RecordBound,
+    /// Record ordinals are not contiguous and zero based.
+    #[error("record-ordinal")]
+    RecordOrdinal,
+    /// A record has a zero amount or a non-Burn tag.
+    #[error("record-structure")]
+    RecordStructure,
+    /// A data output has no exact object or flow association.
+    #[error("data-association")]
+    DataAssociation,
+    /// The data output differs from its U/Recon leg, or the region carries
+    /// another destruction leg or an issuance.
+    #[error("destruction-binding")]
+    DestructionBinding,
+    /// The independently offered Burn event differs.
+    #[error("burn-event")]
+    BurnEvent,
+    /// The independently offered Clear event differs.
+    #[error("clear-event")]
+    ClearEvent,
+    /// The independently offered accounting subject differs.
+    #[error("accounting")]
+    Accounting,
+    /// The offered STATE edge or assignment differs.
+    #[error("state-succession")]
+    StateSuccession,
+    /// Compact carries a forbidden event, STATE or value effect.
+    #[error("compact-silence")]
+    CompactSilence,
+    /// An accounting quantity cannot be represented in its domain.
+    #[error("arithmetic")]
+    Arithmetic,
+    /// The bound family has no Clear transition: its batch bound is absent or
+    /// exceeded, its predecessor is sealed, or its clamp makes no progress.
+    #[error("clear-transition")]
+    ClearTransition,
+    /// The requested projection does not belong to this operation.
+    #[error("projection-role")]
+    ProjectionRole,
+}
+
+impl BurnClearRefusal {
+    /// Complete refusal census; does not include credit overclaim.
+    pub const ALL: &'static [Self] = &[
+        Self::MissingExtension,
+        Self::MalformedObservation,
+        Self::CommonObservation,
+        Self::Transaction,
+        Self::Certificate,
+        Self::Operation,
+        Self::AshBinding,
+        Self::StateBinding,
+        Self::RecordBound,
+        Self::RecordOrdinal,
+        Self::RecordStructure,
+        Self::DataAssociation,
+        Self::DestructionBinding,
+        Self::BurnEvent,
+        Self::ClearEvent,
+        Self::Accounting,
+        Self::StateSuccession,
+        Self::CompactSilence,
+        Self::Arithmetic,
+        Self::ClearTransition,
+        Self::ProjectionRole,
+    ];
+
+    /// Stable kebab-case diagnostic name without input data.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::MissingExtension => "missing-extension",
+            Self::MalformedObservation => "malformed-observation",
+            Self::CommonObservation => "common-observation",
+            Self::Transaction => "transaction",
+            Self::Certificate => "certificate",
+            Self::Operation => "operation",
+            Self::AshBinding => "ash-binding",
+            Self::StateBinding => "state-binding",
+            Self::RecordBound => "record-bound",
+            Self::RecordOrdinal => "record-ordinal",
+            Self::RecordStructure => "record-structure",
+            Self::DataAssociation => "data-association",
+            Self::DestructionBinding => "destruction-binding",
+            Self::BurnEvent => "burn-event",
+            Self::ClearEvent => "clear-event",
+            Self::Accounting => "accounting",
+            Self::StateSuccession => "state-succession",
+            Self::CompactSilence => "compact-silence",
+            Self::Arithmetic => "arithmetic",
+            Self::ClearTransition => "clear-transition",
+            Self::ProjectionRole => "projection-role",
+        }
+    }
+}
+
 use crate::{
     ConstructibilityAuthorization, ConstructibilityDependencyDeclaration, ConstructibilityNodeId,
     DisclosureDependencyDeclaration, DisclosureNodeId, ExprId, FactId,

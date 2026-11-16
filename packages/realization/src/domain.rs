@@ -12,6 +12,11 @@
 
 use crate::RealizationError;
 
+/// Realization-owned record address. These bytes have equality semantics only;
+/// they imply neither a target encoding nor an authenticated owner.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BurnAddress(pub [u8; 32]);
+
 /// Exclusive upper bound of the v13 protocol-amount domain.
 pub const PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE: u64 = 1_u64 << 51;
 

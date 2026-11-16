@@ -4,6 +4,8 @@
 # into its role group.
 realization_source_files = files(
   'src/binding.rs',
+  'src/burn_clear_observation.rs',
+  'src/burn_clear_projection.rs',
   'src/constructibility.rs',
   'src/declarations/announce_maturity.rs',
   'src/declarations/compact_ash.rs',
@@ -27,6 +29,7 @@ realization_source_files = files(
   'src/state.rs',
   'src/state_codec.rs',
   'src/tests/announce_maturity_tests.rs',
+  'src/tests/burn_clear_projection_tests.rs',
   'src/tests/clear_state_tests.rs',
   'src/tests/compact_ash_tests.rs',
   'src/tests/constructibility_tests.rs',

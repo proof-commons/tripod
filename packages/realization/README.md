@@ -237,6 +237,7 @@ source locations, declaration ordinals, target identities, or backend handles.
   (infallible), `ZERO`, `ONE`, `get()`, `is_zero()`, `checked_add`
   (`CountOverflow`). A count is not an amount merely because both are integers.
 - `Cycle` — an ordinal over the full `u64` domain; `Cycle::new(value: u64) -> Self`, `Cycle::ZERO`, `Cycle::MAX`, `Cycle::get(self) -> u64`, and `Cycle::checked_add(self, other: Self) -> Result<Self, RealizationError>`, which fails closed with `CycleOverflow`. A cycle is neither a count nor an amount: the three integer domains never convert implicitly, preserving cardinality, value, and sequence-position semantics.
+- `BurnAddress([u8; 32])` — realization-owned record-address bytes with equality semantics, no target encoding or authentication claim.
 - `RepresentationMode` — explicit or private-committed value representation.
 - `SemanticType`, `SemanticValue` (with `semantic_type()`, `as_bool()`,
   `as_count()`, `as_amount()`, `as_owner_set()`), `OwnerId([u8; 32])`.
@@ -260,13 +261,13 @@ source locations, declaration ordinals, target identities, or backend handles.
 
 Integers are big-endian, and the nonce belongs to representation rather than semantics: semantic projection erases it.
 
-The three refusal sums are closed, distinct from each other and from `RealizationError`; constructor-layer names reserved by the guide are not decode refusals.
+The three STATE refusal sums are closed, distinct from each other and from `RealizationError`; constructor-layer names reserved by the guide are not decode refusals. The separate observation extension adds a fourth sum, `BurnClearRefusal`, described below.
 
 #### Clear
 
 `clear_ash(&StateMetadata, &[(input_identity, ProtocolAmount)], batch_max)` returns `ClearTransitionResult { clear_amount, residual, successor }` or a `ClearTransitionRefusal`. It derives `X=min(B,y_l,Y−1)`, returns residual B−X, and changes only stored `y_l`. Zero residual denotes absence of residual ASH, not a zero-valued output. The existing `StateField::ALL` owns the six-field census; Y is derived and nonce/encoding remain outside semantic metadata.
 
-The function consumes an authenticated family with faithful input identities and a resolved batch bound. Scalar domains are enforced by `ProtocolAmount`; batch and duplicate checks precede derived supply and Sealed; then, for each input in family order, positivity and then checked addition; then progress. Zero ASH defensively refuses at the model's `WrongShape` boundary. Whole-world lookup, asset and STATE recognition, fee validation and transaction finishing are outside function equivalence. The helper does not authenticate an offered family itself. The batch bound is a caller-supplied `usize`; this bite does not bind it to the architecture's `AshBatchMax`.
+The function consumes an authenticated family with faithful input identities and a resolved batch bound. Scalar domains are enforced by `ProtocolAmount`; batch and duplicate checks precede derived supply and Sealed; then, for each input in family order, positivity and then checked addition; then progress. Zero ASH defensively refuses at the model's `WrongShape` boundary. Whole-world lookup, asset and STATE recognition, fee validation and transaction finishing are outside function equivalence. The helper does not authenticate an offered family itself. The batch bound is a caller-supplied `usize`; bite 2.1 does not bind it to the architecture's `AshBatchMax`. Bite 2.2's projection validators read it from the bound snapshot.
 
 `src/tests/clear_state_tests.rs` covers all refusals with one-coordinate accepted controls, all three clamp limiters and four ties, both residual branches, field copying and independent wide arithmetic. The model's `src/tests/state_metadata_conformance_tests.rs` retains the refusal-to-Guard agreement table and function comparisons that execute the model's `ClearAsh::apply` on branch-local worlds; `src/tests/ash_clear_tests.rs` compares accepted executed successors, including nonzero q/cycle and announced maturity. Branch-local probes are explicitly distinct from reachable histories. Maturity's existing implementation and tests are preserved. This is bite 2.1 of (`[PLAN-step:wave2:bite-2-1]`): declaration, observation binding and emitted-path evidence remain later work.
 
@@ -365,11 +366,34 @@ projections are what a consumer compares.
   discharged only by a witness supplied through the new entry point, which
   fails both operator relations closed on a rejecting or mismatched witness.
 
+### Bound Burn/Clear projections
+
+`BurnClearContext::read_observation()` returns its immutable normalized common snapshot; `BoundBurnClearObservation::read_observation()` returns the immutable checked extension. Neither accessor allows a successful binding to be mutated afterwards.
+
+`BurnClearObservation` is a separate internal extension, with `BurnClearContext` and a `BurnClearPayload::{Burn, Clear, Compact}`. `BurnClearContext::bind_observation(common, transaction, certificate)` normalizes and retains the complete common snapshot. Transaction and certificate are opaque producer-supplied equality tokens, not hashes published by realization, signatures or proof of authentication. A trusted independent producer must supply their provenance and primitive STATE fields. `validate_burn_clear_observation(common, expected_context, extension)` compares that independently expected context, normalizes the current common observation and checks exact region/object/data associations, returning an immutable `BoundBurnClearObservation`. Keeping the entire snapshot makes unrelated-context changes conservative binding refusals; no digest or external serialization is introduced.
+
+The alternative was optional shared carriers on `OperationObservation`. At adoption it would migrate fourteen literal-initializer files plus the common struct; this bite adds its own separate test fixture. The adoption census includes the production maturity initializer in `packages/transaction/src/state_abi.rs`. The extension pays explicit binding checks and snapshot storage instead, leaving all those files and common normalization unchanged. It does not activate Burn/Clear declarations or the old evaluator: the declaration/evaluator integrations belong to bites 2.3b, 2.4 and 2.6. Missing extension returns `MissingExtension`; it never supplies defaults. `BoundBurnClearObservation::resolve_state_fact` resolves only operation-qualified Clear `FactId::StateField` values from its carried STATE pair, using the existing exhaustive `StateField` vocabulary. Legacy maturity keeps its old entry and missing-carrier behavior.
+
+The primitive carriers are `ObservedState { reference, metadata }`, `BurnRecord { ordinal, address, amount, tag, fresh_ash }`, and `Destruction { asset, amount, tag, flow }`. `BurnAddress([u8; 32])` belongs to realization. Records retain order, permit repeated addresses, require positive scalar amounts and a configured `BurnRecordMax`, and use contiguous zero-based ordinals. Destruction names a flow in the normalized snapshot and must match its sole U/Recon leg. The contextual snapshot gives each record its transaction/ordinal/fresh-ASH identity and each destruction its owning region. These checks establish typed binding, not whole-operation acceptance or native carrier authentication.
+
+The public projection API has separate roles:
+
+- `BurnEventProjection` and `validate_burn_event(bound, offered)` compare fresh ASH, ordered records and context, independently of credit.
+- `evaluate_record_credit(bound)` returns `RecordCredit::Credited { total }` or `Overclaim { total, fresh_amount }`. Totals use checked `u128`; beyond-scalar-domain overclaim voids the whole record family's credit without refusing the extension or Burn event.
+- `ClearEventProjection` and `validate_clear_event(bound, offered)` compare the STATE pair, ASH sources, B, recomputed X, destruction pinned to X, residual references, omega and derived successor Y; foreign root effects refuse.
+- `StateSuccessionProjection` and `validate_state_succession(bound, offered)` check the exact edge and complete successor against the existing `clear_ash` transition.
+- `AccountingProjection`, `AccountingValues` and `validate_accounting(bound, offered)` cover Burn record totals/fresh amount, compact input/output preservation, Clear B/X/actual STATE decrement/destruction including tag/residual, event type and scoped absence of distribution residue. Event equality never supplies accounting acceptance. Later-history noninterference still needs bite 2.8's separately bound composition evidence.
+- `CompactSilenceProjection` and `validate_compact_silence(bound, offered)` check no Burn/Clear event, STATE effect, issuance or destruction; compact cannot receive fresh record credit.
+
+Projection validators feed `clear_ash` the bound snapshot's `AshBatchMax`. Missing/exceeded bounds, sealed predecessors and zero progress return `ClearTransition`; supply and ASH-total domain failures remain `Arithmetic`. `BurnClearRefusal` has 21 members with stable kebab-case `name()` and matching error strings. Burn events require consumed live U receipts and only live U change besides the fresh ASH. Clear binding requires its associated leg to be the region's sole destruction and forbids issuance.
+
+These are internal typed comparison subjects, not the report producers assigned to Waves 10–12. The tests in `src/tests/burn_clear_projection_tests.rs` retain literal arithmetic controls and one-coordinate binding/projection subjects. Clear's fixture is a primitive projection control with B=10, `y_l=6`, `y_t=3`, X=6 and residual=4; it makes no claim to a model-executed history. Arithmetic refusals remain distinct from credit overclaim. Two-fault subjects pin transaction-before-certificate and record-content-before-ordinal precedence within each record.
+
 ## Error handling
 
-`RealizationError` remains the single error root for construction, scoping, binding, derivation, evaluation, and arithmetic. It derives `thiserror::Error`, so it implements `Display` and `std::error::Error`, and it is `PartialEq` — variants can be matched or compared directly, as the public API test does.
+`RealizationError` remains the general error root for construction, scoping, architecture binding, derivation, common evaluation, and arithmetic. It derives `thiserror::Error`, so it implements `Display` and `std::error::Error`, and it is `PartialEq` — variants can be matched or compared directly, as the public API test does. The operation-specific projection checks use their separate closed refusal sum below.
 
-Three closed refusal sums are separate public results: `MaturityTransitionRefusal` from `announce_maturity`, `ClearTransitionRefusal` from `clear_ash`, and `StateMetadataRefusal` from `decode_state_metadata`. Each exposes `ALL` and `name()`, is never wrapped into `RealizationError`, and represents a lawful outcome of a total function rather than a failure of the crate. There is still no panicking alternative to any fallible call.
+Four closed refusal sums are separate public results: `MaturityTransitionRefusal` from `announce_maturity`, `ClearTransitionRefusal` from `clear_ash`, `StateMetadataRefusal` from `decode_state_metadata`, and `BurnClearRefusal` from the bound observation/projection checks. Each exposes `ALL` and `name()` and is never wrapped into `RealizationError`. The first three describe STATE transition/codec outcomes; the fourth distinguishes missing facts, malformed binding and projection disagreement. There is still no panicking alternative to any fallible call. Record overclaim is a successful `RecordCredit::Overclaim` result, not any of these refusals.
 
 Which families arise where:
 
@@ -383,6 +407,9 @@ Which families arise where:
 | `announce_maturity` | `MaturityTransitionRefusal` |
 | `clear_ash` | `ClearTransitionRefusal` |
 | `decode_state_metadata` | `StateMetadataRefusal` |
+| `BurnClearContext::bind_observation` | Existing common normalization errors; no extension facts are invented |
+| `validate_burn_clear_observation` | `BurnClearRefusal`: missing extension, malformed observation, differing normalized common snapshot, transaction, certificate, operation, ASH/STATE binding, record bound/ordinal/structure, data association or destruction binding |
+| `validate_burn_event`, `validate_clear_event`, `validate_state_succession`, `validate_accounting`, `validate_compact_silence`, `evaluate_record_credit` | `BurnClearRefusal`: wrong projection role, `AshBinding` for unreadable/non-U/nonpositive ASH, event/accounting/edge/silence disagreement, Clear transition refusal or arithmetic; credit overclaim remains a separate result |
 | `evaluate_operation`, `validate_observation` | the observation families: `UnknownObservedObject`, `DuplicateObservedObject`, `DuplicateObservedReference`, `WrongObservedReferenceSide`, `ObservedCanonicalPartitionOverlap`, `ObservedOpenFlowOverlap`, `AnchorInObservedOpenFlow`, `DuplicateObservedRoot`, `MissingBoundValue`, plus `UnknownRelation` |
 | `spec.constructibility_authorizations`, `spec.validate_against` | `OperationOutsideScope`, `ArchitectureBindingMismatch` |
 
