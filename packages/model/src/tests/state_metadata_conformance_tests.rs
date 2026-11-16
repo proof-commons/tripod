@@ -1,4 +1,4 @@
-//! STATE metadata projection and announce-maturity conformance.
+//! STATE metadata projection, announce-maturity and Clear conformance.
 //!
 //! PoolState remains the semantic owner: these tests execute the model
 //! independently and compare its projected observations with realization.
@@ -21,15 +21,35 @@
 //! | AnnouncementBelowMinimum | MaturityLeadTooShort |
 //! | AnnouncementAboveMaximum | MaturityLeadTooLong |
 //! | CycleArithmeticOverflow | CycleOverflow |
+//!
+//! Clear function equivalence is over authenticated STATE and ASH families with
+//! faithful input identities and the same batch bound. Branch-local probes run
+//! `ClearAsh::apply`; they do not claim reachable histories or world invariants.
+//! Whole-world lookup, wrong asset/class and fee validation remain outside the
+//! helper domain. `ZeroAshAmount` is a defensive probe of `read_ash`'s
+//! `WrongShape` boundary, not an authenticated positive ASH. Model acceptance
+//! never consults realization. The mapping below is exhaustive in `clear_guard`.
+//!
+//! | Clear refusal | Reaching test (clear_ prefix) | Guard |
+//! | --- | --- | --- |
+//! | EmptyBatch | empty_batch_agrees | Domain |
+//! | BatchTooLarge | batch_too_large_agrees | Domain |
+//! | DuplicateInput | duplicate_input_agrees | DuplicateInput |
+//! | SupplyOutOfDomain | supply_out_of_domain_agrees | Domain |
+//! | Sealed | sealed_agrees | Sealed |
+//! | ZeroAshAmount | zero_ash_amount_agrees | WrongShape |
+//! | AshTotalOutOfDomain | ash_total_out_of_domain_agrees | Domain |
+//! | ZeroProgress | zero_progress_agrees | ZeroProgress |
 
 use proptest::prelude::*;
+use realization::ClearTransitionRefusal as ClearRefusal;
 
 use super::distribution_fixtures::mature_world;
 use super::scenario_fixtures::*;
 use super::test_fixtures;
 use crate::*;
 
-fn project(state: PoolState) -> realization::StateMetadata {
+pub(super) fn project(state: PoolState) -> realization::StateMetadata {
     let PoolState {
         omega,
         y_l,
@@ -741,5 +761,316 @@ fn architecture_lead_adapter_refuses_invalid_or_missing_pairs() {
                 missing
             ))
         );
+    }
+}
+
+fn clear_guard(refusal: ClearRefusal) -> Guard {
+    use ClearRefusal as R;
+    match refusal {
+        R::EmptyBatch | R::BatchTooLarge | R::SupplyOutOfDomain | R::AshTotalOutOfDomain => {
+            Guard::Domain
+        }
+        R::DuplicateInput => Guard::DuplicateInput,
+        R::Sealed => Guard::Sealed,
+        R::ZeroAshAmount => Guard::WrongShape,
+        R::ZeroProgress => Guard::ZeroProgress,
+    }
+}
+
+fn clear_probe(
+    state: PoolState,
+    values: &[u64],
+    bound: usize,
+    duplicate: bool,
+) -> (World, ClearAsh) {
+    // Branch-local metadata and amount mutations, not reachable-history claims.
+    let mut world = if values.len() > 2 {
+        super::ash_clear_tests::world_with_three_ash()
+    } else {
+        super::ash_clear_tests::world_with_two_ash()
+    };
+    let available = find_ash(&world);
+    let mut inputs = Vec::new();
+    for (&input, &value) in available.iter().zip(values) {
+        world.utxos.get_mut(&input).unwrap().value = sat(value);
+        inputs.push(input);
+    }
+    assert_eq!(inputs.len(), values.len());
+    if duplicate {
+        inputs[1] = inputs[0];
+    }
+    world.constants.ash_batch_max = bound;
+    let (state_input, _) = world.state().unwrap();
+    world.utxos.get_mut(&state_input).unwrap().meta = Meta::State(state);
+    let request = ClearAsh {
+        ash_inputs: inputs,
+        fee_envelope: FeeEnvelope::default(),
+    };
+    (world, request)
+}
+
+fn clear_predecessor(y_l: u64, y_t: u64) -> PoolState {
+    let mut state = super::ash_clear_tests::world_with_two_ash()
+        .state()
+        .unwrap()
+        .1;
+    state.y_l = sat(y_l);
+    state.y_t = sat(y_t);
+    state
+}
+
+fn refuses_clear(
+    y_l: u64,
+    y_t: u64,
+    values: &[u64],
+    bound: usize,
+    duplicate: bool,
+    refusal: ClearRefusal,
+) {
+    let state = clear_predecessor(y_l, y_t);
+    let (world, request) = clear_probe(state, values, bound, duplicate);
+    let family: Vec<_> = request
+        .ash_inputs
+        .iter()
+        .map(|&input| {
+            (
+                input,
+                realization::ProtocolAmount::new(world.utxo(input).unwrap().value.get()).unwrap(),
+            )
+        })
+        .collect();
+    let realized = realization::clear_ash(&project(state), &family, bound);
+    assert_eq!(realized, Err(refusal));
+    let model = request.apply(&world, next_order(&world));
+    assert_eq!(model, Err(clear_guard(refusal)));
+}
+
+#[test]
+fn clear_empty_batch_agrees() {
+    refuses_clear(10, 3, &[], 2, false, ClearRefusal::EmptyBatch);
+    accepts_clear(10, 3, &[2], 2);
+}
+
+#[test]
+fn clear_batch_too_large_agrees() {
+    refuses_clear(10, 3, &[2, 3], 1, false, ClearRefusal::BatchTooLarge);
+    accepts_clear(10, 3, &[2, 3], 2);
+}
+
+#[test]
+fn clear_duplicate_input_agrees() {
+    refuses_clear(10, 3, &[2, 2], 2, true, ClearRefusal::DuplicateInput);
+    accepts_clear(10, 3, &[2, 2], 2);
+}
+
+#[test]
+fn clear_supply_out_of_domain_agrees() {
+    refuses_clear(
+        TWO_51 - 1,
+        1,
+        &[2],
+        2,
+        false,
+        ClearRefusal::SupplyOutOfDomain,
+    );
+    accepts_clear(TWO_51 - 1, 0, &[2], 2);
+}
+
+#[test]
+fn clear_sealed_agrees() {
+    refuses_clear(0, 0, &[2], 2, false, ClearRefusal::Sealed);
+    accepts_clear(2, 0, &[2], 2);
+}
+
+#[test]
+fn clear_zero_ash_amount_agrees() {
+    refuses_clear(10, 3, &[0], 2, false, ClearRefusal::ZeroAshAmount);
+    accepts_clear(10, 3, &[1], 2);
+}
+
+#[test]
+fn clear_ash_total_out_of_domain_agrees() {
+    refuses_clear(
+        10,
+        3,
+        &[TWO_51 - 1, 1],
+        2,
+        false,
+        ClearRefusal::AshTotalOutOfDomain,
+    );
+    accepts_clear(10, 3, &[TWO_51 - 2, 1], 2);
+}
+
+#[test]
+fn clear_zero_progress_agrees() {
+    refuses_clear(0, 3, &[2], 2, false, ClearRefusal::ZeroProgress);
+    accepts_clear(1, 3, &[2], 2);
+    refuses_clear(1, 0, &[2], 2, false, ClearRefusal::ZeroProgress);
+    accepts_clear(2, 0, &[2], 2);
+}
+
+#[test]
+fn clear_sealed_precedes_ash_overflow() {
+    refuses_clear(0, 0, &[TWO_51 - 1, 1], 2, false, ClearRefusal::Sealed);
+    refuses_clear(
+        0,
+        1,
+        &[TWO_51 - 1, 1],
+        2,
+        false,
+        ClearRefusal::AshTotalOutOfDomain,
+    );
+}
+
+#[test]
+fn clear_structural_guards_precede_sealed() {
+    refuses_clear(0, 0, &[], 2, false, ClearRefusal::EmptyBatch);
+    refuses_clear(0, 0, &[2, 3], 1, false, ClearRefusal::BatchTooLarge);
+    refuses_clear(0, 0, &[2, 2], 2, true, ClearRefusal::DuplicateInput);
+    refuses_clear(0, 0, &[2, 3], 2, false, ClearRefusal::Sealed);
+}
+
+#[test]
+fn clear_recognition_and_progress_precedence_agrees() {
+    let maximum = TWO_51 - 1;
+    refuses_clear(10, 3, &[2, 2], 1, true, ClearRefusal::BatchTooLarge);
+    refuses_clear(maximum, 1, &[2, 2], 2, true, ClearRefusal::DuplicateInput);
+    refuses_clear(maximum, 1, &[0], 2, false, ClearRefusal::SupplyOutOfDomain);
+    refuses_clear(0, 0, &[0], 2, false, ClearRefusal::Sealed);
+    refuses_clear(0, 3, &[0], 2, false, ClearRefusal::ZeroAshAmount);
+    refuses_clear(
+        0,
+        3,
+        &[maximum, 1],
+        2,
+        false,
+        ClearRefusal::AshTotalOutOfDomain,
+    );
+    refuses_clear(
+        10,
+        3,
+        &[maximum, 1, 0],
+        3,
+        false,
+        ClearRefusal::AshTotalOutOfDomain,
+    );
+    refuses_clear(
+        10,
+        3,
+        &[0, maximum, 1],
+        3,
+        false,
+        ClearRefusal::ZeroAshAmount,
+    );
+}
+
+// Execute the model itself on a branch-local world, including its transaction
+// postconditions. These are function probes, not invariant/history claims.
+fn model_clear(
+    state: PoolState,
+    values: &[u64],
+    bound: usize,
+) -> Result<(u64, u64, PoolState), Guard> {
+    let (world, request) = clear_probe(state, values, bound, false);
+    let before: std::collections::BTreeSet<_> = find_ash(&world).into_iter().collect();
+    let after = request.apply(&world, next_order(&world))?;
+    let successor = after.state().unwrap().1;
+    let residual = find_ash(&after)
+        .into_iter()
+        .filter(|outpoint| !before.contains(outpoint))
+        .map(|outpoint| after.utxo(outpoint).unwrap().value.get())
+        .sum();
+    Ok((state.y_l.get() - successor.y_l.get(), residual, successor))
+}
+
+fn accepts_clear(y_l: u64, y_t: u64, values: &[u64], bound: usize) {
+    let state = clear_predecessor(y_l, y_t);
+    let (world, request) = clear_probe(state, values, bound, false);
+    let family: Vec<_> = request
+        .ash_inputs
+        .iter()
+        .map(|&input| {
+            let value = world.utxo(input).unwrap().value;
+            (
+                input,
+                realization::ProtocolAmount::new(value.get()).unwrap(),
+            )
+        })
+        .collect();
+    let (x, residual, successor) = model_clear(state, values, bound).unwrap();
+    let realized = realization::clear_ash(&project(state), &family, bound).unwrap();
+    assert_eq!(realized.clear_amount.get(), x);
+    assert_eq!(realized.residual.get(), residual);
+    assert_eq!(realized.successor, project(successor));
+}
+
+fn clear_operand() -> impl Strategy<Value = u64> {
+    prop_oneof![
+        Just(0),
+        Just(1),
+        Just(2),
+        0_u64..8,
+        Just(TWO_51 - 1),
+        0..TWO_51,
+    ]
+}
+
+fn positive_clear_operand() -> impl Strategy<Value = u64> {
+    prop_oneof![Just(1), Just(2), 1_u64..8, Just(TWO_51 - 1), 1..TWO_51,]
+}
+
+#[test]
+fn clear_function_equivalence_each_limiter_and_tie() {
+    for (y_l, y_t, b, expected_x, expected_residual) in [
+        (10, 3, 4, 4, 0),
+        (4, 3, 10, 4, 6),
+        (5, 0, 10, 4, 6),
+        (4, 3, 4, 4, 0),
+        (5, 0, 4, 4, 0),
+        (4, 1, 10, 4, 6),
+        (4, 1, 4, 4, 0),
+    ] {
+        for maturity in [
+            Maturity::Unannounced,
+            Maturity::Announced { cycle: 17 },
+            Maturity::Complete,
+        ] {
+            let state = PoolState {
+                omega: sat(137),
+                y_l: sat(y_l),
+                y_t: sat(y_t),
+                q: sat(23),
+                cycle: 11,
+                maturity,
+            };
+            let (x, residual, successor) = model_clear(state, &[b], 1).unwrap();
+            assert_eq!((x, residual), (expected_x, expected_residual));
+            let realized = realization::clear_ash(
+                &project(state),
+                &[(0, realization::ProtocolAmount::new(b).unwrap())],
+                1,
+            )
+            .unwrap();
+            assert_eq!(realized.clear_amount.get(), x);
+            assert_eq!(realized.residual.get(), residual);
+            assert_eq!(realized.successor, project(successor));
+            assert_eq!(embed(realized.successor), successor);
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn clear_function_equivalence_on_authenticated_families(
+        y_l in clear_operand(),
+        y_t in clear_operand(),
+        values in prop::collection::vec(positive_clear_operand(), 1..3),
+    ) {
+        let state = PoolState { omega: sat(137), y_l: sat(y_l), y_t: sat(y_t), q: sat(23), cycle: 11, maturity: Maturity::Complete };
+        let batch_max = 2;
+        let family: Vec<_> = values.iter().enumerate().map(|(id, &value)| (id, realization::ProtocolAmount::new(value).unwrap())).collect();
+        let expected = model_clear(state, &values, batch_max).map(|(x, r, s)| (x, r, project(s)));
+        let actual = realization::clear_ash(&project(state), &family, batch_max).map(|r| (r.clear_amount.get(), r.residual.get(), r.successor)).map_err(clear_guard);
+        prop_assert_eq!(actual, expected);
     }
 }

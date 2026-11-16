@@ -1,10 +1,8 @@
-//! Typed STATE semantic metadata for the maturity-announcement
-//! operation.
+//! Typed STATE semantic metadata for maturity announcement and Clear.
 //!
 //! The metadata is the semantic STATE census and nothing else: the
 //! pool quantities, the cycle ordinal, and the closed maturity
-//! status, together with the one total transition that announces a
-//! maturity cycle and the closed sum of reasons it refuses.
+//! status, together with total transitions and their closed refusals.
 //!
 //! Representation, nonce, and encoding are deliberately absent. A
 //! nonce is a target-representation artefact that semantic projection
@@ -21,10 +19,182 @@
 //! with the model's own pool state is a conformance obligation proved
 //! against the model, not an import.
 
+use std::collections::BTreeSet;
+
 use architecture::{AssetId, AssetSpec};
 use thiserror::Error;
 
 use crate::{Cycle, ProtocolAmount, RealizationError};
+
+/// The complete semantic result of Clear. Zero residual means no residual ASH.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClearTransitionResult {
+    /// X, recomputed from the authenticated family and predecessor.
+    pub clear_amount: ProtocolAmount,
+    /// B minus X; this is a quantity, not an output placeholder.
+    pub residual: ProtocolAmount,
+    /// All six successor fields, with only `y_l` changed.
+    pub successor: StateMetadata,
+}
+
+/// Closed refusals of Clear. `ZeroAshAmount` refuses an amount no authenticated
+/// ASH carries; every other member can arise on an authenticated family.
+#[derive(Clone, Copy, Debug, Error, PartialEq, Eq, Hash)]
+pub enum ClearTransitionRefusal {
+    /// No ASH input was supplied.
+    #[error("the ASH batch is empty")]
+    EmptyBatch,
+    /// The number of ASH inputs exceeds the supplied batch maximum.
+    #[error("the ASH batch exceeds its bound")]
+    BatchTooLarge,
+    /// Two entries identify the same input.
+    #[error("an ASH input occurs more than once")]
+    DuplicateInput,
+    /// The derived predecessor supply exceeds the amount domain.
+    #[error("derived supply is outside the amount domain")]
+    SupplyOutOfDomain,
+    /// The derived predecessor supply is zero.
+    #[error("the predecessor is sealed")]
+    Sealed,
+    /// An offered ASH amount is zero and cannot be authenticated ASH.
+    #[error("an ASH amount is zero")]
+    ZeroAshAmount,
+    /// Checked aggregation exceeds the amount domain.
+    #[error("the ASH aggregate is outside the amount domain")]
+    AshTotalOutOfDomain,
+    /// The clamp cannot clear a positive amount.
+    #[error("the clamp makes no progress")]
+    ZeroProgress,
+}
+
+impl ClearTransitionRefusal {
+    /// Every refusal, in check order. Tests walk this slice to expose a member
+    /// added without a reaching subject.
+    pub const ALL: &'static [Self] = &[
+        Self::EmptyBatch,
+        Self::BatchTooLarge,
+        Self::DuplicateInput,
+        Self::SupplyOutOfDomain,
+        Self::Sealed,
+        Self::ZeroAshAmount,
+        Self::AshTotalOutOfDomain,
+        Self::ZeroProgress,
+    ];
+
+    /// Stable diagnostic name, without operand values.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::EmptyBatch => "empty-batch",
+            Self::BatchTooLarge => "batch-too-large",
+            Self::DuplicateInput => "duplicate-input",
+            Self::SupplyOutOfDomain => "supply-out-of-domain",
+            Self::Sealed => "sealed",
+            Self::ZeroAshAmount => "zero-ash-amount",
+            Self::AshTotalOutOfDomain => "ash-total-out-of-domain",
+            Self::ZeroProgress => "zero-progress",
+        }
+    }
+}
+
+/// Derive Clear's X, residual and semantic successor, without caller-supplied X.
+///
+/// The caller supplies an authenticated STATE and ASH family: identities must
+/// faithfully identify inputs, and amounts must belong to those inputs. `I`
+/// supplies equality/order only; no encoding or world lookup is implied. The
+/// batch bound is the caller's resolved `AshBatchMax`. Amount construction has
+/// already enforced the scalar domain. Batch and distinctness precede supply
+/// derivation and Sealed; then, for each input in family order, positivity and
+/// then checked addition; then progress.
+/// Zero amounts are defensively refused at the model's ASH recognition boundary.
+///
+/// Function equivalence is confined to this domain. Missing/wrong-asset objects,
+/// STATE lookup/recognition, fee envelopes and transaction finishing are owned
+/// by whole-operation validation, not established by this helper. Authentication
+/// must not pre-sum the family: Sealed precedes an overflowing ASH aggregate.
+/// The function is total, including zero supply and out-of-domain derived sums.
+pub fn clear_ash<I: Ord>(
+    predecessor: &StateMetadata,
+    ash: &[(I, ProtocolAmount)],
+    batch_max: usize,
+) -> Result<ClearTransitionResult, ClearTransitionRefusal> {
+    let result = clear_core(predecessor, ash, batch_max);
+    if let Err(refusal) = result {
+        tracing::debug!(
+            target: "realization::state",
+            outcome = "refused",
+            refusal_kind = refusal.name(),
+            "clear transition refused"
+        );
+    }
+    result
+}
+
+fn clear_core<I: Ord>(
+    predecessor: &StateMetadata,
+    ash: &[(I, ProtocolAmount)],
+    batch_max: usize,
+) -> Result<ClearTransitionResult, ClearTransitionRefusal> {
+    use ClearTransitionRefusal as Refusal;
+
+    if ash.is_empty() {
+        return Err(Refusal::EmptyBatch);
+    }
+    if ash.len() > batch_max {
+        return Err(Refusal::BatchTooLarge);
+    }
+    let mut distinct = BTreeSet::new();
+    for (input, _) in ash {
+        if !distinct.insert(input) {
+            return Err(Refusal::DuplicateInput);
+        }
+    }
+    let y = predecessor
+        .y_l
+        .checked_add(predecessor.y_t)
+        .map_err(|_| Refusal::SupplyOutOfDomain)?;
+    if y.is_zero() {
+        return Err(Refusal::Sealed);
+    }
+    let mut total = ProtocolAmount::ZERO;
+    for (_, amount) in ash {
+        if amount.is_zero() {
+            return Err(Refusal::ZeroAshAmount);
+        }
+        total = total
+            .checked_add(*amount)
+            .map_err(|_| Refusal::AshTotalOutOfDomain)?;
+    }
+    // Y >= 1 here, and the clamp below ensures X <= B and X <= y_l. These
+    // three subtractions cannot fail; their refusals are no-panic fallbacks,
+    // not reachable outcomes.
+    let floor_capacity = y
+        .checked_sub(ProtocolAmount::ONE)
+        .map_err(|_| Refusal::SupplyOutOfDomain)?;
+    let clear_amount = total.min(predecessor.y_l).min(floor_capacity);
+    if clear_amount.is_zero() {
+        return Err(Refusal::ZeroProgress);
+    }
+    let residual = total
+        .checked_sub(clear_amount)
+        .map_err(|_| Refusal::AshTotalOutOfDomain)?;
+    let y_l = predecessor
+        .y_l
+        .checked_sub(clear_amount)
+        .map_err(|_| Refusal::SupplyOutOfDomain)?;
+    Ok(ClearTransitionResult {
+        clear_amount,
+        residual,
+        successor: StateMetadata {
+            omega: predecessor.omega,
+            y_l,
+            y_t: predecessor.y_t,
+            q: predecessor.q,
+            cycle: predecessor.cycle,
+            maturity: predecessor.maturity,
+        },
+    })
+}
 
 /// The closed maturity status carried by semantic STATE.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

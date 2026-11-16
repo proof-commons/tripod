@@ -27,6 +27,7 @@ realization_source_files = files(
   'src/state.rs',
   'src/state_codec.rs',
   'src/tests/announce_maturity_tests.rs',
+  'src/tests/clear_state_tests.rs',
   'src/tests/compact_ash_tests.rs',
   'src/tests/constructibility_tests.rs',
   'src/tests/disclosure_tests.rs',

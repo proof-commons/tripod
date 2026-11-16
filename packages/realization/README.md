@@ -248,6 +248,9 @@ source locations, declaration ordinals, target identities, or backend handles.
 - `AnnouncementLeadBounds` — `new(minimum: Cycle, maximum: Cycle) -> Result<Self, RealizationError>` refuses a zero minimum or an inverted pair with `InvalidAnnouncementLeadBounds { minimum, maximum }`; `minimum(self) -> Cycle` and `maximum(self) -> Cycle` return the inclusive bounds, while `window(self, current: Cycle) -> Result<(Cycle, Cycle), MaturityTransitionRefusal>` returns the inclusive earliest and latest announceable cycles and refuses checked-arithmetic overflow with `CycleArithmeticOverflow`.
 - `announce_maturity(predecessor: &StateMetadata, announced_cycle: Cycle, bounds: AnnouncementLeadBounds) -> Result<StateMetadata, MaturityTransitionRefusal>` — total: every input yields either one semantic successor or one refusal; the successor copies `omega`, `y_l`, `y_t`, `q`, and `cycle` and replaces only `maturity`.
 - `MaturityTransitionRefusal` — the closed members, in declaration order, are `PredecessorAlreadyAnnounced`, `PredecessorMaturityComplete`, `AnnouncementBelowMinimum`, `AnnouncementAboveMaximum`, and `CycleArithmeticOverflow`; `ALL: &'static [Self]` enumerates them in that order and `name(self) -> &'static str` returns each stable kebab-case name.
+- `clear_ash<I: Ord>(predecessor: &StateMetadata, ash: &[(I, ProtocolAmount)], batch_max: usize) -> Result<ClearTransitionResult, ClearTransitionRefusal>` — total over its argument types: every input yields X, the residual and one successor that differs from the predecessor in `y_l` alone, or one refusal; its authenticated-family domain and check order are stated under Clear below.
+- `ClearTransitionResult` — public fields `clear_amount: ProtocolAmount`, `residual: ProtocolAmount` and `successor: StateMetadata`.
+- `ClearTransitionRefusal` — the closed members, in declaration and check order, are `EmptyBatch`, `BatchTooLarge`, `DuplicateInput`, `SupplyOutOfDomain`, `Sealed`, `ZeroAshAmount`, `AshTotalOutOfDomain` and `ZeroProgress`; `ALL: &'static [Self]` enumerates them in that order and `name(self) -> &'static str` returns each stable kebab-case name.
 - Codec constants — `STATE_METADATA_DOMAIN: &[u8] = b"tripod/state-metadata"`, `STATE_METADATA_SCHEMA: u32 = 1`, and `STATE_METADATA_BYTES: usize = 86`; the width is 21 domain bytes + 4 schema bytes + four 8-byte amounts + 8 current-cycle bytes + 1 maturity-discriminant byte + 8 announced-cycle bytes + 4 nonce bytes + 8 reserved bytes = 86. The canonical encoding fixes its domain separator, schema revision, field order, field widths, integer byte order, maturity discriminants, representation-nonce position, reserved-field behavior, and rejection of trailing bytes. `STATE_METADATA_LAYOUT` and `StateMetadataRegionClass` classify its ten rows; `STATE_METADATA_VARIABLE_RANGE` and `STATE_METADATA_VARIABLE_BYTES` derive the contiguous 53-byte variable span; `state_metadata_variable_region` extracts that span and `rebuild_state_metadata` restores the canonical 86-byte layout from it (`0.6.234-dev`).
 - `StateRepresentationNonce` — `ZERO`, `new(value: u32) -> Self`, `get(self) -> u32`, and `next(self) -> Option<Self>`, which advances deterministically and returns `None` at `u32::MAX`.
 - `EncodedStateMetadata` — public fields `semantic: StateMetadata` and `representation: StateRepresentationNonce`.
@@ -257,7 +260,15 @@ source locations, declaration ordinals, target identities, or backend handles.
 
 Integers are big-endian, and the nonce belongs to representation rather than semantics: semantic projection erases it.
 
-The two refusal sums are closed, distinct from each other and from `RealizationError`; constructor-layer names reserved by the guide are not decode refusals.
+The three refusal sums are closed, distinct from each other and from `RealizationError`; constructor-layer names reserved by the guide are not decode refusals.
+
+#### Clear
+
+`clear_ash(&StateMetadata, &[(input_identity, ProtocolAmount)], batch_max)` returns `ClearTransitionResult { clear_amount, residual, successor }` or a `ClearTransitionRefusal`. It derives `X=min(B,y_l,Y−1)`, returns residual B−X, and changes only stored `y_l`. Zero residual denotes absence of residual ASH, not a zero-valued output. The existing `StateField::ALL` owns the six-field census; Y is derived and nonce/encoding remain outside semantic metadata.
+
+The function consumes an authenticated family with faithful input identities and a resolved batch bound. Scalar domains are enforced by `ProtocolAmount`; batch and duplicate checks precede derived supply and Sealed; then, for each input in family order, positivity and then checked addition; then progress. Zero ASH defensively refuses at the model's `WrongShape` boundary. Whole-world lookup, asset and STATE recognition, fee validation and transaction finishing are outside function equivalence. The helper does not authenticate an offered family itself. The batch bound is a caller-supplied `usize`; this bite does not bind it to the architecture's `AshBatchMax`.
+
+`src/tests/clear_state_tests.rs` covers all refusals with one-coordinate accepted controls, all three clamp limiters and four ties, both residual branches, field copying and independent wide arithmetic. The model's `src/tests/state_metadata_conformance_tests.rs` retains the refusal-to-Guard agreement table and function comparisons that execute the model's `ClearAsh::apply` on branch-local worlds; `src/tests/ash_clear_tests.rs` compares accepted executed successors, including nonzero q/cycle and announced maturity. Branch-local probes are explicitly distinct from reachable histories. Maturity's existing implementation and tests are preserved. This is bite 2.1 of (`[PLAN-step:wave2:bite-2-1]`): declaration, observation binding and emitted-path evidence remain later work.
 
 ### Declarations and graphs
 
@@ -358,7 +369,7 @@ projections are what a consumer compares.
 
 `RealizationError` remains the single error root for construction, scoping, binding, derivation, evaluation, and arithmetic. It derives `thiserror::Error`, so it implements `Display` and `std::error::Error`, and it is `PartialEq` — variants can be matched or compared directly, as the public API test does.
 
-Two closed refusal sums are separate public results: `MaturityTransitionRefusal` from `announce_maturity` and `StateMetadataRefusal` from `decode_state_metadata`. Each exposes `ALL` and `name()`, is never wrapped into `RealizationError`, and represents a lawful outcome of a total function rather than a failure of the crate. There is still no panicking alternative to any fallible call.
+Three closed refusal sums are separate public results: `MaturityTransitionRefusal` from `announce_maturity`, `ClearTransitionRefusal` from `clear_ash`, and `StateMetadataRefusal` from `decode_state_metadata`. Each exposes `ALL` and `name()`, is never wrapped into `RealizationError`, and represents a lawful outcome of a total function rather than a failure of the crate. There is still no panicking alternative to any fallible call.
 
 Which families arise where:
 
@@ -370,6 +381,7 @@ Which families arise where:
 | `derive` | the scope and binding families above, plus every declaration-integrity family: duplicate/unknown/cyclic expressions and relations, type mismatches (`ExpressionTypeMismatch`, `BinaryOperandTypeMismatch`, `InvalidSumType`, `InvalidOrderedType`), foreign-ownership violations (`ForeignExpressionOwnership`, `ForeignRelationOwnership`, `ForeignRelationDependency`, `ForeignProofAlternativeBinding`, `ForeignConstructibilityOwnership`, `ForeignDisclosureOwnership`), architecture-agreement violations (`MissingArchitectureOperation`, `ArchitectureOperationMismatch`, `MissingArchitectureRelation`, `RelationKindMismatch`), and graph-policy violations (`ConstructibilityCycle`, `RelationDependencyCycle`, `PermissionlessPrivateDependency`, `SponsorValueRead`) |
 | `ProtocolAmount` / `Count` / `Cycle` arithmetic; `AnnouncementLeadBounds::new` | `AmountOutOfDomain`, `AmountOverflow`, `AmountUnderflow`, `CountOverflow`, `CycleOverflow`, `InvalidAnnouncementLeadBounds { minimum, maximum }` |
 | `announce_maturity` | `MaturityTransitionRefusal` |
+| `clear_ash` | `ClearTransitionRefusal` |
 | `decode_state_metadata` | `StateMetadataRefusal` |
 | `evaluate_operation`, `validate_observation` | the observation families: `UnknownObservedObject`, `DuplicateObservedObject`, `DuplicateObservedReference`, `WrongObservedReferenceSide`, `ObservedCanonicalPartitionOverlap`, `ObservedOpenFlowOverlap`, `AnchorInObservedOpenFlow`, `DuplicateObservedRoot`, `MissingBoundValue`, plus `UnknownRelation` |
 | `spec.constructibility_authorizations`, `spec.validate_against` | `OperationOutsideScope`, `ArchitectureBindingMismatch` |
