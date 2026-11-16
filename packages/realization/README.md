@@ -412,6 +412,7 @@ Which families arise where:
 | `validate_burn_event`, `validate_clear_event`, `validate_state_succession`, `validate_accounting`, `validate_compact_silence`, `evaluate_record_credit` | `BurnClearRefusal`: wrong projection role, `AshBinding` for unreadable/non-U/nonpositive ASH, event/accounting/edge/silence disagreement, Clear transition refusal or arithmetic; credit overclaim remains a separate result |
 | `evaluate_operation`, `validate_observation` | the observation families: `UnknownObservedObject`, `DuplicateObservedObject`, `DuplicateObservedReference`, `WrongObservedReferenceSide`, `ObservedCanonicalPartitionOverlap`, `ObservedOpenFlowOverlap`, `AnchorInObservedOpenFlow`, `DuplicateObservedRoot`, `MissingBoundValue`, plus `UnknownRelation` |
 | `spec.constructibility_authorizations`, `spec.validate_against` | `OperationOutsideScope`, `ArchitectureBindingMismatch` |
+| `burn_clear_laws`, `validate_burn_clear_law_census`, `BurnClearLawDeclaration::evaluate` | Census construction is infallible; validation returns `BurnClearLawError::Census`; evaluation returns `Identity`, `Operand` for missing operands or transition evaluation, or `Evaluation` for existing expression/arithmetic errors. Clamp sealed/zero-progress subjects are disagreements (`Ok(false)`), not errors. |
 
 An important distinction: a `RealizationError` from `evaluate_operation` means
 the *observation itself* was malformed — the evaluator could not run. A
@@ -482,6 +483,87 @@ realization
 Graph-shaped internals use the workspace-owned Petgraph dependency directly
 (D007). Petgraph indices remain local graph handles, never semantic identity,
 and no graph wrapper type crosses the public boundary.
+
+## Burn/Clear staged law packet
+
+`burn_clear_laws` stages bite 2.3a of (`[PLAN-step:wave2:bite-2-3a]`). Its public API is `burn_clear_laws(operation)`, `validate_burn_clear_law_census(operation, declarations)`, `BurnClearLawDeclaration::evaluate(bound)`, `BurnClearLaw::key()` and `proof_kind()`, and `BurnClearLawError::name()`. The five public types are `BurnClearLawKey`, `BurnClearLawId`, `BurnClearLaw`, `BurnClearLawDeclaration`, and `BurnClearLawError` (the operation owner is the existing `OperationId`). There are five staged Burn declarations (four new laws and the existing canonical delta policy) and twelve Clear declarations. They are not dispatch support, complete operation declarations, engine keys, target proof or model conformance. The public `Relation`, `RelationKind`, `RelationSubject`, `ExpressionNode`, `FactId`, `StateField`, common observation and existing errors are unchanged.
+
+The public conversion `From<ClearTransitionRefusal> for BurnClearRefusal` maps `SupplyOutOfDomain` and `AshTotalOutOfDomain` to `Arithmetic`, and every other transition refusal to `ClearTransition`.
+
+The staging error has four named cases: `identity` rejects a mismatched owner/key/body; `census` rejects omission, duplication, a foreign owner or changed body; `operand` wraps the existing `BurnClearRefusal` for missing operands or transition/arithmetic evaluation after binding; `evaluation` wraps the existing `RealizationError`, including expression facts and independent floor arithmetic. Sealed and zero-progress clamp subjects return `Ok(false)`, while a missing batch bound remains an error. A law disagreement returns `Ok(false)`; successful evaluation returns `Ok(true)`. This staging wrapper is additional to the four transition/codec/projection refusal sums described above. It introduces no new refusal into an existing public sum.
+
+Every evaluator is public and reachable in non-test builds. The singleton legacy graph invokes the existing canonical-partition, conservation and authorization evaluator with its actual operation-qualified identity; it does not copy the partition walker. Bindings reuse predicate-only projection helpers without constructing self-comparison snapshots; their standalone joins retain the census-required owner, conservation, flow and succession checks through the existing owners. The five copy laws invoke the existing Equal evaluator with both carried STATE facts. No per-relation tracing boundary is introduced, consistent with `TRACING.md`; transition refusals retain `clear_ash`'s existing event. No dead-code allowance, logging counter or local clock is added.
+
+### Forms frozen for bite 2.3b
+
+`ClearCanonicalDeltaPolicy` is a ninth body beyond the eight allocated in (`[PLAN-tab:realization:burn-clear-vocabulary]`), taken under the conditional-form delegation of (`[PLAN-tab:realization:burn-clear-relations]`). It shares kind `CanonicalDeltaPolicy` (engine code 5), as the three authorization bodies share kind 2; it allocates no kind or subject code and adds one arm to every exhaustive `Relation` match in the consumer table. Clear's architecture delta rows, including `PositiveAshResidual`, are never read by the body, so the 2.6 weld must compare both rows and their conditions literally.
+
+The conditional delta body is `ClearCanonicalDeltaPolicy`, with existing kind `CanonicalDeltaPolicy` and subject `Operation`. It selects the unchanged `ExpectedCanonicalDelta` values: always U/Destruction/Recon; U/`OwnerlessLateral`/no-tag exactly when the derived residual is positive. It then invokes the existing canonical policy evaluator, preserving checked conservation, exact membership and no reused source. Burn retains its fixed U/Lateral/no-tag body. Thus neither captured `ExpectedCanonicalDelta` values nor their encoders change. Full clear and partial clear both have accepted controls; extra lateral without residual and residual without lateral return `Ok(false)`.
+
+The clamp is the closed fieldless body `ClearClamp`. Its operands are the bound predecessor, authenticated ASH references/amounts and `AshBatchMax`; it calls `clear_ash` without pre-summing B. X is not a fact or expression value. `ClearAssignment { field: YL, expression: None }` resolves actual output YL through `FactId::StateField` and compares it with the same transition's derived successor YL. The other five assignments require `Some(ExprId::relation(assignment_id, Predicate))`, whose node is Equal of Input/Output `ExprId::fact(FactId::StateField { operation: Clear, side, field })`. Emit both sides for every field by iterating `StateField::ALL`; this is the only field census. Staging stores the Equal node itself because the new relation identity is not yet active; activation replaces that node field with the owned expression ID, with no change to its operands or meaning.
+
+Compared alternative: a minimal expression node would need typed B, predecessor YL and YT, checked Y and Y−1, minimum/progress semantics, and a way for the YL assignment to consume X. Even a single specialized clamp node needs an additional checked decrement expression or a closed assignment consumer, expression type/dependency/evaluation support and compiler folding disposition. It provides no additional law expressiveness here. The closed body reuses the total transition and needs no new `ExpressionNode`, `FactId`, `StateField` or `DependencyEdge` member; that is the frozen smallest sufficient form. No compiler `fold.rs` activation is required.
+
+| Staged body | Control and focused disagreement in `src/tests/burn_clear_relation_tests.rs` | Witness-map entry at (`[PLAN-tab:realization:burn-clear-witnesses]`) |
+|---|---|---|
+| Burn fixed / Clear conditional canonical policy | `every_staged_law_accepts_its_control`; wrong Burn movement and both conditional movement disagreements | `CanonicalDelta`; `ValueFlowClosure` |
+| Two Burn side representations | Explicit input/private change; one side's disallowed mode in `side_admission_cannot_be_widened_by_change_modes` | `ReceiptClassClosure` |
+| Burn `DataOutputs` | `burn_data_output_disagreement_is_a_binding_refusal`: valid overclaim remains accepted; wrong fresh-ASH association refuses at binding | `AttestationAuthentication` |
+| Clear `DataOutputs` | Correct Recon data/leg; coherently changed data and leg quantity disagrees with clamp | `CanonicalDelta` |
+| `BurnBinding` | Owner-authorized I=12, A=10, C=2, record claim=13; remove signer | `AshLineage`; `ReceiptOwnerRouting`; `AttestationAuthentication`; `ValueFlowClosure` |
+| `ClearClamp` | B, live-supply and floor limiters, all ties; zero-progress and sealed predecessors disagree; missing bound remains an error | `CanonicalDelta`; `AshLineage`; `FloorNondecrease` |
+| Six `ClearAssignments` | `each_assignment_uses_the_carried_field_and_its_owned_equal`: one changed successor coordinate per `StateField::ALL`; changed expression body refuses | `StateSuccession`; `FloorNondecrease` |
+| `ClearFloor` | Positive nonincreasing successor supply and copied omega; zero/increased supply or changed omega | `FloorNondecrease` |
+| `ClearFlow` | Full/partial residual; changed residual amount; same-tag split Recon refuses at normalization; a distinct second tag reaches `DestructionBinding` | `CanonicalDelta`; `AshLineage`; `ValueFlowClosure` |
+| `ClearBinding` | Exact STATE succession; change root effect to termination | `StateSuccession`; `AshLineage` |
+
+`literal_census_identity_and_completeness` fixes the 5/12 identity lists, checks permutations, and removes, duplicates and changes the owner of every declaration. `every_staged_law_accepts_its_control` additionally tests each law's owner mismatch. Missing extension, equal-total split Recon and wrong associations are exercised before a bound value can exist. Existing bite-2.2 tests retain transaction/certificate/region/source/STATE binding and missing-carrier controls. These subjects are primitive realization fixtures with literal expected arithmetic, not model executions. Independent execution is already the transition's bite-2.1 evidence and remains the adapter work assigned to bites 2.5 and 2.7; no model dependency or model acceptance change is introduced into realization.
+
+### Exact activation and consumer packet
+
+Burn `DataOutputs` is true for every bound Burn: bite 2.2's binding refuses each violation of its clause (`RecordBound`, `RecordOrdinal`, `RecordStructure`, `DataAssociation`), so its declared disagreement boundary is that binding. This reading of (`[PLAN-gate:wave2:bite-2-3a]`)'s focused-disagreement clause holds for this law because bite 2.2's gate requires binding to keep refusing a malformed carrier, so a malformed record family never becomes an evaluation subject. Preserve this boundary at activation. The `expected` rows are read by canonical body/identity validation before evaluation; changing a row refuses with `Identity`, rather than weakening the already-bound carrier guarantee.
+
+The evaluated clamp operand graph is frozen below. These are existing fact identities, not new expression values. The raw source references remain necessary for authenticated membership and distinctness, and the checked aggregate is computed only after the predecessor supply/Sealed check. The closed body is opaque to generic expression folding; Wave 3 must lower it as a unit.
+
+| Operand | Existing fact / binding | Consumer |
+|---|---|---|
+| Authenticated ASH family / B | `FactId::FamilyAmount { operation: Clear, side: Input, object: Ash }`, bound source references and per-source amounts | Checked aggregation inside the clamp |
+| Live supply | `FactId::StateField { operation: Clear, side: Input, field: YL }` | Checked supply and clamp capacity |
+| Time-locked supply | `FactId::StateField { operation: Clear, side: Input, field: YT }` | Checked supply and floor capacity |
+| Batch bound | `FactId::BoundValue { bound: AshBatchMax }` | Structural bound before supply/aggregation |
+| Derived X and residual | Closed transition result, no new `FactId` | YL assignment, flow, data quantity and conditional delta |
+
+Append kind members in this order after `ExpressionPredicate`: `SideRepresentation`=16, `DataOutputs`=17, `BurnBinding`=18, `ClearClamp`=19, `ClearAssignment`=20, `ClearFloor`=21, `ClearFlow`=22, `ClearBinding`=23. Append subject `SideRepresentation` { side, object } with prefix 9, then `StateField` { field } with prefix 10. Field subcodes remain Omega=0, YL=1, YT=2, Q=3, Cycle=4, Maturity=5. Preserve old kind 0–15, subject 0–8 and edge 0–12 codes. These are owner engine encodings, not a new public serialization.
+
+| Activated Relation body | Subject / kind | Exact body fields |
+|---|---|---|
+| `SideRepresentation` | `SideRepresentation` { side, object } / `SideRepresentation` | `side: TransactionSide`, `object: ObjectId`, `allowed: BTreeSet<RepresentationMode>` |
+| `DataOutputs` | Operation / `DataOutputs` | `expected: Vec<architecture::DataOutputSpec>`; exact canonical schema rows including cardinality and condition |
+| `BurnBinding` | Operation / `BurnBinding` | None |
+| `ClearClamp` | Operation / `ClearClamp` | None |
+| `ClearAssignment` | `StateField` { field } / `ClearAssignment` | `field: StateField`, `expression: Option<ExprId>`; None exactly for YL, canonical owned Equal otherwise |
+| `ClearFloor` | Operation / `ClearFloor` | None |
+| `ClearFlow` | Operation / `ClearFlow` | None |
+| `ClearBinding` | Operation / `ClearBinding` | None |
+| `ClearCanonicalDeltaPolicy` | Operation / existing `CanonicalDeltaPolicy` | None; only Clear may own this body |
+
+No new `RelationEdge` is needed. `StaticRequirement` expands the operation-law endpoints: Burn input `ReceiptLive` recognition/cardinality, output `ReceiptLive` recognition/cardinality, output Ash recognition/cardinality, Authorization and Conservation → `BurnBinding` → `DataOutputs`; Burn input `SideRepresentation` → `BurnBinding`. Clear input State/Ash recognition/cardinality → `ClearClamp`; `ClearClamp` → each of the six assignments, `ClearFlow` and `DataOutputs`; `ClearClamp` → Clear's `ClearCanonicalDeltaPolicy`, because the conditional body selects its lateral family from the clamp's derived residual; this amends the operation-law dependencies of (`[PLAN-tab:realization:burn-clear-graphs]`) so that a failed clamp blocks the delta instead of aborting evaluation; each assignment → `ClearFloor`; `ClearFloor`, `ClearFlow`, `DataOutputs` and output State/Ash recognition/cardinality → `ClearBinding`. The remaining existing family, authorization, sponsor, root, projection, representation and lifecycle edge meanings and endpoints remain those in (`[PLAN-tab:realization:burn-clear-graphs]`), to be expanded by the complete declaration bites 2.4/2.6. `PublicArithmetic` is frozen for clamp, assignments, floor and flow; `ManifestShape` for canonical policy, data outputs and bindings; side representation has no proof alternative.
+
+| Consumer | Bite-2.3b action |
+|---|---|
+| realization `relation.rs`, `identity.rs`, `validate.rs` | Activate bodies/keys; derive exact subjects; validate all body fields and exact canonical multiplicity; include side admission's input/change mode union only in lifecycle census. |
+| realization `expression.rs`, `evaluate.rs`, staged laws/observation/projection, `error.rs`, `lib.rs` | Bind required extension; feed STATE facts; include `ClearAssignment` in expression ownership/collection; evaluate reviewed bodies; legacy entry refuses missing extension; preserve old variants and controls. |
+| realization `tests/burn_clear_relation_tests.rs`, `relation_identity_tests.rs`, `compact_ash_tests.rs` | Replace local identities with activated identities and retain controls, exact 5/12 staged census (including Burn's existing delta policy), code/subject isolation and old compact behavior. |
+| compiler `engine_attestation.rs` | Allocate exact new kind/subject codes, preserve old encodings; shared state-field encoder must follow the contract's separate path-expansion condition for `engine_attestation/constructibility.rs`. |
+| compiler `coverage.rs`, `layout.rs`, `placement.rs`, `engine_attestation/{requirement,source,foundation}.rs` | Exhaustive new-body disposition; explicit unsupported behavior, never empty requirements or fabricated coverage. |
+| compiler `input.rs`, `error.rs`, `case.rs` and `tests/case_tests.rs` | Typed unsupported-plan refusal at `bind_input` and direct in-crate case entry; retain a reaching direct-entry subject. |
+| compiler `tests/{coverage_tests,coverage_oracle_tests,analyzed_program_oracle_tests,source_tests}.rs` | Preserve old captures/identities and reaching unsupported behavior. |
+| vectors `maturity_mutants/native_staging.rs`, `maturity_safety.rs` | Exhaustive relation handling and STATE-read classification; preserve candidate and dispatch pins until their assigned declaration bites. |
+| compiler silent `engine_attestation/{lifecycle,proof}.rs`, carrier/case/sponsor/operation-plan selectors | Preserve old semantics; new paths remain unsupported in Wave 2. Wave 3 owns execution-case/proof meaning; a necessary extra edit stops for path expansion. |
+
+The complete unchanged/active/downstream sweep remains (`[PLAN-tab:backlog:wave2-consumers]`); this table refines its activation inputs without granting edit authority. No expression change activates compiler `fold.rs`, `disclosure.rs`, or value/type consumers. The common `OperationObservation` and STATE constructors remain unchanged, including transaction's production maturity initializer. No direct downstream compilation is claimed by the package-only lane gate; unchanged existing public enum/struct signatures and declarations avoid new exhaustive-match obligations, and the full repository gate at import remains the compilation verdict.
+
+`src/relation.rs` is a pinned source of the Wave-1 freeze (`FrozenItem::Realization` in `packages/vectors/src/keyed_final_manifest/pins.rs`). Adding these bodies, kinds and subjects changes pinned source, so under (`[PLAN-rule:vectors:keyed-refreeze]`) bite 2.3b lands the change with its re-pin in one independently reviewed, gate-passing landing. That landing carries: the new digest in `pins.rs`; `relation.rs`'s capture-time digest in `RETAINED_CAPTURE` there, as the retained-capture construction requires for every path re-frozen after the capture; a freeze-history row in `packages/vectors/tests/keyed_final/freeze_history.rs` naming path, previous and new digest, source diff, behaviour classification and reopened evidence under (`[PLAN-rec:w1b16:adoption]`); and the matching plan record beside (`[PLAN-tab:vectors:dependency-refreeze]`) in `plans/packages/vectors.md`. The adopted path list and consumer census at (`[PLAN-tab:backlog:wave2-paths]`) and (`[PLAN-tab:backlog:wave2-consumers]`) include these three paths as the review-correction record, before bite 2.3b starts. This packet changes no pin itself.
 
 ## Publications and identity
 

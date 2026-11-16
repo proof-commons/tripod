@@ -1,5 +1,6 @@
 mod announce_maturity_tests;
 mod burn_clear_projection_tests;
+mod burn_clear_relation_tests;
 mod clear_state_tests;
 mod compact_ash_tests;
 mod constructibility_tests;

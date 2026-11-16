@@ -75,6 +75,16 @@ pub enum BurnClearRefusal {
     ProjectionRole,
 }
 
+impl From<crate::ClearTransitionRefusal> for BurnClearRefusal {
+    fn from(refusal: crate::ClearTransitionRefusal) -> Self {
+        match refusal {
+            crate::ClearTransitionRefusal::SupplyOutOfDomain
+            | crate::ClearTransitionRefusal::AshTotalOutOfDomain => Self::Arithmetic,
+            _ => Self::ClearTransition,
+        }
+    }
+}
+
 impl BurnClearRefusal {
     /// Complete refusal census; does not include credit overclaim.
     pub const ALL: &'static [Self] = &[

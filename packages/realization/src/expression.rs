@@ -628,7 +628,7 @@ fn infer_node_type(
     }
 }
 
-fn evaluate_node(
+pub(crate) fn evaluate_node(
     node: &ExpressionNode,
     facts: &FactValues,
     values: &BTreeMap<ExprId, SemanticValue>,

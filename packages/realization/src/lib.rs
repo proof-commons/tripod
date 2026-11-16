@@ -8,6 +8,7 @@
 )]
 
 pub mod binding;
+pub mod burn_clear_laws;
 pub mod burn_clear_observation;
 pub mod burn_clear_projection;
 pub mod constructibility;

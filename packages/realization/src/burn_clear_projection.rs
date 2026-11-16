@@ -179,27 +179,34 @@ pub fn validate_burn_event(
         || offered.fresh_ash != *fresh_ash
         || offered.fresh_amount != fresh_amount
         || offered.records != *records
-        || !has_burn_classes(common, *fresh_ash)
-        || !common.projections.contains(&ProjectionId::BurnEvent)
-        || common.projections.contains(&ProjectionId::ClearEvent)
-        || common
+        || !burn_event_shape_holds(common, *fresh_ash)
+    {
+        return Err(BurnClearRefusal::BurnEvent);
+    }
+    Ok(())
+}
+
+pub(crate) fn burn_event_shape_holds(
+    common: &crate::OperationObservation,
+    fresh_ash: ObservedObjectRef,
+) -> bool {
+    has_burn_classes(common, fresh_ash)
+        && common.projections.contains(&ProjectionId::BurnEvent)
+        && !common.projections.contains(&ProjectionId::ClearEvent)
+        && !common
             .projections
             .contains(&ProjectionId::DistributionResidue)
-        || !common.root_effects.is_empty()
-        || common
+        && common.root_effects.is_empty()
+        && !common
             .region_objects()
             .any(|object| object.kind == crate::ObservedObjectKind::Declared(ObjectId::State))
-        || !common.region.canonical_partition.issuances.is_empty()
-        || common
+        && common.region.canonical_partition.issuances.is_empty()
+        && !common
             .region
             .canonical_partition
             .flows
             .iter()
             .any(|flow| !flow.destructions.is_empty())
-    {
-        return Err(BurnClearRefusal::BurnEvent);
-    }
-    Ok(())
 }
 
 /// Decide whole-family record credit after structural binding.
@@ -291,18 +298,27 @@ pub fn validate_state_succession(
         return Err(BurnClearRefusal::ProjectionRole);
     };
     let context = &bound.observation.context;
-    let effects = &context.common.root_effects;
     if offered.context != *context
         || offered.predecessor != *predecessor
         || offered.successor != *successor
-        || effects.len() != 1
-        || effects[0].root != RootId::State
-        || effects[0].effect != ObservedRootEffectKind::Succession
-        || clear_transition(bound)?.successor != successor.metadata
+        || !state_succession_holds(bound)?
     {
         return Err(BurnClearRefusal::StateSuccession);
     }
     Ok(())
+}
+
+pub(crate) fn state_succession_holds(
+    bound: &BoundBurnClearObservation,
+) -> Result<bool, BurnClearRefusal> {
+    let BurnClearPayload::Clear { successor, .. } = &bound.observation.payload else {
+        return Err(BurnClearRefusal::ProjectionRole);
+    };
+    let effects = &bound.observation.context.common.root_effects;
+    Ok(effects.len() == 1
+        && effects[0].root == RootId::State
+        && effects[0].effect == ObservedRootEffectKind::Succession
+        && clear_transition(bound)?.successor == successor.metadata)
 }
 
 /// Validate the full operation-scoped accounting list independently of events.
@@ -455,9 +471,15 @@ fn sum_ash(
     .map_err(|_| BurnClearRefusal::Arithmetic)
 }
 
-fn clear_transition(
+pub(crate) fn clear_transition(
     bound: &BoundBurnClearObservation,
 ) -> Result<crate::ClearTransitionResult, BurnClearRefusal> {
+    clear_outcome(bound)?.map_err(BurnClearRefusal::from)
+}
+
+pub(crate) fn clear_outcome(
+    bound: &BoundBurnClearObservation,
+) -> Result<Result<crate::ClearTransitionResult, crate::ClearTransitionRefusal>, BurnClearRefusal> {
     let BurnClearPayload::Clear { predecessor, .. } = &bound.observation.payload else {
         return Err(BurnClearRefusal::ProjectionRole);
     };
@@ -469,16 +491,11 @@ fn clear_transition(
         .get(&BoundId::AshBatchMax)
         .and_then(|count| usize::try_from(count.get()).ok())
         .ok_or(BurnClearRefusal::ClearTransition)?;
-    crate::clear_ash(
+    Ok(crate::clear_ash(
         &predecessor.metadata,
         &ash_values(bound, ObservedSide::Input)?,
         maximum,
-    )
-    .map_err(|refusal| match refusal {
-        crate::ClearTransitionRefusal::SupplyOutOfDomain
-        | crate::ClearTransitionRefusal::AshTotalOutOfDomain => BurnClearRefusal::Arithmetic,
-        _ => BurnClearRefusal::ClearTransition,
-    })
+    ))
 }
 
 fn has_burn_classes(common: &crate::OperationObservation, fresh_ash: ObservedObjectRef) -> bool {
