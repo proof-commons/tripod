@@ -313,6 +313,8 @@ The default form's external accessors and privacy locks are exercised in `packag
 
 ## Keyed substrate verification scope · `rule:target-elements:keyed-verification-scope`
 
+The fixed-form recipe, qualified constructor envelope, source-derived policy-asset floor and development-build provenance are owned by (`[DOC-sec:keyed-fixed:recipe]`), (`[DOC-sec:keyed-fixed:envelope]`), (`[DOC-calc:keyed-fixed:floor]`) and (`[DOC-sec:keyed-fixed:environment]`). Constant explicit pair qualification belongs to that covenant, not a new universal target-form constraint. Empty nonce narrows constructor/relay claims without narrowing membership. Source-derived floors do not establish native edges; new resource/input bounds and effective-policy observations remain S5–S8 obligations. No target API or legacy form review changes here.
+
 The bite-1.4 construction packet (`rec:w1b14:gate`) meets `SubstrateRevisitTrigger::InProcessSighash` for verification of the admitted explicit P2WPKH SIGHASH_ALL sponsor. Transaction computes that message first-party; producing signatures and other profiles remain delegated. `DelegatedCapability::Signing` names signature production, including the signer's own message computation, rather than excluding an independent verification message. The target's trigger/capability enums and census do not change; this package owns no signing or verification implementation.
 
 The met verification trigger reopens the decision and is disposed at (`rec:w1b14:construct`): the first-party answer remains for the narrow admitted form, with Elements comparison-only. The safe curve wrapper is a native-linked production edge binding the target library family, admitted at (`q:w1b14:curve`), not independent node evidence.
