@@ -23,6 +23,7 @@ Archived history is excluded from the load-bearing documentation weight budget a
 | [guide-12-completion-report.md](guide-12-completion-report.md) | The Guide-12 exit record at tree 0.4.1-dev: the §29 checklist audited item by item, and the §30 completion report. |
 | [notation-semantic-census.md](notation-semantic-census.md) | Resolved research, closed as over-scoped: the existing label graph is sufficient, and the surviving work was attestation label minting and editorial repair. |
 | [phase-6-closed-records.md](phase-6-closed-records.md) | Closed Phase-6 plan findings, route and classification records, questions, carrier and declaration records, moved verbatim from the Phase-6 card. |
+| [phase-7-engine-records.md](phase-7-engine-records.md) | Closed shared-engine probe and refit records moved verbatim from the Phase-7 card; subsequent rulings stay maintained. |
 
 ## Archive rule · `rule:history:authority`
 

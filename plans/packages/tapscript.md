@@ -322,3 +322,8 @@ The path census is declared and supported by sole-leaf reconstruction, root/path
 ## Keyed emission gate closed · `rec:tapscript:keyed-packet`
 
 The default public bundle, schema-1 recipe/material, checked resource formulas, supplied member coverage and target assessment are assembled at (`rec:w1b13:gate`), with external consumer locks and a clause-by-clause evidence table. Production reachability ends before predecessor authentication and transaction commitment/linkage; vectors' curve and commitment oracle is conformance evidence, not a production dependency. The eight-capability assessment and separate target form introduce no ASH covenant rule. Detailed obligations remain (`rec:w1b13:members`); independent review and the closing disposition are recorded at (`rec:w1b13:closed`).
+
+
+## Fixed-form keyed track · `sec:tapscript:fixed-form`
+
+Under (`rule:phase7:fixed-form-rulings`), the joined gate remains (`rec:backlog:fixed-form-closure`). S5 owns the fixed-form 104-byte both-ends transcript recipe and explicit triple construction material, with independent byte/stack/resources and cryptographic premises from ruling 200. The supplied key sits beside the digest of A||01||LE64(v)||01; neither nonce nor accounting/surplus destination enters that transcript. Both consumed member and successor are checked against the constant. Literal 115-byte guards remain the sized reopening fallback, not an alternate silently selected program. Sibling pattern/constructor/bundle/resources/member files and tests are enumerated at (`tab:backlog:fixed-form-paths`); legacy body pins remain untouched. Every target-derived limit is recomputed for the new leaf before S6, with no inherited input bound.

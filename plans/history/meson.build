@@ -11,4 +11,5 @@ plans_history_files = files(
   'guide-12-completion-report.md',
   'notation-semantic-census.md',
   'phase-6-closed-records.md',
+  'phase-7-engine-records.md',
 )

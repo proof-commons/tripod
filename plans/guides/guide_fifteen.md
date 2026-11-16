@@ -768,7 +768,7 @@ Membership is in the dependency-derived set of the read handle; no designated he
 
 **Specification (Covenant exclusions)** · `spec:guide15-exec:covenant-exclusions`
 
-There is no destruction output, burn requirement, counter, accumulator, magnitude or depth inside the system, and no designated head or terminal (`[A-sec:kpc:operations]`). Other target-valid inputs and outputs remain open; no value-preservation, authorization or record-acceptance relation is added to the covenant (`[A-def:kpc-model:first-output]`); (`[A-sec:kpc:operations]`).
+For the legacy edition, there is no destruction output, burn requirement, counter, accumulator, magnitude or depth inside the system, and no designated head or terminal (`[A-sec:kpc:operations]`). For the legacy edition, other target-valid inputs and outputs remain open; no value-preservation, authorization or record-acceptance relation is added to the covenant (`[A-def:kpc-model:first-output]`); (`[A-sec:kpc:operations]`). Legacy extension may release carried value; later-position covenant-shaped outputs are not handles. The fixed-form edition retains one constant explicit deposit, excludes wrong-pair/form payments from membership and releases `(n−1)v` on MERGE of n members without constraining its destination; it does no input/output resource accounting and adds no authorization (`rule:phase7:fixed-form-rulings`).
 
 **Inventory (Wave-1 recount)** · `reg:guide15-exec:wave1-recount`
 
@@ -1029,6 +1029,22 @@ Both complete declarations validate against architecture and independent model c
 **Proposal (wave2 — Suggested commit)** · `proposal:guide15-exec:wave2-suggested-commit`
 
 `realization: define burn and clear semantics`. (`task:guide15:wave1`).
+
+### Fixed-form Keyed Covenant track · `task:guide15-exec:fixed-form`
+
+Adopt S0–S9 at (`sec:kffwork:execution`) with the corrections and exact paths at (`tab:backlog:fixed-form-paths`), rulings 193–209 at (`rule:phase7:fixed-form-rulings`) and their legacy ledger. This is a named track beside the numbered waves; it neither renumbers them nor discharges Burn/Clear or a later wave. Its task is a complete paper 2.0.0, public triple-bound realization and fresh evidence while preserving the present edition and its captures.
+
+**Rule (Fixed-form files and packages)** · `rule:guide15-exec:fixed-form-settings`
+
+Each packet follows (`def:kffwork:packet`), the adopted paths and consumer census (`tab:backlog:fixed-form-consumers`). S0 changes planning only; S1 includes the labels census correction and publication tests, with code verification. S3 adds profile code 3 in architecture’s semantic namespace as the single frozen-body exception, paired with pins/history and reviewed legacy equivalence. The scheduling boundary and identity adjudication are (`rec:backlog:fixed-form-decisions`). Existing shared kernels remain shared. New paths needed without a new interface or contract change correct the packet and its census before edits; an uncovered interface, contract or ruling decision requires renewed adoption. Every frozen-source change still follows (`rule:vectors:keyed-refreeze`).
+
+**Gate (Fixed-form track closure)** · `gate:guide15-exec:fixed-form`
+
+Close only on the independently reviewed S1–S8 contracts, emitted/linked/constructed bytes, full reading, derived and observed floor, merge surplus, bounded contention and version-separated captures, with every acceptance and reopening disposition joined at S9. Gate D covers documents; C covers formatting, clippy, affected tests and full repository import verification; P adds the real paper build; N adds isolated native capture/admission as defined at (`def:kffwork:packet`). S1 requires C/D/P. No local documents gate establishes a code, paper or native result. Retain candidate-bound exits, logs, walls, resource deltas and absent dimensions.
+
+**Record (Fixed-form closure carrier)** · `rec:guide15-exec:fixed-form-carrier`
+
+(`rec:backlog:fixed-form-closure`) owns the S0–S9 statuses, verified path lists, shared consumers, adoption decisions, independent reviews and final verdict. Package contracts receive their own boundaries; a paper reader gets the final paper and the single realization record. The deployment triple, capture availability and any claimed finality remain the named external facts at (`tab:kffwork:external`). Preparation may proceed without those values; activities requiring them may not presume answers.
 
 ### Wave 3 — Compiler operation plans · `task:guide15-exec:wave3`
 
@@ -1721,7 +1737,7 @@ Neither the charter nor a planned target run proves unavailable evidence; no mis
 
 **Caveat (Second-contract exclusions)** · `cav:guide15-exec:second-contract-limits`
 
-The second contract supplies independence evidence inside Phase 7 under exactly born first and continue first. It has no destruction requirement, carried counter, accumulator, magnitude, depth, designated head or terminal; reader acceptance is outside the covenant (`[A-def:kpc-model:first-output]`); (`[A-rem:kpc-interface:record-evidence]`).
+The second contract supplies independence evidence inside Phase 7 under exactly born first and continue first. It has no destruction requirement, carried counter, accumulator, magnitude, depth, designated head or terminal; reader acceptance is outside the covenant (`[A-def:kpc-model:first-output]`); (`[A-rem:kpc-interface:record-evidence]`). These legacy limits do not assert fixed-form value freedom: its single retained deposit and unrestricted merge release are stated at (`spec:guide15-exec:covenant-exclusions`); S9 checks both edition scopes.
 
 **Caveat (Measured subjects and published premises)** · `cav:guide15-exec:measurement-limits`
 

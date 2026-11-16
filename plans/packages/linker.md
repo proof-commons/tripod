@@ -329,3 +329,8 @@ Under (`rec:w1b14:adoption`) and (`step:w1b14:link`), `packages/linker/src/keyed
 This introduces no production dependency edge, planner, covenant predicate, funding policy, commitment or predecessor authentication. Echoing emission's recipe asserts nothing; step 3 constructs the offer independently from its request key. Schema 1 of `KeyedLeafRecipe` in `packages/tapscript/src/keyed_constructor.rs` alone specifies commitment; transaction implements and authenticates it in step 2. Existing resource kernels and attestation linkers are unchanged. The link retains evidence obligations without admitting them. The entry's sole completion event and capture control are specified in `packages/linker/TRACING.md` (Events table).
 
 The public construction packet and exact two-offer/four-literal/five-reference, zero-relocation inventory are closed at (`rec:w1b14:closed`). Transaction now consumes this material through production commitment and checked requests; linking itself still supplies neither funding nor chain recognition.
+
+
+## Fixed-form keyed track · `sec:linker:fixed-form`
+
+Under (`rule:phase7:fixed-form-rulings`), the joined gate remains (`rec:backlog:fixed-form-closure`). S5 links the fixed-form recipe through new keyed_fixed_bundle and keyed_fixed_reference owners before S6 construction. The current sixteen-instruction legacy grammar is preserved; it cannot validate the new thirty-six-instruction streaming leaf. Own a complete occurrence/reference census for the new digest/key/birth/continuation schedule, with wrong-coordinate and wrong-control-recipe refusals, and independent commitment checks. Registration and test paths are (`tab:backlog:fixed-form-paths`); new pins/corpus are separate under (`rule:vectors:keyed-refreeze`).
