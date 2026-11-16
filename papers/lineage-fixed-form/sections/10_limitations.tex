@@ -6,6 +6,13 @@
 This specification makes no realization claim. Acceptance belongs to the
 reader, and finality is an evidence assumption outside the covenant
 (\zcref{sec:kpcfixed:interface}). The costs of a realization remain open.
+The meanings and results of additional reader folds belong to their
+readers (\zcref{rem:kpcfixed-operations:reader-folds}); no monotonicity or
+agreement is promised for arbitrary folds. The SOURCE-only acceptance
+result of \zcref{rem:kpcfixed-interface:record-evidence} holds unchanged
+under its stated premises. A fold reading the full record set still needs complete dependency
+closure; a path cannot stand for it
+(\zcref{rem:kpcfixed-interface:dependency-closure}).
 
 \begin{remark}[Public extension and contention]
 \label{rem:kpcfixed:public-extension}

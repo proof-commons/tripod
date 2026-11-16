@@ -101,8 +101,8 @@ fi
 # The third paper uses the same stamp and bibliography chain.
 # Its named target must render and publish through that graph too.
 meson compile -C "$build" lineage-fixed-form >/dev/null
-fixed_pdf="$mock_root/archive/rendered/Tripod_Keyed_Provenance_Covenant_v2.0.0.pdf"
-fixed_flat="$mock_root/archive/flattened/Tripod_Keyed_Provenance_Covenant_v2.0.0_flat.tex"
+fixed_pdf="$mock_root/archive/rendered/Tripod_Keyed_Provenance_Covenant_v2.1.0.pdf"
+fixed_flat="$mock_root/archive/flattened/Tripod_Keyed_Provenance_Covenant_v2.1.0_flat.tex"
 test -s "$fixed_flat"
 fixed_stamps="$build/papers/lineage-fixed-form/stamps.tex"
 grep -q 'MOCK TRIPOD ATTESTATION PDF' "$fixed_pdf"

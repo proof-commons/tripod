@@ -110,6 +110,7 @@
 | ``[A-rem:kpcfixed-interface:dependency-closure]`` | ``rem:kpcfixed-interface:dependency-closure`` | `papers/lineage-fixed-form/sections/01_interface.tex` |
 | ``[A-rem:kpcfixed-interface:record-evidence]`` | ``rem:kpcfixed-interface:record-evidence`` | `papers/lineage-fixed-form/sections/01_interface.tex` |
 | ``[A-rem:kpcfixed-model:qualification-necessity]`` | ``rem:kpcfixed-model:qualification-necessity`` | `papers/lineage-fixed-form/sections/02_model.tex` |
+| ``[A-rem:kpcfixed-operations:reader-folds]`` | ``rem:kpcfixed-operations:reader-folds`` | `papers/lineage-fixed-form/sections/03_operations.tex` |
 | ``[A-rem:kpcfixed:policy-floor]`` | ``rem:kpcfixed:policy-floor`` | `papers/lineage-fixed-form/sections/10_limitations.tex` |
 | ``[A-rem:kpcfixed:public-extension]`` | ``rem:kpcfixed:public-extension`` | `papers/lineage-fixed-form/sections/10_limitations.tex` |
 | ``[A-rem:maturity:announcement-timing]`` | ``rem:maturity:announcement-timing`` | `papers/attestation/sections/09_maturity.tex` |

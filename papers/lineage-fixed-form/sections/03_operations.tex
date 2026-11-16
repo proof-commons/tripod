@@ -13,6 +13,11 @@ Validity uses exact enforcement under \zcref{assum:kpcfixed-model:realization}.
 An event $e$ with $I_q(e)=\varnothing$ that creates a handle
 $s=O(e)_0\in K_q$ is a SOURCE. The handle itself identifies the new record
 $r_q(s)=(q,s)$ and receives $C_q(s)=\{r_q(s)\}$.
+The empty condition counts handles of this same triple: the
+event consumes zero handles of $K_q$, not necessarily zero inputs.
+It may consume inputs that are not handles, including those that fund it.
+Under the assumptions of \zcref{thm:kpcfixed-invariants:key-isolation},
+a handle of another triple cannot be among them.
 Call $s$ the SOURCE handle of that record. Its fresh identity binds its
 creating event, so no other event introduces that record.
 If a published reader rule requires attributable destruction for a
@@ -48,15 +53,18 @@ or sufficient fee funding.
 
 \begin{definition}[Record sets and classification]
 \label{def:kpcfixed-operations:classification}
-Every event creating a handle $s\in K_q$ satisfies exactly one of these
+Every event $e$ creating a handle $s\in K_q$ satisfies exactly one of these
 two cases, with the defining recurrence
 \[
  C_q(s)=
  \begin{cases}
  \{r_q(s)\},&\text{if }I_q(e)=\varnothing,\\
- \displaystyle\bigcup_{x\in I_q(e)}C_q(x),&\text{otherwise}.
+ \displaystyle\bigcup_{x\in I_q(e)}C_q(x),&\text{if }I_q(e)\ne\varnothing.
  \end{cases}
 \]
+The empty case is separate because a union over no consumed handles would
+be empty. Instead, the definition starts one record where there is no
+provenance to inherit.
 An event creating no handle of $K_q$ has no set to define and cannot
 consume a handle of $K_q$, by continue first. This classifies every event of every valid
 history without imposing any further validity condition.
@@ -73,8 +81,30 @@ Record sets and successors are derived from $H$ and are not carried by
 handles. The system has no counter or accumulator and no designated head or terminal.
 The pair is a membership constant, not a measure of the record set or
 an accumulated magnitude; no depth is carried either.
-It defines no burn or destruction law. In particular, it is separate
-from the attestation's Burn and Clear operations; neither operation is
-imported into this covenant or its record recurrence.
+The system defines no burn or destruction law and is separate from the
+attestation's Burn and Clear operations; neither is imported into the
+covenant or its recurrence.
+
+\begin{remark}[Reader folds]
+\label{rem:kpcfixed-operations:reader-folds}
+Meaning layered on the history beyond membership and record sets is a
+reader's fold over authenticated history: a reader-chosen rule processes
+events and combines their data with its accumulated result. Such a fold
+may read any data of that history, including a message beside a handle,
+destruction or burn evidence, value accounting, or events of another
+protocol layered on the history. These meanings and their rules are
+neither enforced by the covenant nor defined by this paper. The covenant
+fixes only the spending condition of outputs bearing its program.
+Membership and record sets are this paper's definitions over the history,
+and the paper proves what follows from them. Two readers choosing different
+folds may obtain different results without disagreeing about the covenant.
+A fold requiring attributable destruction for a record is subject to the
+rule in \zcref{op:kpcfixed-operations:source}. Reading other events cannot
+create a record or change its contents: only SOURCE introduces a record
+(\zcref{thm:kpcfixed-invariants:source-provenance}), whose identity binds
+that event's immutable contents. A destruction or burn reading is thus an
+instance of a reader's fold, consistent with the absence of a burn or
+destruction law stated above.
+\end{remark}
 
 \end{document}

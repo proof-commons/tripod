@@ -1032,7 +1032,7 @@ Both complete declarations validate against architecture and independent model c
 
 ### Fixed-form Keyed Covenant track · `task:guide15-exec:fixed-form`
 
-Adopt S0–S9 at (`sec:kffwork:execution`) with the corrections and exact paths at (`tab:backlog:fixed-form-paths`), rulings 193–209 at (`rule:phase7:fixed-form-rulings`) and their legacy ledger. This is a named track beside the numbered waves; it neither renumbers them nor discharges Burn/Clear or a later wave. Its task is a complete paper 2.0.0, public triple-bound realization and fresh evidence while preserving the present edition and its captures.
+Adopt S0–S9 at (`sec:kffwork:execution`) with the corrections and exact paths at (`tab:backlog:fixed-form-paths`), rulings 193–209 at (`rule:phase7:fixed-form-rulings`) and their legacy ledger. This is a named track beside the numbered waves; it neither renumbers them nor discharges Burn/Clear or a later wave. Its task is a complete fixed-form paper of major version 2, public triple-bound realization and fresh evidence while preserving the present edition and its captures.
 
 **Rule (Fixed-form files and packages)** · `rule:guide15-exec:fixed-form-settings`
 

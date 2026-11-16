@@ -1,5 +1,5 @@
 # Keyed Provenance Covenant specification and publication inputs.
-project('lineage-fixed-form', version: '2.0.0', meson_version: '>=1.3.0')
+project('lineage-fixed-form', version: '2.1.0', meson_version: '>=1.3.0')
 fs = import('fs')
 main_tex = files('main.tex')
 latexmk_rc = files('.latexmkrc')
