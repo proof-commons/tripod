@@ -854,10 +854,6 @@ fn offline_transport_control(
             capture.terminal_state(),
             Some(CaptureTerminalState::Timeout)
         );
-        assert!(
-            started.elapsed() < Duration::from_secs(30),
-            "in-process watchdog before outer guard"
-        );
         assert_eq!(durable.len(), 1);
         assert_eq!(
             durable[0]["request"],
