@@ -2154,6 +2154,84 @@ mod tests {
     }
 
     #[test]
+    fn compact_clear_declaration_reopenings_keep_both_keys() {
+        use super::{CompactClosureKind as K, CompactObservedRefusal as R, CompactOperand as O};
+        let (bundle, _) = ledger_sources();
+        let context = super::compact_context(bundle).expect("context");
+        let readings = ledger_readings();
+        let mut first: Option<&super::CompactRecord> = None;
+        for name in [
+            "missing-clear-exit-emitted-sponsorless",
+            "missing-clear-exit-emitted-sponsored",
+        ] {
+            let reading = readings
+                .iter()
+                .find(|reading| {
+                    super::compact_first_party_name(reading.requirement())
+                        .expect("first-party name")
+                        == name
+                })
+                .expect("emitted Clear key");
+            assert_eq!(reading.kind(), K::ObservedDeclarationRefusal);
+            if let Some(previous) = first {
+                assert_eq!(reading.evidence.control, previous.control);
+                assert_eq!(reading.evidence.subject, previous.subject);
+                assert_eq!(reading.evidence.refusal, previous.refusal);
+            } else {
+                first = Some(&reading.evidence);
+            }
+            let O::Emitted(control) = &reading.evidence.control else {
+                panic!("emitted control")
+            };
+            let O::Emitted(subject) = &reading.evidence.subject else {
+                panic!("emitted subject")
+            };
+            assert_eq!(control.leaves, subject.leaves);
+            assert_eq!(control.leaves, super::emitted_offer(&context).leaves);
+            assert_eq!(control.declarations.len(), 1);
+            let requirement = control
+                .declarations
+                .iter()
+                .find(|requirement| requirement.exit == OperationId::Clear)
+                .expect("outstanding Clear declaration")
+                .clone();
+            assert_eq!(requirement.object, ObjectId::Ash);
+            assert_eq!(
+                requirement.representation,
+                realization::RepresentationMode::Explicit
+            );
+            assert_eq!(
+                requirement.status,
+                compiler::operation_plan::LifecycleExitStatus::DeclaredOutsideCompilerScope
+            );
+            let mut removed = control.declarations.clone();
+            assert!(removed.remove(&requirement));
+            assert_eq!(subject.declarations, removed);
+            removed.insert(requirement.clone());
+            assert_eq!(removed, control.declarations);
+            let refusal =
+                tapscript::CompactEmittedLifecycleRefusal::MissingClearDeclaration { requirement };
+            assert_eq!(reading.refusal(), &R::Lifecycle(refusal.clone()));
+            assert_eq!(
+                tapscript::validate_compact_emitted_lifecycle(
+                    &context.emitted,
+                    &control.leaves,
+                    &control.declarations,
+                ),
+                Ok(()),
+            );
+            assert_eq!(
+                tapscript::validate_compact_emitted_lifecycle(
+                    &context.emitted,
+                    &subject.leaves,
+                    &subject.declarations,
+                ),
+                Err(refusal),
+            );
+        }
+    }
+
+    #[test]
     fn compact_closure_joins_all_twenty_six_keys_and_the_native_forty_eight() {
         use super::CompactClosureKind as K;
         let (bundle, corpus) = ledger_sources();
