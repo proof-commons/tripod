@@ -57,6 +57,7 @@ model_source_files = files(
   'src/tests/checkpoint_semantics_tests.rs',
   'src/tests/class_accounting_tests.rs',
   'src/tests/clause_weld_tests.rs',
+  'src/tests/clear_realization_conformance_tests.rs',
   'src/tests/corruption_fixtures.rs',
   'src/tests/cycle_tests.rs',
   'src/tests/declassification_tests.rs',

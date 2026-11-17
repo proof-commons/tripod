@@ -95,6 +95,7 @@ mod canonical_rejection_tests;
 mod checkpoint_semantics_tests;
 mod class_accounting_tests;
 mod clause_weld_tests;
+mod clear_realization_conformance_tests;
 mod cycle_tests;
 mod declassification_tests;
 mod distribution_bijection_tests;

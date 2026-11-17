@@ -68,9 +68,9 @@ pub use audit::{
     receipt_accounting_audit,
 };
 pub use conformance::{
-    ConformanceProjectionError, ModelBurnConformanceObservation, ModelConformanceObservation,
-    observe_announce_maturity, observe_burn, observe_compact_ash, observe_live_transfer,
-    unresolved_model_evidence,
+    ConformanceProjectionError, ModelBurnConformanceObservation, ModelClearConformanceObservation,
+    ModelConformanceObservation, observe_announce_maturity, observe_burn, observe_clear,
+    observe_compact_ash, observe_live_transfer, unresolved_model_evidence,
 };
 pub use constants::Constants;
 pub use fee::{FeeChange, FeeEnvelope, validate_fee_envelope};

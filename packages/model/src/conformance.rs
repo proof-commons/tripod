@@ -45,6 +45,8 @@ pub enum ConformanceProjectionError {
     AmountOutOfDomain,
     BoundOutOfDomain,
     SponsorProtocolRegionOverlap(u64),
+    MissingClearStateEdge,
+    MissingClearDestruction,
 }
 
 impl ConformanceProjectionError {
@@ -70,6 +72,8 @@ impl ConformanceProjectionError {
             Self::AmountOutOfDomain => "amount_out_of_domain",
             Self::BoundOutOfDomain => "bound_out_of_domain",
             Self::SponsorProtocolRegionOverlap(_) => "sponsor_protocol_region_overlap",
+            Self::MissingClearStateEdge => "missing_clear_state_edge",
+            Self::MissingClearDestruction => "missing_clear_destruction",
         }
     }
 }
@@ -102,6 +106,251 @@ pub struct ModelBurnConformanceObservation {
     pub event: realization::BurnEventProjection,
     /// Accounting values projected from the executed record family and ASH.
     pub accounting: realization::AccountingProjection,
+}
+
+/// Independently projected Clear facts from one accepted model execution.
+/// The public offers can be compared separately; only `common` retains model evidence.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModelClearConformanceObservation {
+    /// Bound model observation and model-only established evidence.
+    pub common: ModelConformanceObservation,
+    /// Primitive Clear carrier projected from the executed certificate and worlds.
+    pub extension: realization::BurnClearObservation,
+    /// Clear event values independently projected from the certificate.
+    pub event: realization::ClearEventProjection,
+    /// Amounts and flags independently projected from the execution.
+    pub accounting: realization::AccountingProjection,
+    /// The exact STATE pair read from the before and after worlds.
+    pub state_succession: realization::StateSuccessionProjection,
+}
+
+/// Project an accepted Clear certificate and its before and after worlds.
+///
+/// # Errors
+///
+/// Returns [`ConformanceProjectionError`] if its certified objects, STATE edge,
+/// destruction, or amounts cannot be represented in the realization domain.
+pub fn observe_clear(
+    execution: &ExecutedTransition<crate::ClearAsh>,
+) -> Result<ModelClearConformanceObservation, ConformanceProjectionError> {
+    let span =
+        tracing::debug_span!(target: "model::conformance", "observe_clear", branch = "clear");
+    let _entered = span.enter();
+    let result = observe_clear_core(execution);
+    record_projection(&result, "clear");
+    result
+}
+
+fn observe_clear_core(
+    execution: &ExecutedTransition<crate::ClearAsh>,
+) -> Result<ModelClearConformanceObservation, ConformanceProjectionError> {
+    let before = execution.before();
+    let after = execution.after();
+    let common = bind_model_evidence(observe_transition(
+        before,
+        after,
+        BranchKind::Clear,
+        "clear",
+        BTreeSet::new(),
+        owner_ids(&execution.request().fee_envelope.signers),
+        RepresentationMode::Explicit,
+    )?);
+    let certificate = appended_certificate(before, after)?;
+    // A bound Clear cannot reach this point without its kernel-derived projection.
+    let clear = certificate
+        .clear
+        .ok_or(ConformanceProjectionError::WrongBranch {
+            expected: BranchKind::Clear,
+            actual: certificate.branch,
+        })?;
+    let (input, output) = match certificate.state_edge {
+        Some(RootEdge::Succ { input, output }) => (input, output),
+        _ => return Err(ConformanceProjectionError::MissingClearStateEdge),
+    };
+    let reference = |outpoint, side, members: &BTreeSet<OutPoint>| {
+        members
+            .iter()
+            .position(|member| *member == outpoint)
+            .and_then(|ordinal| u32::try_from(ordinal).ok())
+            .map(|ordinal| ObservedObjectRef { side, ordinal })
+    };
+    let input_ref = |outpoint| {
+        reference(outpoint, ObservedSide::Input, &certificate.consumed)
+            .ok_or(ConformanceProjectionError::MissingConsumedObject(outpoint))
+    };
+    let output_ref = |outpoint| {
+        reference(outpoint, ObservedSide::Output, &certificate.created)
+            .ok_or(ConformanceProjectionError::MissingCreatedObject(outpoint))
+    };
+    let state_metadata = |world: &World, outpoint| {
+        let state = match world.utxos.get(&outpoint).map(|utxo| utxo.meta) {
+            Some(Meta::State(state)) => state,
+            _ => return Err(ConformanceProjectionError::MissingClearStateEdge),
+        };
+        Ok(realization::StateMetadata {
+            omega: observed_amount(state.omega)?,
+            y_l: observed_amount(state.y_l)?,
+            y_t: observed_amount(state.y_t)?,
+            q: observed_amount(state.q)?,
+            cycle: realization::Cycle::new(state.cycle),
+            maturity: match state.maturity {
+                crate::Maturity::Unannounced => realization::Maturity::Unannounced,
+                crate::Maturity::Announced { cycle } => realization::Maturity::Announced {
+                    cycle: realization::Cycle::new(cycle),
+                },
+                crate::Maturity::Complete => realization::Maturity::Complete,
+            },
+        })
+    };
+    let predecessor = realization::ObservedState {
+        reference: input_ref(input)?,
+        metadata: state_metadata(before, input)?,
+    };
+    let successor = realization::ObservedState {
+        reference: output_ref(output)?,
+        metadata: state_metadata(after, output)?,
+    };
+    let consumed_ash = certificate
+        .consumed
+        .iter()
+        .copied()
+        .filter(|outpoint| {
+            before
+                .utxos
+                .get(outpoint)
+                .is_some_and(|utxo| utxo.meta == Meta::Ash)
+        })
+        .collect::<Vec<_>>();
+    let ash_sources = consumed_ash
+        .iter()
+        .copied()
+        .map(input_ref)
+        .collect::<Result<Vec<_>, _>>()?;
+    let aggregate = consumed_ash
+        .iter()
+        .try_fold(crate::Sat::ZERO, |sum, outpoint| {
+            let value = before
+                .utxos
+                .get(outpoint)
+                .ok_or(ConformanceProjectionError::MissingConsumedObject(*outpoint))?
+                .value;
+            sum.checked_add(value)
+                .map_err(|_| ConformanceProjectionError::AmountOutOfDomain)
+        })?;
+    let (flow_index, flow, leg) = certificate
+        .canonical_partition
+        .flows
+        .iter()
+        .enumerate()
+        .find_map(|(index, flow)| {
+            (flow.asset == Asset::U)
+                .then(|| {
+                    flow.destructions
+                        .iter()
+                        .find(|leg| leg.tag == Tag::Recon)
+                        .map(|leg| (index, flow, leg))
+                })
+                .flatten()
+        })
+        .ok_or(ConformanceProjectionError::MissingClearDestruction)?;
+    let destruction = realization::Destruction {
+        asset: architecture::AssetId::U,
+        amount: observed_amount(leg.amount)?,
+        tag: architecture::TagId::Recon,
+        // A certified Clear has one canonical flow, so normalization keeps its index.
+        flow: Some(flow_index),
+    };
+    let residual = flow
+        .destination_outputs
+        .iter()
+        .map(|outpoint| {
+            let utxo = after
+                .utxos
+                .get(outpoint)
+                .ok_or(ConformanceProjectionError::MissingCreatedObject(*outpoint))?;
+            Ok((output_ref(*outpoint)?, observed_amount(utxo.value)?))
+        })
+        .collect::<Result<Vec<_>, ConformanceProjectionError>>()?;
+    let residual_total =
+        flow.destination_outputs
+            .iter()
+            .try_fold(crate::Sat::ZERO, |sum, outpoint| {
+                let value = after
+                    .utxos
+                    .get(outpoint)
+                    .ok_or(ConformanceProjectionError::MissingCreatedObject(*outpoint))?
+                    .value;
+                sum.checked_add(value)
+                    .map_err(|_| ConformanceProjectionError::AmountOutOfDomain)
+            })?;
+    let state_decrement = match before.utxos.get(&input).map(|utxo| utxo.meta) {
+        Some(Meta::State(state)) => state
+            .y_l
+            .checked_sub(match after.utxos.get(&output).map(|utxo| utxo.meta) {
+                Some(Meta::State(next)) => next.y_l,
+                _ => return Err(ConformanceProjectionError::MissingClearStateEdge),
+            })
+            .map_err(|_| ConformanceProjectionError::AmountOutOfDomain)?,
+        _ => return Err(ConformanceProjectionError::MissingClearStateEdge),
+    };
+    let transaction = certificate.txid.0;
+    let mut certificate_token = [0; 32];
+    certificate_token[..8].copy_from_slice(&input.to_le_bytes());
+    certificate_token[8..16].copy_from_slice(&output.to_le_bytes());
+    certificate_token[16..].copy_from_slice(&transaction[..16]);
+    let context = realization::BurnClearContext::bind_observation(
+        common.observation().clone(),
+        transaction,
+        certificate_token,
+    )
+    .map_err(ConformanceProjectionError::InvalidObservation)?;
+    let extension = realization::BurnClearObservation {
+        context: context.clone(),
+        payload: realization::BurnClearPayload::Clear {
+            predecessor,
+            successor,
+            ash_sources: ash_sources.clone(),
+            destruction,
+        },
+    };
+    let event = realization::ClearEventProjection {
+        context: context.clone(),
+        predecessor,
+        successor,
+        ash_sources,
+        aggregate: observed_amount(aggregate)?,
+        clear_amount: destruction.amount,
+        destruction,
+        residual,
+        omega: observed_amount(clear.omega)?,
+        y: observed_amount(clear.y)?,
+    };
+    let accounting = realization::AccountingProjection {
+        context: context.clone(),
+        values: realization::AccountingValues::Clear {
+            aggregate: observed_amount(aggregate)?,
+            clear_amount: destruction.amount,
+            state_decrement: observed_amount(state_decrement)?,
+            destruction,
+            residual: observed_amount(residual_total)?,
+        },
+        event: certificate
+            .clear
+            .map(|_| architecture::ProjectionId::ClearEvent),
+        distribution_residue: certificate.distribution_residue.is_some(),
+    };
+    let state_succession = realization::StateSuccessionProjection {
+        context,
+        predecessor,
+        successor,
+    };
+    Ok(ModelClearConformanceObservation {
+        common,
+        extension,
+        event,
+        accounting,
+        state_succession,
+    })
 }
 
 /// Project the certificate and bound request of an accepted model Burn.

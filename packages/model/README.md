@@ -312,6 +312,7 @@ primitive facts for a realization check.
 - `observe_compact_ash(&ExecutedTransition<CompactAsh>) -> Result<ModelConformanceObservation, ConformanceProjectionError>`
 - `observe_burn(&ExecutedTransition<BurnReceipts>) -> Result<ModelBurnConformanceObservation, ConformanceProjectionError>` projects the certificate's fresh ASH and ordered record family with the model's request signers and bounds. The returned extension, event and accounting are comparison data; the model's independent credit verdict comes from `BurnTransaction::records_accepted()` on the executed history. Burn-only realization evaluates the bound extension; record credit remains a separate verdict, including an overclaim that does not invalidate Burn. Substrate conservation is discharged here only by the model's invariant-wrapped execution, never as target evidence.
 - `ModelBurnConformanceObservation` holds public projection data for comparison. Its `common` member alone carries the model-only established-evidence provenance; callers can copy or mutate the other carriers without changing model acceptance.
+- `observe_clear(&ExecutedTransition<ClearAsh>) -> Result<ModelClearConformanceObservation, ConformanceProjectionError>` projects the certificate's Clear event and U/Recon destruction, the STATE edge in the before and after worlds, and residual ASH from created outputs. `ModelClearConformanceObservation` keeps extension, event, accounting and STATE-succession offers as separate public comparison values; `common` alone retains model-only evidence. The local context tokens contain the transaction id and ordered STATE references, while the full common observation remains bound. Accepted observations include `AshBatchMax` and `FeeSponsorInputMax`; a missing ASH maximum reaches `MissingBoundValue` at complete evaluation and `ClearTransition` at direct projection validation.
 - `observe_live_transfer(&ExecutedTransition<TransferReceipts>) -> Result<..>`
   — refuses a non-`Live` receipt class with `WrongBranch`.
 - `ModelConformanceObservation` — private fields, producible only by those
@@ -434,18 +435,7 @@ another, and none is convertible into another.
 `CanonicalClosure`, `ActiveBackingCap`, `HistoryProjection`. Use `clause_of`
 to reach the corresponding architecture invariant clause.
 
-`ConformanceProjectionError` covers observation-projection failures:
-`NoTransition`, `WrongBranch { expected, actual }`, the missing/unknown object
-and flow family (`MissingConsumedObject`, `MissingCreatedObject`,
-`UnknownFlowSource`, `UnknownFlowDestination`, `UnknownDeltaSource`,
-`UnknownDeltaDestination`), history-shape violations
-(`NotOneTransitionExtension`, `HistoryPrefixChanged`, `NonIncreasingOrder`,
-`HistoryLengthOverflow`), object-lifecycle violations
-(`ConsumedCreatedOverlap`, `ConsumedObjectSurvived`,
-`CreatedObjectAlreadyExisted`), domain violations (`AmountOutOfDomain`,
-`BoundOutOfDomain`, `UndeclaredCanonicalAsset`),
-`SponsorProtocolRegionOverlap`, and `InvalidObservation` wrapping a
-`realization::RealizationError`.
+`ConformanceProjectionError` covers observation-projection failures: `NoTransition`, `WrongBranch { expected, actual }`, the missing/unknown object and flow family (`MissingConsumedObject`, `MissingCreatedObject`, `UnknownFlowSource`, `UnknownFlowDestination`, `UnknownDeltaSource`, `UnknownDeltaDestination`), history-shape violations (`NotOneTransitionExtension`, `HistoryPrefixChanged`, `NonIncreasingOrder`, `HistoryLengthOverflow`), object-lifecycle violations (`ConsumedCreatedOverlap`, `ConsumedObjectSurvived`, `CreatedObjectAlreadyExisted`), domain violations (`AmountOutOfDomain`, `BoundOutOfDomain`, `UndeclaredCanonicalAsset`), Clear certificate-shape violations (`MissingClearStateEdge`, `MissingClearDestruction`), `SponsorProtocolRegionOverlap`, and `InvalidObservation` wrapping a `realization::RealizationError`.
 
 ## What this package deliberately does not do
 
