@@ -1,5 +1,7 @@
 # Tracing design for `tripod-vectors`
 
+vectors::keyed_fixed_constructor records construct/reconstruct spans and construction outcome/refusal; vectors::keyed_fixed_stack_model records evaluate with script byte count, outcome and model_only=true; vectors::keyed_fixed_manifest records validate and outcome. These are offline construction, bounded model and source validation events, not native observations, timing benchmarks or a new printed history exception.
+
 ## Purpose and shape · `sec:tracing-vectors:purpose`
 
 `vectors` is a library of canonical compact ASH, live transfer, and maturity announcement evidence. It builds semantic fixtures and linked bundles, derives relation-indexed plans, materializes target transaction subjects, compares accepted controls with one-coordinate mutants, admits archived run-of-record observations, and validates and renders typed safety, continuity, recovery, history, minimality, and resource reports. It does not own target execution; its only executable is the public observation helper built from the harness-free test source.

@@ -3,6 +3,8 @@
 # audit fails the build. The parent meson.build accumulates this list
 # into its role group.
 linker_source_files = files(
+  'src/keyed_fixed_bundle.rs',
+  'src/keyed_fixed_reference.rs',
   'src/backend.rs',
   'src/bundle.rs',
   'src/carrier.rs',
@@ -65,4 +67,4 @@ linker_doc_files = files('README.md', 'TRACING.md')
 # Same-typed files deliberately outside the crate-source census
 # (ADR-014). External public-consumer tests are compiled by Cargo but
 # are not crate-source subjects of the label scanner.
-linker_excluded_files = files('tests/keyed_bundle.rs')
+linker_excluded_files = files('tests/keyed_fixed_bundle.rs') + files('tests/keyed_bundle.rs')

@@ -16,6 +16,9 @@ pub enum ProgramFact {
     Other { sha256: [u8; 32] },
 }
 impl ProgramFact {
+    /// Introspection rows, with payload before encoded witness version.
+    /// # Errors
+    /// Refuses an unavailable program or a witness version/payload outside its domain.
     pub fn rows(&self) -> Result<[Vec<u8>; 2], Refusal> {
         match self {
             Self::Unavailable => Err(Refusal::Fact("missing_program")),

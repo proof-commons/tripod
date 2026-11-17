@@ -1,5 +1,7 @@
 # `tripod-linker`
 
+S5's `keyed_fixed_bundle` and `keyed_fixed_reference` owners consume sealed fixed-form emission and independent recipe/target offers. `LinkedKeyedFixedBundle` retains the emission and exact 104 bytes; it never re-plans or substitutes introspection with literals. The complete census is seven literals at instructions 0, 2, 4, 8, 25, 30, 35 and eleven reads/selectors at 5, 9, 13, 14, 17, 18, 22, 23, 28, 29, 31; every other instruction is checked too. Born-first owns 22–27, own-qualification 13–21 with the shared constant 2–3 and authenticated current commitment, successor qualification 4–12 and 28–34 with that same constant. Key commitment is 0–1; sole final truth is 35. There are two constructor assertions, no relocations, one leaf and no sibling path. `tests/keyed_fixed_bundle.rs` pins the literal occurrence census and changed key/asset/value, target, missing/duplicate and introspection-offer refusals. S6 consumes the sealed linked type; all legacy bundle/reference pins are preserved.
+
 ## Wave-1 independence evidence
 
 The keyed consumer links a completed grammar with zero mandatory byte relocations. Emission has already instantiated the sole public-key operand; linking neither substitutes it again nor solves a self-hash fixed point. Existing link discipline and attestation routes remain, while SOURCE/MERGE/joint scopes, offer permutations and two-key controls establish the added route's closure (`[PLAN-rec:w1b14:link]`), (`[PLAN-rec:w1b16:freeze]`).

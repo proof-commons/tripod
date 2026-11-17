@@ -1,5 +1,7 @@
 # Tapscript tracing engineering design
 
+The fixed-form boundaries use targets tapscript::keyed_fixed_constructor (construct), tapscript::keyed_fixed_bundle (emit_keyed_fixed_bundle), tapscript::keyed_fixed_members (bind_keyed_fixed_members) and tapscript::keyed_fixed_resources (resources, transaction_weight). Construction, bundle and member completions record outcome; bundle events retain relation/runtime/evidence counts. Resource events record derived script bytes and peak stack, and weight records member count and outcome. These events report construction or model derivation, never execution evidence.
+
 ## Purpose and shape · `sec:tracing-tapscript:purpose`
 
 `tapscript` is a library adapter from compiler-owned target requirements to the reviewed Elements Tapscript contract. It assesses capabilities and evidence, builds typed programs and candidate compact, live, and STATE constructions, validates abstract execution, and returns typed refusals and outstanding obligations. It has no binary, command runner, or process stream owner.

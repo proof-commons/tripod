@@ -3,6 +3,12 @@
 # audit fails the build. The parent meson.build accumulates this list
 # into its role group.
 vectors_source_files = files(
+  'src/keyed_fixed_constructor.rs',
+  'src/keyed_fixed_manifest.rs',
+  'src/keyed_fixed_stack_model.rs',
+  'src/keyed_fixed_manifest/encoding.rs',
+  'src/keyed_fixed_manifest/pins.rs',
+  'src/keyed_fixed_manifest/encoding/tests.rs',
   'src/abi_validation.rs',
   'src/bin/maturity-observer-cli.rs',
   'src/bundle.rs',
@@ -424,7 +430,7 @@ vectors_fixture_files = files(
 # (ADR-014): integration-test sources are cargo test inputs, not label
 # subjects. The census audit accepts the exclusion only because it is
 # declared here.
-vectors_excluded_files = vectors_fixture_files + files(
+vectors_excluded_files = files('tests/keyed_fixed_template.rs', 'tests/keyed_fixed_freeze_history.rs') + vectors_fixture_files + files(
   'tools/extract-keyed-final.py',
   'tests/common/legacy.rs',
   'tests/common/mod.rs',

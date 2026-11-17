@@ -333,4 +333,6 @@ The public construction packet and exact two-offer/four-literal/five-reference, 
 
 ## Fixed-form keyed track · `sec:linker:fixed-form`
 
+S5 implements LinkedKeyedFixedBundle and the separate offer/reference owner. Its seven literals and eleven authenticated reads/selectors account for every one of the 36 instructions. The occurrence-to-clause map and independent controls are in packages/linker/README.md and tests/keyed_fixed_bundle.rs; immutable linked bytes remain S6's input. Legacy grammar and reference pins are unchanged. Commitment and predecessor checks are independently exercised in packages/vectors/tests/keyed_fixed_template.rs; no native result is asserted.
+
 Under (`rule:phase7:fixed-form-rulings`), the joined gate remains (`rec:backlog:fixed-form-closure`). S5 links the fixed-form recipe through new keyed_fixed_bundle and keyed_fixed_reference owners before S6 construction. The current sixteen-instruction legacy grammar is preserved; it cannot validate the new thirty-six-instruction streaming leaf. Own a complete occurrence/reference census for the new digest/key/birth/continuation schedule, with wrong-coordinate and wrong-control-recipe refusals, and independent commitment checks. Registration and test paths are (`tab:backlog:fixed-form-paths`); new pins/corpus are separate under (`rule:vectors:keyed-refreeze`).

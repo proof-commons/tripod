@@ -1,5 +1,7 @@
 # Linker tracing design
 
+linker::keyed_fixed_bundle owns link_keyed_fixed_bundle. The span records offered field count; completion records outcome, constructor/literal/reference counts, zero relocations, one leaf and unresolved evidence count. Refusals use the closed payload-free classification. No transcript or deployment payload is logged.
+
 ## Purpose and shape · `sec:tracing-linker:purpose`
 
 `tripod-linker` is a library that turns typed, relocatable backend bundles into deterministic candidate links; it does not finalize a transaction or discharge the candidate's outstanding obligations. Its existing attestation entry points are `link_candidate` in `src/bundle.rs` for compact ASH, `link_live_candidate` in `src/live_bundle.rs` for live transfer, and `link_state_candidate` in `src/state_bundle.rs` for maturity announcements.

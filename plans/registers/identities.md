@@ -7,7 +7,7 @@ immediate policy owner is the identity adjudication procedure in
 is a planning aid, not a substitute for typed identity definitions, and is
 never toolchain input.
 
-Admission of any new digest is governed by (`[ADR021-req:identity:admission-record]`). The entries below record walks through the adopted procedure in DI-004, the keyed capture freeze admission, and the fixed-form pre-admission walk of 2026-11-16. Existing digest proposals were read from their owning code and assessed at the applicable nodes; the prospective fixed-form proposal ended at validation before reaching the benefit criterion. Outcomes distinguish admission, decided no-identity stops and pre-admission work whose warrants remain owed. The classification is per identity class — one recipe, one role, one consumer-decision pattern — and never per value.
+Admission of any new digest is governed by (`[ADR021-req:identity:admission-record]`). The entries below record walks through the adopted procedure in DI-004, the keyed capture freeze admission, and the fixed-form admission completed at S5. Existing digest proposals were read from their owning code and assessed at the applicable nodes; S5 supplies the typed validation and encoding warrants left open by the prospective fixed-form walk. Outcomes distinguish admission, decided no-identity stops and pre-admission work whose warrants remain owed. The classification is per identity class — one recipe, one role, one consumer-decision pattern — and never per value.
 
 ## 1. Census · `tab:identities:census`
 
@@ -22,7 +22,7 @@ Adjudicated digest and identity classes, one row each; known gaps follow the tab
 | Architecture semantic hash | semantic | admitted, 2.5 |
 | Architecture behavioural hash | semantic | admitted, 2.6 |
 | Keyed capture freeze | provenance | admitted, (`rec:identities:keyed-capture-freeze`) |
-| Fixed-form keyed capture freeze | — | pre-admission, (`rec:identities:keyed-fixed-capture-stop`) |
+| Fixed-form keyed capture freeze | provenance | admitted, dormant until S8, (`rec:identities:keyed-fixed-capture-stop`) |
 | Generated-file exact comparison | — | stopped, 3.1 |
 | Field-level digests | — | stopped, 3.2 |
 | Deployment-profile hash | — | pre-admission, 3.3 |
@@ -35,7 +35,7 @@ Adjudicated digest and identity classes, one row each; known gaps follow the tab
 | Executor wire-frame identity | — | stopped, 3.10 |
 | CI lane outputs | — | stopped, 3.11 |
 
-Seven admitted classes, nine no-identity stops and three pre-admission records. Known gaps remain for the schema-2 keyed declaration binding, confidential fixture transcript digest, operator-right candidate digest, capture-manifest and archive/census/retention/provenance digests, run content addresses, first-party subject/program byte bindings and derived test-material values; their producers and owed walks are recorded at (`tab:backlog:wave1-followups`). These computations have no matching admission or stop here; this search is not a completeness proof, and the pending walks decide which require identities or belong under existing stops.
+Eight admitted classes, nine no-identity stops and two pre-admission records. Known gaps remain for the schema-2 keyed declaration binding, confidential fixture transcript digest, operator-right candidate digest, capture-manifest and archive/census/retention/provenance digests, run content addresses, first-party subject/program byte bindings and derived test-material values; their producers and owed walks are recorded at (`tab:backlog:wave1-followups`). These computations have no matching admission or stop here; this search is not a completeness proof, and the pending walks decide which require identities or belong under existing stops.
 
 ### 1.1 Status vocabulary · `tab:identities:status`
 
@@ -52,7 +52,7 @@ evidence of anything.
 
 ## 2. Admission records · `sec:identities:current`
 
-Seven identity classes are admitted. Each records its subject, owner, producer,
+Eight identity classes are admitted. Each records its subject, owner, producer,
 consumer, decision, assurance class, stale condition, recipe by identifier,
 migration rule, non-claims, and status — the admission fields the adopted
 procedure requires, in the order
@@ -456,24 +456,53 @@ A stop is an outcome, not an omission. This section also houses pre-admission re
 
 ### 3.12 Fixed-form keyed capture freeze · `rec:identities:keyed-fixed-capture-stop`
 
-- **Proposal:** a distinct vectors-owned provenance identity for the complete fixed-form selected-source freeze and structural envelope, bound to the supplied triple and predicted program, for capture-process and retained-corpus equality decisions.
-- **Branch:** the walk of 2026-11-16 under (`[ADR021-alg:identity:adjudication]`) ended at **typed and validated? — validate before admission**. This is pre-admission, not either of the ADR's two no-identity stopping branches. The adopted S5 inventory and S8 capture consumers at (`tab:backlog:fixed-form-paths`) do not yet exist as a typed validated fixed-form object. Neither the legacy FreezeManifest, which binds a key-only leaf, nor the S3 semantic manifest, which excludes deployment values, is that object. Ruling 210 preserves the legacy admission; it does not warrant this one.
+S5 completes the 2026-11-16 pre-admission walk under (`[ADR021-alg:identity:adjudication]`); the retained label preserves its citation identity. This is a separate provenance class, dormant pending S8's deadline-bound consumer migration.
 
-- **Prospective decision:** accept the expected current or retained fixed-form freeze and refuse absent, unequal or cross-edition bindings after process/archive transfer. Review at production cannot bind later arrivals, and an archive digest cannot establish equality to expected source inputs, so this has a distinct prospective benefit. The benefit has no present consumer. Ruling 211 assigns S5 the admission record and S8's deadline-bound consumer migration; that record must supply the exact consumer decision and transition required by (`[ADR021-req:identity:admission-record]`), not infer them from step order alone. No new recipe identifier, grammar or digest value is allocated here; `keyed-capture-freeze-v1` cannot be reused for the new role/projection.
+- **Subject, owner and producer:** vectors owns FreezeManifest, the opaque ValidatedFreeze and its identity method in packages/vectors/src/keyed_fixed_manifest.rs. Validation checks included whole-file source bytes against 46 literal pins, both ordered inventories, the independently supplied triple, the fully reconstructed descriptor, schema, target and every envelope field. Only ValidatedFreeze publishes the aggregate identity.
+- **Decision and benefit:** S8's fixed-form capture/native consumers must accept only an expected current per-triple freeze, refusing absent, unequal and cross-edition values. Its retained-corpus consumer must require the capture-time freeze. The exact owners are packages/vectors/src/keyed_fixed_capture.rs, keyed_fixed_native.rs and keyed_fixed_corpus.rs, allocated at (`tab:backlog:fixed-form-paths`). Review cannot bind later process/archive arrivals; an archive hash binds a claim without comparing it to the expected inputs. Neither no-identity branch supplies that comparison.
+- **Recipe and class:** `tripod-keyed-fixed-capture-freeze-v1`, provenance, locator-grade. SHA-256 covers exactly the ordered binary grammar below, owned by packages/vectors/src/keyed_fixed_manifest/encoding.rs. No diagnostic formatter participates. A frame means u32-BE byte length followed by exactly those bytes; there is no padding or separator. Boolean bytes are 00/01. Source paths are ASCII [A-Za-z0-9/._-] only, with no normalization or escaping. Counts and lengths outside u32 refuse.
 
-| Provenance property | Warrant and missing evidence |
+| Order | Encoded fields, in order |
 |---|---|
-| Deterministic | OPEN: no fixed-form canonical encoder exists. The legacy owned encoding warrants only its existing types and alphabet; derived diagnostic formatting cannot define the new recipe. |
-| Complete over named input set | OPEN: S5 must freeze the separate source/computed inventory, triple/program, target and envelope fields, with whole-manifest or otherwise explicitly justified dependency treatment and exhaustive field coverage. A 35-path legacy inventory cannot silently stand for sibling sources. |
-| Free of incidentals | Recipe-defined for provenance, not semantic invariance. OPEN: the new recipe must state whether paths, full source bytes, order and formatting are content, and exclude runtime accidents it does not identify; no implicit inheritance from the legacy projection. |
-| Domain-separated | Required; ruling 209 separates the semantic manifest, not the capture-freeze domain. OPEN: a distinct capture role/domain must be fixed and bound by its encoder and consumer. |
-| Recipe-identified | Required; OPEN until projection, canonical framing, primitive and domain are owned together. Choosing a name alone supplies no recomputation contract. |
-| Collision/second-preimage resistance | SHA-256 is the established conditional primitive in the legacy owner; no new construction is admitted. The new encoding must also be unambiguous, with the threat model and pin/aggregate layers stated; a strong primitive cannot repair omitted fields or ambiguous framing. |
-| Recomputable | OPEN: consumers need the complete new grammar and current/historical inputs, literal independent controls and a consumer transition. No fixed-form archive or reconstruction mapping exists to verify. |
+| 1 | ASCII `tripod-keyed-fixed-capture-freeze-v1`, then one 00 byte |
+| 2 | Source count u32-BE; for each source in stored order: framed path, raw SHA-256 digest32. Validation requires the exact current 46-entry inventory in path order. |
+| 3 | Computed count u32-BE; each explicit code below as u16-BE in stored order. Validation requires codes 1 through 11 in that order. |
+| 4 | K32, A32, v as u64-BE (distinct from transcript LE64), unframed transcript42, pair digest32 |
+| 5 | Framed leaf, leaf version u8, internal x32, root32, tweak32, output x32, parity u8 (00 even, 01 odd), framed output program, framed control block |
+| 6 | Recipe schema u32-BE, target version u32-BE; current values 1 and 2 |
+| 7 | Maximum-members option: None is one 00 byte with no following value; Some is 01 followed by u64-BE |
+| 8 | Five u64-BE counts: script bytes, script-witness bytes, input-witness bytes, control depth, argument items |
+| 9 | Four boolean bytes: annex, issuance, peg-in, empty nonce |
 
-- **Revisit:** at S5 with the typed validated fixed-form subject, complete inventory/envelope, owned canonical encoding, independent field/framing/cross-edition and history controls, and S8's recorded deadline-bound consumer migration. Ruling 211 at (`rule:phase7:fixed-form-rulings`) assigns these to the existing vectors freeze owner and requires S8 consumer activation before any fixed-form capture. S3 and S4 neither read nor re-pin a fixed-form freeze; S3's frozen semantic.rs edit belongs to the admitted legacy class. No fixed-form identity prerequisite holds those steps, and their other integration dependencies remain unchanged.
-- **Staleness and migration:** proposed stale conditions are changes to any included source bytes, inventory, computed binding, triple/program, target, envelope or recipe input; exact conditions remain part of admission. Retained captures keep their capture-time recipe and mapping, with new source/pin/history and affected-evidence dispositions under (`rule:vectors:keyed-refreeze`). Projection, framing, domain or primitive changes require a distinct recipe and explicit transition. None of this changes the active legacy admission or its re-pin obligations.
-- **Non-claims:** no source correctness, native acceptance, semantic identity, authenticity, deployment readiness or equivalence follows from the prospective proposal or its pre-admission record.
+| Computed code | Name | Value coverage |
+|---|---|---|
+| 1 | Triple | K, A, v in descriptor |
+| 2 | Transcript | Descriptor transcript |
+| 3 | PairDigest | Descriptor pair digest |
+| 4 | Leaf | Descriptor leaf |
+| 5 | Root | Descriptor root |
+| 6 | Tweak | Descriptor tweak |
+| 7 | Program | Descriptor output program |
+| 8 | Control | Descriptor control block |
+| 9 | EmissionAndClosure | Name only; emission and linker occurrence census are recomputed, not encoded values |
+| 10 | MemberCoverage | Name only; member coverage is recomputed, not an encoded value |
+| 11 | DerivedResources | Name only; the listed envelope counts are encoded separately, but peak and element width are recomputed, not encoded values |
+
+The code list is a census, not eleven framed value records. Codes 1–8 carry their values through the descriptor; codes 9–11 do not freeze their full results. S8 decides whether its capture binding includes those recomputed results. The selected-source inventory also excludes conformance constructor re-exports and generic program/push encoders; the descriptor binds their resulting values, not an asserted transitive source closure.
+
+| Provenance property | Warrant |
+|---|---|
+| Deterministic | Fixed field order, widths, byte order and explicit enum codes; exhaustive struct destructuring and enum matching. |
+| Complete over named inputs | Explicit 46-source inventory through S5, including shared recipe dependencies and whole workspace/eight package manifests. The resolved lock and transitive source closure are not claimed. Pin-table contents are the encoded inventory, avoiding a self-hash cycle. Triple, transcript/hash, leaf/version, internal key, root/tweak, output key/parity/program/control and every structural envelope field are included. No S6–S8 source is claimed frozen. |
+| Free of incidentals | Relative paths, whole-file formatting and stored source/computed order are recipe content. Clock, machine, absolute checkout path, build mode and process state are excluded. |
+| Domain-separated | Distinct zero-terminated recipe identifier, separate from legacy capture and schema-3 semantic identity. The history test compares both editions. |
+| Recipe-identified | Identifier, projection, primitive and complete grammar are owned together. |
+| Collision/second-preimage resistance | Conditional SHA-256 assumptions at source-pin and aggregate layers. Fixed widths and length framing are unambiguous. Strings outside [A-Za-z0-9/._-] refuse with Alphabet; no escaping or normalization. |
+| Recomputable | Included source bytes and literal pins, independent grammar assembly in packages/vectors/tests/keyed_fixed_freeze_history.rs, field/framing/alphabet controls in the encoder child tests. The initial S5 snapshot and a synthetic stale-source subject are tested; there is no previous landed fixed-form freeze or retained capture. |
+
+- **Migration and deadline:** activate the named three consumers, including missing/unequal/cross-edition controls, before the first fixed-form capture at S8. In the same reviewed pre-capture landing add S6 construction/commitment and later capture-used sources, computed values and admitted maximum, with pins/history and affected-evidence dispositions under (`rule:vectors:keyed-refreeze`). The present None maximum means unadmitted, never unlimited. Retained rows keep capture-time inputs and recipe; current pins never replace them.
+- **Staleness:** any source bytes, inventory/order, triple, descriptor, schema, target or envelope change stales the current value. Source changes require paired pins/history. Projection, framing, alphabet, domain or primitive changes require a distinct recipe and explicit consumer transition. Legacy frozen sources, pins, history and captures are unchanged. The shared model helper outside that legacy inventory has only the three documented error-contract lines added; the first fixed-form freeze includes that documented source without a historical re-pin.
+- **Non-claims:** no authenticity, source correctness, executable/toolchain/lock identity, native acceptance, target amount or policy admission, deployment readiness or mathematical injectivity. Cryptographic premises remain conditional at (`[DOC-sec:keyed-fixed:assumptions]`). S5 gates and independent review remain required before import.
 
 ## 4. Inventory decisions · `rem:identities:decisions`
 
