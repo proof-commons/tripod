@@ -69,8 +69,9 @@ pub use audit::{
 };
 pub use conformance::{
     ConformanceProjectionError, ModelBurnConformanceObservation, ModelClearConformanceObservation,
-    ModelConformanceObservation, observe_announce_maturity, observe_burn, observe_clear,
-    observe_compact_ash, observe_live_transfer, unresolved_model_evidence,
+    ModelCompactConformanceObservation, ModelConformanceObservation, observe_announce_maturity,
+    observe_burn, observe_clear, observe_compact_ash, observe_compact_ash_with_burn_clear,
+    observe_live_transfer, unresolved_model_evidence,
 };
 pub use constants::Constants;
 pub use fee::{FeeChange, FeeEnvelope, validate_fee_envelope};

@@ -50,6 +50,7 @@ model_source_files = files(
   'src/tests/authorization_tests.rs',
   'src/tests/bound_conformance_tests.rs',
   'src/tests/burn_attestation_tests.rs',
+  'src/tests/burn_clear_composition_tests.rs',
   'src/tests/burn_realization_conformance_tests.rs',
   'src/tests/canonical_closure_tests.rs',
   'src/tests/canonical_flow_fault_tests.rs',

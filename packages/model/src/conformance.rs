@@ -124,6 +124,20 @@ pub struct ModelClearConformanceObservation {
     pub state_succession: realization::StateSuccessionProjection,
 }
 
+/// Public comparison offers for one independently executed compact.
+/// Only `common` carries model-side evidence provenance.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModelCompactConformanceObservation {
+    /// Bound common observation and model-only established evidence.
+    pub common: ModelConformanceObservation,
+    /// Compact's empty operation-specific payload.
+    pub extension: realization::BurnClearObservation,
+    /// Independently observed input and output ASH sums and certificate flags.
+    pub accounting: realization::AccountingProjection,
+    /// Absence of Burn and Clear side effects in this context.
+    pub silence: realization::CompactSilenceProjection,
+}
+
 /// Project an accepted Clear certificate and its before and after worlds.
 ///
 /// # Errors
@@ -570,6 +584,85 @@ pub fn observe_compact_ash(
     let result = observe_compact_ash_core(execution);
     record_projection(&result, "compact_ash");
     result
+}
+
+/// Project an executed compact into the common and comparison carriers.
+///
+/// # Errors
+///
+/// Returns [`ConformanceProjectionError`] when certificate objects or amounts
+/// cannot be represented in realization's domain.
+pub fn observe_compact_ash_with_burn_clear(
+    execution: &ExecutedTransition<CompactAsh>,
+) -> Result<ModelCompactConformanceObservation, ConformanceProjectionError> {
+    let span = tracing::debug_span!(
+        target: "model::conformance",
+        "observe_compact_ash_with_burn_clear",
+        branch = "compact_ash",
+    );
+    let _entered = span.enter();
+    let result = observe_compact_ash_with_burn_clear_core(execution);
+    record_projection(&result, "compact_ash");
+    result
+}
+
+fn observe_compact_ash_with_burn_clear_core(
+    execution: &ExecutedTransition<CompactAsh>,
+) -> Result<ModelCompactConformanceObservation, ConformanceProjectionError> {
+    let common = observe_compact_ash_core(execution)?;
+    let certificate = appended_certificate(execution.before(), execution.after())?;
+    let ash_sum = |world: &World,
+                   objects: &BTreeSet<OutPoint>,
+                   missing: fn(u64) -> ConformanceProjectionError| {
+        objects.iter().try_fold(Sat::ZERO, |sum, outpoint| {
+            let utxo = world
+                .utxos
+                .get(outpoint)
+                .ok_or_else(|| missing(*outpoint))?;
+            if utxo.meta == Meta::Ash {
+                sum.checked_add(utxo.value)
+                    .map_err(|_| ConformanceProjectionError::AmountOutOfDomain)
+            } else {
+                Ok(sum)
+            }
+        })
+    };
+    let input = observed_amount(ash_sum(
+        execution.before(),
+        &certificate.consumed,
+        ConformanceProjectionError::MissingConsumedObject,
+    )?)?;
+    let output = observed_amount(ash_sum(
+        execution.after(),
+        &certificate.created,
+        ConformanceProjectionError::MissingCreatedObject,
+    )?)?;
+    let token = certificate.txid.0;
+    let context =
+        realization::BurnClearContext::bind_observation(common.observation().clone(), token, token)
+            .map_err(ConformanceProjectionError::InvalidObservation)?;
+    Ok(ModelCompactConformanceObservation {
+        common,
+        extension: realization::BurnClearObservation {
+            context: context.clone(),
+            payload: realization::BurnClearPayload::Compact,
+        },
+        accounting: realization::AccountingProjection {
+            context: context.clone(),
+            values: realization::AccountingValues::Compact { input, output },
+            event: certificate
+                .burn
+                .as_ref()
+                .map(|_| architecture::ProjectionId::BurnEvent)
+                .or_else(|| {
+                    certificate
+                        .clear
+                        .map(|_| architecture::ProjectionId::ClearEvent)
+                }),
+            distribution_residue: certificate.distribution_residue.is_some(),
+        },
+        silence: realization::CompactSilenceProjection { context },
+    })
 }
 
 fn observe_compact_ash_core(

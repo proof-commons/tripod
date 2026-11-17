@@ -1051,6 +1051,193 @@ fn announcement_declassification_matches_model_owned_artifact_row() {
 }
 
 #[test]
+fn joint_public_dependencies_match_literal_obligations() {
+    use architecture::{BoundId, ObjectId, OperationId};
+    use realization::{
+        DisclosureReason as Reason, FactId, RelationId, RelationKind, RelationSubject, StateField,
+        TransactionSide as Side,
+    };
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let compact = OperationId::CompactAsh;
+    let clear = OperationId::Clear;
+    let burn = OperationId::Burn;
+    let compact_reason = Reason::PermissionlessConstructibility {
+        operation: compact,
+        relation: RelationId::new(
+            compact,
+            RelationKind::Constructibility,
+            RelationSubject::Operation,
+        ),
+    };
+    let clear_reason = Reason::PermissionlessConstructibility {
+        operation: clear,
+        relation: RelationId::new(
+            clear,
+            RelationKind::Constructibility,
+            RelationSubject::Operation,
+        ),
+    };
+    let mut expected = BTreeMap::<OperationId, BTreeMap<FactId, BTreeSet<Reason>>>::new();
+    let compact_rows = BTreeMap::from([
+        (
+            FactId::FamilyAmount {
+                operation: compact,
+                side: Side::Input,
+                object: ObjectId::Ash,
+            },
+            BTreeSet::from([compact_reason.clone()]),
+        ),
+        (
+            FactId::FamilyAmount {
+                operation: compact,
+                side: Side::Output,
+                object: ObjectId::Ash,
+            },
+            BTreeSet::from([Reason::PublicInterface]),
+        ),
+        (
+            FactId::FamilyCount {
+                operation: compact,
+                side: Side::Input,
+                object: ObjectId::Ash,
+            },
+            BTreeSet::from([compact_reason.clone()]),
+        ),
+        (
+            FactId::BoundValue {
+                bound: BoundId::AshBatchMax,
+            },
+            BTreeSet::from([compact_reason]),
+        ),
+    ]);
+    expected.insert(compact, compact_rows);
+    expected.insert(
+        burn,
+        BTreeMap::from([(
+            FactId::FamilyAmount {
+                operation: burn,
+                side: Side::Output,
+                object: ObjectId::Ash,
+            },
+            BTreeSet::from([Reason::PublicInterface, Reason::PublicEvent]),
+        )]),
+    );
+    let mut clear_rows = BTreeMap::new();
+    for (side, object) in [
+        (Side::Input, ObjectId::State),
+        (Side::Output, ObjectId::State),
+        (Side::Input, ObjectId::Ash),
+        (Side::Output, ObjectId::Ash),
+    ] {
+        clear_rows.insert(
+            FactId::FamilyCount {
+                operation: clear,
+                side,
+                object,
+            },
+            BTreeSet::from([clear_reason.clone()]),
+        );
+    }
+    clear_rows.insert(
+        FactId::FamilyAmount {
+            operation: clear,
+            side: Side::Input,
+            object: ObjectId::Ash,
+        },
+        BTreeSet::from([clear_reason.clone(), Reason::PublicInterface]),
+    );
+    for bound in [BoundId::AshBatchMax, BoundId::FeeSponsorInputMax] {
+        clear_rows.insert(
+            FactId::BoundValue { bound },
+            BTreeSet::from([clear_reason.clone()]),
+        );
+    }
+    for field in StateField::ALL {
+        clear_rows.insert(
+            FactId::StateField {
+                operation: clear,
+                side: Side::Input,
+                field: *field,
+            },
+            BTreeSet::from([clear_reason.clone(), Reason::PublicState]),
+        );
+        let mut reasons = BTreeSet::from([Reason::PublicState]);
+        if matches!(field, StateField::Omega | StateField::YL | StateField::YT) {
+            reasons.insert(Reason::PublicEvent);
+        }
+        clear_rows.insert(
+            FactId::StateField {
+                operation: clear,
+                side: Side::Output,
+                field: *field,
+            },
+            reasons,
+        );
+    }
+    expected.insert(clear, clear_rows);
+    expected.insert(OperationId::TransferLive, BTreeMap::new());
+
+    let mut union = BTreeMap::<FactId, BTreeSet<Reason>>::new();
+    for (operation, rows) in &expected {
+        let singleton = realization::derive(
+            &architecture::ARCHITECTURE,
+            realization::RealizationScope::from_operations([*operation]).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(&singleton.declassification().required_public, rows);
+        assert!(singleton.declassification().newly_disclosed.is_empty());
+        for (fact, reasons) in rows {
+            union
+                .entry(fact.clone())
+                .or_default()
+                .extend(reasons.clone());
+        }
+    }
+    let combined = realization::derive(
+        &architecture::ARCHITECTURE,
+        realization::RealizationScope::from_operations([
+            burn,
+            compact,
+            clear,
+            OperationId::TransferLive,
+        ])
+        .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(combined.declassification().required_public, union);
+    assert!(combined.declassification().newly_disclosed.is_empty());
+    assert_eq!(
+        combined.declassification().required_public[&FactId::BoundValue {
+            bound: BoundId::AshBatchMax
+        }],
+        BTreeSet::from([
+            Reason::PermissionlessConstructibility {
+                operation: compact,
+                relation: RelationId::new(
+                    compact,
+                    RelationKind::Constructibility,
+                    RelationSubject::Operation
+                )
+            },
+            clear_reason,
+        ])
+    );
+    for (operation, rows) in &expected {
+        let declaration = combined.operation(*operation).unwrap();
+        let own = declaration
+            .disclosure_nodes
+            .iter()
+            .filter_map(|node| match node {
+                realization::DisclosureNode::Fact { id, .. } => Some(id.clone()),
+                realization::DisclosureNode::Relation { .. } => None,
+            })
+            .collect::<BTreeSet<_>>();
+        assert!(rows.keys().all(|key| own.contains(key)));
+    }
+}
+
+#[test]
 fn sponsored_announcement_observes_an_isolated_sponsor_region() {
     let (world, input) = fund_lbtc(&test_fixtures::world(), SPONSOR, sat(10));
     let request = announcement_request(&world, fee_envelope_exact(input, SPONSOR, sat(10), sat(4)));
