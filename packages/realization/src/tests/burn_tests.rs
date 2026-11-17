@@ -1462,25 +1462,52 @@ fn every_object_coordinate_is_welded_for_ash_and_live_receipts() {
 }
 
 #[test]
-fn limitation_pin_for_overlapping_pilot_lifecycle_nodes() {
-    // Awaiting the assembler union owner: replace this limitation pin with
-    // accepted mixed-scope controls when that owner changes the assembly rule.
+fn overlapping_burn_pilots_have_literal_unions() {
     realized();
-    for (pilot, object) in [
-        (OperationId::CompactAsh, ObjectId::Ash),
-        (OperationId::TransferLive, ObjectId::ReceiptLive),
+    for (pilot, objects) in [
+        (
+            OperationId::CompactAsh,
+            &[ObjectId::Ash, ObjectId::ReceiptLive][..],
+        ),
+        (
+            OperationId::TransferLive,
+            &[ObjectId::Ash, ObjectId::ReceiptLive][..],
+        ),
     ] {
-        assert_eq!(
-            derive(
-                &ARCHITECTURE,
-                RealizationScope::from_operations([OperationId::Burn, pilot]).unwrap()
-            )
-            .unwrap_err(),
-            RealizationError::DuplicateLifecycleNode(LifecycleNodeId::Representation {
-                object,
-                mode: RepresentationMode::Explicit,
-            })
-        );
+        let scope = RealizationScope::from_operations([OperationId::Burn, pilot]).unwrap();
+        let mixed = derive(&ARCHITECTURE, scope).unwrap();
+        mixed.validate_against(&ARCHITECTURE).unwrap();
+        super::derivation_tests::assert_literal_lifecycle(&mixed, objects);
+        super::derivation_tests::assert_pair_disclosure_union(&mixed, [OperationId::Burn, pilot]);
+        assert_eq!(mixed.operations.len(), 2);
+        assert!(mixed.lifecycle_graph.edge_indices().any(|edge| {
+            let (source, target) = mixed.lifecycle_graph.edge_endpoints(edge).unwrap();
+            mixed.lifecycle_graph[source].id
+                == LifecycleNodeId::Representation {
+                    object: ObjectId::ReceiptLive,
+                    mode: RepresentationMode::PrivateCommitted,
+                }
+                && mixed.lifecycle_graph[target].id
+                    == LifecycleNodeId::RequiredExit {
+                        object: ObjectId::ReceiptLive,
+                        operation: OperationId::Burn,
+                    }
+        }));
+        let mut expected_private = BTreeSet::from([FactId::FamilyAmount {
+            operation: OperationId::Burn,
+            side: TransactionSide::Output,
+            object: ObjectId::ReceiptLive,
+        }]);
+        if pilot == OperationId::TransferLive {
+            for side in [TransactionSide::Input, TransactionSide::Output] {
+                expected_private.insert(FactId::FamilyAmount {
+                    operation: OperationId::TransferLive,
+                    side,
+                    object: ObjectId::ReceiptLive,
+                });
+            }
+        }
+        assert_eq!(mixed.declassification.retained_private, expected_private);
     }
 }
 

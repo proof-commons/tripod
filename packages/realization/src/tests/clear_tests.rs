@@ -1723,28 +1723,83 @@ fn complete_clear_clamp_failure_blocks_dependents() {
 }
 
 #[test]
-fn limitation_pin_for_clear_overlapping_lifecycle_nodes() {
+#[allow(clippy::too_many_lines)] // Four pairwise literal reason and private-set controls belong together.
+fn overlapping_clear_scopes_have_literal_unions() {
     realized();
-    derive(
-        &ARCHITECTURE,
-        RealizationScope::from_operations([OperationId::Clear, OperationId::TransferLive]).unwrap(),
-    )
-    .unwrap();
-    for (other, object) in [
-        (OperationId::CompactAsh, ObjectId::Ash),
-        (OperationId::Burn, ObjectId::Ash),
-        (OperationId::AnnounceMaturity, ObjectId::State),
+    let clear_reason = DisclosureReason::PermissionlessConstructibility {
+        operation: OperationId::Clear,
+        relation: op(RelationKind::Constructibility),
+    };
+    for (other, objects) in [
+        (
+            OperationId::CompactAsh,
+            &[ObjectId::Ash, ObjectId::State][..],
+        ),
+        (
+            OperationId::Burn,
+            &[ObjectId::Ash, ObjectId::State, ObjectId::ReceiptLive][..],
+        ),
+        (
+            OperationId::AnnounceMaturity,
+            &[ObjectId::Ash, ObjectId::State][..],
+        ),
+        (
+            OperationId::TransferLive,
+            &[ObjectId::Ash, ObjectId::State, ObjectId::ReceiptLive][..],
+        ),
     ] {
-        assert_eq!(
-            derive(
-                &ARCHITECTURE,
-                RealizationScope::from_operations([OperationId::Clear, other]).unwrap()
-            )
-            .unwrap_err(),
-            RealizationError::DuplicateLifecycleNode(LifecycleNodeId::Representation {
-                object,
-                mode: RepresentationMode::Explicit
-            })
-        );
+        let mixed = derive(
+            &ARCHITECTURE,
+            RealizationScope::from_operations([OperationId::Clear, other]).unwrap(),
+        )
+        .unwrap();
+        mixed.validate_against(&ARCHITECTURE).unwrap();
+        super::derivation_tests::assert_literal_lifecycle(&mixed, objects);
+        super::derivation_tests::assert_pair_disclosure_union(&mixed, [OperationId::Clear, other]);
+        assert_eq!(mixed.operations.len(), 2);
+        if other == OperationId::CompactAsh {
+            let compact_reason = DisclosureReason::PermissionlessConstructibility {
+                operation: OperationId::CompactAsh,
+                relation: RelationId::new(
+                    OperationId::CompactAsh,
+                    RelationKind::Constructibility,
+                    RelationSubject::Operation,
+                ),
+            };
+            assert_eq!(
+                mixed.declassification.required_public[&FactId::BoundValue {
+                    bound: BoundId::AshBatchMax,
+                }],
+                BTreeSet::from([clear_reason.clone(), compact_reason])
+            );
+        }
+        if other == OperationId::Burn {
+            assert_eq!(
+                mixed.declassification.required_public[&FactId::BoundValue {
+                    bound: BoundId::FeeSponsorInputMax,
+                }],
+                BTreeSet::from([clear_reason.clone()])
+            );
+        }
+        let expected_private = if other == OperationId::Burn {
+            BTreeSet::from([FactId::FamilyAmount {
+                operation: OperationId::Burn,
+                side: TransactionSide::Output,
+                object: ObjectId::ReceiptLive,
+            }])
+        } else if other == OperationId::TransferLive {
+            [TransactionSide::Input, TransactionSide::Output]
+                .into_iter()
+                .map(|side| FactId::FamilyAmount {
+                    operation: OperationId::TransferLive,
+                    side,
+                    object: ObjectId::ReceiptLive,
+                })
+                .collect()
+        } else {
+            BTreeSet::new()
+        };
+        assert_eq!(mixed.declassification.retained_private, expected_private);
+        assert!(mixed.declassification.newly_disclosed.is_empty());
     }
 }

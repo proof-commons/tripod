@@ -1,6 +1,6 @@
 //! Deterministic derivation of one explicitly scoped realization.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use architecture::{Architecture, OperationId};
 use petgraph::graph::{DiGraph, NodeIndex};
@@ -9,13 +9,16 @@ use crate::{
     ArchitectureBinding, ConstructibilityAuthorization, ConstructibilityEdge,
     ConstructibilityGraphProjection, ConstructibilityNode, ConstructibilityNodeId,
     DeclassificationAnalysis, DependencyEdge, DisclosureEdge, DisclosureGraphProjection,
-    DisclosureNode, ExprId, ExpressionDeclaration, LifecycleEdge, LifecycleGraphProjection,
-    LifecycleNode, LifecycleNodeId, OperationObservation, OperationRealization,
-    OperationRealizationProjection, RealizationError, RealizationScope, RelationDeclaration,
-    RelationEdge, RelationGraphProjection, RelationId,
+    DisclosureNode, ExprId, ExpressionDeclaration, LifecycleDependencyDeclaration, LifecycleEdge,
+    LifecycleGraphProjection, LifecycleNode, LifecycleNodeId, OperationObservation,
+    OperationRealization, OperationRealizationProjection, RealizationError, RealizationScope,
+    RelationDeclaration, RelationEdge, RelationGraphProjection, RelationId,
     constructibility::{build_constructibility_graph, project_constructibility_graph},
     declarations,
-    declassification::{analyze_disclosure, build_disclosure_graph, project_disclosure_graph},
+    declassification::{
+        analyze_disclosure, build_disclosure_graph, merge_disclosure_nodes,
+        project_disclosure_graph,
+    },
     expression::{ExpressionGraphProjection, build_expression_graph, project_expression_graph},
     lifecycle::{build_lifecycle_graph, project_lifecycle_graph},
     relation::{build_relation_graph, project_relation_graph},
@@ -436,21 +439,26 @@ fn assemble_scoped_realization_with_phase(
     let (constructibility_graph, constructibility_node_by_id, _constructibility_order) =
         build_constructibility_graph(constructibility_nodes, constructibility_edges)?;
 
-    let lifecycle_nodes = operations
-        .values()
-        .flat_map(|operation| operation.lifecycle_nodes.iter().cloned())
-        .collect::<Vec<_>>();
-    let lifecycle_edges = operations
-        .values()
-        .flat_map(|operation| operation.lifecycle_edges.iter().cloned())
-        .collect::<Vec<_>>();
+    let (lifecycle_nodes, lifecycle_edges) = merge_lifecycle_rows(&operations)?;
+    tracing::debug!(
+        target: "realization::derive",
+        lifecycle_nodes = crate::trace_count(lifecycle_nodes.len()),
+        lifecycle_edges = crate::trace_count(lifecycle_edges.len()),
+        "shared lifecycle rows assembled"
+    );
     let (lifecycle_graph, lifecycle_node_by_id, _lifecycle_order) =
         build_lifecycle_graph(lifecycle_nodes, lifecycle_edges)?;
 
-    let disclosure_nodes = operations
-        .values()
-        .flat_map(|operation| operation.disclosure_nodes.iter().cloned())
-        .collect::<Vec<_>>();
+    let disclosure_nodes = merge_disclosure_nodes(
+        operations
+            .values()
+            .map(|operation| operation.disclosure_nodes.as_slice()),
+    )?;
+    tracing::debug!(
+        target: "realization::derive",
+        disclosure_nodes = crate::trace_count(disclosure_nodes.len()),
+        "shared disclosure facts assembled"
+    );
     let disclosure_edges = operations
         .values()
         .flat_map(|operation| operation.disclosure_edges.iter().cloned())
@@ -479,18 +487,7 @@ fn assemble_scoped_realization_with_phase(
     let declassification =
         analyze_disclosure(&disclosure_graph, &disclosure_node_by_id, &disclosure_seeds)?;
 
-    let mut authorizations = BTreeMap::new();
-
-    for operation in operations.keys() {
-        let row = architecture
-            .operation(*operation)
-            .ok_or(RealizationError::OperationOutsideArchitecture(*operation))?;
-
-        authorizations.insert(
-            *operation,
-            crate::validate::constructibility_authorizations(row)?,
-        );
-    }
+    let authorizations = construct_authorizations(architecture, &operations)?;
 
     let result = ScopedRealizationSpec {
         architecture: binding,
@@ -515,6 +512,59 @@ fn assemble_scoped_realization_with_phase(
     crate::validate::validate_scoped_realization(architecture, &result)?;
 
     Ok(result)
+}
+
+fn merge_lifecycle_rows(
+    operations: &BTreeMap<OperationId, OperationRealization>,
+) -> Result<(Vec<LifecycleNode>, Vec<LifecycleDependencyDeclaration>), RealizationError> {
+    // Reject repeated rows in their declaring operation before sharing rows
+    // between operations. The graph builder retains its duplicate guard.
+    for operation in operations.values() {
+        let mut nodes = BTreeSet::new();
+        for node in &operation.lifecycle_nodes {
+            if !nodes.insert(node.id.clone()) {
+                return Err(RealizationError::DuplicateLifecycleNode(node.id.clone()));
+            }
+        }
+        let mut edges = BTreeSet::new();
+        for edge in &operation.lifecycle_edges {
+            if !edges.insert(edge.clone()) {
+                return Err(RealizationError::DuplicateLifecycleDependency(edge.clone()));
+            }
+        }
+    }
+    let mut seen_nodes = BTreeSet::new();
+    let nodes = operations
+        .values()
+        .flat_map(|operation| operation.lifecycle_nodes.iter())
+        .filter(|node| seen_nodes.insert(node.id.clone()))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut seen_edges = BTreeSet::new();
+    let edges = operations
+        .values()
+        .flat_map(|operation| operation.lifecycle_edges.iter())
+        .filter(|edge| seen_edges.insert((*edge).clone()))
+        .cloned()
+        .collect::<Vec<_>>();
+    Ok((nodes, edges))
+}
+
+fn construct_authorizations(
+    architecture: &Architecture,
+    operations: &BTreeMap<OperationId, OperationRealization>,
+) -> Result<BTreeMap<OperationId, Vec<ConstructibilityAuthorization>>, RealizationError> {
+    let mut authorizations = BTreeMap::new();
+    for operation in operations.keys() {
+        let row = architecture
+            .operation(*operation)
+            .ok_or(RealizationError::OperationOutsideArchitecture(*operation))?;
+        authorizations.insert(
+            *operation,
+            crate::validate::constructibility_authorizations(row)?,
+        );
+    }
+    Ok(authorizations)
 }
 
 /// Project a scoped realization into stable typed values.

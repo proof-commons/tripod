@@ -1,14 +1,404 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use architecture::{ARCHITECTURE, OperationId};
+use architecture::{ARCHITECTURE, BoundId, ObjectId, OperationId};
 
 use crate::{
-    ArchitectureBinding, ConstructibilityNode, ConstructibilityNodeId, DisclosureNodeId,
-    DisclosureReason, DisclosureSeed, ExprId, ExpressionDeclaration, ExpressionNode,
-    ExpressionRole, FactId, LifecycleNodeId, OperationRealization, RealizationError,
-    RealizationScope, RelationDependencyDeclaration, RelationEdge, SemanticType, derive,
-    derive::assemble_scoped_realization, project_scoped_realization,
+    ArchitectureBinding, ConstructibilityNode, ConstructibilityNodeId,
+    DisclosureDependencyProjection, DisclosureNodeId, DisclosureReason, DisclosureSeed, ExprId,
+    ExpressionDeclaration, ExpressionNode, ExpressionRole, FactId, InitialVisibility,
+    LifecycleDependencyProjection, LifecycleEdge, LifecycleNodeId, OperationRealization,
+    RealizationError, RealizationScope, RelationDependencyDeclaration, RelationEdge,
+    RepresentationMode, SemanticType, derive, derive::assemble_scoped_realization,
+    project_scoped_realization,
 };
+
+// Literal lifecycle census of the adopted ASH, live receipt and STATE tables.
+pub(super) fn assert_literal_lifecycle(
+    realization: &crate::ScopedRealizationSpec,
+    objects: &[ObjectId],
+) {
+    use ObjectId::{Ash, ReceiptLive, State};
+    use OperationId::{
+        AdmitDeposits, AnnounceMaturity, Burn, Clear, CompactAsh, Cycle, ReceiptRelabel, Redeem,
+        TransferLive,
+    };
+    use RepresentationMode::{Explicit, PrivateCommitted, PublicCommitted};
+    let mut nodes = BTreeSet::new();
+    let mut edges = BTreeSet::new();
+    let table: [(ObjectId, &[RepresentationMode], &[OperationId]); 3] = [
+        (Ash, &[Explicit, PublicCommitted], &[CompactAsh, Clear]),
+        (
+            ReceiptLive,
+            &[Explicit, PrivateCommitted],
+            &[TransferLive, Burn, Redeem],
+        ),
+        (
+            State,
+            &[Explicit, PublicCommitted],
+            &[
+                AdmitDeposits,
+                Cycle,
+                Redeem,
+                ReceiptRelabel,
+                Clear,
+                AnnounceMaturity,
+            ],
+        ),
+    ];
+    for (object, modes, exits) in table {
+        if !objects.contains(&object) {
+            continue;
+        }
+        for mode in modes {
+            let source = LifecycleNodeId::Representation {
+                object,
+                mode: *mode,
+            };
+            nodes.insert(source.clone());
+            for exit in exits {
+                let target = LifecycleNodeId::RequiredExit {
+                    object,
+                    operation: *exit,
+                };
+                nodes.insert(target.clone());
+                edges.insert(LifecycleDependencyProjection {
+                    source: source.clone(),
+                    target,
+                    edge: LifecycleEdge::RequiresExit,
+                });
+            }
+        }
+    }
+    let projection = project_scoped_realization(realization);
+    assert_eq!(
+        projection
+            .lifecycle
+            .nodes
+            .into_iter()
+            .map(|node| node.id)
+            .collect::<BTreeSet<_>>(),
+        nodes
+    );
+    assert_eq!(
+        projection
+            .lifecycle
+            .edges
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        edges
+    );
+}
+
+/// Compare the assembled pair with the pre-union single-declaration paths.
+pub(super) fn assert_pair_disclosure_union(
+    mixed: &crate::ScopedRealizationSpec,
+    pair: [OperationId; 2],
+) {
+    let mut expected_nodes = BTreeMap::new();
+    let mut expected_edges = BTreeSet::new();
+    let mut expected_seeds = Vec::new();
+    let mut expected_analysis = crate::DeclassificationAnalysis::default();
+    for operation in pair {
+        let singleton = derive(
+            &ARCHITECTURE,
+            RealizationScope::from_operations([operation]).unwrap(),
+        )
+        .unwrap();
+        let declaration = &singleton.operations[&operation];
+        assert_eq!(mixed.operations.get(&operation), Some(declaration));
+        let (graph, index) = crate::declassification::build_disclosure_graph(
+            declaration.disclosure_nodes.clone(),
+            declaration.disclosure_edges.clone(),
+        )
+        .unwrap();
+        for node in graph.node_weights() {
+            if let Some(previous) = expected_nodes.insert(node.id(), (*node).clone()) {
+                assert_eq!(&previous, node, "shared fact visibility changed");
+            }
+        }
+        expected_edges.extend(crate::declassification::project_disclosure_graph(&graph).edges);
+        expected_seeds.extend(declaration.disclosure_seeds.iter().cloned());
+        let analysis = crate::declassification::analyze_disclosure(
+            &graph,
+            &index,
+            &declaration.disclosure_seeds,
+        )
+        .unwrap();
+        for (fact, reasons) in analysis.required_public {
+            expected_analysis
+                .required_public
+                .entry(fact)
+                .or_default()
+                .extend(reasons);
+        }
+        for (fact, reasons) in analysis.newly_disclosed {
+            expected_analysis
+                .newly_disclosed
+                .entry(fact)
+                .or_default()
+                .extend(reasons);
+        }
+        expected_analysis
+            .retained_private
+            .extend(analysis.retained_private);
+    }
+    let projection = project_scoped_realization(mixed);
+    assert_eq!(
+        projection.disclosure.nodes,
+        expected_nodes.keys().cloned().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        projection.disclosure.edges,
+        expected_edges.into_iter().collect::<Vec<_>>()
+    );
+    assert_eq!(
+        mixed
+            .disclosure_graph
+            .node_weights()
+            .cloned()
+            .map(|node| (node.id(), node))
+            .collect::<BTreeMap<_, _>>(),
+        expected_nodes,
+    );
+    expected_seeds.sort();
+    let mut actual_seeds = mixed
+        .operations
+        .values()
+        .flat_map(|declaration| declaration.disclosure_seeds.iter().cloned())
+        .collect::<Vec<_>>();
+    actual_seeds.sort();
+    assert_eq!(actual_seeds, expected_seeds);
+    assert_eq!(projection.declassification, expected_analysis);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // Literal graph, disclosure, and permutation expectations form one combined-scope control.
+fn combined_declared_scope_has_literal_union() {
+    use OperationId::{AnnounceMaturity, Burn, Clear, CompactAsh, TransferLive};
+    let ids = [CompactAsh, TransferLive, AnnounceMaturity, Burn, Clear];
+    let scope = RealizationScope::from_operations(ids).unwrap();
+    let baseline = derive(&ARCHITECTURE, scope.clone()).unwrap();
+    baseline.validate_against(&ARCHITECTURE).unwrap();
+    assert_literal_lifecycle(
+        &baseline,
+        &[ObjectId::Ash, ObjectId::ReceiptLive, ObjectId::State],
+    );
+    let projection = project_scoped_realization(&baseline);
+    assert_eq!(projection.operations.len(), 5);
+    assert_eq!(
+        projection
+            .disclosure
+            .nodes
+            .iter()
+            .filter_map(|id| {
+                if let DisclosureNodeId::Fact(FactId::BoundValue { bound }) = id {
+                    Some(*bound)
+                } else {
+                    None
+                }
+            })
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            BoundId::AshBatchMax,
+            BoundId::BurnInputMax,
+            BoundId::BurnChangeMax,
+            BoundId::BurnRecordMax,
+            BoundId::FeeSponsorInputMax,
+        ])
+    );
+    let declared_nodes = baseline
+        .operations
+        .values()
+        .flat_map(|operation| {
+            operation
+                .disclosure_nodes
+                .iter()
+                .map(crate::DisclosureNode::id)
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        projection
+            .disclosure
+            .nodes
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        declared_nodes
+    );
+    let declared_edges = baseline
+        .operations
+        .values()
+        .flat_map(|operation| operation.disclosure_edges.iter())
+        .map(|row| DisclosureDependencyProjection {
+            source: row.source.clone(),
+            target: row.target.clone(),
+            edge: row.edge,
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        projection
+            .disclosure
+            .edges
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        declared_edges
+    );
+    let clear_reason = DisclosureReason::PermissionlessConstructibility {
+        operation: Clear,
+        relation: crate::RelationId::new(
+            Clear,
+            crate::RelationKind::Constructibility,
+            crate::RelationSubject::Operation,
+        ),
+    };
+    let compact_reason = DisclosureReason::PermissionlessConstructibility {
+        operation: CompactAsh,
+        relation: crate::RelationId::new(
+            CompactAsh,
+            crate::RelationKind::Constructibility,
+            crate::RelationSubject::Operation,
+        ),
+    };
+    assert_eq!(
+        projection.declassification.required_public[&FactId::BoundValue {
+            bound: BoundId::AshBatchMax
+        }],
+        BTreeSet::from([clear_reason.clone(), compact_reason])
+    );
+    assert_eq!(
+        projection.declassification.required_public[&FactId::BoundValue {
+            bound: BoundId::FeeSponsorInputMax
+        }],
+        BTreeSet::from([clear_reason])
+    );
+    assert_eq!(
+        projection.declassification.retained_private,
+        BTreeSet::from([
+            FactId::FamilyAmount {
+                operation: Burn,
+                side: crate::TransactionSide::Output,
+                object: ObjectId::ReceiptLive
+            },
+            FactId::FamilyAmount {
+                operation: TransferLive,
+                side: crate::TransactionSide::Input,
+                object: ObjectId::ReceiptLive
+            },
+            FactId::FamilyAmount {
+                operation: TransferLive,
+                side: crate::TransactionSide::Output,
+                object: ObjectId::ReceiptLive
+            },
+        ])
+    );
+    assert!(projection.declassification.newly_disclosed.is_empty());
+    // Scope construction sorts operation IDs. Reversal checks that public
+    // scope-input order canonicalizes; it cannot vary assembler iteration.
+    let reversed = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations(ids.into_iter().rev()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(projection, project_scoped_realization(&reversed));
+    let mut operations = baseline.operations;
+    for operation in operations.values_mut() {
+        operation.lifecycle_nodes.reverse();
+        operation.lifecycle_edges.reverse();
+        operation.disclosure_nodes.reverse();
+    }
+    let permuted = assemble_scoped_realization(
+        &ARCHITECTURE,
+        ArchitectureBinding::from_architecture(&ARCHITECTURE).unwrap(),
+        scope,
+        operations,
+    )
+    .unwrap();
+    assert_eq!(projection, project_scoped_realization(&permuted));
+}
+
+#[test]
+fn standalone_operation_projections_are_unchanged_by_union() {
+    use OperationId::{AnnounceMaturity, Burn, Clear, CompactAsh, TransferLive};
+    for (operation, objects) in [
+        (CompactAsh, vec![ObjectId::Ash]),
+        (TransferLive, vec![ObjectId::ReceiptLive]),
+        (AnnounceMaturity, vec![ObjectId::State]),
+        (Burn, vec![ObjectId::Ash, ObjectId::ReceiptLive]),
+        (Clear, vec![ObjectId::Ash, ObjectId::State]),
+    ] {
+        let realization = derive(
+            &ARCHITECTURE,
+            RealizationScope::from_operations([operation]).unwrap(),
+        )
+        .unwrap();
+        assert_literal_lifecycle(&realization, &objects);
+        let row = &realization.operations[&operation];
+        // These unchanged single-list builders are the pre-union path for one
+        // declaration; compare the complete affected projections and analysis.
+        let (lifecycle, _, _) = crate::lifecycle::build_lifecycle_graph(
+            row.lifecycle_nodes.clone(),
+            row.lifecycle_edges.clone(),
+        )
+        .unwrap();
+        let (disclosure, disclosure_nodes) = crate::declassification::build_disclosure_graph(
+            row.disclosure_nodes.clone(),
+            row.disclosure_edges.clone(),
+        )
+        .unwrap();
+        let expected_analysis = crate::declassification::analyze_disclosure(
+            &disclosure,
+            &disclosure_nodes,
+            &row.disclosure_seeds,
+        )
+        .unwrap();
+        let projection = project_scoped_realization(&realization);
+        assert_eq!(
+            projection.lifecycle,
+            crate::lifecycle::project_lifecycle_graph(&lifecycle)
+        );
+        assert_eq!(
+            projection.disclosure,
+            crate::declassification::project_disclosure_graph(&disclosure)
+        );
+        assert_eq!(projection.declassification, expected_analysis);
+    }
+    let burn = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations([Burn]).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        burn.declassification.retained_private,
+        BTreeSet::from([FactId::FamilyAmount {
+            operation: Burn,
+            side: crate::TransactionSide::Output,
+            object: ObjectId::ReceiptLive,
+        }])
+    );
+    let clear = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations([Clear]).unwrap(),
+    )
+    .unwrap();
+    assert!(clear.declassification.retained_private.is_empty());
+    assert_eq!(
+        clear
+            .disclosure_graph
+            .node_weights()
+            .filter(|node| matches!(
+                node,
+                crate::DisclosureNode::Fact {
+                    id: FactId::BoundValue {
+                        bound: BoundId::AshBatchMax
+                    },
+                    initial_visibility: InitialVisibility::Public
+                }
+            ))
+            .count(),
+        1
+    );
+}
 
 #[test]
 fn compact_ash_scope_derives_direct_graphs() {

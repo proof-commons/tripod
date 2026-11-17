@@ -3,15 +3,115 @@ use std::collections::{BTreeMap, BTreeSet};
 use petgraph::visit::EdgeRef;
 
 use crate::{
-    DisclosureDependencyDeclaration, DisclosureEdge, DisclosureNode, DisclosureNodeId,
-    DisclosureReason, FactId, InitialVisibility, RealizationError, RealizationScope,
-    TransactionSide,
+    ArchitectureBinding, DisclosureDependencyDeclaration, DisclosureEdge, DisclosureNode,
+    DisclosureNodeId, DisclosureReason, FactId, InitialVisibility, RealizationError,
+    RealizationScope, TransactionSide,
     declassification::{
         analysis_from_reason_map, build_disclosure_graph, disclosure_reasons_by_node,
         phase1_disclosure_declarations,
     },
-    derive, phase1_declassification,
+    derive,
+    derive::assemble_scoped_realization,
+    phase1_declassification,
 };
+
+#[test]
+fn union_refuses_conflicting_disclosure_visibility() {
+    use architecture::{ARCHITECTURE, BoundId, OperationId};
+    let scope = RealizationScope::from_operations([OperationId::Burn, OperationId::Clear]).unwrap();
+    let control = derive(&ARCHITECTURE, scope.clone()).unwrap();
+    let id = DisclosureNodeId::Fact(FactId::BoundValue {
+        bound: BoundId::FeeSponsorInputMax,
+    });
+    let mut changed = control.operations;
+    let node = changed
+        .get_mut(&OperationId::Burn)
+        .unwrap()
+        .disclosure_nodes
+        .iter_mut()
+        .find(|node| node.id() == id)
+        .unwrap();
+    let DisclosureNode::Fact {
+        initial_visibility, ..
+    } = node
+    else {
+        unreachable!()
+    };
+    assert_eq!(*initial_visibility, InitialVisibility::Public);
+    *initial_visibility = InitialVisibility::Private;
+    assert_eq!(
+        assemble_scoped_realization(
+            &ARCHITECTURE,
+            ArchitectureBinding::from_architecture(&ARCHITECTURE).unwrap(),
+            scope,
+            changed
+        )
+        .unwrap_err(),
+        RealizationError::DuplicateDisclosureNode(id)
+    );
+}
+
+#[test]
+fn union_preserves_within_operation_disclosure_duplicates() {
+    use architecture::{ARCHITECTURE, BoundId, OperationId};
+    let shared_scope =
+        RealizationScope::from_operations([OperationId::CompactAsh, OperationId::Clear]).unwrap();
+    let shared_control = derive(&ARCHITECTURE, shared_scope.clone()).unwrap();
+    let shared_id = DisclosureNodeId::Fact(FactId::BoundValue {
+        bound: BoundId::AshBatchMax,
+    });
+    let mut shared_nodes = shared_control.operations;
+    let repeated_bound = shared_nodes[&OperationId::CompactAsh]
+        .disclosure_nodes
+        .iter()
+        .find(|node| node.id() == shared_id)
+        .unwrap()
+        .clone();
+    shared_nodes
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap()
+        .disclosure_nodes
+        .push(repeated_bound);
+    assert_eq!(
+        assemble_scoped_realization(
+            &ARCHITECTURE,
+            ArchitectureBinding::from_architecture(&ARCHITECTURE).unwrap(),
+            shared_scope,
+            shared_nodes,
+        )
+        .unwrap_err(),
+        RealizationError::DuplicateDisclosureNode(shared_id)
+    );
+
+    let scope =
+        RealizationScope::from_operations([OperationId::CompactAsh, OperationId::TransferLive])
+            .unwrap();
+    let control = derive(&ARCHITECTURE, scope.clone()).unwrap();
+    let binding = ArchitectureBinding::from_architecture(&ARCHITECTURE).unwrap();
+    let mut nodes = control.operations.clone();
+    let duplicate = nodes[&OperationId::CompactAsh].disclosure_nodes[0].clone();
+    nodes
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap()
+        .disclosure_nodes
+        .push(duplicate.clone());
+    assert_eq!(
+        assemble_scoped_realization(&ARCHITECTURE, binding.clone(), scope.clone(), nodes)
+            .unwrap_err(),
+        RealizationError::DuplicateDisclosureNode(duplicate.id())
+    );
+    let mut edges = control.operations;
+    let duplicate = edges[&OperationId::CompactAsh].disclosure_edges[0].clone();
+    edges
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap()
+        .disclosure_edges
+        .push(duplicate.clone());
+    assert_eq!(
+        assemble_scoped_realization(&ARCHITECTURE, binding, scope, edges).unwrap_err(),
+        RealizationError::DuplicateDisclosureDependency(duplicate)
+    );
+}
 
 #[test]
 fn phase1_disclosure_classifies_pilots_correctly() {

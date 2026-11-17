@@ -139,6 +139,39 @@ pub struct DeclassificationAnalysis {
     pub retained_private: BTreeSet<FactId>,
 }
 
+/// Share only architecture-owned facts with equal declared visibility.
+/// Check each declaration before the cross-operation merge so a local
+/// duplicate cannot disappear behind an identical row from another operation.
+pub(crate) fn merge_disclosure_nodes<'a>(
+    declarations: impl IntoIterator<Item = &'a [DisclosureNode]>,
+) -> Result<Vec<DisclosureNode>, RealizationError> {
+    let mut merged = BTreeMap::<DisclosureNodeId, DisclosureNode>::new();
+    for declaration in declarations {
+        let mut local = BTreeSet::new();
+        for node in declaration {
+            let id = node.id();
+            if !local.insert(id.clone()) {
+                return Err(RealizationError::DuplicateDisclosureNode(id));
+            }
+            if let Some(prior) = merged.get(&id) {
+                if !matches!(
+                    (&id, prior, node),
+                    (
+                        DisclosureNodeId::Fact(FactId::BoundValue { .. }),
+                        DisclosureNode::Fact { initial_visibility: left, .. },
+                        DisclosureNode::Fact { initial_visibility: right, .. }
+                    ) if left == right
+                ) {
+                    return Err(RealizationError::DuplicateDisclosureNode(id));
+                }
+            } else {
+                merged.insert(id, node.clone());
+            }
+        }
+    }
+    Ok(merged.into_values().collect())
+}
+
 #[allow(clippy::type_complexity)]
 pub(crate) fn build_disclosure_graph(
     nodes: impl IntoIterator<Item = DisclosureNode>,

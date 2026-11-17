@@ -1,10 +1,42 @@
 use architecture::{ARCHITECTURE, ObjectId, OperationId};
 
 use crate::{
-    LifecycleDependencyDeclaration, LifecycleEdge, LifecycleNode, LifecycleNodeId,
-    RealizationError, RealizationScope, Relation, RepresentationMode, ScopedRealizationSpec,
-    build_lifecycle_graph, derive, require_lifecycle_exit,
+    ArchitectureBinding, LifecycleDependencyDeclaration, LifecycleEdge, LifecycleNode,
+    LifecycleNodeId, RealizationError, RealizationScope, Relation, RepresentationMode,
+    ScopedRealizationSpec, build_lifecycle_graph, derive, derive::assemble_scoped_realization,
+    require_lifecycle_exit,
 };
+
+#[test]
+fn union_preserves_within_operation_lifecycle_duplicates() {
+    let scope =
+        RealizationScope::from_operations([OperationId::CompactAsh, OperationId::Burn]).unwrap();
+    let control = derive(&ARCHITECTURE, scope.clone()).unwrap();
+    let binding = ArchitectureBinding::from_architecture(&ARCHITECTURE).unwrap();
+    let mut nodes = control.operations.clone();
+    let duplicate = nodes[&OperationId::CompactAsh].lifecycle_nodes[0].clone();
+    nodes
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap()
+        .lifecycle_nodes
+        .push(duplicate.clone());
+    assert_eq!(
+        assemble_scoped_realization(&ARCHITECTURE, binding.clone(), scope.clone(), nodes)
+            .unwrap_err(),
+        RealizationError::DuplicateLifecycleNode(duplicate.id)
+    );
+    let mut edges = control.operations;
+    let duplicate = edges[&OperationId::CompactAsh].lifecycle_edges[0].clone();
+    edges
+        .get_mut(&OperationId::CompactAsh)
+        .unwrap()
+        .lifecycle_edges
+        .push(duplicate.clone());
+    assert_eq!(
+        assemble_scoped_realization(&ARCHITECTURE, binding, scope, edges).unwrap_err(),
+        RealizationError::DuplicateLifecycleDependency(duplicate)
+    );
+}
 
 // --- Lifecycle relation/graph weld (SR2-03) ----------------------
 //
