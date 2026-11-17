@@ -16,14 +16,14 @@ Archived history is excluded from the load-bearing documentation weight budget a
 | Document | Contents |
 |---|---|
 | [attestation-floor-bounds.md](attestation-floor-bounds.md) | Resolved research: the attestation containment and seigniorage claims and the SP5 capacity export. |
-| [backlog-history.md](backlog-history.md) | Closed sections moved out of [the backlog](../backlog.md): completed gate records and the finding registers of remediated static reviews. |
+| [backlog-history.md](backlog-history.md) | Closed sections moved out of [the backlog](../backlog.md): completed gate records, closed wave evidence, historical timing detail and the finding registers of remediated static reviews. |
 | [ctf-guide-wave-5-closeout.md](ctf-guide-wave-5-closeout.md) | The confidential-funding execution guide's Wave-5 exit record: the restart order step by step, the row delta with the identity that moved each row, the residuals, and the divergences reported rather than repaired. |
 | [ctf-guide-wave-6-closeout.md](ctf-guide-wave-6-closeout.md) | The confidential-funding follow-up evidence wave's exit record: steps one through four accepted against a real node, the target-ct-conservation row moved beside the three proof-negatives attributed by field, the order typed-stopped at step five, and Wave 5's step-three mis-typing named as corrected. |
 | [ctf-guide-wave-7-closeout.md](ctf-guide-wave-7-closeout.md) | The confidential-funding shape wave's exit record: the multi-output and multi-input fixtures built, three remaining positive private shapes accepted against a real node and their rows moved, the one-output shapes typed at the registry floor, and the order typed-stopped at step six on the sponsor signer. |
 | [guide-12-completion-report.md](guide-12-completion-report.md) | The Guide-12 exit record at tree 0.4.1-dev: the §29 checklist audited item by item, and the §30 completion report. |
 | [notation-semantic-census.md](notation-semantic-census.md) | Resolved research, closed as over-scoped: the existing label graph is sufficient, and the surviving work was attestation label minting and editorial repair. |
 | [phase-6-closed-records.md](phase-6-closed-records.md) | Closed Phase-6 plan findings, route and classification records, questions, carrier and declaration records, moved verbatim from the Phase-6 card. |
-| [phase-7-engine-records.md](phase-7-engine-records.md) | Closed shared-engine probe and refit records moved verbatim from the Phase-7 card; subsequent rulings stay maintained. |
+| [phase-7-engine-records.md](phase-7-engine-records.md) | Closed shared-engine probe, refit and Wave-1 packet records moved verbatim from the Phase-7 card; rulings and current acceptance conditions stay maintained. |
 | [wave0-preflight-semantic-census.md](wave0-preflight-semantic-census.md) | Closed Wave-0 preflight semantic census, including its carrier and Clear-schedule tables, moved verbatim from the backlog. |
 
 ## Archive rule · `rule:history:authority`

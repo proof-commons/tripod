@@ -484,9 +484,9 @@ credentials, or production authority.
 |Unadopted child group cleanup|TODO|`UnadoptedChild::drop` kills only its direct child in `packages/target-elements-conformance/src/executor.rs`; a descheduled thread allows a pre-adoption fork. Signal the group or record, with a control, why that is unnecessary (`rule:guide10:process-group`).|
 |Harness timing follow-ups|TODO|`keyed-final-capture-wrappers` has 300/127.842789 ≈ 2.35-fold headroom; the fourfold rule (`rec:w1b15:wide-bound`) needs a split-or-report decision (`plans/drafts/wave1-bite-1-6-plan.md`). `cargo-lane-contracts`, `vectors-target-census`, `compact-native-capture-contract` and `compact-native-funding-contract` lack budgets/tolerances beside `test(` in `meson.build` and `scripts/meson.build`; measure and record them. `scripts/ci-timing-report.py` reports every wall; decide on budget/tolerance comparisons as reports, never failures (`sec:test-performance:tracking`).|
 
-### Wave-1 final packet evidence · `rec:backlog:wave1-packet`
+### Wave-1 final packet evidence (archived)
 
-The corrected bite-1.6 packet is `0.7.142-dev`, independently reviewed through `refs/handoff/w20b1/b16-packet-review`, with all six required and fourteen optional documentation corrections incorporated. Its full repository gate on the clean completed packet tree is green at (`rec:w1b16:completed-packet-gate`), resolving the earlier receipt's exact gap. The separate closing disposition (`rec:w1b16:closed`) meets all three bite gates clause by clause, and (`rec:w1b16:wave1-exit`) closes Wave 1 on all three original criteria. The packet's eight requirements/six families, final a–f measurements, six decisions/old-nine mapping, eight-package seams and baseline/regression argument retain their evidence at (`rec:w1b16:packet`). The corrected-packet documents confirmation and the closing-record verification scopes remain distinct there; neither selected-package verification nor this record substitutes for the full repository result.
+The verbatim packet receipt is in [backlog history](history/backlog-history.md#closed-wave-records).
 
 **Wave-1 status** · `tab:backlog:wave1-exit`
 
@@ -519,24 +519,36 @@ The join covers thirteen packet gates, eight deliverables, seven entry rows, dis
 | (`step:wave2:bite-2-2`) | DONE | Bound internal projections and independent record-credit verdict; (`gate:wave2:bite-2-2`). Landed as `0.7.153-dev`; full repository gate on `0.7.154-dev` green at 2026-11-16T10:20:03Z, 3,280s. Receipt below. |
 | (`step:wave2:bite-2-3a`) | DONE | Evaluated law bodies and frozen vocabulary design; (`gate:wave2:bite-2-3a`). Landed as `0.7.156-dev`; full repository gate on `0.7.157-dev` green at 2026-11-16T11:43:37Z, 3,589s. Receipt below. |
 | (`step:wave2:bite-2-3b`) | DONE | Activated vocabulary, injective engine-key codes and compiler/vector compatibility; (`gate:wave2:bite-2-3b`). Landed as `0.7.166-dev` after independent review; full repository gate green at 2026-11-16T19:49:18Z, 4,265s. Receipt below. |
-| (`step:wave2:bite-2-4`) | DONE | Complete Burn declaration and weld; (`gate:wave2:bite-2-4`). Landed as `0.7.170-dev` after independent review; full repository gate pending at this record. Receipt below. |
-| (`step:wave2:bite-2-5`) | TODO | Independent Burn conformance; (`gate:wave2:bite-2-5`) |
+| (`step:wave2:bite-2-4`) | DONE | Complete Burn declaration and weld; (`gate:wave2:bite-2-4`). Landed as `0.7.170-dev` after independent review; full repository gate green at 2026-11-17T08:41:11Z, 3,287s. Receipt below. |
+| (`step:wave2:bite-2-5`) | DONE | Independent Burn conformance; (`gate:wave2:bite-2-5`). Landed as `0.7.176-dev` after independent review; full repository gate pending at this record. Receipt below. |
 | (`step:wave2:bite-2-6`) | TODO | Complete Clear declaration/weld and immediate ruling-133/138 reopenings; (`gate:wave2:bite-2-6`). Clear will collide with CompactAsh and Burn on shared lifecycle nodes/edges and operation-independent disclosure bounds, and with AnnounceMaturity on STATE lifecycle nodes. Record and pin these assembly refusals as 2.4 did, without changing shared owners; TransferLive or Clear alone supplies the reaching control. |
-| (`step:wave2:bite-2-7`) | TODO | Independent Clear conformance and six-field comparison; (`gate:wave2:bite-2-7`) |
+| (`step:wave2:bite-2-7`) | TODO | Independent Clear conformance and six-field comparison; (`gate:wave2:bite-2-7`). Consumed-code dispositions from the 2.5 review: read X and residual from the certificate's ClearProjection and the successor from after-world STATE; never recompute them with realization clear_ash. Read accounting evidence from the certificate. Burn's order/fresh-ASH token formula does not carry to Clear; bind Clear's own certificate and STATE identities. Reuse the generic record_projection completion-event helper. Keep the Burn adapter's field decision: common retains its protected model provenance; extension/event/accounting are public comparison values, not jointly authenticated fields |
 | (`step:backlog:wave2-bite-2-7a`) | TODO | Shared operation-graph union after 2.6 and before 2.8; (`gate:backlog:wave2-bite-2-7a`). |
-| (`step:wave2:bite-2-8`) | TODO | Joint region/projection/public-dependency evidence; (`gate:wave2:bite-2-8`) |
+| (`step:wave2:bite-2-8`) | TODO | Joint region/projection/public-dependency evidence; (`gate:wave2:bite-2-8`). Receiver for the model-adapter ledger's substituted-region control, which has no subject in bite 2.5 |
 | (`step:wave2:bite-2-9`) | TODO | Both compact dispositions, ruling-133 subjects and inherited compatibility reconciled; (`gate:wave2:bite-2-9`) |
 | (`step:wave2:bite-2-10`) | TODO | Frozen wave packet, full gate, baseline figures and explicit Wave-3 receiver; (`gate:wave2:closing`) |
 
-Bite 2.1 receipt: `~/loops/evidence/wave2/record-0.7.151-dev/{manifest.txt,gate.log}` on kranich records the candidate, toolchains, commands, clean trees, all per-battery resource deltas and completion. All nine batteries exited 0; `ci.sh` passed 116 Meson lanes with zero failures, and the real-TeX documentation/generated run passed five checks with zero failures. Battery wall seconds / cgroup CPU-use delta microseconds: ci-setup 0/2921033; ci-build-gate 235/1000488118; ci-build-release 1479/7166016557; ci.sh 1110/7758893160; document-setup 1/3570858; document-compile 3/5882668; document-test 2/4848176; fmt 7/9489979; clippy 3/3993301. Resource scope is the gate's own cgroup, service `tripod-record-gate-20261116T075358Z.service`, including its containers; shell-child CPU accounting is separately labelled in the log. This is the performed gate receipt, not a Wave-2 closure claim.
+**Closed Bite 2.1 receipt (archived)**
 
-Bite 2.2 receipt: `~/loops/evidence/wave2/record-0.7.154-dev/{manifest.txt,gate.log}` on kranich names `0.7.154-dev` as the gated tree after the `0.7.153-dev` landing. All nine batteries exited 0; `ci.sh` passed 116 Meson lanes with zero failures, and the real-TeX documentation/generated run passed five checks with zero failures. The gate ended 2026-11-16T10:20:03Z, wall 3,280s, chain rc 0, with a clean tree after the run.
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
-Bite 2.3a receipt: `~/loops/evidence/wave2/record-0.7.157-dev/{manifest.txt,gate.log}` on kranich names `0.7.157-dev` as the gated tree after the `0.7.156-dev` landing. All nine batteries exited 0; `ci.sh` passed 116 Meson lanes with zero failures, and the real-TeX documentation/generated run passed five checks with zero failures. The gate ended 2026-11-16T11:43:37Z, wall 3,589s, chain rc 0, with a clean tree after the run.
+Bite 2.4 receipt: `0.7.170-dev` supplies complete Burn dispatch, architecture/declaration welds, the shared Burn law-edge census, independent shell expectations and conservation refusals, the public compiler unsupported-plan subject and the non-STATE dispatch pin. Independent review preceded landing. Burn with either pilot currently refuses at derivation because the assembler concatenates shared lifecycle nodes; identical edges would collide next. Burn with AnnounceMaturity supplies the compiler control. The limitation pins await the assembler union below; no mixed-pilot support or direct-private Burn discharge is claimed. Full repository gate green at 2026-11-17T08:41:11Z, wall 3,287s.
 
-Bite 2.3b receipt: `0.7.166-dev` activates the Burn/Clear relation bodies, exact body/proof census and copy-expression ownership checks, bound-carrier evaluation, stable engine encodings and explicit compiler/vector dispositions. Compiler operation and relation entries refuse unsupported plans; no Burn/Clear plan is supplied. The relation source is re-frozen with retained capture identity and unchanged keyed byte pins. Independent review preceded import, rebuilt the freeze encoding with its own script and reproduced every encoding literal; the required reaching copy-expression refusal test is in the landing. The loop's full repository gate receipt is green at 2026-11-16T19:49:18Z, wall 4,265s. Declaration dispatch and complete graph welds remain bites 2.4/2.6; follow-ups and packet corrections are below.
+Bite 2.5 receipt: `0.7.176-dev` projects accepted, bound model Burn executions into common observations, the Burn extension, event and accounting facts in packages/model/src/conformance.rs. Independent review corrected the credit comparison to consume the model indexer's own records_accepted() verdict over executed history. The seven rows below are recounted from accepted_burn_matrix_agrees_with_complete_declaration in packages/model/src/tests/burn_realization_conformance_tests.rs at the landing. Model execution acceptance and model credit are separate verdicts; every row binds and is conformant in the realization, including overclaims. L denotes realization::PROTOCOL_AMOUNT_LIMIT_EXCLUSIVE; totals below are the literals and sums in that test.
 
-Bite 2.4 receipt: `0.7.170-dev` supplies complete Burn dispatch, architecture/declaration welds, the shared Burn law-edge census, independent shell expectations and conservation refusals, the public compiler unsupported-plan subject and the non-STATE dispatch pin. Independent review preceded landing. Burn with either pilot currently refuses at derivation because the assembler concatenates shared lifecycle nodes; identical edges would collide next. Burn with AnnounceMaturity supplies the compiler control. The limitation pins await the assembler union below; no mixed-pilot support or direct-private Burn discharge is claimed. Full repository gate pending at this record: the fetched hub main does not contain the tag.
+| Matrix row | Fresh amount / record total | Model execution / own credit verdict | Realization conformance / separate credit verdict |
+|---|---|---|---|
+| one: one owner, no change or records | 100 / 0 | Accepted / true | Conformant / Credited { total: 0 } |
+| credited: one owner, change 20 | 80 / 50 | Accepted / true | Conformant / Credited { total: 50 } |
+| exact: one owner, change 20, records 30 + 50 | 80 / 80 | Accepted / true | Conformant / Credited { total: 80 } |
+| multiple: owners with inputs 100 + 60, changes 10 + 10 | 140 / 70 | Accepted / true | Conformant / Credited { total: 70 } |
+| repeated: same owner twice, inputs 100 + 40, changes 5 + 5 | 130 / 140 | Accepted / false | Conformant / Overclaim { total: 140, fresh_amount: 130 } |
+| beyond: one owner, two maximum-domain records | 100 / 2 × (L − 1) | Accepted / false | Conformant / Overclaim { total: 2 × (L − 1), fresh_amount: 100 } |
+| sponsored: one owner, change 10, separate opaque sponsor | 90 / 10 | Accepted / true | Conformant / Credited { total: 10 } |
+
+This covers zero, under-, exact- and over-credit, including a record sum beyond the individual amount domain. Credit is not in the conformance report. The receipt claims explicit representation only, no signature binding and no event report; an internal event projection is not a report. SubstrateConservation remains EvidenceRequired in the realization; only model-side evidence is discharged by the bound execution, and the report is not evidence-complete. Full repository gate pending at this record: fetched hub main does not contain `0.7.176-dev`.
+
+Records/design receipt: `0.7.171-dev` and `0.7.172-dev` were covered by the full repository gate on `0.7.172-dev`, green at 2026-11-17T09:04:42Z, wall 1,368s. This supplies the earlier pending gate clauses without replacing the code landings' separate receipts.
 
 Duration finding under (`rec:w1b15:wide-bound`): the `0.7.151-dev` release build took 1,479s, versus 1,550s on `0.7.142-dev` at (`rec:w1b16:completed-packet-gate`), so it is not a regression against that figure. The 1,800s bound is the gate harness's own bound for that battery and is not set by any text in the tree; 1,479s is above its quarter-bound reporting threshold (450s). The node was shared and loaded (one-minute load 47.31 at release-build entry); gate-owned CPU-use delta was 7,166,016,557µs and CPU-pressure some delta 121,305,580µs. Retain the bound; the comparison establishes no causal attribution or automatic widening.
 
@@ -565,6 +577,8 @@ Names are new implementation allocations except the explicitly existing pins. Ev
 | limitation_pin_for_clear_overlapping_lifecycle_nodes — src/tests/clear_tests.rs | `cargo test -p tripod-realization --profile gate limitation_pin_for_clear_overlapping_lifecycle_nodes` | Clear alone and Clear+TransferLive derive; Clear+CompactAsh, Clear+Burn and Clear+AnnounceMaturity retain exact DuplicateLifecycleNode identities. Record latent shared edges/bounds too; these limitations await 2.7a. |
 | declared_clear_reaches_unsupported_plan_at_input_binding — packages/compiler/tests/public_api.rs | `cargo test -p tripod-compiler --profile gate declared_clear_reaches_unsupported_plan_at_input_binding` | Derive Clear+TransferLive: bind_input accepts compiler scope {TransferLive}; adding only Clear refuses UnsupportedOperationPlan { operation: Clear }. Keep scope_outside_the_realization_is_incomplete unchanged beside it. |
 | Existing candidate_leaf_and_transition_censuses_have_no_announced_state_spend and realization_operation_census_retains_only_the_announcement_state_transition — packages/vectors/src/maturity_mutants/native_staging.rs | `cargo test -p tripod-vectors --profile gate candidate_leaf_and_transition_censuses_have_no_announced_state_spend`; `cargo test -p tripod-vectors --profile gate realization_operation_census_retains_only_the_announcement_state_transition` | Preserve the candidate-leaf pin; revise the dispatch assertions for Clear while retaining the test identity cited by the rulings. Announcement is no longer the sole declared STATE operation; neither pin establishes an emitted Clear leaf. |
+
+Consumed-code dispositions from the bite-2.5 review apply to 2.6 and its 2.7 consumer: a missing ASH batch maximum refuses inside the projection validators as BurnClearRefusal::ClearTransition, before it could become MissingBoundValue. Distinguish that boundary from missing ordinary bound operands, including FeeSponsorInputMax; each subject names the boundary it actually reaches. Independent model X, residual and successor come from the certificate projection and after-world STATE, never realization recomputation. These are dispositions of existing code, not additional test requirements.
 
 The existing dispatch pin's name describes its historical assertion; its revised assertion must distinguish declaration from candidate. TransferLive is the compiler control because AnnounceMaturity collides with Clear before union. The reviewed unbalanced Burn failed canonical delta and blocked Conservation: do not invent a conservation failure expectation or bypass prerequisite order.
 
@@ -608,6 +622,7 @@ These are deferred choices under (`rule:guide15-exec:wave2-settings`), not added
 
 | Bite / further case | Status and what it would show |
 |---|---|
+| 2.5 — deferred review subjects F1–F4, N1, N2, N5, N7 | DEFER by choice: F1 changes only a well-formed record address, showing binding/conformance/credit still pass while independent event comparison refuses. F2 swaps equal-valued change owners, showing standalone acceptance but bound-projection disagreement. F3 substitutes fresh_ash or removes BurnRecordMax, showing AshBinding or RecordBound at binding rather than an evaluation MissingBoundValue. F4 adds observe_burn traced/untraced equivalence in packages/model/src/tests/tracing_boundary_tests.rs, a separately scoped follow-up. N1 executes a real 9/11 split and binds it to a 10/10 request, showing RequestBindingMismatch and projection disagreement instead of only malformed-history shape. N2 preserves certificate/region tokens in the equal-total split subject, isolating the split coordinate. N5 examines certificate txid/common token rules and same-base executions sharing order/txid, showing the distinction needed at 2.8 without carrying Burn's fresh-ASH token formula into Clear. N7 puts world/owner/change/record/sponsor inputs and independent model records_accepted credit expectations in a data-table harness, making row comparisons explicit; the landed sponsored credit literal already closes that omission. These are further subjects or harness work, not claims of executed tests. |
 | 2.6 — broader arithmetic/guard permutations | DEFER to 2.7's independent model conformance: overflow, batch/distinct/lookup precedence and varied six-field successors compare independently accepted model executions rather than duplicate the transition suite here. |
 | 2.6 — exhaustive same-length substitutions across every shell collection | DEFER: would detect count-only completeness implementations beyond the selected literal census and reaching copy/public-requirement/exit subjects; no generic mutation framework is selected. |
 | 2.6 — sponsor and disjoint-region combinations | DEFER to 2.8: would show public dependencies and foreign-source isolation under combined regions beyond the complete declaration's basic full/partial controls. |
@@ -659,7 +674,7 @@ The post-2.3b packet correction below applies to (`step:wave2:bite-2-4`) and (`g
 
 | Consumer / decision | Reason and disposition |
 |---|---|
-| packages/model/src/conformance.rs; src/tests/burn_realization_conformance_tests.rs (paths relative to packages/model/) | ADAPTER 2.5: Bite 2.5 consumer dispositions from the bite-2.4 review, section 9: use the Burn-only realization and evaluate_operation_with_burn_clear; the legacy entry returns MissingExtension and an undeclared bound operation returns OperationOutsideScope. Credit is absent from the evaluation report: compare evaluate_record_credit separately, retaining overclaim as a valid Burn. Changed record facts refuse at validate_burn_clear_observation binding, before relation evaluation. Supply BurnInputMax, BurnChangeMax and FeeSponsorInputMax from model parameters or the result is MissingBoundValue. SubstrateConservation is EvidenceRequired: conformance is not evidence completeness, and any model-only discharge keeps its model-only label. Private change amounts come from the execution; an equal-total changed split remains valid standalone and disagrees only at bound-request comparison. Build observations independently from model execution, not realization's private fixture. These dispose consumed code facts under the existing 2.5 packet, adding no acceptance requirement or path. |
+| packages/model/src/conformance.rs; src/tests/burn_realization_conformance_tests.rs (paths relative to packages/model/) | ADAPTER 2.5: Bite 2.5 consumer dispositions from the bite-2.4 review, section 9: use the Burn-only realization and evaluate_operation_with_burn_clear; the legacy entry returns MissingExtension and an undeclared bound operation returns OperationOutsideScope. Credit is absent from the evaluation report: compare evaluate_record_credit separately, retaining overclaim as a valid Burn. Changed structural record facts (ordinal, tag, zero amount, count and association) refuse at validate_burn_clear_observation binding. A changed address or amount in a well-formed record can bind; independent event comparison catches either, and accounting also catches changed amounts. Supply BurnInputMax, BurnChangeMax and FeeSponsorInputMax from model parameters or the result is MissingBoundValue. SubstrateConservation is EvidenceRequired: conformance is not evidence completeness, and any model-only discharge keeps its model-only label. Private change amounts come from the execution; an equal-total changed split remains valid standalone and disagrees only at bound-request comparison. Build observations independently from model execution, not realization's private fixture. These dispose consumed code facts under the existing 2.5 packet, adding no acceptance requirement or path. |
 | packages/compiler/README.md | EDIT 2.4, extend at 2.6: the bind_input failure list must name UnsupportedOperationPlan for a declared Burn/Clear requested in compiler scope. Pair the new reaching subject with the existing incomplete-scope refusal; no compiler plan or new error is needed. |
 | packages/realization/TRACING.md | EDIT 2.4, already in its path row: replace “Either public evaluation method” with all public evaluation methods, including evaluate_operation_with_burn_clear alongside evaluate_operation and evaluate_operation_with_operator_membership. The same evaluation boundary owns the event; no new per-law trace boundary. |
 | packages/realization/src/burn_clear_laws.rs; packages/realization/src/tests/burn_clear_relation_tests.rs | EDIT 2.4: put the law-to-law edge census beside validate_burn_clear_relation_census and consume it from the complete Burn declaration and validator. The current activated_declaration/activated_graph fixture alone states these edges; an evaluator's blocked-versus-error result must not depend on fixture-only wiring. Use existing RelationDependencyDeclaration/StaticRequirement and existing graph validation, not a second graph walker or public interface. Burn input SideRepresentation→BurnBinding→DataOutputs belongs here; complete family/authorization/conservation dependencies remain the declaration weld's responsibility under (`tab:realization:burn-clear-graphs`). Retain independent literal expectations and omission/changed-edge refusals, so sharing construction does not become self-comparison. Extend this same owner and its tests for Clear before 2.6 dispatch, including ClearClamp→ClearCanonicalDeltaPolicy from the accepted activation: sealed/no-progress clamps block the delta; missing bound remains an error. No new relation edge kind or changed law is authorized. |
@@ -977,130 +992,39 @@ The completed repair narrative moved verbatim to [backlog history](history/backl
 | `P2-012` | P1 | DONE | Compact-ASH and live-transfer analyzed pilots; gate record §2.11 |
 | `P2-013` | Gate | DONE | Complete Phase-2 evidence and exit; gate record §2.11 |
 
-### 6.2 Completed foundation
+### 6.2 Completed foundation (archived)
 
-The following are implemented internally and remain subject to their package
-tests and owner validation:
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
-```text
-P2-001  realization boundary
-P2-002  Petgraph review
-P2-003  compiler crate and error root
-P2-004  compiler input binding
-P2-005  relation/expression DAGs
-P2-006  checked constant folding
-P2-007  exact proof planning, reaccepted
-P2-008  source, constructibility, and disclosure analysis
-P2-009  representation lifecycle
-P2-010  execution-case placement and layout requirements
-P2-011  relation-indexed coverage requirements
-```
+### P2-007 — Repair and reaccept exact proof planning
 
-No complete analyzed-program public API is exposed yet. This is deliberate:
-partial analyses must not be mistaken for a completed compiler result.
-
-### P2-007 — Repair and reaccept exact proof planning · `task:phase2:proof-planning`
-
-**Priority:** P1
 **Status:** DONE
-**Depends on:** T6, T7, P2-005, P2-006
-**Blocks:** P2-010 through P2-013
 
-Reaccepted after T6 and T7 closed; the gate record is in §2.8.
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
-Reacceptance required, and the recorded evidence establishes:
+### P2-010 — Derive execution-case placement and layout requirements
 
-1. every in-scope relation classified exactly once;
-2. every approved proof alternative retained or rejected for a typed reason;
-3. external-evidence capabilities validated;
-4. proof/representation compatibility applied completely;
-5. capability and source requirements consistent;
-6. hard constraints applied before objective or candidate retention;
-7. exact feasible set compared with an independently derived exhaustive oracle;
-8. no partial result on complexity exhaustion;
-9. deterministic candidate ordering and equality under declaration
-   permutations.
-
-The search retains the exact feasible set; it does not silently select one
-candidate under an unstated target policy.
-
-### P2-010 — Derive execution-case placement and layout requirements · `task:phase2:placement`
-
-**Priority:** P1
 **Status:** DONE
-**Depends on:** accepted P2-007, P2-008, P2-009, C1-009
-**Blocks:** P2-011 and P2-012
 
-Delivered in the Guide-5 batch; the gate record and evidence are in §2.9.
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
-Relations are classified per execution case on independent axes — discharge
-boundary, semantic scope, activation, and carrier multiplicity — rather than
-one local/global/conditional/duplicated category. Execution cases expand only
-the sponsor dimension; the representation is fixed by each feasible proof
-plan. Every active runtime relation case has an eligible abstract carrier;
-carrier eligibility, exact feasible placement sets, and target-independent
-layout requirements are validated against an independent exhaustive oracle.
-Complexity limits are explicit typed parameters and exhaustion returns no
-partial result. No target bytes or concrete target positions enter this
-stage.
+### P2-011 — Derive relation-indexed coverage requirements
 
-### P2-011 — Derive relation-indexed coverage requirements · `task:phase2:coverage`
-
-**Priority:** P1
 **Status:** DONE
-**Depends on:** P2-010, C1-010, C1-013
-**Blocks:** P2-012
 
-Delivered in the Guide-6 batch; the gate record and evidence are in §2.10.
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
-Exact equality holds among the realization relation scope, the compiler
-relation scope, the relation-case plan scope, and the coverage scope. Every
-active relation-case carries positive and negative requirements at each of
-its boundaries, a carrier requirement when runtime-carried, and an accepted
-semantic-projection requirement; inactive relation-cases carry an explicit
-inactive-valid requirement; conditional relations satisfy the
-inactive-valid, active-valid, active-invalid triplet across the case set,
-and representation modes are covered across the complete feasible plan
-set. A broad operation test does not substitute for relation coverage.
+### P2-012 — Analyze both pilots end to end
 
-### P2-012 — Analyze both pilots end to end · `task:phase2:pilots`
-
-**Priority:** P1
 **Status:** DONE
-**Depends on:** T6, T7, P2-005 through P2-011
-**Blocks:** P2-013
 
-Delivered in the Guide-7 batch; the gate record and evidence are in §2.11.
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
-Both pilots analyze end to end into one validated scoped analyzed program
-per scope: the acceptance relation lists are the exact relation censuses,
-every requirement in the acceptance matrices holds, rejected proof and
-representation pairings are absent from the plan set, repeated analysis
-from equal typed inputs produces equal stable projections, and the
-combined two-pilot scope stores per-operation factors whose product
-equals the retired global enumeration exactly. The analyzed value claims
-no deployment lifecycle completeness: the pilots retain their future
-target and operation obligations explicitly.
+### P2-013 — Phase-2 evidence and exit
 
-### P2-013 — Phase-2 evidence and exit · `gate:backlog:phase2`
-
-**Priority:** Gate
 **Status:** DONE
-**Depends on:** T6–T9, P2-004 through P2-012, C1-005, C1-008,
-C1-009, C1-010, C1-013
 
-Passed; the complete exit evidence is the Guide-7 gate record in §2.11,
-including the declared-MSRV and current-stable lanes, the meson-required
-CI run, the explicit product regressions, and passed document byte
-reproducibility. Every exit condition held: findings closed, censuses
-exact, capabilities failing closed, deterministic pilot analysis,
-independent oracles agreeing, gates recorded, current-phase declarations
-moving together, and a clean final tree.
-
-Phase completion does not itself justify a persistent compiler digest;
-none was minted.
-
----
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
 ## 7. Immediate algorithm preparation · `sec:backlog:algorithms`
 
@@ -1123,63 +1047,9 @@ none was minted.
 | `C1-013` | DONE | Independent small-instance oracles; placement oracle §2.9, coverage/collateral/SCC oracles §2.10 |
 | `C1-014` | DONE | Preparation review and Phase-2 handoff; gate record §2.11 |
 
-### 7.2 C1-008 — Proof-plan search reacceptance
+### 7.2 C1-008 — Proof-plan search reacceptance (archived)
 
-Reaccepted in the Guide-4 batch, gate record §2.8. The recorded evidence
-establishes each former condition:
-
-- external-evidence capability requirements are retained;
-- representation-sensitive proofs are checked against selected modes;
-- candidate capabilities and sources agree;
-- the independent oracle derives those rules independently;
-- infeasibility and complexity exhaustion remain distinct;
-- no partial result is returned.
-
-### 7.3 C1-009 — Execution-case-aware placement
-
-Delivered in the Guide-5 batch with P2-010; the gate record is in §2.9.
-Every active relation case is covered by an eligible carrier, production
-search is compared with an independent exhaustive assignment oracle on
-small instances and both pilot scopes, and the adversarial case list —
-optional-carrier defects, global-on-local defects, source unavailability,
-duplicate enforcement, permutation equality, and both budget exhaustions —
-is retained as focused regressions.
-
-### 7.4 C1-010 — Typed symbols and SCC policy
-
-Delivered in the Guide-6 batch within the coverage scope; the gate record is
-in §2.10. Two-pass typed resolution runs a complete definition census before
-complete reference resolution; duplicate keys, unknown references, and
-cross-operation references fail; SCC members and diagnostics are normalized
-by stable key and every current cycle is rejected. SCC membership does not
-authorize a semantic cycle — an accepted cycle would require a new typed
-resolution strategy and policy review. This work prepares linker policy but
-pulled no linker or target types into compiler core.
-
-### 7.5 C1-013 — Independent algorithm oracles
-
-| Production analysis | Independent oracle |
-|---|---|
-| canonical topology | valid-order enumeration plus least-key rule |
-| SCC | mutual-reachability equivalence |
-| expression interning | non-interned evaluator |
-| dependency closure | repeated complete scan |
-| proof selection | exhaustive candidate enumeration with independently derived hard constraints |
-| placement | exhaustive carrier subsets |
-| relation census | direct set equality |
-| constant folding | non-folded evaluator |
-| stable projection | declaration-order permutation |
-| coverage | direct relation × case matrix equality |
-
-The proof-selection oracle must not call the same obligation-classification or
-compatibility helper as production for the property it is meant to verify.
-
-Delivered across the Guide-5 and Guide-6 batches: the placement oracle in
-§2.9; the relation-by-case coverage oracle, the repeated-scan collateral
-oracle, and the mutual-reachability SCC oracle in §2.10. Each restates its
-hard predicates independently of the production helper it verifies.
-
----
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
 ## 8. Dependency posture · `sec:backlog:dependencies`
 
@@ -1796,92 +1666,13 @@ Ruling 130 revisits ruling 58: the reduced STATE leaf retains its local checks a
 
 `SponsorEnvelopeMultiplicity` remains model-scope resource policy enforced by no leaf; the other region-scoped relations and the four plain-L-BTC cardinality and recognition identities retain their stated carrier limits (`rec:backlog:wave0-region-refit`). Value-blind membership does not decide conservation, fee policy or target authorization: exact zero-valued membership is a model acceptance control with target value and policy behavior classified separately. C1 and C2 must declare the compensated-corruption subject's exact reachable boundary and preserve any earlier conservation refusal. At the sponsored ruling landing, an explicit-only first construction left the balanced confidential form and proofs owed. Their construction and selected-policy agreement are now admitted at (`rec:backlog:wave0-confidential-route-admission`). No refusal at another boundary answers an observable obligation, and removal of the selected form requires a replacement route (`rule:guide15-exec:observable-retention`); (`rec:backlog:wave0-safety-native-staging`).
 
-### Sponsored construction · `sec:backlog:sponsored-construction`
+### Sponsored construction (archived)
 
-**Record (Wave 0 sponsored construction)** · `rec:backlog:wave0-sponsored-construction`
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
-The typed sponsored STATE request constructs with and without explicit change under ruling 130 at (`rule:phase7:wave0-rulings`). The coordinator remains at input zero, canonical sponsor inputs begin at one, and the authenticated successor remains at output zero. Positive change occupies output one before the final fee; absent or zero change leaves the fee at one. The complete spent-output census reaches operator signing, and each sponsor input receives its own request over the frozen transaction through the sponsor capability. The operator construction-right path remains intact.
+### Sponsored observation (archived)
 
-**Table (Sponsored construction rows)** · `tab:backlog:sponsored-construction-rows`
-
-Tests named below reside in `packages/transaction/src/tests/state_construct_tests.rs`, `state_finalize_tests.rs` and `state_signing_tests.rs`. Model subjects use the constructed positions and retained census with erased sponsor values. Runtime relation failures and observation-normalization refusals retain their distinct boundaries.
-
-| Row | Present bound | C1 construction or refusal reaching the boundary | Test pin | What C2 still owes |
-|---|---|---|---|---|
-| `16.1 / sponsored-without-change` | `SponsoredControlRefusedAtConstruction` | Explicit control completes; successor zero, fee one, complete census and per-input witnesses | `sponsored_without_change_reaches_submit_ready` | Funded positive-floor acceptance and exact readback |
-| `16.1 / sponsored-with-change-where-supported` | `SponsoredControlRefusedAtConstruction` | Explicit control completes; successor zero, change one, fee two | `sponsored_with_change_reaches_submit_ready` | Funded positive-floor acceptance and exact readback |
-| `16.10 / state-sponsor-overlap` | `SponsoredControlRefusedAtConstruction` | Construction `OverlappingOutpoint`; model `SponsorIsolation` failure | `state_input_cannot_join_sponsor_offer`; `state_input_and_successor_cannot_join_sponsor_flow` | No target claim from these boundaries |
-| `16.10 / two-sponsor-envelopes` | `SponsorArmAwaitsRegionScoping` | Second disjoint owned flow normalizes and fails `SponsorEnvelopeMultiplicity` | `second_sponsor_envelope_fails_region_multiplicity` | No leaf-count claim |
-| `16.10 / foreign-sponsor-asset` | `SponsoredControlRefusedAtConstruction` | Construction `SponsorInputCarriesForeignAsset`; model `ObjectRecognition` failure | `sponsor_views_are_required_and_foreign_assets_refuse`; `foreign_sponsor_asset_fails_model_recognition` | No target claim from recognition |
-| `16.10 / missing-sponsor-authorization` | `SponsoredControlRefusedAtConstruction` | Missing member signer fails isolation; missing response fails completion | `each_sponsor_member_requires_its_own_model_authorization`; `each_sponsor_member_requires_its_own_response_and_exact_echo` | Sponsor-input execution where submitted |
-| `16.10 / sponsor-change-at-state-output-0` | `SponsoredControlRefusedAtConstruction` | Exchanged output positions fail finalized output comparison | `sponsor_change_cannot_replace_successor_zero` | STATE script boundary with unrelated signatures valid |
-| `16.10 / state-successor-in-sponsor-range` | `SponsoredControlRefusedAtConstruction` | Successor flow membership fails `SponsorIsolation` | `state_input_and_successor_cannot_join_sponsor_flow` | Distinguish any positional target variant |
-| `16.10 / fee-change-substitution` | `SponsoredControlRefusedAtConstruction` | Reallocation differs from frozen outputs; changed fee is named after signing | `fee_change_reallocation_differs_from_frozen_offer`; `sponsored_fee_mutation_after_signing_is_named` | Retained-signature refusal; assess reauthorized allocation separately |
-| `16.10 / sponsor-member-unclassified` | `SponsorArmAwaitsRegionScoping` | Missing flow membership fails isolation; duplicate and cross-region references refuse normalization | `missing_sponsor_membership_fails_isolation`; `surplus_sponsor_membership_refuses_at_observation_boundary` | No target claim from membership |
-| `16.10 / empty-sponsor-offer-for-sponsored-request` | `SponsoredControlRefusedAtConstruction` | `EmptySponsorOffer` against a nonempty constructive control | `malformed_and_empty_offers_refuse_against_a_nonempty_control` | No target claim from offer admission |
-| `16.10 / balanced-state-corruption-compensated-by-sponsor-change` | `SponsoredControlRefusedAtConstruction` | Changed STATE amount fails recognition and frozen-output comparison; distinct asset balances do not compensate | `sponsor_change_does_not_compensate_state_asset_corruption`; `state_amount_corruption_fails_model_recognition_with_sponsorship` | Exact conservation or STATE script boundary; preserve an earlier conservation refusal |
-| `16.10 / zero-valued-sponsor-member-under-exact-role-structure` | `SponsorArmAwaitsRegionScoping` | Exact erased membership still passes isolation with a zero-valued source | `zero_sponsor_value_does_not_erase_membership` | Exact target value and policy boundary |
-| `16.10 / confidential-sponsor-value-where-the-selected-target-policy-claims-support` | `SponsoredControlRefusedAtConstruction` | Explicit route returns `MaturitySponsorValueRequiresProofFinalization`; no closure | `confidential_sponsor_value_requires_balanced_proof_route` | Balanced confidential control, proofs and selected-policy verdict |
-| `16.4 / sponsor-input-added-after-signing` | `ScriptPathRejection`; native staging waits on C1 | Distinct appended input fails `MaturitySponsorInputAddedAfterSigning` | `sponsored_input_extension_after_signing_is_named` | Declared STATE script boundary |
-| `16.4 / fee-output-changed-after-signing` | `ScriptPathRejection`; native staging waits on C1 | Existing fee mutation fails `MaturityFeeRoleChangedAfterSigning` | `sponsored_fee_mutation_after_signing_is_named` | Declared STATE script boundary |
-
-**Result (Sponsored construction)** · `result:backlog:sponsored-construction`
-
-Both explicit sponsored forms construct, retain the full signing census and collect distinct sponsor responses by position. Construction refuses malformed funding context, a reserve alias of the STATE asset and an unindexable sponsor suffix; finalization and signing also compare the settled output witnesses. The tests `declared_reserve_cannot_alias_the_state_asset`, `sponsor_suffix_position_overflow_refuses_before_signing` and `sponsored_output_witness_mutation_refuses_at_both_boundaries` pin these boundaries against accepted controls. Model tests exercise exact membership, recognition, member authorization and region-owned multiplicity. The request cross-product preserves sponsorless-change refusal, and the public finalized facts `SponsorRegionAbsent` and `FeeRoleAbsent` become `SponsorRegion` and `FeeRole` within the unchanged eleven-member census. These are construction and model findings for (`gate:guide15-exec:bite-0-5-conjunct-14`), with target evidence and retyping ordered after them.
-
-**Caveat (Declared boundaries and remaining evidence)**
-
-No target observation is supplied. Safety bounds and census pins remain unchanged; former construction-refusal reasons remain legible pending C3. The confidential-value row stays open because explicit-only construction supplies no balanced confidential form or proofs. Duplicate membership yields `DuplicateObservedReference` and cross-region membership yields `UnknownObservedObject` during observation normalization; neither is an isolation verdict. Sponsor response echoes establish binding rather than target signature validity. The reserve remains caller-declared, so rejecting a STATE-asset alias does not establish the target's reserve-asset identity. No refusal substitutes for another declared boundary (`rule:guide15-exec:observable-retention`).
-
-### Sponsored observation · `sec:backlog:sponsored-observation`
-
-**Record (Wave 0 sponsored observation)** · `rec:backlog:wave0-sponsored-observation`
-
-The explicit sponsored observations are retained; the confidential obligation was later discharged by admitted agreement at (`rec:backlog:wave0-confidential-route-admission`). The executor selects either the historical zero overrides or the node's default fee policy; selecting defaults omits both fee overrides and supplies no measured floor by itself. Relay acceptance, ordinary block-template selection and direct-block acceptance are separate observations. The relay and mempool floors are reported by the node through its mempool readout. The block floor is declared by the pinned source, no override: `DEFAULT_BLOCK_MIN_TX_FEE` is 100 smallest units per kvB, represented as `0.00000100 BTC/kvB`, and the retained start arguments must show that neither floor was overridden. The archive admission distinguishes these provenance markers. The qualifying four-file sponsored archive is admitted (`step:wave0:bite-0-5-c2`); (`gate:guide15-exec:bite-0-5-conjunct-7`).
-
-The control families are S0, a funded variable-metadata sponsorless announcement; S1, a funded sponsored announcement without change; and S2, a funded sponsored announcement with change. Each required acceptance must bind the submitted bytes, transaction identity, witness identity, mined bytes and block height. Sponsored controls require relay acceptance, membership by transaction identity in a non-producing assembly read with its total weight, and mining without an explicit transaction list. If assembly reading is unavailable, only the recorded isolated-production fallback may establish selection. Sponsorless controls require the relay outcome followed by separately recorded direct-block acceptance. The observations below are derived by exact replay; construction-only dispositions retain their separate boundaries.
-
-**Table (Sponsored observation rows)** · `tab:backlog:sponsored-observation-rows`
-
-| Row | Control family | Expected boundary | Observed outcome with route | Disposition for C3 | Pinning test |
-|---|---|---|---|---|---|
-| `16.1 / sponsored-without-change` | S1 against S0 | Relay acceptance and ordinary block selection | Relay accepted; assembly member; ordinary mined readback; fee 128 units | Acceptance and exact readback supplied | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.1 / sponsored-with-change-where-supported` | S2 against S1 | Relay acceptance and ordinary block selection | Relay accepted; assembly member; ordinary mined readback; fee 141, change 999859 units | Acceptance and exact readback supplied | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.1 / minimum-valid-lead` | S0 at minimum lead | Accepted transaction at inclusive lower endpoint | Relay refused: `min relay fee not met`; direct-block accepted with exact readback | Positive-floor direct-block observation supplied; no template-route claim | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.1 / maximum-valid-lead` | S0 at maximum lead | Accepted transaction at inclusive upper endpoint | Relay refused: `min relay fee not met`; direct-block accepted with exact readback | Positive-floor direct-block observation supplied; no template-route claim | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.1 / representative-interior-lead` | S0 at interior lead | Accepted transaction inside the lead window | Relay refused: `min relay fee not met`; direct-block accepted with exact readback | Positive-floor direct-block observation supplied; no template-route claim | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.1 / smallest-current-cycle` | S0 with current cycle zero | Accepted transaction with derived announcement cycle | Relay refused: `min relay fee not met`; direct-block accepted with exact readback | Positive-floor direct-block observation supplied; no template-route claim | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.1 / current-cycle-near-checked-upper-domain` | S0 at last complete window | Accepted transaction at the checked domain edge | Relay refused: `min relay fee not met`; direct-block accepted with exact readback | Positive-floor direct-block observation supplied; no template-route claim | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.1 / nontrivial-unaffected-fields` | S0 with distinct unaffected values | Acceptance with unchanged unaffected fields | Relay refused: `min relay fee not met`; direct-block accepted with exact readback | Positive-floor direct-block observation supplied; no template-route claim | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.1 / representation-nonce-zero` | S0 with constructor-selected zero nonce | Acceptance with least-first search evidence | Relay refused: `min relay fee not met`; direct-block accepted with exact readback | Positive-floor direct-block observation supplied; no template-route claim | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.1 / representation-nonce-nonzero` | S0 with constructor-selected nonzero nonce | Acceptance with every earlier retryable refusal retained | Relay refused: `min relay fee not met`; direct-block accepted with exact readback | Positive-floor direct-block observation supplied; no template-route claim | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.1 / accepted-target-transaction-with-semantic-constructor-root-and-recovery-projections-all-matching` | S0 with all four projection checks | Acceptance and agreement of all four projections | Relay refused: `min relay fee not met`; direct-block accepted with exact readback | Positive-floor direct-block observation supplied; no template-route claim | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.10 / state-sponsor-overlap` | S2 with STATE input claimed as sponsor | Construction disjointness and model isolation | No target carrier for membership | Inherit construction evidence only | `state_input_cannot_join_sponsor_offer`; `state_input_and_successor_cannot_join_sponsor_flow` |
-| `16.10 / two-sponsor-envelopes` | S2 with second disjoint owned flow | Model multiplicity | No leaf-count carrier | Inherit model evidence only | `second_sponsor_envelope_fails_region_multiplicity` |
-| `16.10 / foreign-sponsor-asset` | S2 with foreign sponsor asset | Construction and model recognition | No target claim from recognition | Inherit construction evidence only | `sponsor_views_are_required_and_foreign_assets_refuse`; `foreign_sponsor_asset_fails_model_recognition` |
-| `16.10 / missing-sponsor-authorization` | S2 with one witness removed | Sponsor-input script execution | `ScriptPathRejection`: witness program hash mismatch at relay validation | Sponsor-input refusal supplied against accepted S2 | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.10 / sponsor-change-at-state-output-0` | S2 with successor/change positions exchanged | STATE script execution with fresh unrelated signatures | `ScriptPathRejection`: OP_EQUALVERIFY at relay validation; fresh unrelated signatures | Positional STATE refusal supplied against accepted S2 | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.10 / state-successor-in-sponsor-range` | S2 with successor claimed as sponsor member | Model isolation | No target membership carrier; exchanged positions separately reach `ScriptPathRejection` | Preserve membership boundary; no target membership credit | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.10 / fee-change-substitution` | S2 with fee/change allocation moved at fixed total | Retained-STATE-signature refusal; reauthorized allocation separately assessed | Retained signature: `ScriptPathRejection`; reauthorized fee 142 and change 999858 accepted through relay, assembly and ordinary mining | Refusal and separate allocation acceptance supplied | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.10 / sponsor-member-unclassified` | S2 with one flow membership omitted | Model exact membership | No target carrier for membership | Inherit model evidence only | `missing_sponsor_membership_fails_isolation` |
-| `16.10 / empty-sponsor-offer-for-sponsored-request` | S1 with empty offer | Construction admission | No transaction to submit from the refused offer | Inherit construction evidence only | `malformed_and_empty_offers_refuse_against_a_nonempty_control` |
-| `16.10 / balanced-state-corruption-compensated-by-sponsor-change` | S2 with STATE amount corrupted and reserve change adjusted | Conservation or STATE script, as reached | `ConsensusRejectionBeforeScript`: `bad-txns-in-ne-out`, also refused by direct block | Earlier conservation refusal retained; no STATE-script credit | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.10 / zero-valued-sponsor-member-under-exact-role-structure` | S2 with one member value zero | Funding validity before spend execution | Zero-valued funding refused: `ConsensusRejectionBeforeScript`, `bad-txns-in-ne-out` | Funding boundary supplied; zero-valued spend unreachable | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.10 / confidential-sponsor-value-where-the-selected-target-policy-claims-support` | S2 with confidential value and required proofs | Balanced confidential construction, then selected policy | Explicit control and confidential subject both accept through relay and ordinary template selection with exact readback | Final build-property reason bound to admitted agreement (`rec:backlog:wave0-confidential-route-admission`) | `confidential_admission_binds_bytes_provenance_census_route_and_readback`; `confidential_acceptance_binds_final_build_property_standing` |
-| `16.4 / sponsor-input-added-after-signing` | S2 with distinct input appended after STATE signing | STATE script execution | `ScriptPathRejection`: invalid Schnorr signature; added funding and balancing allocation, both sponsor signatures refreshed | STATE signing refusal supplied against accepted S2 | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-| `16.4 / fee-output-changed-after-signing` | S2 with fee changed after STATE signing | STATE script execution | `ScriptPathRejection`: invalid Schnorr signature; fee/change total fixed and sponsor signature refreshed | STATE signing refusal supplied; shares allocation subject | `sponsored_admission_binds_bytes_provenance_census_routes_and_readback` |
-
-**Result (Sponsored observation packet)** · `result:backlog:sponsored-observation`
-
-The archive `packages/vectors/fixtures/maturity-sponsored-run-of-record/` binds the ceremony, timing sidecar, `MANIFEST.sha256` and `RUN-REPORT` through `MATURITY_SPONSORED_CEREMONY_SHA256`, `MATURITY_SPONSORED_MANIFEST_SHA256` and `MATURITY_SPONSORED_RUN_ADDRESS`. Its report states relay and mempool floors of `0.00000100 BTC/kvB`, reported by the node, and a block floor of `0.00000100 BTC/kvB`, declared by the pinned source, no override. Exact replay yields 69 operations, 35 funding steps, 17 signings and 17 submissions: 12 acceptances and five refusals. Zero-valued funding contributes one separate conservation refusal among the funding steps. The nine sponsorless subjects use direct-block acceptance after relay refusal; S1, S2 and the separately reauthorized allocation use observed assembly membership followed by ordinary mining. Measured signed weights of 2544 and 2809 units, each with an eight-unit signature margin, yield fees of 128 and 141 units by rounding upward at twice the largest floor. S2 funding is 1000000 units and its change is 999859; the independently reauthorized allocation pays 142 and returns 999858. Every accepted submission binds transaction identity, witness identity, exact submitted/mined bytes and block height. At sponsored admission, C3 inherited these observations, the funding refusal and the six non-target dispositions; the confidential row and the STATE-script obligation behind the conservation refusal remained open. The subsequent native observation at (`rec:backlog:wave0-native-observation`) supplied the script-boundary refusal, and admitted confidential agreement supplied the final disposition at (`rec:backlog:wave0-confidential-route-admission`). Safety bounds and census pins remain unchanged.
-
-The disposable node retains `-listen=0`, `-dnsseed=0` and `-connect=0`, preventing incoming connections and automatic connection attempts; its private data directory and RPC endpoint isolate its mempool and block production. Each probe nevertheless retains its own transaction identity, current floors, five-minute load, mempool size and minimum fee, assembly membership and total weight. Confirmation uses a transaction lookup followed by its returned block hash, with inclusion outside the produced block recorded separately. Client calls have a 120-second budget; mutating methods have one attempt, while reads permit one 240-second retry. An inclusion found after an expired mutation remains undecided with its block hash and `inclusion_in_produced=false`, including in the legacy handlers. An expired wallet spend queries the fresh destination's wallet records and retains any found effects without repeating the spend or crediting a verdict. Missing assembly membership is undecided by displacement, never a refusal. Load and concurrent-state counts supply no verdict or admission precondition.
-
-**Caveat (Boundaries and unresolved evidence)**
-
-Fresh attempts restart the negative family and credit only subjects paired with that attempt's accepted control. Abandoned exchanges remain history and contribute no accepted or refused credit. Subsequent captures and reports carry `sponsored-waiting` with each unresolved row and retained reason; admission compares both copies with replay. An unresolved table entry is typed waiting with that reason, never refused. The immutable archive omits this optional field and replays to an empty waiting list; omission cannot admit a waiting row.
-
-The six construction/model-only dispositions supply no target refusal credit. At this capture the confidential-value row remained open because the explicit builder supplied no balanced confidential form or proofs; the subsequent construction, capture and admission are recorded at (`rec:backlog:wave0-confidential-route-capture-driver`) and (`rec:backlog:wave0-confidential-route-admission`). A zero-valued funding refusal cannot establish execution of a zero-valued input. Input extension and allocation mutations declare their balance-preserving collateral; a literal single-field mutation refused by conservation leaves the intended STATE-script obligation open. Any observation at another boundary receives no credit for the declared boundary. Direct-block acceptance establishes neither relay acceptance nor ordinary block-template selection. The caller's branch context establishes no current-root freshness.
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
 ### Sponsored retyping · `sec:backlog:sponsored-retyping`
 
@@ -1924,268 +1715,21 @@ The seven final rows declare pre-target ABI-layout mutations. Their construction
 
 At sponsored retyping, balanced STATE corruption adjusted reserve change across distinct assets, so per-asset conservation refused before the STATE script. Its declared script boundary therefore remained contradicted at an observed boundary; the report rendered failed completeness and the contradiction standing, never ordinary waiting. The STATE-script obligation stayed with observe-remaining and needed a per-asset-balanced mutation (`step:wave0:bite-0-5-observe-remaining`); (`rule:guide15-exec:observable-retention`). The two §16.4 rows, `sponsor-input-added-after-signing` and `fee-output-changed-after-signing`, retained their script bounds, sponsorless control derivation and register entries. Their matrix control was the sponsorless announcement while their C2 observations were taken against the sponsored S2 control, so their credit needed a control ruling or a sponsorless re-observation, which the observe-remaining step owned (`step:wave0:bite-0-5-observe-remaining`); their C2 observations were held here, not folded. Subsequent native observation supplied the balanced-corruption script-boundary refusal and both operator-row observations at (`rec:backlog:wave0-native-observation`), while the sponsored archive retains its historical contradiction. Reauthorized allocation acceptance supplies no refusal credit for the retained-signature negative. No archive bytes or target observations were added by retyping.
 
-### Native observation · `sec:backlog:native-observation`
+### Native observation (archived)
 
-**Record (Wave 0 native observation)** · `rec:backlog:wave0-native-observation`
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
-The subject inventory retains the thirty-five keys and twenty-six archived-context digests of (`rec:backlog:wave0-safety-native-staging`). Exact replay rebuilds the four stand-in subjects over funded outpoints and adapts the maximum-lead subject to its live context. Each negative precedes its consuming control; credit requires acceptance of that family's control. The serial schedule runs under the node defaults without numerical overrides. The eight semantic positives use the deployed S2 form; at this admission the combined projection row kept its waiting reason, subsequently discharged at (`rec:backlog:wave0-combined-projection`). The confidential construction remains outside this observation.
+### Independent observation (archived)
 
-**Table (Native observation row ledger)** · `tab:backlog:native-observation-rows`
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
-| Row | Control family | Declared boundary | Observed outcome with route or reason none was obtained | Standing after | Pinning test |
-| --- | --- | --- | --- | --- | --- |
-| `16.2 / successor-remains-unannounced` | SponsorlessAnnouncement; window | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.2 / successor-becomes-complete` | SponsorlessAnnouncement; window | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.3 / metadata-from-another-state-object` | SponsorlessAnnouncement; metadata | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.4 / empty-signature` | SponsorlessAnnouncement; operator | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.4 / malformed-signature` | SponsorlessAnnouncement; operator | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.4 / wrong-operator` | SponsorlessAnnouncement; operator | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.4 / stale-operator` | SponsorlessAnnouncement; unavailable | `ScriptPathRejection` → `NativeCoordinateAbsentFromCandidate` | No operator-key migration relation; ruling 131 at (`rec:backlog:wave0-native-route-settlement`) | `NativeCoordinateAbsentFromCandidate; Final` | `absent_native_coordinates_have_exact_final_membership` |
-| `16.4 / valid-signature-under-another-key` | SponsorlessAnnouncement; operator | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.4 / valid-signature-over-another-candidate` | SponsorlessAnnouncement; operator | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.4 / successor-metadata-changed-after-signing` | SponsorlessAnnouncement; operator | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.4 / successor-program-changed-after-signing` | SponsorlessAnnouncement; operator | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.4 / sponsor-input-added-after-signing` | SponsorlessAnnouncement; added-sponsor | `ScriptPathRejection` | script_path_rejection; refused | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.4 / fee-output-changed-after-signing` | SponsoredAnnouncement; interior S2 | `ScriptPathRejection` | script_path_rejection; refused | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.5 / wrong-state-asset` | SponsorlessAnnouncement; predecessor | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.5 / wrong-singleton-amount` | SponsorlessAnnouncement; predecessor | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.5 / wrong-predecessor-program` | SponsorlessAnnouncement; predecessor | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.5 / predecessor-metadata-reconstructs-another-program` | SponsorlessAnnouncement; predecessor | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.5 / wrong-leaf-version` | SponsorlessAnnouncement; abi | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.6 / successor-from-wrong-semantic-metadata` | SponsorlessAnnouncement; same-coin retained control | `ScriptPathRejection` | script_path_rejection; refused; retained archive | `NativeRefusalObserved` | `retained_semantic_refusal_binds_its_exact_row_and_same_coin_control` |
-| `16.6 / successor-from-predecessor-metadata-unchanged` | SponsorlessAnnouncement; window | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.6 / wrong-announcement-cycle` | SponsorlessAnnouncement; successor | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.6 / wrong-representation-nonce` | SponsorlessAnnouncement; successor | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.6 / later-admissible-nonce-instead-of-first` | SponsorlessAnnouncement; later-nonce | `ScriptPathRejection → typed final reason` | accepted; direct-block | `NativeCoordinateUndecidedByCandidate; Final` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.6 / wrong-leaf-version` | SponsorlessAnnouncement; successor | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.6 / wrong-control-recipe` | SponsorlessAnnouncement; unavailable | `ScriptPathRejection` → `NativeCoordinateAbsentFromCandidate` | No operation spends an announced state; no successor control position exists; ruling 133 at (`rec:backlog:wave0-native-route-settlement`) | `NativeCoordinateAbsentFromCandidate; Final` | `candidate_leaf_and_transition_censuses_have_no_announced_state_spend` |
-| `16.6 / arbitrary-caller-supplied-output-program` | SponsorlessAnnouncement; successor | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.6 / no-state-successor` | SponsorlessAnnouncement; successor | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.6 / two-state-successors` | SponsorlessAnnouncement; equivalent-coin retained control | `ScriptPathRejection → typed final reason` | accepted; direct-block; matched readback; retained archive | `NativeCoordinateUndecidedByCandidate; Final` | `retained_two_successor_acceptance_binds_final_undecided_standing` |
-| `16.6 / extra-state-like-output` | SponsorlessAnnouncement; extra-output | `ScriptPathRejection → typed final reason` | accepted; direct-block | `NativeCoordinateUndecidedByCandidate; Final` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.11 / wrong-transaction-version` | SponsorlessAnnouncement; version | `ConsensusRejectionBeforeScript → typed final reason` | accepted; direct-block | `NativeCoordinateUndecidedByCandidate; Final` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.11 / wrong-sequence` | SponsorlessAnnouncement; successor | `ConsensusRejectionBeforeScript` | consensus_rejection_before_script; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.11 / witness-item-reorder` | SponsorlessAnnouncement; abi | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.11 / predecessor-and-successor-metadata-witnesses-exchanged` | SponsorlessAnnouncement; unavailable | `ScriptPathRejection` → `NativeCoordinateAbsentFromCandidate` | Successor metadata is derived, never a free witness; ruling 132 at (`rec:backlog:wave0-native-route-settlement`) | `NativeCoordinateAbsentFromCandidate; Final` | `absent_coordinates_bind_the_candidate_witness_and_generation_censuses` |
-| `16.11 / control-block-from-another-program` | SponsorlessAnnouncement; abi | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.11 / target-bytes-changed-after-abi-validation` | SponsorlessAnnouncement; abi | `ScriptPathRejection` | script_path_rejection; refused; direct-block validation after relay refusal | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.1 / minimum-valid-lead` | TheRowIsTheControl; funded S2 | `AcceptedTransaction`; former `AcceptanceAwaitsRelayAdmissibility` | Relay admission, assembly membership, ordinary mining and exact readback | `NativeAcceptanceObserved`; `Target` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.1 / maximum-valid-lead` | TheRowIsTheControl; funded S2 | `AcceptedTransaction`; former `AcceptanceAwaitsRelayAdmissibility` | Relay admission, assembly membership, ordinary mining and exact readback | `NativeAcceptanceObserved`; `Target` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.1 / representative-interior-lead` | TheRowIsTheControl; funded S2 | `AcceptedTransaction`; former `AcceptanceAwaitsRelayAdmissibility` | Relay admission, assembly membership, ordinary mining and exact readback | `NativeAcceptanceObserved`; `Target` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.1 / smallest-current-cycle` | TheRowIsTheControl; funded S2 | `AcceptedTransaction`; former `AcceptanceAwaitsRelayAdmissibility` | Relay admission, assembly membership, ordinary mining and exact readback | `NativeAcceptanceObserved`; `Target` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.1 / current-cycle-near-checked-upper-domain` | TheRowIsTheControl; funded S2 | `AcceptedTransaction`; former `AcceptanceAwaitsRelayAdmissibility` | Relay admission, assembly membership, ordinary mining and exact readback | `NativeAcceptanceObserved`; `Target` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.1 / nontrivial-unaffected-fields` | TheRowIsTheControl; funded S2 | `AcceptedTransaction`; former `AcceptanceAwaitsRelayAdmissibility` | Relay admission, assembly membership, ordinary mining and exact readback | `NativeAcceptanceObserved`; `Target` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.1 / representation-nonce-zero` | TheRowIsTheControl; funded S2 | `AcceptedTransaction`; former `AcceptanceAwaitsRelayAdmissibility` | Relay admission, assembly membership, ordinary mining and exact readback | `NativeAcceptanceObserved`; `Target` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.1 / representation-nonce-nonzero` | TheRowIsTheControl; funded S2 | `AcceptedTransaction`; former `AcceptanceAwaitsRelayAdmissibility` | Relay admission, assembly membership, ordinary mining and exact readback | `NativeAcceptanceObserved`; `Target` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
-| `16.1 / accepted-target-transaction-with-semantic-constructor-root-and-recovery-projections-all-matching` | TheRowIsTheControl; admitted S2 | `AcceptedTransaction`; former `AcceptanceAwaitsRelayAdmissibility` | One relay-and-template acceptance with semantic, constructor, root-history and public-recovery agreement over identical bytes | `NativeAcceptanceObserved`; `Target` | `combined_projection_binds_the_selected_acceptance_and_all_four_terms` |
-| `16.10 / balanced-state-corruption-compensated-by-sponsor-change` | SponsoredAnnouncement; interior S2 | `ScriptPathRejection` | Refused at STATE output recognition; `OP_EQUALVERIFY`; both asset totals exact | `NativeRefusalObserved` | `native_observation_credits_only_exact_rows_and_never_acceptances_as_refusals` |
+### Report and relations (archived)
 
-**Result (Native observation evidence and census)** · `result:backlog:native-observation`
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
-The four immutable files in `packages/vectors/fixtures/maturity-native-run-of-record/` are admitted once through `MATURITY_NATIVE_MANIFEST_SHA256`, `MATURITY_NATIVE_RUN_ADDRESS` and the ceremony pin. `native_observation_admission_binds_bytes_policy_census_and_replay` checks the archive, policy, census and exact replay; `native_replay_refuses_changed_requests_and_missing_control_readback` checks request and control integrity. The run reports relay and mempool floors of `0.00000100 BTC/kvB`; the block floor is `0.00000100 BTC/kvB`, declared by the pinned source with no override. Its schedule has 137 operations: 63 fundings, 27 sponsor signings, 47 submissions, 21 acceptances and 26 refusal observations. The report records preflight 35 ms, Cargo 316921 ms, census 282 ms, manifest 1083 ms and elapsed 318334 ms at report emission. No C2-based wall estimate exists because its timing sidecar carries no duration.
+### Relation dispositions (archived)
 
-The denominator remains 206. Native-run-required moves 35 → 0: twenty-seven rows gain declared-boundary refusals, three accepted departures gain the final coordinate reason, and five unavailable subjects gain the waiting construction reason. Acceptance moves 3 → 11 through the eight relay-and-template positives. Refusal moves 10 → 38 through those twenty-seven native rows and balanced corruption, which also removes the sole unexpected-boundary standing, 1 → 0. Answered moves 83 → 119 and outstanding 123 → 87. Typed non-answers remain 29: final 19 → 22 and waiting 10 → 7, because eight positive waits leave and five staging waits enter. `STILL_REQUIRED` becomes empty; `NATIVE_STAGING_HISTORY` retains all thirty-five keys, including the unavailable subjects. The historical staging partition remains 25 / 3 / 2 / 5 and its twenty-six digests remain pinned. The report renders thirty-eight refusal lines and computes partial completeness. This supplies no native or Safety closure; the close-safety step inherits the ledger and all eighty-seven outstanding obligations.
-
-Two subject observations each support two row claims: `window:successor-remains-unannounced` supports both §16.2's unannounced successor and §16.6's unchanged predecessor metadata; `operator:wrong-operator` supports both wrong operator and a valid signature under another key. Each row independently passes the control, locator, carrier and declared-boundary binder. Six accepted control observations are also shared across row claims: window, operator, predecessor, successor, ABI and interior S2. The metadata, added-sponsor and classification controls each support one row. The interior S2 acceptance is both its positive-row observation and the control for the fee and balanced-corruption subjects. The §16.4 fee row changes control because the sponsorless form has no fee output. Its fresh mutation raises the fee by one unit and lowers change by one, retains the STATE signature and refreshes sponsor authorization. The §16.10 fee row retains its C3 credit: the two rows share a mutation, not an observation. Balanced corruption exchanges output-zero and change asset/value pairs, preserves their programs and the fee, and refreshes both authorizations before the honest S2 control consumes the inputs.
-
-The preceding observation census remains historical; the separately admitted retained observation is recorded at (`rec:backlog:wave0-native-route-capture-driver`) and current finality at (`result:backlog:close-safety-reconciliation`).
-
-**Caveat (Boundaries and remaining constructions)**
-
-The five subjects unavailable in this historical capture now comprise three absent coordinates and two constructions admitted through the separate retained archive at (`rec:backlog:wave0-native-route-capture-driver`); no universal impossibility is claimed. Three accepted departures establish a property of this candidate, not negative refusal credit or positive-row credit. Every observed refusal reaches its declared boundary in this archive; relay fee or witness-policy refusals alone receive no credit, and the later direct-block validation supplies the recorded consensus or script outcome. A refusal elsewhere or infrastructure failure would answer nothing at the row's declared boundary. The sponsorless controls and classification acceptances use direct block after fee refusal; that route establishes no positive-floor acceptance. Twenty-two sponsorless refusal observations, carrying twenty-four row claims, establish the script boundary through the direct-block verdict `mandatory-script-verify-flag-failed` alone, which does not name the refusing check. The close-safety step (`step:wave0:bite-0-5-close-safety`) inherits the finding that the script error from direct-block validation must be retained in the capture so the refusing check is named.
-
-**Caveat (Combined projections and confidential value)**
-
-The combined projection formerly retained `AcceptanceAwaitsRelayAdmissibility`: sponsorless bytes failed the fee floor and sponsored bytes failed the readers' one-input-one-output restriction. Positional readers now read past that restriction for role-validated layouts over one admitted S2 acceptance (`rec:backlog:wave0-combined-projection`), without broadening a validator. The confidential-value row is final under `ConfidentialSponsorValueUndecidedByCandidate`, bound to admitted agreement at (`rec:backlog:wave0-confidential-route-admission`). Retained evidence is named by the loop's `evidence/wave0/native/<run-address>/` tier, while admitted evidence is cited by its fixture directory and pins.
-
-### Independent observation · `sec:backlog:independent-observation`
-
-**Record (Wave 0 independent observation)** · `rec:backlog:wave0-independent-observation`
-
-The separate observer receives a closed public manifest and answers acquired through the node interface. Its five imports and forbidden input names are pinned by `observer_imports_and_input_surface_are_pinned`; it reads standard input and writes standard output. The producer exits before acquisition, its wallet directory is removed, and a fresh node opens the retained chain directory. The coordinator awaits each child separately and removes the chain directory at completion. No producer response, archive, fixture or temporary file supplies the observer's semantic input. The manifest declares the variable schedule, lead bounds, static root, internal policy, contract revision, STATE output index and explicit candidate and ABI projections; the locator identifies the public transaction.
-
-**Table (Independent observation readings)** · `tab:backlog:independent-observation-readings`
-
-| Reading | What was supplied | What was read from the node | Outcome | Standing or disposition | Pinning test |
-| --- | --- | --- | --- | --- | --- |
-| `16.13 / missing-transaction` | Manifest without its transaction locator | Unaltered acquisition answers | `missing-public-input:transaction_id` | Refused before public recovery | `closed_manifest_refuses_every_missing_and_private_field` |
-| (`rule:guide14-exec:checkpoint`) | Altered declared genesis | Actual genesis and chain name | `checkpoint-genesis_id-disagrees` | Checkpoint refusal; no Safety reclassification | `boundary_replay_checks_seven_outcomes_and_separate_report_roles` |
-| `16.13 / copied-transaction-bytes` | Offered complete bytes changed in one position | Exact transaction including witness | `copied-transaction-bytes` | Refused at the acquired-byte binding | `boundary_replay_checks_seven_outcomes_and_separate_report_roles` |
-| (`rule:guide14-exec:checkpoint`) | Altered offered block hash | Containing block and active block at its height | `checkpoint-block-disagrees` | Checkpoint refusal; no Safety reclassification | `boundary_replay_checks_seven_outcomes_and_separate_report_roles` |
-| (`rule:guide14-exec:checkpoint`) | Altered offered height | Containing block height | `checkpoint-height-disagrees` | Checkpoint refusal; no Safety reclassification | `boundary_replay_checks_seven_outcomes_and_separate_report_roles` |
-| `equal-final-cursor / altered-predecessor-edge-refused` | Changed predecessor edge followed by the honest edge; equal final cursor | Honest transaction and containing block | `PredecessorIsNotTheCursor` at the first edge | Refused despite equal final cursors | `boundary_replay_checks_seven_outcomes_and_separate_report_roles` |
-| (`gate:guide15-exec:bite-0-5-conjunct-11`) | Public manifest and the single acquired edge | Complete bytes, identity, containing block, height, membership and active-block answers | Validated history report with one edge and a node-bound checkpoint | Observable edge acquisition and validation MET; retained non-claims below | `observer_archive_replays_reports_and_preserves_each_boundary` |
-| (`gate:guide15-exec:bite-0-5-conjunct-13`) | Observer-built public handoff | Complete bytes and the STATE output program | Validated public-recovery report; `programs_agree` true | Observable public recovery and program comparison MET; retained non-claims below | `observer_archive_replays_reports_and_preserves_each_boundary` |
-
-**Result (Independent acquisition and conjunct dispositions)** · `result:backlog:independent-observation`
-
-The four recaptured files in `packages/vectors/fixtures/maturity-observer-run-of-record/`, carrying the namespace probe diagnostic and separate measured child walls, are admitted once by `maturity_observer_run_of_record`, under `MATURITY_OBSERVER_MANIFEST_SHA256`, `MATURITY_OBSERVER_RUN_ADDRESS` and `MATURITY_OBSERVER_CEREMONY_SHA256`. Admission checks the manifest and ordered report ceremony (preflight, build, producer, acquisition, observer, census, manifest and coordinator walls, followed by their summed elapsed wall and the three child exits), binds each reported child exit to its recorded result, replays all seven experiment outcomes and both reports, binds the recorded process exits and isolation evidence, and requires the submitted and independently acquired bytes to equal the variable archive's 1,701-byte subject exactly, witness included. `observer_archive_refuses_each_changed_file` pins all four file boundaries. The capture records the actual chain name and genesis, containing block and height, membership and active-block readings, and both recomputed transaction identities. Relay and mempool floors are node answers of `0.00000100 BTC/kvB`; the block floor is `0.00000100 BTC/kvB` from the pinned source with no override. The actual route is relay refusal followed by direct-block inclusion.
-
-Conjunct 11 is MET for independent acquisition of the exact announcement, its one validated root edge and its bound checkpoint; equality of the final cursor alone is explicitly refused by `equal-final-cursor / altered-predecessor-edge-refused`, related to `16.8 / successor-cursor-restored-after-invalid-intermediate-edge`. Conjunct 13 is MET for recovery from the acquired public handoff and agreement of the reconstructed program with the observed output. These are dispositions by parts under (`crit:guide15-exec:observer-independence`) and (`crit:guide15-exec:conjunct-observation`), not revisions of the historical CONDITIONALLY MET entries at (`sec:phase6:gate-record`). The history and recovery report roles stay separate, retaining conjunct 15's distinction. Only a checked observation selects the acquisition residuals: the history report uses `single-node-acquisition-only`; the recovery report preserves every structural validator line and appends `acquisition_residual single-node-acquisition-only replaces no-chain-observation`. Cursor freshness and archive-origin residuals remain and full-artifact authentication remains unclaimed. A source tag alone supplies no observation credit.
-
-The census stays 206 / 119 / 87 / 11 / 38 / 29: denominator, answered, outstanding, native acceptances, native refusals and typed non-answers respectively. The existing root-history and public-recovery buckets remain 16 and 14. This archive adds independent acquisition evidence without reclassifying a Safety row. The close-safety step (`step:wave0:bite-0-5-close-safety`) inherits both conjunct dispositions by parts, the six recorded refusals and all retained non-claims, alongside the eighty-seven outstanding obligations. Retained evidence belongs to `evidence/wave0/observer/<run-address>/`; admitted evidence is named by the fixture directory and its pins.
-
-**Caveat (Acquisition boundary and chain lifetime)**
-
-Construction is the isolation boundary in force: the pin covers the observer target and `maturity_observer`, `maturity_history`, `maturity_history_report`, `maturity_recovery`, `maturity_recovery_report`, `maturity_continuity`, `maturity_closure`, `maturity_safety`, `maturity_report` and `maturity_negative_half` along its call path. The scanned set is closed over callable imports with a named allowlist; the one archive-bearing callable, `maturity_evidence::derive_maturity_evidence_plan_with`, is imported only by `maturity_negative_half` for `outstanding_rows` in the scanned set, and the name refusal in scanned non-test regions and archive-free callable bodies is mechanical; only the call graph beyond the allowlisted bodies remains a reading. The path also uses the linker's continuity rule and the transaction, tapscript, realization, architecture and target crates, plus `serde_json` and `target_elements_conformance`. The observer has no filesystem APIs, no archive imports, no inherited environment and no file argument. The admitted probe diagnostic records that a filesystem namespace is unavailable: `bwrap` is absent and `unshare` refuses with `Operation not permitted`. Preflight records the excluded paths as unnamed in observer arguments and environment. Both processes use the same retained chain through separate node lifetimes; this establishes independent acquisition and validation of the exact subject from one node of record, with no second chain view, deployment or archival-availability claim (`cav:wave0:observer-node-limit`).
-
-**Caveat (Fee-floor condition)**
-
-The exact sponsorless form has no fee output and is included directly after its relay refusal. This establishes the observed subject needed by the one-input, one-output continuity and recovery readers, not positive-floor relayability. Ruling 115's fee-floor condition and conjunct 7 remain unchanged at (`sec:phase6:gate-record`).
-
-**Caveat (Checkpoint premises and retained limits)**
-
-Each checkpoint fact carries its own provenance: node answers for genesis, block, height, membership and active block; recomputation from acquired bytes for transaction identity and the two outpoints; public declaration bound to the reviewed contract; and explicit public projections for the chain identifier, candidate and ABI. Admission compares the declared chain identifier with the variable archive's chain identity. No archived caller-supplied branch context is reused. Active-block readings bind this acquisition to its containing chain prefix, but do not authenticate later cursor freshness. Full candidate and ABI artifacts, archive origin beyond exact admission, another node's view and future availability remain outside the claim.
-
-### Report and relations · `sec:backlog:report-and-relations`
-
-**Record (Wave 0 report consumers and relation dispositions)** · `rec:backlog:wave0-report-and-relations`
-
-The report-and-relations step (`step:wave0:bite-0-5-report-and-relations`) supplies the report and relation readings of (`gate:guide15-exec:bite-0-5-report-gate`) and (`gate:guide15-exec:bite-0-5-relation-gate`). The fifteen report subjects are six metadata, two sponsor and seven protocol-report rows. Their accepted controls and refused subjects run through the consumers in `packages/vectors/src/maturity_report.rs`; the evidence fold in `packages/vectors/src/maturity_evidence.rs` consumes only the campaign's privately constructed admission object. No row is retyped.
-
-**Table (Report consumer readings)** · `tab:backlog:report-consumer-readings`
-
-All pairs use `ReportSemanticProjectionRejection` and retain the matrix's expected projection. The five individual field changes and compensated change compare the complete offered tuple against the successor recomputed from the admitted predecessor and request. Publication comparisons first validate structured fields against the source plan, matrix and register, then compare offered bytes with the canonical projection. Typed refusals below are variants of `MaturityReportConsumerRefusal`; `Structured` retains the underlying report refusal.
-
-| Section / row | Accepted control | Changed subject | Validated consumer and exact refusal | Standing after | Pinning test |
-|---|---|---|---|---|---|
-| `16.3 / unaffected-field-omega-changed-alone` | Admitted nontrivial semantic successor accepted | Omega + 1 | `validate_report_semantic_projection`: `SemanticTermDiffers(Omega)` | `ReportLayerObserved` | `report_pair_metadata_omega` |
-| `16.3 / unaffected-field-y-l-changed-alone` | Admitted nontrivial semantic successor accepted | YL + 1 | `validate_report_semantic_projection`: `SemanticTermDiffers(YL)` | `ReportLayerObserved` | `report_pair_metadata_y_l` |
-| `16.3 / unaffected-field-y-t-changed-alone` | Admitted nontrivial semantic successor accepted | YT + 1 | `validate_report_semantic_projection`: `SemanticTermDiffers(YT)` | `ReportLayerObserved` | `report_pair_metadata_y_t` |
-| `16.3 / unaffected-field-q-changed-alone` | Admitted nontrivial semantic successor accepted | Q + 1 | `validate_report_semantic_projection`: `SemanticTermDiffers(Q)` | `ReportLayerObserved` | `report_pair_metadata_q` |
-| `16.3 / unaffected-field-cycle-changed-alone` | Admitted nontrivial semantic successor accepted | Cycle + 1 | `validate_report_semantic_projection`: `SemanticTermDiffers(Cycle)` | `ReportLayerObserved` | `report_pair_metadata_cycle` |
-| `16.3 / semantic-field-changes-compensated-by-another-field` | Admitted nontrivial semantic successor accepted | Omega + 1 and YL − 1, preserving their sum | `validate_report_semantic_projection`: `SemanticTermDiffers(Omega)` | `ReportLayerObserved` | `report_pair_metadata_compensation` |
-| `16.10 / report-publishes-sponsor-amount` | Validated source report and canonical bytes accepted | Append sponsor_amount | `validate_maturity_safety_publication`: `ForbiddenPublication(sponsor_amount)` | `ReportLayerObserved` | `report_pair_sponsor_amount` |
-| `16.10 / report-publishes-sponsor-opening` | Validated source report and canonical bytes accepted | Append sponsor_opening | `validate_maturity_safety_publication`: `ForbiddenPublication(sponsor_opening)` | `ReportLayerObserved` | `report_pair_sponsor_opening` |
-| `16.12 / caller-authored-evidence-standing` | Validated source report and canonical bytes accepted | Claim one extra report-layer observation | `validate_maturity_safety_publication`: `Structured(CensusBucketDiffers(report_layer_observed))` | `ReportLayerObserved` | `report_pair_authored_standing` |
-| `16.12 / report-summary-edited` | Validated source report and canonical bytes accepted | Claim one extra answered row | `validate_maturity_safety_publication`: `Structured(AnsweredOrOutstandingDiffers(answered))` | `ReportLayerObserved` | `report_pair_summary` |
-| `16.12 / failed-row-removed` | Validated source report and canonical bytes accepted | Remove a native refusal row | `validate_maturity_safety_publication`: `Structured(NativeRefusalCountDiffers)` | `ReportLayerObserved` | `report_pair_removed_failure` |
-| `16.12 / duplicate-passing-row` | Validated source report and canonical bytes accepted | Duplicate a witnessed passing row | `validate_maturity_safety_publication`: `Structured(WitnessedRefusalCountDiffers)` | `ReportLayerObserved` | `report_pair_duplicate_pass` |
-| `16.12 / observed-target-layer-differs-from-declared-row-boundary` | Validated source report and canonical bytes accepted | Falsify the retained observed layer | `validate_maturity_safety_publication`: `Structured(NativeRefusalDiffers)` | `ReportLayerObserved` | `report_pair_falsified_boundary` |
-| `16.12 / canonical-report-includes-wall-time` | Validated source report and canonical bytes accepted | Append wall_time | `validate_maturity_safety_publication`: `PublicationDiffers(first surplus line)` | `ReportLayerObserved` | `report_pair_wall_time` |
-| `16.12 / typed-diagnostic-contains-a-caller-path-or-injected-line` | Validated source report and canonical bytes accepted | Append a diagnostic containing a path and an extra line | `validate_maturity_safety_publication`: `PublicationDiffers(first surplus line)` | `ReportLayerObserved` | `report_pair_diagnostic` |
-
-The boundary-layer pair refuses a falsified observation, not an honestly reported contradiction. `truthful_unexpected_boundary_stays_failed_and_only_the_falsification_refuses` accepts the truthful structured report with completeness `Failed`, then refuses its falsified layer. `publication_bytes_refuse_altered_surplus_duplicate_and_diagnostic_lines` independently pins offered byte changes, including a path-only diagnostic and an injected extra line.
-
-**Result (Report admission and relation reconciliation)** · `result:backlog:report-and-relations`
-
-The source and folded census is 206 / 119 / 87 / 15 / 0 / 29 → 206 / 134 / 72 / 0 / 15 / 29: denominator, answered, outstanding, report-layer-required, report-layer-observed and typed non-answers. Exactly fifteen admitted report pairs account for the movement; native observations and typed non-answers do not move. Typed finality remains 22 final and 7 waiting. `report_campaign_moves_only_its_fifteen_rows` compares every keyed row before and after, and the existing census tests retain the denominator and bucket partition.
-
-The two-way join required by (`verif:wave0:campaign-join`) lives in `admit_report_readings`. Manifest membership comes from matrix boundaries. Every required section-and-name key must have its exact accepted control, refused subject, boundary and expected projection; every output receiving credit must belong to that manifest. `report_campaign_joins_every_manifest_key_in_both_directions` pins equality; `report_join_refuses_missing`, `report_join_refuses_duplicate`, `report_join_refuses_surplus`, `report_join_refuses_wrong_section` and `report_join_refuses_changed_subject_and_projection` pin the refusals. Derivation stages the source plan, report campaign and admission, evidence fold, then final report assembly and validation. Neither a test name nor a rendering result grants standing.
-
-Relations remain 14 / 108 / 84 before and after this step, with reasons 55 / 9 / 9 / 0 / 11. The dispositions are recorded in (`tab:backlog:relation-dispositions`). `the_whole_transaction_scoped_rows_are_exactly_the_recounted_set` reconstructs the historical 14 / 102 / 90 and 55 / 9 / 9 / 17 by moving the six named exact links back into the prior seventeen-row scope bucket with the eleven exclusions. `every_non_link_has_a_keyed_semantic_disposition` pins all eighty-four remaining keys. This step adds no relation links.
-
-**Caveat (Report authority)**
-
-These are report-layer observations under (`tab:wave0:report-consumers`). Rendering supplies neither target evidence nor policy acceptance. The semantic consumer compares admitted semantic material; the publication consumer rejects discrepancies in a report's claims and bytes. Neither broadens a target validator.
-
-**Caveat (Combined-projection wait)**
-
-The combined-projection row formerly retained `AcceptanceAwaitsRelayAdmissibility` because sponsorless bytes failed the fee floor and sponsored bytes failed the readers' count restriction. The requirement for one exact transaction satisfying acceptance and every projection is discharged by the positional readers and selected S2 acceptance (`rec:backlog:wave0-combined-projection`); the earlier native observation remains historical evidence.
-
-**Caveat (Inherited closure obligations)**
-
-The close-safety step (`step:wave0:bite-0-5-close-safety`) inherited at that admission seventy-two outstanding rows, the combined-projection wait, the balanced confidential route, the remaining conjunct dispositions and all acquisition and authentication residuals recorded at (`rec:backlog:wave0-independent-observation`). The current census and retained obligations are recorded at (`result:backlog:close-safety-reconciliation`). Neither (`gate:wave0:bite-0-5-packet`) nor the close-safety gate closes here. At that admission, `T12-005` remained TODO and `T11-064` retained its obligations; their closure is recorded at (`result:backlog:bite-0-5-gate-pass`).
-
-
-### Relation dispositions · `sec:backlog:relation-dispositions`
-
-The table disposes the ninety historical non-links: eighty-four retained non-links and six exact links already established by (`rec:backlog:wave0-region-refit`).
-
-**Table (Relation dispositions)** · `tab:backlog:relation-dispositions`
-
-| Section / row | Reason or prior scope | Deciding semantic fact or exact relation / subject / class | Disposition after | Pinning test |
-|---|---|---|---|---|
-| `16.2 / equal-to-current-cycle-where-outside-the-lead` | NoPublishedRelationNamesIt | The pinned request coordinate is a State transition/window law; no expression predicate is published. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.2 / lower-bound-addition-overflow` | NoPublishedRelationNamesIt | The pinned request coordinate is a State transition/window law; no expression predicate is published. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.2 / malformed-cycle-encoding` | NoPublishedRelationNamesIt | The pinned request coordinate is a State transition/window law; no expression predicate is published. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.2 / one-above-maximum` | NoPublishedRelationNamesIt | The pinned request coordinate is a State transition/window law; no expression predicate is published. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.2 / one-below-minimum` | NoPublishedRelationNamesIt | The pinned request coordinate is a State transition/window law; no expression predicate is published. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.2 / request-cycle-differs-from-successor` | NoPublishedRelationNamesIt | The pinned request coordinate is a State transition/window law; no expression predicate is published. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.2 / upper-bound-addition-overflow` | NoPublishedRelationNamesIt | The pinned request coordinate is a State transition/window law; no expression predicate is published. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / correct-semantic-metadata-with-noncanonical-representation-nonce` | NoPublishedRelationNamesIt | The pinned codec coordinate is not representation mode or authentication; the published State representation relation names only those. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / duplicate-one-field` | NoPublishedRelationNamesIt | The pinned codec coordinate is not representation mode or authentication; the published State representation relation names only those. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / noncanonical-enum-tag` | NoPublishedRelationNamesIt | The pinned codec coordinate is not representation mode or authentication; the published State representation relation names only those. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / nonzero-reserved-field` | NoPublishedRelationNamesIt | The pinned codec coordinate is not representation mode or authentication; the published State representation relation names only those. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / omit-one-field` | NoPublishedRelationNamesIt | The pinned codec coordinate is not representation mode or authentication; the published State representation relation names only those. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / reorder-fields` | NoPublishedRelationNamesIt | The pinned codec coordinate is not representation mode or authentication; the published State representation relation names only those. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / semantic-field-changes-compensated-by-another-field` | SubjectOutsideTheRelationsRegion | Offered successor metadata is outside the empty canonical asset-flow delta set; compensation does not turn it into an asset flow. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / trailing-bytes` | NoPublishedRelationNamesIt | The pinned codec coordinate is not representation mode or authentication; the published State representation relation names only those. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / unaffected-field-cycle-changed-alone` | SubjectOutsideTheRelationsRegion | Offered successor metadata is outside the empty canonical asset-flow delta set; compensation does not turn it into an asset flow. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / unaffected-field-omega-changed-alone` | SubjectOutsideTheRelationsRegion | Offered successor metadata is outside the empty canonical asset-flow delta set; compensation does not turn it into an asset flow. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / unaffected-field-q-changed-alone` | SubjectOutsideTheRelationsRegion | Offered successor metadata is outside the empty canonical asset-flow delta set; compensation does not turn it into an asset flow. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / unaffected-field-y-l-changed-alone` | SubjectOutsideTheRelationsRegion | Offered successor metadata is outside the empty canonical asset-flow delta set; compensation does not turn it into an asset flow. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / unaffected-field-y-t-changed-alone` | SubjectOutsideTheRelationsRegion | Offered successor metadata is outside the empty canonical asset-flow delta set; compensation does not turn it into an asset flow. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / unknown-schema` | NoPublishedRelationNamesIt | The pinned codec coordinate is not representation mode or authentication; the published State representation relation names only those. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.3 / wrong-domain-separator` | NoPublishedRelationNamesIt | The pinned codec coordinate is not representation mode or authentication; the published State representation relation names only those. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.6 / later-admissible-nonce-instead-of-first` | NoPublishedRelationNamesIt | The pinned representation nonce is not operator witness availability or an external report identity. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.6 / wrong-representation-nonce` | NoPublishedRelationNamesIt | The pinned representation nonce is not operator witness availability or an external report identity. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.7 / nonce-search-exceeds-bound` | NoPublishedRelationNamesIt | Nonce enumeration and minimality are outside the operator constructibility relation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.7 / nonce-skips-an-admissible-value` | NoPublishedRelationNamesIt | Nonce enumeration and minimality are outside the operator constructibility relation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.7 / nonce-starts-at-one` | NoPublishedRelationNamesIt | Nonce enumeration and minimality are outside the operator constructibility relation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.7 / repeated-hashing-used-as-fixed-point-search` | NoPublishedRelationNamesIt | Nonce enumeration and minimality are outside the operator constructibility relation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-ash` | SeveralPublishedRelationsFit | Both input and output family closures exclude this family; the row leaves the side unspecified. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-authority-object` | SeveralPublishedRelationsFit | Both input and output family closures exclude this family; the row leaves the side unspecified. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-burn-record` | NoPublishedRelationNamesIt | The event is not a declared canonical asset-flow family; no family or side is inferred from its name. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-clear-event` | NoPublishedRelationNamesIt | The event is not a declared canonical asset-flow family; no family or side is inferred from its name. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-destruction` | NoPublishedRelationNamesIt | The event is not a declared canonical asset-flow family; no family or side is inferred from its name. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-distribution-control-or-vault` | SeveralPublishedRelationsFit | Both input and output family closures exclude this family; the row leaves the side unspecified. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-entitlement` | SeveralPublishedRelationsFit | Both input and output family closures exclude this family; the row leaves the side unspecified. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-issuance` | NoPublishedRelationNamesIt | The event is not a declared canonical asset-flow family; no family or side is inferred from its name. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-live-receipt-input-or-output` | SeveralPublishedRelationsFit | Both input and output family closures exclude this family; the row leaves the side unspecified. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-pace` | SeveralPublishedRelationsFit | Both input and output family closures exclude this family; the row leaves the side unspecified. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-request` | SeveralPublishedRelationsFit | Both input and output family closures exclude this family; the row leaves the side unspecified. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-resv-input-or-output` | SeveralPublishedRelationsFit | Both input and output family closures exclude this family; the row leaves the side unspecified. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / add-time-locked-receipt` | SeveralPublishedRelationsFit | Both input and output family closures exclude this family; the row leaves the side unspecified. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.9 / introduce-canonical-u-ent-or-dist-ctl-flow` | Historical whole-transaction scope | CanonicalDeltaPolicy / Operation / UnexpectedCanonicalDeltaFamily | Declared (retained from region refit) | `the_whole_transaction_scoped_rows_are_exactly_the_recounted_set` |
-| `16.10 / confidential-sponsor-value-where-the-selected-target-policy-claims-support` | NoPublishedRelationNamesIt | Confidential value support belongs to target policy; substrate conservation does not declare that support. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.10 / empty-sponsor-offer-for-sponsored-request` | SubjectOutsideTheRelationsRegion | Request/offer agreement is outside observed sponsor membership. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.10 / fee-change-substitution` | SubjectOutsideTheRelationsRegion | Fee/change value is outside value-blind sponsor isolation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.10 / missing-sponsor-authorization` | Historical whole-transaction scope | SponsorIsolation / Sponsor / MissingSponsorAuthorization | Declared (retained from region refit) | `the_whole_transaction_scoped_rows_are_exactly_the_recounted_set` |
-| `16.10 / report-publishes-sponsor-amount` | TheReportIsTheSubject | Report carrier, ReportField locator and report semantic rejection boundary; no target relation is inferred. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.10 / report-publishes-sponsor-opening` | TheReportIsTheSubject | Report carrier, ReportField locator and report semantic rejection boundary; no target relation is inferred. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.10 / sponsor-change-at-state-output-0` | SubjectOutsideTheRelationsRegion | Absolute output position is outside role membership. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.10 / sponsor-member-unclassified` | Historical whole-transaction scope | SponsorIsolation / Sponsor / SponsorMemberUnclaimed | Declared (retained from region refit) | `the_whole_transaction_scoped_rows_are_exactly_the_recounted_set` |
-| `16.10 / state-sponsor-overlap` | Historical whole-transaction scope | SponsorIsolation / Sponsor / SponsorProtocolOverlap | Declared (retained from region refit) | `the_whole_transaction_scoped_rows_are_exactly_the_recounted_set` |
-| `16.10 / state-successor-in-sponsor-range` | Historical whole-transaction scope | SponsorIsolation / Sponsor / SponsorProtocolOverlap | Declared (retained from region refit) | `the_whole_transaction_scoped_rows_are_exactly_the_recounted_set` |
-| `16.10 / two-sponsor-envelopes` | Historical whole-transaction scope | SponsorEnvelopeMultiplicity / Sponsor / SponsorEnvelopeMultiplicityExceeded | Declared (retained from region refit) | `the_whole_transaction_scoped_rows_are_exactly_the_recounted_set` |
-| `16.10 / zero-valued-sponsor-member-under-exact-role-structure` | SubjectOutsideTheRelationsRegion | Zero amount can preserve exact role structure; membership supplies no amount claim. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / candidate-outside-bounds` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / duplicate-coordinator` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / no-coordinator` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / predecessor-and-successor-metadata-witnesses-exchanged` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. Scope finality is recorded at (`rec:backlog:wave0-native-route-settlement`). | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / relocation-applied-twice` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / relocation-omitted` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / state-and-sponsor-positions-exchanged` | SubjectOutsideTheRelationsRegion | Absolute state/sponsor ordering is outside region membership. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / target-bytes-changed-after-abi-validation` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / unresolved-lead-bound-symbol` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / unresolved-metadata-schema-symbol` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / unresolved-operator-symbol` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / witness-item-reorder` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / wrong-coordinator` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / wrong-sequence` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.11 / wrong-transaction-version` | NoPublishedRelationNamesIt | The pinned ABI, witness or relocation coordinate is not the published operator constructibility subject or violation. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / accepted-submission-without-identity` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / accepted-submission-without-mined-readback-where-required` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / blank-request` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / caller-authored-evidence-standing` | TheReportIsTheSubject | Report carrier, ReportField locator and report semantic rejection boundary; no target relation is inferred. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / canonical-report-includes-wall-time` | TheReportIsTheSubject | Report carrier, ReportField locator and report semantic rejection boundary; no target relation is inferred. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / conservation-rejection-carrying-accepted-only-openings` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / duplicate-passing-row` | TheReportIsTheSubject | Report carrier, ReportField locator and report semantic rejection boundary; no target relation is inferred. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / failed-row-removed` | TheReportIsTheSubject | Report carrier, ReportField locator and report semantic rejection boundary; no target relation is inferred. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / infrastructure-response-carrying-target-observation` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / malformed-json` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / observed-target-layer-differs-from-declared-row-boundary` | TheReportIsTheSubject | Report carrier, ReportField locator and report semantic rejection boundary; no target relation is inferred. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / oversized-request` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / rejected-signing-response-carrying-witness` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / rejected-submission-carrying-accepted-identity` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / report-summary-edited` | TheReportIsTheSubject | Report carrier, ReportField locator and report semantic rejection boundary; no target relation is inferred. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / typed-diagnostic-contains-a-caller-path-or-injected-line` | TheReportIsTheSubject | Report carrier, ReportField locator and report semantic rejection boundary; no target relation is inferred. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / unknown-request-field` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / unterminated-request` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / wrong-environment` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / wrong-provenance` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
-| `16.12 / wrong-schema` | NoPublishedRelationNamesIt | Request/response framing and field coherence are not published operation-relation subjects. | Unlinked | `every_non_link_has_a_keyed_semantic_disposition` |
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
 ### Close safety · `sec:backlog:close-safety`
 
@@ -2379,68 +1923,13 @@ For (`cond:guide15-exec:wave0-exit-condition-9`), the former blanket "no opcode 
 
 Bite 0.7 inherits the execution-exit joins for all preflight rows, the twelve question dispositions, the remaining numbered position acceptances, the candidate audit and the clean-tree full repository baseline gate. Bite 0.5 supplies exit conditions 2, 3, 4 and 5, condition 1 through `T11-064`, and its figures and non-claims for condition 9. (`T4-009`), previously TODO and blocking consolidation and never an unfinished bite 0.5 obligation, closes on its own criteria at (`rec:backlog:wave0-compact-inherited-closure`); (`T12-007`) retains consolidation (`rec:guide15-exec:bite-0-7-closure-carrier`).
 
-### ABI-entry Safety comparisons · `sec:backlog:abi-entries`
+### ABI-entry Safety comparisons (archived)
 
-**Record (ABI-entry Safety comparisons)** · `rec:backlog:wave0-abi-entries`
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
-The four landed entries are called over retained accepted controls and twenty-nine changed offers for twenty-three Safety rows. One staging object retains each row's exact nonempty subject inventory and each subject's expected refusal; a row discharges only after its control accepts and every distinct subject refuses exactly. The classification and role subjects retain their matrix control, pre-target boundary and carrier; the exchanged-positions comparison uses its constructed S1 control. No production validator changes in this comparison step.
+### Combined projection (archived)
 
-**Table (ABI-entry comparisons)** · `tab:backlog:abi-entry-comparisons`
-
-| Key | Accepted control | Changed coordinate | Owning entry and exact refusal | Standing after | Pinning test |
-|---|---|---|---|---|---|
-| `16.9 / add-live-receipt-input-or-output` | Sponsorless announcement | Live receipt added at input 1 and, separately, output 1; truthful family claims | `transaction::validate_maturity_abi_classification`: Input/output `AllowedObjectFamilies: UndeclaredObjectFamily`; each also `CanonicalDeltaPolicy` | First-party comparison; 2 subjects | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-time-locked-receipt` | Sponsorless announcement | Time-locked receipt at output 1 | `transaction::validate_maturity_abi_classification`: Output closure `UndeclaredObjectFamily` plus `CanonicalDeltaPolicy` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-ash` | Sponsorless announcement | ASH at output 1 | `transaction::validate_maturity_abi_classification`: Output closure `UndeclaredObjectFamily` plus `CanonicalDeltaPolicy` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-entitlement` | Sponsorless announcement | ENT at output 1 | `transaction::validate_maturity_abi_classification`: Output closure `UndeclaredObjectFamily` plus `CanonicalDeltaPolicy` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-request` | Sponsorless announcement | Request at output 1 | `transaction::validate_maturity_abi_classification`: Output closure `UndeclaredObjectFamily` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-distribution-control-or-vault` | Sponsorless announcement | Distribution control and, separately, vault at output 1 | `transaction::validate_maturity_abi_classification`: Output closure `UndeclaredObjectFamily` plus `CanonicalDeltaPolicy`, for each alternative | First-party comparison; 2 subjects | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-resv-input-or-output` | Sponsorless announcement | RESV at input 1 and, separately, output 1 | `transaction::validate_maturity_abi_classification`: Input/output closure `UndeclaredObjectFamily` | First-party comparison; 2 subjects | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-pace` | Sponsorless announcement | PACE at output 1 | `transaction::validate_maturity_abi_classification`: Output closure `UndeclaredObjectFamily` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-authority-object` | Sponsorless announcement | Entitlement authority and, separately, distribution authority at output 1 | `transaction::validate_maturity_abi_classification`: Output closure `UndeclaredObjectFamily`, for each alternative | First-party comparison; 2 subjects | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-issuance` | Sponsorless announcement | Input 0 issuance flag and checked complete 74-byte issuance body | `transaction::validate_maturity_abi_classification`: `IssuanceOffered` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-destruction` | Sponsorless announcement | Nonzero STATE-asset data-carrier output 1, claimed destruction | `transaction::validate_maturity_abi_classification`: `UnadmittedOutputRole { position: 1, claim: Destruction }` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-burn-record` | Sponsorless announcement | Zero-value output 1 carrying `tag-burn` | `transaction::validate_maturity_abi_classification`: `UnadmittedOutputRole { position: 1, claim: DataOutput(Some(Burn)) }` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-clear-event` | Sponsorless announcement | Zero-value output 1 carrying the clear tag | `transaction::validate_maturity_abi_classification`: `UnadmittedOutputRole { position: 1, claim: DataOutput(Some(Recon)) }` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / add-residue-projection` | Sponsorless announcement | Output 1 carrying `tag-distribution-residue`, claimed projection | `transaction::validate_maturity_abi_classification`: `RelationVerdicts` with `ProjectionPolicy` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.9 / introduce-canonical-u-ent-or-dist-ctl-flow` | Sponsorless announcement | Three alternatives: U, ENT and DIST_CTL, each with input 1, output 1 and a lateral canonical flow | `transaction::validate_maturity_abi_classification`: `RelationVerdicts` with `CanonicalDeltaPolicy` and both `UndeclaredObjectFamily` closures, for each alternative | First-party comparison; 3 subjects | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.11 / wrong-coordinator` | Sponsorless announcement | Invented coordinator outpoint at input 0 | `transaction::validate_maturity_abi_roles`: `CoordinatorIsNotTheValidatedPredecessor { expected, offered }` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.11 / duplicate-coordinator` | Sponsorless announcement | Predecessor repeated at input 1 | `transaction::validate_maturity_abi_roles`: `CoordinatorRepeated { positions: [0, 1] }` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.11 / no-coordinator` | Sponsorless announcement | Input 0 replaced by a reserve sponsor member | `transaction::validate_maturity_abi_roles`: `CoordinatorMissing` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.11 / state-and-sponsor-positions-exchanged` | Sponsored S1, with two encoded witness-program reserve inputs and no change | STATE and sponsor positions 0 and 1 exchanged with their census and claims | `transaction::validate_maturity_abi_roles`: `StateAndSponsorPositionsExchanged { state: 1, sponsor: 0 }` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.11 / wrong-input-count` | Sponsorless announcement | Distinct surplus STATE input 1 | `transaction::validate_maturity_abi_roles`: `Cardinality { relation: input STATE cardinality, failure: CardinalityAboveMaximum }` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.11 / wrong-output-count` | Sponsorless announcement | Surplus STATE output 1 | `transaction::validate_maturity_abi_roles`: `Cardinality { relation: output STATE cardinality, failure: CardinalityAboveMaximum }` | First-party comparison; 1 subject | `abi_entry_pairs_cover_twenty_three_rows_and_twenty_nine_subjects` |
-| `16.2 / malformed-cycle-encoding` | Signing and binding chain's actual cycle item | The bound signing writer's requested-cycle stack item truncated from eight bytes to seven | `MaturityAnnouncementRequest::decode_announced_cycle`: `CycleWidth { declared: 8, offered: 7 }` | First-party comparison; 1 subject | `entry_pair_cycle_decoding_reads_the_bound_writer_item` |
-| `16.3 / correct-semantic-metadata-with-noncanonical-representation-nonce` | Selected nonce, returning the search's whole evidence | The retained semantic at the first admitted nonce above its retained least nonce, inside the default budget | `CandidateStateConstructor::compare_offered_representation`: `NoncanonicalRepresentationNonce { offered, least }` | First-party comparison; 1 subject | `entry_pair_nonce_comparison` |
-
-The seven family subjects with canonical-delta collateral are both live-receipt sides, time-locked receipt, ASH, entitlement, distribution control and distribution vault. The canonical-flow row separately retains both closure failures for each of its three assets. All six role subjects first classify; their input/output STATE cardinality statuses are respectively passed/passed, above-maximum/passed, below-minimum/passed, passed/passed, above-maximum/passed and passed/above-maximum. The changed-position S1 control is built locally over admitted witness programs and public reserve funding, without sponsor signing.
-
-**Result (ABI-entry census)** · `result:backlog:abi-entries`
-
-At ABI-entry admission, first-party required moves 28 → 5 and discharged 53 → 76; the supplementary partition moves [13, 2, 28] → [36, 2, 5]. The Safety census was 206 / 170 / 36: 170 observed, 22 final, 2 retired and 12 waiting, with waiting split into five adapter comparisons and seven typed waits. The exported `MaturityAbiValidationRow` index then had twenty-eight section/name keys, twenty-three `AbiFieldRefused` readings over twenty-nine subjects and five `TargetWasNotAsked` adapter readings. `UnsafeRawMutationExists` is a finding for a changed offer the entry accepts; invalid controls, unconstructible subjects and wrong refusal classes remain errors. The obligations fold refuses failed staging. `maturity_index_pins_every_key_subject_and_ledger_reading` pins the index against the ledger, and `classification_rows_require_every_subject_and_its_exact_refusal` rejects copied, missing, accepted and wrong-class alternatives, including the second and third subject of a row. The subsequent adapter comparisons and current index reading are recorded at (`rec:backlog:wave0-adapter-comparisons`).
-
-The bounded-consolidation baseline remains unchanged. Its historical eight entry movements and these twenty-three ABI movements are disjoint; that step's preservation test compared their union of thirty-one and pinned 175 other rows unchanged. The fourteen-key entry record then had nine movements in that union's intersection, including the nonce. The original seven-movement reconstruction excludes all entry discharges. At that admission, native acceptance/refusal remained 11 / 38, report-layer required/observed 0 / 15, typed non-answers 29 and relation links 14 / 108 / 84; no report key changes and the schema remains 3. Those retained adapter requests are now admitted at (`rec:backlog:wave0-adapter-comparisons`). At that admission, the confidential observation and broader gates kept `T12-005` open; its closure is recorded at (`result:backlog:bite-0-5-gate-pass`).
-
-**Caveat (ABI-entry limits)** · `cav:backlog:abi-entry-limits`
-
-Claim independence is established by the transaction tests' alternative claims over the same bytes; the vectors comparisons pin the truthful claims and exact verdict sets. Claims never substitute for byte authentication. The sponsor maximum remains the observed, uncalibrated count retained by classification, not a calibrated bound supplied to roles. Issuance, destruction, burn and clear rows retain ABI-layout refusals without borrowing relation identities. All relation links and reasons remain unchanged.
-
-Placement acceptance does not establish the presence rules for sponsor change only with a sponsor region or fees where required. The change-only transaction test retains that residual and pins the sponsor projection's recognition and cardinality statuses, including blocked isolation. The same-ABI-and-view premise of the role entry is explicit; this step does not broaden its checks. The decoder control is the signing writer's actual bound item, located by role identity; only truncation is staged here, with extension retained in the transaction tests. Nonce leastness is host leastness within the default search budget; the comparison adds no covenant leastness clause or new target observation.
-
-### Combined projection · `sec:backlog:combined-projection`
-
-**Record (One accepted transaction and four projections)** · `rec:backlog:wave0-combined-projection`
-
-The combined §16.1 row is one conjunction over `sponsored-with-change-where-supported:control:52` in `packages/vectors/fixtures/maturity-sponsored-run-of-record/`. Admission binds submitted and mined bytes, both transaction identities, relay admission, ordinary template membership and block height 49. The archived funding census is joined by outpoint in input order. Classification and roles use one ABI and validated view; their authenticated claims establish positions while blocked sponsor relation verdicts remain blocked. The semantic transition uses the request decoder; both constructors retain host leastness; the root edge binds the same readback checkpoint; public recovery reconstructs the successor from the same bytes and public spent outputs. Four distinct term agreements and acceptance must share exact bytes and one transaction identity. The ten row-keyed positive controls comprise two sponsored and eight native controls; the separately reauthorized fee-change acceptance makes eleven relay-and-template acceptances in those archives. Only the selected S2 control supplies this conjunction.
-
-**Result (Combined-projection census)**
-
-At combined-projection admission, the row moved from `AcceptanceAwaitsRelayAdmissibility` to `Layer(AcceptedTransaction)` and stood `NativeAcceptanceObserved`. The Safety census moved 206 / 170 / 36 → 206 / 171 / 35: observed 171, final 22, retired 2 and waiting 11. Typed non-answers moved 29 → 28, with 22 final and six waiting; native acceptance moved 11 → 12 and native refusal stayed 38. First-party 76 / 5, supplementary [36, 2, 5], report-layer 0 / 15, relations 14 / 108 / 84 and schema 3 remained unchanged. The admitted sponsored archive recorded twelve acceptances and five refusals; assigning another row to an existing acceptance adds no archive observation. The intermediate test plans replay current native folds, while earlier recorded census results remain historical. `combined_projection_binds_the_selected_acceptance_and_all_four_terms`, `combined_fold_refuses_terms_from_two_accepted_transactions` and the census pins check the movement. The current first-party standing is recorded at (`rec:backlog:wave0-adapter-comparisons`).
-
-**Caveat (Scope of the conjunction)**
-
-The sponsorless readers and their input/output-count refusals remain unchanged. No target validator, fixture, archive or relation changes. Host leastness is not a covenant leastness claim, and the checkpoint supplies no current-chain freshness guarantee. The subsequent native-route dispositions are recorded at (`rec:backlog:wave0-native-route-settlement`) and (`rec:backlog:wave0-native-route-capture-driver`); adapter comparisons follow at (`rec:backlog:wave0-adapter-comparisons`). The balanced confidential observation is admitted at (`rec:backlog:wave0-confidential-route-admission`). Diagnostic recapture is complete at (`rec:backlog:wave0-diagnostic-route-admission`), and ruling 135(b)'s native-gate (`gate:guide15-exec:bite-0-5-native-gate`) reading is recorded at (`result:backlog:bite-0-5-gate-pass`). The one-or-four question remains open in `plans/drafts/accepted-byte-classification-study.md`; the denominator stays 206 under (`step:wave0:bite-0-5-combined-projection-route`). A follow-up can fold the sponsorless continuity, public-handoff derivation and recovery byte checks onto shared positional cores once their byte-identity constraints no longer bind the copies.
-
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
 ### Native route settlement · `sec:backlog:native-route-settlement`
 
@@ -2462,57 +1951,9 @@ At settlement the census remained 206 / 171 / 35: observed 171, final 25, retire
 
 The two constructions, their capture and separate admission are complete at (`rec:backlog:wave0-native-route-construction`) and (`rec:backlog:wave0-native-route-capture-driver`). The manifest precedes capture and whole-archive admission precedes each family's fold. Adapter comparisons are admitted at (`rec:backlog:wave0-adapter-comparisons`). Confidential agreement is admitted at (`rec:backlog:wave0-confidential-route-admission`) without changing the candidate. Diagnostic recapture is complete at (`rec:backlog:wave0-diagnostic-route-admission`), and ruling 135(b)'s native-gate (`gate:guide15-exec:bite-0-5-native-gate`) reading is recorded at (`result:backlog:bite-0-5-gate-pass`). The three scope settlements contribute to the non-answer gate's (`gate:guide15-exec:bite-0-5-non-answer-gate`) discharge under ruling 135(a), and (`result:backlog:bite-0-5-gate-pass`) records the native (`gate:guide15-exec:bite-0-5-native-gate`) and packet (`gate:wave0:bite-0-5-packet`) gates satisfied and `T12-005` closed; the current census remains at (`result:backlog:close-safety-reconciliation`). The generation-policy source entry in (`tab:guide15-exec:preflight`) retains its open expanded-generation execution exit; its ruling-131 reference is owed in the join at (`step:wave0:bite-0-7-join-entry-exits`). Each final premise is rechecked if the candidate changes under (`cond:wave0:baseline-freeze`).
 
-### Native route construction · `sec:backlog:native-route-construction`
+### Native route construction (archived)
 
-**Record (Retained native route constructions)** · `rec:backlog:wave0-native-route-construction`
-
-The two constructions of (`step:wave0:bite-0-5-native-routes`) are staged without a target observation. `SuccessorFromWrongSemanticMetadata` changes only q by checked addition of one through `link_for_metadata`, derives the foreign successor at its first admissible nonce under the same policy and offers its program at output zero with the honest predecessor metadata and request retained. Prefix and nonce follow that program and authorization is refreshed; successor reconstruction is the expected refusing check. `TwoStateSuccessors` keeps honest STATE input and output zero and adds a separately spendable same-asset coin and successor at amount one, signing both inputs over the full spent-output census. Its declared `ScriptPathRejection` remains separate from expected acceptance under `OutputCountUnread`.
-
-The twenty-eight subjects cover thirty staged keys with the two existing shared pairs unchanged. The current partition is [26, 4, 2, 3]; `historical_unstageable_subjects_keep_their_partition_after_scope_settlement` reconstructs [25, 3, 2, 5] by the five historical keys and checks three absent-coordinate finals separately from the two subsequently admitted constructions, preserving their historical staging classification. The historical result at (`result:backlog:safety-native-staging`) remains unchanged. `native_staging_leaves_the_historical_census_unchanged` reconstructs the historical denominator and supplementary partition, while `native_observation_preserves_the_denominator_and_staging_history` preserves the current census. Both new byte strings differ from every inherited admission and every other staged subject; the extra-output pin is unchanged.
-
-The retained-routes planner and `replay_retained_routes` form a separate schedule from historical native replay. The semantic refusal is submitted first on the bootstrap predecessor coin, followed by its honest consuming control on that same coin. Only the two-successor family accepts its control before funding a fresh equivalent predecessor from the issuance reserve: its compatibility argument under (`pre:wave0:accepted-control`) keeps predecessor program, amount, asset, constructor, request and policy identical while outpoint, transaction identity, item 6 and the added key-path signature differ. The second STATE coin uses another reserve payment at amount one to the first published signer's key-path program. Funding validates asset, amount, program and distinct outpoint. The families are independent: a refused control retains the responses as diagnostic evidence and stops only that family; the schedule continues with the next family, and completion reports stopped families without admitting their exchanges. Changed requests, incomplete schedules and invalid readbacks refuse replay. Scripted responses test the schedule without claiming target acceptance.
-
-**Table (Retained native construction measurements)** · `tab:backlog:native-route-construction`
-
-| Subject and governing label | Spend-time pin | Control bytes / weight units | Subject bytes / weight units |
-|---|---|---|---|
-| `16.6 / successor-from-wrong-semantic-metadata`; (`step:wave0:bite-0-5-native-routes`) | `PIN_WRONG_SEMANTIC_METADATA` in `packages/vectors/src/maturity_mutants/native_staging.rs` | 1701 / 2091 | 1701 / 2091 |
-| `16.6 / two-state-successors`; (`step:wave0:bite-0-5-native-routes`) | `PIN_TWO_STATE_SUCCESSORS` in `packages/vectors/src/maturity_mutants/native_staging.rs` | 1701 / 2091 | 1891 / 2638 |
-
-Construction established the historical census 206 / 171 / 35 and categories 171 / 25 / 2 / 8, with typed non-answers 25 final plus three waiting. Subsequent retained capture and admission at (`rec:backlog:wave0-native-route-capture-driver`) bind both accepted controls, exact subjects, earlier funding and node-default policy: semantic metadata now has an observed script-path refusal; two successors has the final undecided-coordinate reason. The driver record states the admitted census; construction pins and report schema 3 remain unchanged. No production validator changes. At that retained landing, capture ran separately from the then-owed diagnostic recapture (`alg:wave0:campaign-manifest`); (`proto:wave0:native-admission`).
-
-**Record (Retained native capture driver)** · `rec:backlog:wave0-native-route-capture-driver`
-
-At retained native admission the census was 206 / 172 / 34: observed 172, final 26, retired two and waiting six = five first-party obligations plus one typed wait. Typed non-answers were 27 = 26 final plus one waiting; construction-wait membership was zero and the absent-coordinate reason had three members. The undecided-coordinate reason had four members. Native acceptance/refusal was 12 / 39; first-party 76 / 5, relations 14 / 108 / 84, supplementary [36, 2, 5], historical staging [25, 3, 2, 5], all inherited subject pins and report schema 3 remained unchanged. The retained archive added one refusal answer; its two-successor acceptance supports finality without adding an acceptance answer. `retained_semantic_refusal_binds_its_exact_row_and_same_coin_control` and `retained_two_successor_acceptance_binds_final_undecided_standing` pin those observations. `historical_unstageable_subjects_keep_their_partition_after_scope_settlement` separates current standing from historical staging facts. Later adapter admission is recorded at (`rec:backlog:wave0-adapter-comparisons`) and the current census at (`result:backlog:close-safety-reconciliation`).
-
-The diagnostic executor recording, compatible reader and expected-class table have landed under ruling 134 (`rule:phase7:wave0-rulings`); this driver's admitted capture remains unchanged, and diagnostic capture and admission are separately complete at (`rec:backlog:wave0-diagnostic-route-admission`).
-
-The `maturity_retained` target selects the ignored test `the_retained_maturity_routes_run_against_a_real_target` through `scripts/live-native-maturity-retained-capture.sh`, checked by `scripts/test-live-native-maturity-retained-capture.sh`. Its wrapper binds two `campaign-row` records inside the evidence payload and RUN-REPORT: typed claims, candidate and ABI, deployment, policy, constructor, mutation, declared boundary, control, funded outpoints, native fold and reverse observation-to-claim mapping under (`alg:wave0:campaign-manifest`); the unchanged retained schedule supplies the exchanges. The wrapper freezes intent before execution and binds funding before submission. Eligibility establishes structural completion and replay consistency, including contradictory outcomes and stopped-control diagnostics; admission requires the whole archive with no stopped family, agreement for both expectations, accepted controls with matched readback and complete replay; the fold then assigns each family's standing from its own observation under (`pre:wave0:accepted-control`) and (`proto:wave0:native-admission`). The capture of record `w16x1-retained-20261101T134825Z` is admitted byte-for-byte at `packages/vectors/fixtures/maturity-retained-run-of-record/`. Admission binds all twenty-four items below to the capture, timing, manifest and replayed campaign; policy-less records and stopped, absent or contradicting families refuse with the family and failed binding retained. Eligibility alone assigns no row credit. The retained parser consumes the following closed grammar; encoded fields use byte length and lower hexadecimal, JSON records have closed keys, and the four-file archive binds capture and timing through MANIFEST.sha256 and that manifest through RUN-REPORT. Items 16 to 21 bind an eligible report; an ineligible report carries the `missing` sentinel for an absent or duplicated retained field and every `campaign-row` the evidence record held.
-
-1. `run-report-schema native-maturity-run-report 1`.
-2. `capture-format-schema native-maturity-capture 1`.
-3. `suite-commit`, `suite-tree`, `suite-clean yes`.
-4. `rust-test-target maturity_retained`.
-5. Encoded `rust-test-name` naming the retained test.
-6. Encoded `cargo-argv`: pinned cargo, `test -p tripod-vectors --test maturity_retained -- --ignored --exact the_retained_maturity_routes_run_against_a_real_target --test-threads=1`.
-7. Expected/observed test and ceremony counts one; setup counts zero.
-8. `diagnostics-present yes`; passed/failed/ignored counts one/zero/zero; cargo exit zero.
-9. Expected Elements tip, binary-reported revision, intended executed tip.
-10. Adapter name/version and node name/version; adapter version `2.1.0`.
-11. `protocol-revision 8`, `fixture-digest-algorithm forward-v2`.
-12. Deployment environment, network, genesis and target contract.
-13. `capture-profile retained`.
-14. Four `phase-wall-ms` lines: preflight, cargo, census, manifest, each unsigned.
-15. Unsigned `elapsed-wall-ms`.
-16. Encoded `retained-policy`: object keys `relay`, `mempool`, `block`, `unit`, `block_identifier`, `relay_provenance`, `block_provenance`, `start_arguments`.
-17. Encoded `retained-families`: semantic family then two-successor family; each record has keys `family`, `claim`, `control`, `subject`, `stopped`, `expectation`, `control_accepted`. Each claim has `section`, `name`; each non-null control or subject has `step`, `layer`, `route`, `readback`.
-18. Encoded `retained-stopped`: ordered subset of the two families.
-19. `campaign-manifest-schema 1`.
-20. `campaign-manifest-count 2`.
-21. Two encoded `campaign-row` records in family order, validated against typed intent and exchanges at admission; each row has keys `claim`, `operation`, `family`, `candidate`, `abi`, `target`, `deployment`, `branch`, `policy_requirement`, `policy`, `constructor`, `mutation`, `declared_boundary`, `expected_layer`, `control_id`, `compatibility`, `control`, `observation`, `expected_consumer`. Each claim has `section`, `name`; candidate has `schedule`, `subject_pin`; deployment has `network`, `genesis`; branch has `identifier`, `checkpoint`; each non-null control or observation has `step`, `digest`, `funded_outpoints`, `claims`; each funded-outpoint entry has `funding_step`, `output`, with the protocol's funded-output keys; policy uses the validated policy object from item 16.
-22. `ceremony-roster begin`, one `ceremony report` digest, `ceremony-roster end`.
-23. `manifest-sha256` digest.
-24. `eligible yes` or `eligible no`, then end of file; eligibility assigns no row credit.
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
 **Record (Diagnostic maturity capture driver)** · `rec:backlog:wave0-diagnostic-route-capture-driver`
 
@@ -2577,50 +2018,9 @@ The registry row `native-diagnostic-content-pins` matches `MATURITY_DIAGNOSTIC_(
 
 This admission completes (`step:wave0:bite-0-5-diagnostic-recapture`). Ruling 135(b) accepts the attribution, finding and remaining instruction-site limits for the native gate (`gate:guide15-exec:bite-0-5-native-gate`) (`rule:phase7:wave0-rulings`). No standing or observed-answer count moves. The broader conjunct, bite (`gate:guide15-exec:bite-0-5-gate`) and packet (`gate:wave0:bite-0-5-packet`) closure is recorded at (`result:backlog:bite-0-5-gate-pass`); ruling 134 is unchanged.
 
-**Record (Confidential sponsor capture driver)** · `rec:backlog:wave0-confidential-route-capture-driver`
+**Closed **Record (Confidential sponsor capture driver) (archived)**
 
-Balanced construction and the separate driver supplied the capture admitted at (`rec:backlog:wave0-confidential-route-admission`) under (`step:wave0:bite-0-5-confidential-sponsor-route`). Its evidence home is `evidence/wave0/confidential/w17a1-confidential-20261101T194031Z/`, relative to the entry evidence home (`rec:backlog:wave0-entry`); the four-file archive is `packages/vectors/fixtures/maturity-confidential-run-of-record/`.
-
-The planner freezes one typed Safety claim, candidate source and ABI, deployment, branch, constructor, expected acceptance, control identity, compatibility and future final build-property consumer before issuance (`alg:wave0:campaign-manifest`). Fourteen successful exchanges are `issue`, `control-predecessor`, `fund-template-sponsor`, `sign-control-template`, `measure-control`, `fund-sponsor`, `sign-control`, `control`, `subject-predecessor`, `fund-confidential-sponsor-reserve`, `sign-confidential-template`, `measure-confidential`, `sign-confidential` and the confidential claim submission. Templates are never submitted. Subject funding and construction follow only relay-and-template control acceptance with exact readback (`pre:wave0:accepted-control`).
-
-The checked compatibility argument keeps issued asset, predecessor program, singleton amount, metadata, request, reserve asset, sponsor program, candidate, ABI, operator, sponsor key identity and policy equal. Both reserve inputs carry 1250 units. Outpoints, transaction and witness identities, signatures, representation, measured fee and change differ. Each submission records its weight, fee, positive change and accepted readback when present. The historical million-unit S2 control retains weight 2809, fee 141 and change 999859.
-
-The narrow reserve reader resolves the catalogued handle and digest, requires both derived openings and borrows the first primary coin's own blinder. Change nonce input and proof seed retain their tagged derivations. No opening, blinder, nonce input, proof seed or material object is serialized or formatted; only public commitments, output nonce commitments and proofs enter the candidate and records. The real adapters materialize and independently check commitments. Signed-template measurement uses twice the largest default floor over rounded-up virtual size, eight witness weight units and proof growth to the admitted maximum of 5134 bytes including framing. The final signed weight must fit the fee; checked subtraction must leave positive change. Failure reports a public fee-fit refusal, with no retry or invented amount. Re-amounting requires a new handle on both sides.
-
-The ignored target `packages/vectors/tests/maturity_confidential.rs` selects `the_confidential_maturity_route_runs_against_a_real_target` through the unchanged shared executor. A supervised zero-operation handshake probe requires confidential funding, confidential sponsor authorization and selected profiles before the family; the real handshake is checked again. `scripts/live-native-maturity-confidential-capture.sh` selects profile `confidential` with one Cargo invocation, one test, one report ceremony and no setup artifact. Its header requires the explicit readable library setting, node-default policy, maturity observation, wallet and disk-backed temporary root. Library configuration, readability and digest are public readings without a pathname. The capture is written before assertions. `scripts/test-live-native-maturity-confidential-capture.sh` supplies the integration contract without a node or actual library.
-
-Agreement is eligible. A refused or direct-block-only control stops the family, produces no subject and is ineligible. A refused subject after the qualified control is a contradiction: structurally eligible diagnostic evidence, but refused by whole-archive admission (`proto:wave0:native-admission`). A subject accepted only by direct block is likewise an eligible contradiction, with its readback retained and whole-archive admission refused. A readback mismatch retains the raw response and is ineligible; infrastructure failure is retained and ineligible. Admitted agreement supports the final build-property reason recorded at (`rec:backlog:wave0-confidential-route-admission`): the covenant reads no sponsor value commitment and the selected support holds under defaults. The fault row cannot take an accepted-transaction layer. Contradiction cannot justify this final reason; archive admission and the Safety retype land together. A refusal at any step after the qualified control reports its refusal coordinate, not a stopped family; expectation is pending until the subject outcome settles.
-
-The report has twenty-five grouped items: twenty-three unchanged or renamed items, one new preflight item and terminal eligibility. Items 1–3, 7–12, 14–15, 19 and 22–23 retain the retained driver's grammar. Items 4–6 and 13 select the new target and profile; 16–18 and 20–21 carry one confidential family and committed funding. Item 24 is new; eligibility moves to item 25. Encoded fields use byte length and lower hexadecimal. The four files remain capture, timing, MANIFEST.sha256 and RUN-REPORT; diagnostics stay outside the manifest.
-
-1. `run-report-schema native-maturity-run-report 1`.
-2. `capture-format-schema native-maturity-capture 1`.
-3. `suite-commit`, `suite-tree`, `suite-clean yes`.
-4. `rust-test-target maturity_confidential`.
-5. Encoded `rust-test-name` naming the confidential test.
-6. Encoded `cargo-argv`: selected cargo, `test -p tripod-vectors --test maturity_confidential -- --ignored --exact the_confidential_maturity_route_runs_against_a_real_target --test-threads=1`.
-7. Expected/observed test and ceremony counts one; setup counts zero.
-8. `diagnostics-present yes`; passed/failed/ignored one/zero/zero; cargo exit zero.
-9. Expected Elements tip, binary-reported revision, intended executed tip.
-10. Adapter name/version and node name/version.
-11. `protocol-revision 8`, `fixture-digest-algorithm forward-v2`.
-12. Deployment environment, network, genesis and target contract.
-13. `capture-profile confidential`.
-14. Four `phase-wall-ms` lines: preflight, cargo, census, manifest.
-15. Unsigned `elapsed-wall-ms`.
-16. Encoded `confidential-policy`: relay/mempool/block/unit/block_identifier/relay_provenance/block_provenance/start_arguments.
-17. Encoded `confidential-families`: one record with family/claim/control/subject/stopped/expectation/control_accepted/eligible/refusal; expectation is agreement, contradiction, stopped or pending.
-18. Encoded `confidential-stopped`: empty or the sole family.
-19. `campaign-manifest-schema 1`.
-20. `campaign-manifest-count 1`.
-21. One encoded `campaign-row`: claim/operation/family/candidate/abi/target/deployment/branch/policy_requirement/policy/constructor/mutation/declared_boundary/expected_layer/control_id/compatibility/control/observation/expected_consumer. Claim has section/name, candidate has schedule, deployment has network/genesis, branch has identifier/checkpoint, compatibility has kind/same/different. Submissions have step/digest/funded_outpoints/claims/fee/change/weight/readback; funding entries have funding_step/output. Explicit outputs retain protocol keys; committed outputs have outpoint/explicit_asset/value_commitment/nonce/script/output_witness_index/surjection_proof/rangeproof and no amount field. Readback preserves transaction and witness identities, block hash, height and raw bytes.
-22. `ceremony-roster begin`, one `ceremony report` digest, `ceremony-roster end`.
-23. `manifest-sha256` digest.
-24. Encoded `confidential-preflight`: library_configured/library_readable/library_sha256/probe/capture; each handshake reading has confidential_value_test_funding/confidential_value_sponsor_authorization/advertisement_matches/profiles. Profiles have representation/custody/materializer/reproducibility_contract.
-25. `eligible yes` or `eligible no`, then end of file; eligibility assigns no row credit.
-
-At the confidential driver landing, twelve scripted scenario tests and fifteen wrapper-guard tests cover the settled labels, pending subject and eligibility, direct-block control and subject, campaign projection, readback mismatch, acceptance-boundary panic, changed requests/funding/controls at replay, material confinement and fee fit. Module tests pin proof-growth measurement and final-weight fit. Reader tests cover accepted material, changed digest, shape and missing openings. The shell contract retains framing guards and adds missing or unreadable library, either capability missing, advertisement and profile mismatch, committed-output grammar, family count, stopped control and mismatched preflight reading, capture-only reading mismatch and an existing mode-zero library file (skipped when readable despite its mode). No fixture or archive is added. Safety stayed 206 / 177 / 29, categories (177, 26, 2, 1), typed 27 = 26 final + one waiting, native 12 / 39, confidential membership one, layer-bound 179, reachable/unreachable 51 / 128 and reachable relation pairs/bound rows 1253 / 39. The finality and census tests pinned these values at that landing; the current census is recorded at (`result:backlog:close-safety-reconciliation`). At that landing the waiting reason and NoPublishedRelationNamesIt disposition remained unchanged. The later admission retypes only the boundary cell at (`rec:backlog:wave0-confidential-route-admission`).
-
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
 **Record (Confidential sponsor admission)** · `rec:backlog:wave0-confidential-route-admission`
 
@@ -2681,44 +2081,9 @@ Only these seven keys move. The other 199 keep their complete standing and evide
 | `16.11 / unresolved-lead-bound-symbol` | FirstPartyRequired; census resolved by its owning entry | Complete versus MaturityLeadMin-omitted census; `MissingDefinition(MaturityLeadMin)` | observed | `supplementary_comparisons_retain_exact_objects_and_refusals` |
 | `16.11 / unresolved-operator-symbol` | FirstPartyRequired; census resolved by its owning entry | Complete versus CommittedOperatorKey-omitted census; `MissingDefinition(CommittedOperatorKey)` | observed | `supplementary_comparisons_retain_exact_objects_and_refusals` |
 
-### Adapter request comparisons · `sec:backlog:adapter-comparisons`
+### Adapter request comparisons · archived record
 
-**Record (Exact Python request comparisons)** · `rec:backlog:wave0-adapter-comparisons`
-
-The five request-entry comparisons complete (`step:wave0:bite-0-5-first-party-entries`). The Python check executes the adapter source bytes it reads and hashes, drives both operands through the same entry over `io.BytesIO`, and compares its five rendered readings byte for byte with `packages/vectors/fixtures/adapter-request-comparisons/COMPARISONS`. Its default mode refuses any differing line; `--emit` produces the fixture for deliberate re-admission. The Rust admission embeds that fixture, constructs the same operands independently, and checks every identity, length, digest, boundary, entry, outcome and refusal before constructing a retained comparison. Library derivation reads no filesystem and starts no interpreter or subprocess. A source-file test independently hashes the adapter through the manifest directory. Returned readings are data validated against the Rust-constructed operands; a copied success flag supplies no comparison.
-
-| Identity field | Admitted reading |
-|---|---|
-| Adapter | `elements-native-executor` |
-| Adapter version / protocol revision | `2.1.1` / `8` |
-| Adapter source SHA-256 | `e60999d8427b129b6caf82e2fefae553ec6ceb321327de726f08fc831bedc596` |
-| Interpreter version | `3.14.10`; carried as a reading, not a Rust identity pin |
-
-Every adapter source change requires deliberate re-pinning of `ADAPTER_SOURCE_SHA256` and the Python source pin, followed by a fresh `--emit` and both admission checks. An interpreter reading change also requires refreshing the fixture after a successful comparison; no interpreter patch version is an operand-validity premise. The source identity belongs to this admission and does not rewrite historical capture provenance.
-
-The five comparisons are re-admitted on the node of record's gate interpreter under this record's interpreter rule. Adapter `2.1.1` sends every node-client RPC argument through `-stdin`, one argument per line, instead of placing transaction hex on the process command line; the offline executor boundary suite checks intact delivery of a 512 KiB argument, empty arguments and trailing spaces, and refusal of embedded line feeds before launch. Protocol revision `8` and the request/response schema are unchanged; historical captures retain their original executable provenance.
-
-All reader calls use maximum 4194304 and phase `request`. Bytes below are ASCII with a final line-feed where stated. The field comparison decodes each record with `RequestReader.read_object` and then uses the allowed tuple `schema`, `case`, `subject`. These controls establish acceptance at their named entries, not transaction execution or acceptance by later request semantics.
-
-| Key | Accepted bytes | One changed coordinate | Entry and exact refusal | Boundary |
-|---|---|---|---|---|
-| `16.12 / blank-request` | Empty JSON object followed by line-feed: `{}\n` | Replace the object body with two spaces, retaining line-feed | `RequestReader.read`; `FRAMING_BLANK_RECORD` gives `blank_record` | RequestFraming |
-| `16.12 / oversized-request` | `{}\n` | Insert 4194303 spaces between the object and line-feed; the first 4194305 bytes contain no newline | `RequestReader.read`; `FRAMING_OVERSIZED_RECORD` gives `oversized_record` | RequestFraming |
-| `16.12 / unterminated-request` | `{}\n` | Remove only the final line-feed, leaving `{}` | `RequestReader.read`; `FRAMING_UNTERMINATED_RECORD` gives `unterminated_record` | RequestFraming |
-| `16.12 / malformed-json` | `{}\n` | Replace the closing object delimiter with the closing array delimiter: `{]\n` | `RequestReader.read_object`; `FRAMING_MALFORMED_RECORD` gives `malformed_record` | RequestJson |
-| `16.12 / unknown-request-field` | `{"schema":8,"case":{},"subject":{}}\n` | Append the object field `"unknown":0`, producing `{"schema":8,"case":{},"subject":{},"unknown":0}\n` | `require_execution_request_fields`; `EXECUTION_REQUEST_FIELD_CENSUS_FAILED` | RequestFields |
-
-The three request-side boundaries refine the existing `SemanticRequestRejection` layer. All five matrix declarations, carriers, prior reasons and unlinked relation dispositions remain unchanged. `MaturityRetainedComparison::PythonRequest` retains the language, entry, request bound or allowed-field tuple, source pin and validated interpreter reading beside both operands; the oversized operand is constructed and hashed, then retained by length and digest. The fixture stores lengths and digests rather than its large padding. `adapter_request_comparisons_bind_exact_pairs`, `adapter_admission_refuses_each_changed_reading` and `adapter_pairs_refuse_copied_reversed_and_misbound_operands` reject copied or reversed operands, changed bindings, invalid controls, accepted subjects, wrong refusals, missing, duplicate or surplus lines, malformed encoding and altered digests. Admission failure retains the attempted typed failure rather than discharging a row. `adapter_source_matches_the_admitted_digest` binds the source independently.
-
-The fixture grammar is exactly five lines in the table's order: `comparison E(key) boundary E(entry) accepted refused E(refusal) control_length control_sha256 subject_length subject_sha256 E(adapter_name) E(adapter_version) protocol source_sha256 E(interpreter_version)`. Each `E(text)` is two space-separated fields: canonical decimal UTF-8 byte length and lowercase hexadecimal bytes. Lengths have no redundant leading zero; digests are 64 lowercase hexadecimal digits. Boundary and outcome words are closed tokens. Every line ends in one line-feed; carriage returns, missing final line-feed, extra fields and surplus bytes refuse. The key includes `16.12 / ` and the exact row name. This grammar is separate from the unchanged Safety report schema 3.
-
-The existing `executor-boundaries` suite poses framing faults in the handshake phase under the 64 KiB handshake bound and routes its field fault through the handshake census. It corroborates neither the 4 MiB request bound nor `require_execution_request_fields`. The new `executor-request-comparisons` lint test supplies exact-entry evidence and fixture equality without a node daemon. Neither changes an adapter validator or the process-level suite. Rust response-framing mirrors read responses and supply no request-side comparison.
-
-At the adapter admission landing, the Safety census was 206 / 177 / 29, with first-party discharged / required 81 / 0 and categories observed 177 / final 26 / retired 2 / waiting 1. The supplementary partition was 43 = 41 comparisons + 2 typed out-of-contract dispositions + 0 retained, or [41, 2, 0]. Against the preceding admission, answered rose by five from 172, outstanding fell by five from 34, and first-party discharged rose by five from 76. Waiting fell from six to the one confidential observation. The five comparisons added observed answers; they added neither native observations nor final reasons. Typed non-answers remained 27 = 26 final + 1 waiting, native acceptance/refusal 12 / 39, report required/observed 0 / 15, relation links 14 / 108 / 84, both staging partitions and report schema 3 remained unchanged. Completeness remains partial. The subsequent confidential admission moves final/waiting to 27 / 0 at (`rec:backlog:wave0-confidential-route-admission`).
-
-`entry_movements_preserve_every_other_row_and_historical_answer` checks 36 cumulative movements and 170 unchanged rows, preserving the 78 historical answers and original evidence. The original eight-entry and subsequent twenty-three ABI-entry movements remain disjoint from these five. The fourteen-entry table now records fourteen observed rows, including the nonce comparison supplied by (`rec:backlog:wave0-abi-entries`). The ABI index keeps 28 keys and now records 23 `AbiFieldRefused`, 5 `AdapterRequestRefused` and 0 unasked readings over 34 changed subjects. The initial 40 discharges, original seven-movement reconstruction and two retirements retain their separate historical pins.
-
-The five Python request comparisons retain both operands and their exact checked entry relations; source-bound readings admit only an accepted control and the named refusal of its changed subject. Together with the existing comparisons and typed out-of-contract proofs, this supplies every inherited row's obligation under (`gate:guide15-exec:bite-0-5-first-party-gate`): copied success flags cannot answer a row. Every considered existing-entry row has an admitted exact comparison; the nonce comparison is recorded by the ABI-entries step and adapter admission is supplied here. The confidential selected-policy observation is admitted at (`rec:backlog:wave0-confidential-route-admission`); detailed diagnostic recapture is complete at (`rec:backlog:wave0-diagnostic-route-admission`), while close-safety reconciliation and non-answer gate re-reading are recorded at (`result:backlog:close-safety-reconciliation`); `T12-005` and the broader packet close at (`result:backlog:bite-0-5-gate-pass`).
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
 ### First-party entries · `sec:backlog:first-party-entries`
 
@@ -2771,51 +2136,9 @@ The guide's files setting (`setup:guide15-exec:bite-0-5-files-and-packages`) now
 
 In `packages/target-elements-conformance/src/executor.rs`, `run_protocol` and `compare_environment` change from crate-private to public and `bind_script_path_response` changes from private to public, with documentation stating their scope. Their validation bodies are unchanged. No raw transcript constructor becomes public. These are production API changes allowing exact first-party comparisons. `run_protocol` retains the trust declared by the caller's configuration; scripted streams do not force Mock trust. These entry pairs explicitly pass Mock trust, and their scripted exchanges establish no native execution, authentication or deployment guarantee. Native constructions and combined projection subsequently received their dispositions at (`rec:backlog:wave0-native-route-capture-driver`) and (`rec:backlog:wave0-combined-projection`); adapter comparison admission follows at (`rec:backlog:wave0-adapter-comparisons`). Before the bite 0.5 gate pass, balanced confidential observation was admitted at (`rec:backlog:wave0-confidential-route-admission`) and diagnostic recapture was complete at (`rec:backlog:wave0-diagnostic-route-admission`), while `T12-005` stayed TODO; its closure is recorded at (`result:backlog:bite-0-5-gate-pass`).
 
-### Test performance · `sec:backlog:test-performance`
+### Test performance · archived record
 
-**Record (Wave 0 test performance)** · `rec:backlog:wave0-test-performance`
-
-The baseline at `0.7.20-dev`, scheduling change and comparable warm result satisfy the three steps of bite 0.6 (`step:wave0:bite-0-6-baseline-measurement`); (`step:wave0:bite-0-6-rule-and-land-remedy`); (`step:wave0:bite-0-6-measure-and-close`). Ruling 129 adds priority 1 to exactly `executor-boundaries`, `live-native-v2-r7-capture-contract` and `live-native-v2-r8-capture-contract` in root `meson.build`, preserving all 56 checks, arguments, dependencies, timeouts, profiles, failure propagation, timing attribution and the final clean-tree check (`rule:phase7:wave0-rulings`).
-
-The executor check creates fresh temporary framework, executable and diagnostic fixtures. Each capture check uses its own temporary synthetic repository, mock Cargo and output directory. None shares package JSON outputs or the Cargo target with a package check or serial Cargo check. Imported Python bytecode is an incidental ignored cache, not fixture state. Serial Cargo checks retain their ordering; the signing fixture and its 2.0 s stand-in lifetime remain unchanged.
-
-**Result (Before/after pair)** · `result:backlog:test-performance`
-
-The retained baseline under `evidence/wave0/test-performance/w16d1-measure-20261025T202808Z/` records 1662.2 s cold and 891.8 s warm, then 689.3 s isolated debug and 77.9 s isolated release. The after sequence under `evidence/wave0/test-performance/w16d1-measure-20261025T220347Z/` records 731.2 s warm, 658.4 s isolated debug and 66.3 s isolated release: a 160.6 s (18.0%) lower comparable warm wall. Both warm observations reuse compiled artifacts on sojka in the same target directory; the after target is not cleared. Cold after is unavailable. Each full run passes the same 56 checks; each isolated suite passes 16. The retained `analysis.log` reconciles every package's test identity, binary ordinal and outcome against the baseline, with no new failure or skip and no completed event lacking timing (`tab:test-performance:register`).
-
-Executed and ignored counts below are equal before and after in each profile, including isolated suites; totals include unit, integration and documentation tests. All suite summaries reconcile with the event streams.
-
-| Package | Executed per profile | Ignored per profile |
-|---|---:|---:|
-| architecture | 166 | 0 |
-| artifacts | 12 | 0 |
-| cli-common | 76 | 0 |
-| compiler | 812 | 3 |
-| document-stamps | 45 | 0 |
-| execwrap | 52 | 0 |
-| flatten-latex-main | 41 | 0 |
-| labels | 240 | 0 |
-| linker | 258 | 0 |
-| model | 360 | 0 |
-| realization | 363 | 0 |
-| tapscript | 634 | 0 |
-| target-elements | 256 | 0 |
-| target-elements-conformance | 679 | 0 |
-| transaction | 471 | 0 |
-| vectors | 1114 | 49 |
-| Total | 5579 | 52 |
-
-Achieved full-gate parallelism rises from 2.428903 to 3.111391 overlapping check-equivalents. Each moved check overlaps all 32 package checks; clean-tree remains last. After warm debug vectors, conformance and compiler leave residuals of 2.829079 s, 2.690823 s and 2.067020 s after subtracting successful sequential suite walls, not overlapping individual-test sums. These residuals combine unseparated work and waiting.
-
-The initial after observation under `evidence/wave0/test-performance/w16d1-measure-20261025T213511Z/` takes 933.8 s, then 698.8 s debug and 68.3 s release. It compiles vectors because tests embed the edited backlog; it is retained as incremental compilation and excluded from the warm pair. Repeating the sequence without tracked changes or target clearing supplies the compilation-free pair. Final record edits change no selected embedded safety or compact disposition table; the measured test subject remains unchanged.
-
-Holding durations and other scheduling offsets fixed, moving only the three checks removes 155.768517 s of exposed work and models a 736.031483 s warm wall. The model retains 12.680301 s after documentation and 1.502826 s after attestation for checks that do not move. Its longest moved check is 138.698715 s within the observed 688.835804 s initial phase. This is a model, not a measured after result; additional contention can change those durations.
-
-**Caveat (Performance scope and unavailable dimensions)**
-
-A wall is not calibration; one comparable pair does not estimate variance or assign contention (`cav:guide15-exec:performance-scope`). The node exposes 61 available processing units on a host with 128 physical cores and 256 logical CPUs. The retained loads accompany each command. Separate Cargo-lock durations, doctest compilation, fixture waiting, scheduler delay, CPU work and individual shell or Python case durations are unavailable. The mocked gate does not establish real document rendering or byte reproducibility.
-
-The baseline isolated debug wall of 689.3 s exceeds the historical 480 s tolerance on a different reference host; executor boundaries occupies 138.698715 s against its stale 20 s tolerance. Both remain within their actual timeouts. Budget comments remain unchanged. The excluded attempt consumed 69 minutes, including unnecessary target-directory checking; environment initialization selected the wrong target. Its observations remain explicitly excluded under `evidence/wave0/test-performance/w16d1-measure-20261025T192056Z/`, and cannot supply the accepted pair.
+The verbatim closed record is in [backlog history](history/backlog-history.md#closed-wave-records).
 
 **Record (Wave 0 compact inherited closure)** · `rec:backlog:wave0-compact-inherited-closure`
 
@@ -3221,7 +2544,7 @@ Adopt the named track (`task:guide15-exec:fixed-form`) and rulings 193–212 at 
 | (`step:kffwork:s2`) | DONE | Realization recipe, environment/envelope/floor and paper obligations at (`[DOC-sec:keyed-fixed:scope]`); property-by-property pre-admission at (`rec:identities:keyed-fixed-capture-stop`). Landed as `0.7.164-dev`; full repository gate green at 2026-11-16T17:52:01Z, 1,413s. Ruling 211 leaves capture-freeze admission to S5 and activation to S8; S2 mints no identity. D with build-registration verification; receipt and timing-test correction below. |
 | (`step:kffwork:s3`) | DONE | Complete declarations/member/manifest identities, unchanged legacy and attestation controls, paired namespace re-pin; C/D. Landed as `0.7.168-dev` after independent review; full repository gate green at 2026-11-16T22:10:05Z, 5,429s. Receipt below. |
 | (`step:kffwork:s4`) | DONE | Public sealed compiler plans, full projections/re-derivation, cross-owner refusals; C. Landed as `0.7.169-dev` after independent review; full repository gate green at 2026-11-17T07:42:03Z, 3,847s. Receipt below. |
-| (`step:kffwork:s5`) | TODO | Independently checked transcript/104-byte leaf/linker/commitment/resources and separate typed freeze, owned encoding, inventory and ADR-021 admission under ruling 211, recording S8's deadline-bound consumer migration; C/D. Design question for this program producer: should a typed authenticated program bind the program to its triple, instead of leaving that binding solely to the caller? This records an option, not additional assigned implementation. |
+| (`step:kffwork:s5`) | DONE | Independently checked transcript/104-byte leaf/linker/commitment/resources and separate typed freeze, owned encoding, inventory and ADR-021 admission under ruling 211, recording S8's deadline-bound consumer migration; C/D. Design question for this program producer: should a typed authenticated program bind the program to its triple, instead of leaving that binding solely to the caller? This records an option, not additional assigned implementation. Landed as `0.7.174-dev` after independent review; full repository gate pending at this record. Receipt below. |
 | (`step:kffwork:s6`) | TODO | Selected implementation/tests: (`sec:backlog:fixed-form-s6-design`). Public construction, exact member authentication, amount/envelope bounds and arbitrary merge surplus; C. Under ruling 212, consume the target-owned stated-amount bound: an accepted control at its maximum and a subject one unit above must produce the typed too-large refusal at the constructor. When S6 edits (`sec:transaction:fixed-form`), name reviewed_stated_amount_bound() there as the bound owner. S5 consumer dispositions (facts, not new requirements): (1) LinkedKeyedFixedBundle::bytes() is the complete leaf; relation fragments are coverage material with their own H pushes and are not programs. (2) Recipe offers come independently from the request's authenticated triple; echoing the emission's recipe supplies no binding check. (3) The offline vectors constructor supplies root, tweak, output key, parity, program and control comparison material; the record fixes their reconstruction. (4) Member receipts cover supplied roles, not parent authentication; the binder accepts mixed recipes, so S6's existing exact-member authentication includes program Pq, birth zero and explicit A/v, and agreement with the successor's Pq. (5) The 46 selected sources become pinned at S5 landing, including whole manifests and the shared model helper; subsequent authorized edits carry pins/history/dispositions under (`rule:vectors:keyed-refreeze`), while S6 sources join at S8's re-freeze. (6) transaction_weight takes complete stripped bytes once, other witnesses and 143 bytes per member; 307 marginal WU is predicted, None maximum is unadmitted, and typed N+1/value ceiling remain S6's existing bound work. (7) The leaf drops outpoint flags; issuance/peg-in remain excluded by the constructor envelope, with peg-in classification/evidence left to S7/S8. |
 | (`step:kffwork:s7`) | TODO | Selected implementation/tests: (`sec:backlog:fixed-form-s7-design`). Full byte-reader/model agreement, filters, SOURCE-only attribution, missing-branch and malformed-payment controls; C/D. |
 | (`step:kffwork:s8`) | TODO | Activate S5's admitted fixed-form freeze consumers and verify its migration before any fixed-form capture under ruling 211; reviewed native subjects, capture admission, resource/reading/contention results and measured test budgets; C/N/D. |
@@ -3236,6 +2559,8 @@ Paper release 2.1.0 clarifies that SOURCE consumes no handles of its own triple 
 S3 receipt: `0.7.168-dev` adds the sibling fixed-form vocabulary and semantic manifest, positive symbolic value and member predicate, SOURCE/MERGE declarations and identities, with unchanged legacy and attestation controls. The program-to-triple binding remains the caller's obligation; the typed-program option is recorded at S5. The frozen shared profile source is re-pinned with retained capture identity and history controls; no fixed-form freeze is admitted here. Ruling 212 places the target ceiling at S6. Independent review preceded landing; full repository gate green at 2026-11-16T22:10:05Z, wall 5,429s.
 
 S4 receipt: `0.7.169-dev` publishes sealed fixed-form compiler input and immutable SOURCE/MERGE plans through the existing shared kernels, with full independent projections, re-derivation, namespace and cross-owner refusals. SOURCE has no runtime clause; MERGE carries born-first, own qualification and successor qualification. Legacy compiler sources and common kernels remain unchanged; key/program authentication stays with the program producer and reader. Independent review preceded landing; full repository gate green at 2026-11-17T07:42:03Z, wall 3,847s. The first run ended red on battery time budgets alone under concurrent node load: release build 5,452s against 5,400s. That evidence is retained; the green rerun on the same commit is the receipt.
+
+S5 receipt: `0.7.174-dev` supplies the fixed-form transcript, emitted leaf, linker and commitment path, bounded offline stack comparison and a separate typed capture freeze with owned encoding and identity admission. Independent review rebuilt the transcript, pair digest, leaf, internal key and freeze identity from the realization record alone. Legacy frozen sources and byte pins remain preserved. S8 still owns consumer activation and the expanded source inventory before fixed-form capture; no native execution or constructor/reader completion is claimed. Full repository gate pending at this record: fetched hub main does not contain the tag.
 
 Each step consumes its predecessor’s accepted contract; preparation may overlap but cannot claim its gate. The old-leaf copy subject may prepare after S0. The complete observation table (`tab:kffwork:observations`) is adopted: opening-holder and public-only copy controls on the legacy leaf; fixed-form SOURCE/MERGE acceptance under multiple triples; separately balanced asset, value, asset-form and value-form refusals; malformed SOURCE membership/input guard and later-position birth controls; policy-asset empty-nonce M−1/M dust edge and rate/nonce qualifications; weights, bounds and surplus; conflict/retry and full-closure reading. Refusals name their exact boundary, not impossibility. Independent proof, declaration/compiler, byte/linker/constructor, reader and pre/post-capture readings precede the corresponding dependent claim; S9 joins their candidate-bound journals and full import gates. Wave-2 delivery, production finality and unresolved legacy fully-confidential continuation are not closed here.
 
