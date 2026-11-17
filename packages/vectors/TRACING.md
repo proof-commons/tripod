@@ -55,6 +55,7 @@ Every standard-error byte of a first-party program comes from the one tracing su
 |---|---|---|---|---|
 | Test oracle `keyed_stack_core::evaluate` | `vectors::keyed_stack_model`, `evaluate_keyed_model` | DEBUG | `script_bytes: usize` | Test-only traced entry; target retains the historical model name. The library reader calls untraced core entries, with no member-loop span. |
 | `keyed_history_reader::read` | `vectors::keyed_history_reader`, `read_keyed_history` | INFO | `event_count: usize`, `key_count: usize` | One finite byte/evidence derivation; no production chain acceptance. |
+| `keyed_fixed_history_reader::read` | `vectors::keyed_fixed_history_reader`, `read_keyed_fixed_history` | INFO | `event_count: usize`, `triple_count: usize` | One complete fixed-form byte/evidence derivation. |
 | `keyed_evidence::prepare_families` | `vectors::keyed_evidence`, `prepare_keyed_families` | INFO | `event_count: usize` | One unchanged reader pass and one family-owned canonical index; archive admission is offline. |
 | `keyed_evidence::family_report` | `vectors::keyed_evidence`, `keyed_family_report` | INFO | `family: Family` (debug) | One family derivation over immutable underlying evidence. |
 | Six `keyed_evidence::validate_*` family entries | `vectors::keyed_evidence`, `validate_keyed_family` | INFO | `family: Family` (debug) | Recomputes the selected family, no nested family verdict. |
@@ -77,6 +78,8 @@ The fixed canonical bundle and evidence-plan constructors have typed error retur
 | Test-oracle byte model completion | `vectors::keyed_stack_model` | DEBUG | `keyed model evaluated` | `outcome: &str`, `model_only: bool`, `primitive_count: u64` on success, `refusal_kind: &str` on refusal |
 | Keyed history reader completion | `vectors::keyed_history_reader` | INFO | `keyed history read completed` | `handle_count: usize`, `incomplete_count: usize`, `relation_count: usize`; one event per returned reading, including incomplete readings |
 | Keyed history reader refusal | `vectors::keyed_history_reader` | DEBUG | `keyed history read refused` | `refusal_kind: &str`, `boundary: Boundary` (debug); one event per refusal |
+| Fixed-form history reader completion | `vectors::keyed_fixed_history_reader` | INFO | `fixed history read completed` | `handle_count: usize`, `edge_count: usize`, `byte_count: usize`; one event per returned reading |
+| Fixed-form history reader refusal | `vectors::keyed_fixed_history_reader` | DEBUG | `fixed history read refused` | `boundary: Boundary` and `refusal: Refusal` (debug); one event per refusal |
 | Family completion | `vectors::keyed_evidence` | INFO | `keyed family completed` | `operation: &str`; exactly one per preparation, generation or family-validation return |
 | Family refusal | `vectors::keyed_evidence` | DEBUG | `keyed family refused` | `operation: &str`, `family: Option<Family>`, `refusal_kind: &str`, `observation_boundary: Option<FamilyObservationBoundary>` (debug); one per refusal |
 | Keyed evidence reading completion | `vectors::keyed_evidence` | INFO | `keyed evidence reading completed` | One per successful return; complete and noncomplete bodies keep their distinct shapes |

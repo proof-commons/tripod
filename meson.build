@@ -845,7 +845,7 @@ vector_test_targets = [
   'test:guide13_live_transfer', 'test:guide13_preflight',
   'test:keyed_final_admission',
   'test:keyed_fixed_template', 'test:keyed_fixed_freeze_history',
-  'test:keyed_fixed_reproduction',
+  'test:keyed_fixed_reproduction', 'test:keyed_fixed_history',
   'test:guide13_sponsor_signing', 'test:maturity_abi', 'test:maturity_closure',
   'test:maturity_confidential', 'test:maturity_continuity',
   'test:maturity_diagnostic', 'test:maturity_native', 'test:maturity_observer',
