@@ -2864,7 +2864,11 @@ mod tests {
             Relation,
         };
 
-        for operation in [OperationId::CompactAsh, OperationId::TransferLive] {
+        for operation in [
+            OperationId::CompactAsh,
+            OperationId::TransferLive,
+            OperationId::Burn,
+        ] {
             let scope =
                 realization::RealizationScope::from_operations([operation]).expect("one operation");
             let realized = realization::derive(&architecture::ARCHITECTURE, scope)
@@ -2987,6 +2991,7 @@ mod tests {
             supported,
             BTreeSet::from([
                 architecture::OperationId::AnnounceMaturity,
+                architecture::OperationId::Burn,
                 architecture::OperationId::CompactAsh,
                 architecture::OperationId::TransferLive,
             ])

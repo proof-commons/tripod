@@ -5,6 +5,7 @@ use architecture::{Architecture, OperationId};
 use crate::{OperationRealization, RealizationError};
 
 pub mod announce_maturity;
+pub mod burn;
 pub mod compact_ash;
 pub mod keyed;
 pub mod keyed_fixed;
@@ -16,9 +17,18 @@ fn derive_attestation_operation(
 ) -> Result<OperationRealization, RealizationError> {
     match operation {
         OperationId::AnnounceMaturity => announce_maturity::derive(architecture),
+        OperationId::Burn => burn::derive(architecture),
         OperationId::CompactAsh => compact_ash::derive(architecture),
         OperationId::TransferLive => transfer_live::derive(architecture),
-        other => Err(RealizationError::UnsupportedOperationDeclaration(other)),
+        OperationId::CreateRequest
+        | OperationId::CancelRequest
+        | OperationId::AdmitDeposits
+        | OperationId::Cycle
+        | OperationId::SettleDistribution
+        | OperationId::TransferTimeLocked
+        | OperationId::Redeem
+        | OperationId::ReceiptRelabel
+        | OperationId::Clear => Err(RealizationError::UnsupportedOperationDeclaration(operation)),
     }
 }
 

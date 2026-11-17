@@ -491,8 +491,8 @@ pub enum RealizationError {
     },
 
     /// A realization relation disagrees with the architecture row that
-    /// owns its values.
-    #[error("relation {relation:?} disagrees with its architecture object family")]
+    /// owns its values or required declaration graph.
+    #[error("relation {relation:?} disagrees with its architecture or declaration requirements")]
     ArchitectureRelationMismatch { relation: RelationId },
 
     /// An operation declares a cardinality or recognition relation that

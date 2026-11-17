@@ -376,16 +376,22 @@ fn cross_operation_lifecycle_exits_remain_valid_typed_payloads() {
 }
 
 #[test]
-fn undeclared_burn_scope_rejects_for_now() {
-    let error = derive(
+fn burn_is_supported_while_redeem_remains_undeclared() {
+    let control = derive(
         &ARCHITECTURE,
         RealizationScope::from_operations([OperationId::Burn]).unwrap(),
+    )
+    .unwrap();
+    assert!(control.operations.contains_key(&OperationId::Burn));
+    let error = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations([OperationId::Redeem]).unwrap(),
     )
     .unwrap_err();
 
     assert_eq!(
         error,
-        RealizationError::UnsupportedOperationDeclaration(OperationId::Burn),
+        RealizationError::UnsupportedOperationDeclaration(OperationId::Redeem),
     );
 }
 

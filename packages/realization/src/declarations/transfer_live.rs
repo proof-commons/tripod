@@ -557,6 +557,9 @@ fn constructibility_declarations() -> (
 }
 
 fn lifecycle_declarations() -> (Vec<LifecycleNode>, Vec<LifecycleDependencyDeclaration>) {
+    // PrivateCommitted -> Burn is the deferred direct-private route's
+    // requirement. Explicit-only Burn dispatch does not discharge that route
+    // (`[PLAN-rule:phase7:wave2-rulings]`, ruling 191).
     lifecycle_for(
         ObjectId::ReceiptLive,
         [

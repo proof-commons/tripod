@@ -230,12 +230,7 @@ single transaction-side encoding (input 0, output 1); both lowerers use it.
   realization relation, never weaken an unsupported relation, retain explicit
   external-evidence requirements, and fail rather than emit a partial plan.
   Public field `proof_search_limits`.
-- `bind_input(&architecture::Architecture, realization::ScopedRealizationSpec, CompilationScope, AnalysisPolicy) -> Result<BoundCompilerInput, CompileError>`
-  — the only constructor of a bound input. It re-runs the realization owner's
-  validation (`InvalidRealization`), requires the realization's architecture
-  binding to equal the supplied architecture (`ArchitectureBindingMismatch`),
-  and requires every scope member to be declared by the realization
-  (`IncompleteRealizationScope { operation }`).
+- `bind_input(&architecture::Architecture, realization::ScopedRealizationSpec, CompilationScope, AnalysisPolicy) -> Result<BoundCompilerInput, CompileError>` — the only constructor of a bound input. It re-runs the realization owner's validation (`InvalidRealization`), requires the realization's architecture binding to equal the supplied architecture (`ArchitectureBindingMismatch`), requires every scope member to be declared by the realization (`IncompleteRealizationScope { operation }`), and refuses declared operations without a compiler plan (`UnsupportedOperationPlan { operation }`).
 - `BoundCompilerInput` — immutable, private fields, no mutable accessor, no
   serializer, no digest. Readers: `realization() -> &ScopedRealizationSpec`,
   `scope() -> &CompilationScope`, `policy() -> AnalysisPolicy`,
@@ -400,11 +395,7 @@ The input-boundary entry points report the following failures.
 
 ### From `bind_input`
 
-`InvalidRealization` (the realization failed its owner's re-run validation),
-`ArchitectureBindingMismatch` (the realization binds a different architecture
-identity than the one supplied), `IncompleteRealizationScope { operation }` (a
-scope member the realization does not declare), and
-`UnsupportedRealizationSchema { schema }`.
+`InvalidRealization` (the realization failed its owner's re-run validation), `ArchitectureBindingMismatch` (the realization binds a different architecture identity than the one supplied), `IncompleteRealizationScope { operation }` (a scope member the realization does not declare), `UnsupportedOperationPlan { operation }` (a declared Burn requested in compiler scope has no compiler plan), and `UnsupportedRealizationSchema { schema }`.
 
 ### From `analyze_target_requirements`
 

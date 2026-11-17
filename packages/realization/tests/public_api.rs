@@ -19,6 +19,38 @@ use realization::{
 };
 
 #[test]
+fn burn_scope_is_supported_but_does_not_complete_the_architecture() {
+    let scope = RealizationScope::from_operations([OperationId::Burn]).unwrap();
+    let realized = derive(&ARCHITECTURE, scope.clone()).unwrap();
+    realized.validate_against(&ARCHITECTURE).unwrap();
+    assert_eq!(
+        realized
+            .operation(OperationId::Burn)
+            .unwrap()
+            .relations
+            .len(),
+        32
+    );
+    let missing = OperationId::ALL
+        .iter()
+        .copied()
+        .filter(|operation| *operation != OperationId::Burn)
+        .collect();
+    assert_eq!(
+        scope.try_complete(&ARCHITECTURE),
+        Err(realization::RealizationError::IncompleteScope { missing })
+    );
+    assert_eq!(
+        derive(
+            &ARCHITECTURE,
+            RealizationScope::from_operations([OperationId::Redeem]).unwrap()
+        )
+        .unwrap_err(),
+        realization::RealizationError::UnsupportedOperationDeclaration(OperationId::Redeem)
+    );
+}
+
+#[test]
 fn phase1_foundation_is_publicly_constructible() {
     let binding = ArchitectureBinding::from_architecture(&ARCHITECTURE).unwrap();
 

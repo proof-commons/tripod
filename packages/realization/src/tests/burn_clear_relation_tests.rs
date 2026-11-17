@@ -12,6 +12,62 @@ fn amount(value: u64) -> ProtocolAmount {
     ProtocolAmount::new(value).unwrap()
 }
 
+#[test]
+fn burn_law_edges_have_literal_endpoints_and_refuse_omission_or_change() {
+    let input = RelationId::new(
+        OperationId::Burn,
+        RelationKind::SideRepresentation,
+        RelationSubject::SideRepresentation {
+            side: TransactionSide::Input,
+            object: ObjectId::ReceiptLive,
+        },
+    );
+    let binding = RelationId::new(
+        OperationId::Burn,
+        RelationKind::BurnBinding,
+        RelationSubject::Operation,
+    );
+    let data = RelationId::new(
+        OperationId::Burn,
+        RelationKind::DataOutputs,
+        RelationSubject::Operation,
+    );
+    let expected = vec![
+        RelationDependencyDeclaration {
+            prerequisite: input,
+            dependent: binding.clone(),
+            edge: RelationEdge::StaticRequirement,
+        },
+        RelationDependencyDeclaration {
+            prerequisite: binding,
+            dependent: data,
+            edge: RelationEdge::StaticRequirement,
+        },
+    ];
+    assert_eq!(burn_law_dependencies(), expected);
+    validate_burn_law_dependencies(&expected).unwrap();
+    for index in 0..2 {
+        let mut omitted = expected.clone();
+        omitted.remove(index);
+        let mut changed = expected.clone();
+        changed[index].edge = RelationEdge::RecognitionBeforeValue;
+        let mut duplicate = expected.clone();
+        duplicate.push(expected[index].clone());
+        for subject in [omitted, changed, duplicate] {
+            assert_eq!(
+                validate_burn_law_dependencies(&subject),
+                Err(RealizationError::ArchitectureRelationMismatch {
+                    relation: RelationId::new(
+                        OperationId::Burn,
+                        RelationKind::BurnBinding,
+                        RelationSubject::Operation
+                    ),
+                })
+            );
+        }
+    }
+}
+
 // Synthetic graph under the public evaluator: complete declaration dispatch
 // remains separate from this law-level activation fixture.
 #[allow(clippy::too_many_lines)] // Keep the synthetic law and dependency census together.
@@ -102,33 +158,7 @@ fn activated_declaration(operation: OperationId) -> OperationRealization {
         }
     }
     if operation == OperationId::Burn {
-        let ids = [
-            RelationId::new(
-                operation,
-                RelationKind::SideRepresentation,
-                RelationSubject::SideRepresentation {
-                    side: TransactionSide::Input,
-                    object: ObjectId::ReceiptLive,
-                },
-            ),
-            RelationId::new(
-                operation,
-                RelationKind::BurnBinding,
-                RelationSubject::Operation,
-            ),
-            RelationId::new(
-                operation,
-                RelationKind::DataOutputs,
-                RelationSubject::Operation,
-            ),
-        ];
-        for pair in ids.windows(2) {
-            dependencies.push(RelationDependencyDeclaration {
-                prerequisite: pair[0].clone(),
-                dependent: pair[1].clone(),
-                edge: RelationEdge::StaticRequirement,
-            });
-        }
+        dependencies.extend(burn_law_dependencies());
     }
     OperationRealization {
         operation,
@@ -430,7 +460,7 @@ fn holds(
     report.verdict(&id).unwrap().status == RelationStatus::Passed
 }
 
-fn burn() -> (OperationObservation, BurnClearObservation) {
+pub(super) fn burn() -> (OperationObservation, BurnClearObservation) {
     let mut common = common(
         OperationId::Burn,
         vec![

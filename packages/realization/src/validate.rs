@@ -59,6 +59,11 @@ pub fn validate_scoped_realization(
 
     validate_relation_identities(realization)?;
 
+    if let Some(declaration) = realization.operations.get(&OperationId::Burn) {
+        validate_burn_architecture(architecture)?;
+        validate_burn_declaration(declaration)?;
+    }
+
     validate_architecture_family_relations(architecture, realization)?;
 
     validate_lifecycle_relation_weld(realization)?;
@@ -1022,6 +1027,316 @@ fn compact_error(field: ArchitectureMismatchField) -> RealizationError {
 
 fn mismatch_compact(field: ArchitectureMismatchField) -> Result<(), RealizationError> {
     Err(compact_error(field))
+}
+
+fn burn_mismatch(field: ArchitectureMismatchField) -> RealizationError {
+    RealizationError::ArchitectureOperationMismatch {
+        operation: OperationId::Burn,
+        field,
+    }
+}
+
+/// Exact set-like collection comparison without discarding multiplicity.
+fn same_members<T: PartialEq>(actual: &[T], expected: &[T]) -> bool {
+    actual.len() == expected.len()
+        && expected
+            .iter()
+            .all(|item| actual.iter().filter(|candidate| *candidate == item).count() == 1)
+}
+
+/// Compare Burn's inherited architecture coordinates with the adopted contract.
+#[allow(clippy::too_many_lines)] // Keep every operation coordinate in the same weld.
+pub fn validate_burn_architecture(architecture: &Architecture) -> Result<(), RealizationError> {
+    use ArchitectureMismatchField as F;
+    use architecture::{
+        CanonicalDeltaSpec, DataOutputKind, DataOutputSpec, InputSpec, OutputSpec, ProjectionSpec,
+        TagId,
+    };
+    let operation = architecture.operation(OperationId::Burn).ok_or(
+        RealizationError::MissingArchitectureOperation(OperationId::Burn),
+    )?;
+    let checks = [
+        (
+            operation.kind == OperationKind::CovenantBranch,
+            F::OperationKind,
+        ),
+        (
+            operation.authorization == PermissionClass::ReceiptOwners,
+            F::Authorization,
+        ),
+        (operation.roots.is_empty(), F::RootPolicy),
+        (operation.issuances.is_empty(), F::Issuances),
+        (operation.reads.is_empty(), F::Reads),
+        (operation.writes.is_empty(), F::Writes),
+        (
+            same_members(
+                operation.inputs,
+                &[
+                    InputSpec {
+                        object: ObjectId::ReceiptLive,
+                        minimum: 1,
+                        maximum: MaxCount::Bound(BoundId::BurnInputMax),
+                        authorization: InputAuthorization::InputOwner,
+                    },
+                    InputSpec {
+                        object: ObjectId::PlainLbtc,
+                        minimum: 0,
+                        maximum: MaxCount::Bound(BoundId::FeeSponsorInputMax),
+                        authorization: InputAuthorization::SponsorOwner,
+                    },
+                ],
+            ),
+            F::InputFamilies,
+        ),
+        (
+            same_members(
+                operation.outputs,
+                &[
+                    OutputSpec {
+                        object: ObjectId::Ash,
+                        minimum: 1,
+                        maximum: MaxCount::Exact(1),
+                    },
+                    OutputSpec {
+                        object: ObjectId::ReceiptLive,
+                        minimum: 0,
+                        maximum: MaxCount::Bound(BoundId::BurnChangeMax),
+                    },
+                    OutputSpec {
+                        object: ObjectId::PlainLbtc,
+                        minimum: 0,
+                        maximum: MaxCount::Exact(1),
+                    },
+                ],
+            ),
+            F::OutputFamilies,
+        ),
+        (
+            same_members(
+                operation.canonical_deltas,
+                &[CanonicalDeltaSpec {
+                    asset: AssetId::U,
+                    kind: DeltaKind::Lateral,
+                    condition: DeltaCondition::Always,
+                    destruction_tag: None,
+                }],
+            ),
+            F::CanonicalDelta,
+        ),
+        (
+            same_members(
+                operation.data_outputs,
+                &[DataOutputSpec {
+                    kind: DataOutputKind::BurnRecord,
+                    tag: TagId::Burn,
+                    asset: None,
+                    minimum: 0,
+                    maximum: MaxCount::Bound(BoundId::BurnRecordMax),
+                    condition: DeltaCondition::Always,
+                }],
+            ),
+            F::DataOutputs,
+        ),
+        (
+            same_members(operation.open_flows, &[OpenFlowKind::FeeSponsor]),
+            F::OpenFlows,
+        ),
+        (
+            same_members(
+                operation.value_flows,
+                &[
+                    ValueFlowClass::OwnerConsented,
+                    ValueFlowClass::OwnerlessBoundSink,
+                    ValueFlowClass::SponsorEnvelope,
+                ],
+            ),
+            F::ValueFlows,
+        ),
+        (
+            same_members(
+                operation.witnesses,
+                &[
+                    WitnessId::CanonicalDelta,
+                    WitnessId::AshLineage,
+                    WitnessId::ReceiptOwnerRouting,
+                    WitnessId::ReceiptClassClosure,
+                    WitnessId::AttestationAuthentication,
+                    WitnessId::ValueFlowClosure,
+                ],
+            ),
+            F::Witnesses,
+        ),
+        (
+            same_members(
+                operation.bounds,
+                &[
+                    BoundId::BurnInputMax,
+                    BoundId::BurnChangeMax,
+                    BoundId::BurnRecordMax,
+                    BoundId::FeeSponsorInputMax,
+                ],
+            ),
+            F::Bounds,
+        ),
+        (
+            same_members(
+                operation.projections,
+                &[
+                    ProjectionSpec {
+                        projection: ProjectionId::TransitionCertificate,
+                        rule: ProjectionRule::Required,
+                    },
+                    ProjectionSpec {
+                        projection: ProjectionId::BurnEvent,
+                        rule: ProjectionRule::Required,
+                    },
+                ],
+            ),
+            F::ProjectionPolicy,
+        ),
+    ];
+    for (holds, field) in checks {
+        if !holds {
+            return Err(burn_mismatch(field));
+        }
+    }
+    validate_burn_objects(architecture)
+}
+
+fn validate_burn_objects(architecture: &Architecture) -> Result<(), RealizationError> {
+    use architecture::{AccountingDomain, AllocatorId, DeallocatorId, LifecycleClass};
+    for (object, class, mutators, deallocators, field) in [
+        (
+            ObjectId::Ash,
+            LifecycleClass::Backlog,
+            vec![OperationId::CompactAsh, OperationId::Clear],
+            vec![DeallocatorId::Operation(OperationId::Clear)],
+            ArchitectureMismatchField::AshOutput,
+        ),
+        (
+            ObjectId::ReceiptLive,
+            LifecycleClass::UserPosition,
+            vec![
+                OperationId::TransferLive,
+                OperationId::Burn,
+                OperationId::Redeem,
+            ],
+            vec![
+                DeallocatorId::Operation(OperationId::Burn),
+                DeallocatorId::Operation(OperationId::Redeem),
+            ],
+            ArchitectureMismatchField::ReceiptOutput,
+        ),
+    ] {
+        let row = architecture
+            .object(object)
+            .ok_or(RealizationError::MissingArchitectureObject(object))?;
+        if row.asset != AssetId::U
+            || row.lifecycle != class
+            || row.accounting_domain != AccountingDomain::Receipt
+            || !row.consensus_value_authoritative
+            || !same_members(row.mutators, &mutators)
+            || !same_members(row.deallocators, &deallocators)
+        {
+            return Err(burn_mismatch(field));
+        }
+        let (allocators, witnesses) = if object == ObjectId::Ash {
+            (
+                vec![
+                    AllocatorId::Operation(OperationId::Burn),
+                    AllocatorId::Operation(OperationId::CompactAsh),
+                    AllocatorId::Operation(OperationId::Clear),
+                ],
+                vec![
+                    WitnessId::CanonicalDelta,
+                    WitnessId::AshLineage,
+                    WitnessId::UtxoLifecycle,
+                ],
+            )
+        } else {
+            (
+                vec![
+                    AllocatorId::Genesis,
+                    AllocatorId::Operation(OperationId::Cycle),
+                    AllocatorId::Operation(OperationId::SettleDistribution),
+                    AllocatorId::Operation(OperationId::TransferLive),
+                    AllocatorId::Operation(OperationId::ReceiptRelabel),
+                ],
+                vec![
+                    WitnessId::CanonicalDelta,
+                    WitnessId::ReceiptOwnerRouting,
+                    WitnessId::ReceiptClassClosure,
+                ],
+            )
+        };
+        if !same_members(row.allocators, &allocators) || !same_members(row.witnesses, &witnesses) {
+            return Err(burn_mismatch(field));
+        }
+    }
+    Ok(())
+}
+
+/// Every shell collection is obligatory, including exact edge multiplicity.
+/// This is a census comparison, not an alternate graph validator or walker.
+pub fn validate_burn_declaration(
+    declaration: &crate::OperationRealization,
+) -> Result<(), RealizationError> {
+    use crate::RelationKind as K;
+    let expected = crate::declarations::burn::declaration();
+    crate::burn_clear_laws::validate_expected_relations(
+        OperationId::Burn,
+        &expected.relations,
+        &declaration.relations,
+    )?;
+    crate::burn_clear_laws::validate_burn_law_dependencies(&declaration.relation_dependencies)?;
+    for (holds, field) in [
+        (declaration.expressions.is_empty(), K::BurnBinding),
+        (
+            same_members(
+                &declaration.relation_dependencies,
+                &expected.relation_dependencies,
+            ),
+            K::BurnBinding,
+        ),
+        (
+            same_members(
+                &declaration.constructibility_nodes,
+                &expected.constructibility_nodes,
+            ) && same_members(
+                &declaration.constructibility_edges,
+                &expected.constructibility_edges,
+            ),
+            K::Constructibility,
+        ),
+        (
+            same_members(&declaration.lifecycle_nodes, &expected.lifecycle_nodes)
+                && same_members(&declaration.lifecycle_edges, &expected.lifecycle_edges),
+            K::Representation,
+        ),
+        (
+            same_members(&declaration.disclosure_nodes, &expected.disclosure_nodes)
+                && same_members(&declaration.disclosure_edges, &expected.disclosure_edges)
+                && same_members(&declaration.disclosure_seeds, &expected.disclosure_seeds),
+            K::Representation,
+        ),
+    ] {
+        if !holds {
+            return Err(RealizationError::ArchitectureRelationMismatch {
+                relation: crate::RelationId::new(
+                    OperationId::Burn,
+                    field,
+                    if field == K::Representation {
+                        crate::RelationSubject::Representation {
+                            object: ObjectId::Ash,
+                        }
+                    } else {
+                        crate::RelationSubject::Operation
+                    },
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_lines)]

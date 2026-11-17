@@ -24,6 +24,25 @@ fn pilot_realization() -> crate::ScopedRealizationSpec {
     derive(&ARCHITECTURE, RealizationScope::phase1_pilots()).unwrap()
 }
 
+#[test]
+fn burn_dispatch_preserves_the_deferred_private_receipt_exit() {
+    for operations in [vec![OperationId::TransferLive], vec![OperationId::Burn]] {
+        let realization = derive(
+            &ARCHITECTURE,
+            RealizationScope::from_operations(operations).unwrap(),
+        )
+        .unwrap();
+        crate::require_lifecycle_exit(
+            &realization.lifecycle_graph,
+            &realization.lifecycle_node_by_id,
+            ObjectId::ReceiptLive,
+            RepresentationMode::PrivateCommitted,
+            OperationId::Burn,
+        )
+        .unwrap();
+    }
+}
+
 fn receipt(side: ObservedSide, ordinal: u32, value: u64, owner: OwnerId) -> ObservedObject {
     ObservedObject {
         reference: ObservedObjectRef { side, ordinal },

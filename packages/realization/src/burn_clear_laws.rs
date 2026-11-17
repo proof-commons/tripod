@@ -257,6 +257,68 @@ pub fn validate_burn_clear_relation_census(
         .map_err(|_| BurnClearLawError::Census)
 }
 
+/// Burn's activated law-to-law requirements. Family, authorization and value
+/// prerequisites belong to the complete operation declaration.
+pub(crate) fn burn_law_dependencies() -> Vec<crate::RelationDependencyDeclaration> {
+    let binding = RelationId::new(
+        OperationId::Burn,
+        RelationKind::BurnBinding,
+        RelationSubject::Operation,
+    );
+    vec![
+        crate::RelationDependencyDeclaration {
+            prerequisite: RelationId::new(
+                OperationId::Burn,
+                RelationKind::SideRepresentation,
+                RelationSubject::SideRepresentation {
+                    side: TransactionSide::Input,
+                    object: ObjectId::ReceiptLive,
+                },
+            ),
+            dependent: binding.clone(),
+            edge: crate::RelationEdge::StaticRequirement,
+        },
+        crate::RelationDependencyDeclaration {
+            prerequisite: binding,
+            dependent: RelationId::new(
+                OperationId::Burn,
+                RelationKind::DataOutputs,
+                RelationSubject::Operation,
+            ),
+            edge: crate::RelationEdge::StaticRequirement,
+        },
+    ]
+}
+
+/// Exact activated subgraph census; complete declarations may add incoming
+/// family requirements, but cannot omit or replace a law-to-law edge.
+pub(crate) fn validate_burn_law_dependencies(
+    dependencies: &[crate::RelationDependencyDeclaration],
+) -> Result<(), RealizationError> {
+    let laws = burn_clear_laws(OperationId::Burn)
+        .iter()
+        .map(|law| law.relation_declaration().id)
+        .collect::<BTreeSet<_>>();
+    let mut actual = dependencies
+        .iter()
+        .filter(|edge| laws.contains(&edge.prerequisite) && laws.contains(&edge.dependent))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut expected = burn_law_dependencies();
+    actual.sort();
+    expected.sort();
+    if actual != expected {
+        return Err(RealizationError::ArchitectureRelationMismatch {
+            relation: RelationId::new(
+                OperationId::Burn,
+                RelationKind::BurnBinding,
+                RelationSubject::Operation,
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// Declaration diagnostics for the same exact census used by the staged entry.
 pub(crate) fn validate_activated_relation_census(
     operation: OperationId,
@@ -269,7 +331,16 @@ pub(crate) fn validate_activated_relation_census(
     if expected.is_empty() {
         return Err(RealizationError::UnsupportedOperationDeclaration(operation));
     }
-    for row in &expected {
+    validate_expected_relations(operation, &expected, declarations)
+}
+
+/// Shared exact comparison for the activated subset and complete owner census.
+pub(crate) fn validate_expected_relations(
+    operation: OperationId,
+    expected: &[RelationDeclaration],
+    declarations: &[RelationDeclaration],
+) -> Result<(), RealizationError> {
+    for row in expected {
         let mut matching = declarations.iter().filter(|actual| actual.id == row.id);
         let Some(actual) = matching.next() else {
             return Err(RealizationError::MissingArchitectureRelation {

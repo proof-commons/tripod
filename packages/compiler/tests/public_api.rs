@@ -209,6 +209,38 @@ fn scope_construction_rejects_empty_and_duplicate() {
 }
 
 #[test]
+fn declared_burn_reaches_unsupported_plan_at_input_binding() {
+    let realized = realization::derive(
+        &architecture::ARCHITECTURE,
+        realization::RealizationScope::from_operations([
+            OperationId::AnnounceMaturity,
+            OperationId::Burn,
+        ])
+        .unwrap(),
+    )
+    .unwrap();
+    let control_scope = CompilationScope::from_operations([OperationId::AnnounceMaturity]).unwrap();
+    assert!(
+        bind_input(
+            &architecture::ARCHITECTURE,
+            realized.clone(),
+            control_scope,
+            test_policy()
+        )
+        .is_ok()
+    );
+    let scope =
+        CompilationScope::from_operations([OperationId::AnnounceMaturity, OperationId::Burn])
+            .unwrap();
+    assert_eq!(
+        bind_input(&architecture::ARCHITECTURE, realized, scope, test_policy()).unwrap_err(),
+        CompileError::UnsupportedOperationPlan {
+            operation: OperationId::Burn
+        },
+    );
+}
+
+#[test]
 fn scope_outside_the_realization_is_incomplete() {
     // The pilot realization is intentionally partial; requesting Burn
     // must fail rather than silently drop or complete the member.
