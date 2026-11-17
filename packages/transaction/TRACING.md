@@ -112,3 +112,7 @@ The keyed sponsor verifier exposes DEBUG spans `keyed_sponsor_digest` and `verif
 `keyed_construction_boundaries_trace_exactly_one_own_terminal_event` and `keyed_sponsor_boundaries_trace_exactly_one_own_terminal_event` use the exactly-one-child capture helper on accepted and refused calls. Admission invokes untraced construction and verification cores; the reused tapscript weight boundary retains its own owner span/event. No measured duration or secret enters these events.
 
 `keyed_construction_refusal_tables_are_snake_case` covers both common `TraceRefusal` implementations. Completion and refusal events include `family = "keyed"`. `KeyedPolicy::new` is an untraced configuration-value constructor; only construction, admission and the diagnostic verifier entries publish transaction-boundary events.
+
+The fixed-form `commit_keyed_fixed_bundle` entry emits one completion or typed refusal event with `family = "keyed"`. `keyed_fixed_policy_member_maximum`, `keyed_fixed_policy_floor` and `KeyedFixedPolicy::new` are untraced policy-value helpers; the public request, construction and admission boundaries emit their own terminal events.
+
+Fixed-form sibling boundaries use `transaction::keyed_fixed_*` targets with one completion or typed-refusal event per public request, commitment, authentication, construction or sponsor verification call. Parent decoding, hashing and curve arithmetic stay beneath those spans. Static refusal kinds and counts may be emitted; keys, values, signatures and parent bytes are not event fields.

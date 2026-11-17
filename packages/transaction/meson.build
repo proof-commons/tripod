@@ -11,6 +11,12 @@ transaction_source_files = files(
   'src/keyed_construct.rs',
   'src/keyed_construct/tests.rs',
   'src/keyed_curve.rs',
+  'src/keyed_fixed_abi.rs',
+  'src/keyed_fixed_construct.rs',
+  'src/keyed_fixed_inputs.rs',
+  'src/keyed_fixed_request.rs',
+  'src/keyed_fixed_sponsor.rs',
+  'src/keyed_fixed_taproot.rs',
   'src/keyed_inputs.rs',
   'src/keyed_request.rs',
   'src/keyed_request/tests.rs',
@@ -85,4 +91,4 @@ transaction_doc_files = files('README.md', 'TRACING.md')
 
 # Same-typed files deliberately outside the crate-source census
 # (ADR-014). External Cargo tests are test inputs, not src/ label owners.
-transaction_excluded_files = files('tests/keyed_surface.rs')
+transaction_excluded_files = files('tests/keyed_surface.rs', 'tests/keyed_fixed_surface.rs')

@@ -159,3 +159,5 @@ The capture support also prints one epoch-millisecond and elapsed-time line afte
 The envelope children additionally print separately scoped SOURCE preparation and MERGE construction walls, policy arithmetic and typed preflight refusals under that same timeout-retention exception. These are test-local drivers using the existing public capture boundary; no new untraced production entry is introduced. Post-transport retention, per-case archive writing and admission each print their own wall under the same retention exception. Native per-case sessions retain their own exchange timestamps and measured observations, while missing native dimensions stay absent.
 
 The S3 semantic-profile re-freeze uses the existing capture encoding and current/retained digest boundaries above; it adds no tracing target or printed-timer exception.
+
+The S6 fresh-process reproduction test calls the existing vectors, linker and transaction boundaries. It adds no vectors production event or native timing claim; each called owner retains its own span and terminal event.
