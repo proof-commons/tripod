@@ -64,6 +64,11 @@ pub fn validate_scoped_realization(
         validate_burn_declaration(declaration)?;
     }
 
+    if let Some(declaration) = realization.operations.get(&OperationId::Clear) {
+        validate_clear_architecture(architecture)?;
+        validate_clear_declaration(declaration)?;
+    }
+
     validate_architecture_family_relations(architecture, realization)?;
 
     validate_lifecycle_relation_weld(realization)?;
@@ -1036,12 +1041,330 @@ fn burn_mismatch(field: ArchitectureMismatchField) -> RealizationError {
     }
 }
 
+fn clear_mismatch(field: ArchitectureMismatchField) -> RealizationError {
+    RealizationError::ArchitectureOperationMismatch {
+        operation: OperationId::Clear,
+        field,
+    }
+}
+
 /// Exact set-like collection comparison without discarding multiplicity.
 fn same_members<T: PartialEq>(actual: &[T], expected: &[T]) -> bool {
     actual.len() == expected.len()
         && expected
             .iter()
             .all(|item| actual.iter().filter(|candidate| *candidate == item).count() == 1)
+}
+
+/// Compare every Clear architecture coordinate with the adopted contract.
+///
+/// # Errors
+/// Returns the first exact operation or object coordinate mismatch.
+#[allow(clippy::too_many_lines)] // The operation weld is a single ordered coordinate census.
+pub fn validate_clear_architecture(architecture: &Architecture) -> Result<(), RealizationError> {
+    use ArchitectureMismatchField as F;
+    use architecture::{
+        CanonicalDeltaSpec, DataOutputKind, DataOutputSpec, InputSpec, OutputSpec, ProjectionSpec,
+        TagId,
+    };
+    let operation = architecture.operation(OperationId::Clear).ok_or(
+        RealizationError::MissingArchitectureOperation(OperationId::Clear),
+    )?;
+    let checks = [
+        (
+            operation.kind == OperationKind::CovenantBranch,
+            F::OperationKind,
+        ),
+        (
+            operation.authorization == PermissionClass::Permissionless,
+            F::Authorization,
+        ),
+        (
+            same_members(
+                operation.roots,
+                &[architecture::RootUseSpec {
+                    root: RootId::State,
+                    use_kind: RootUse::Succession,
+                }],
+            ),
+            F::RootPolicy,
+        ),
+        (operation.issuances.is_empty(), F::Issuances),
+        (operation.reads.is_empty(), F::Reads),
+        (operation.writes.is_empty(), F::Writes),
+        (
+            same_members(
+                operation.inputs,
+                &[
+                    InputSpec {
+                        object: ObjectId::State,
+                        minimum: 1,
+                        maximum: MaxCount::Exact(1),
+                        authorization: InputAuthorization::CovenantCompanion,
+                    },
+                    InputSpec {
+                        object: ObjectId::Ash,
+                        minimum: 1,
+                        maximum: MaxCount::Bound(BoundId::AshBatchMax),
+                        authorization: InputAuthorization::Permissionless,
+                    },
+                    InputSpec {
+                        object: ObjectId::PlainLbtc,
+                        minimum: 0,
+                        maximum: MaxCount::Bound(BoundId::FeeSponsorInputMax),
+                        authorization: InputAuthorization::SponsorOwner,
+                    },
+                ],
+            ),
+            F::InputFamilies,
+        ),
+        (
+            same_members(
+                operation.outputs,
+                &[
+                    OutputSpec {
+                        object: ObjectId::State,
+                        minimum: 1,
+                        maximum: MaxCount::Exact(1),
+                    },
+                    OutputSpec {
+                        object: ObjectId::Ash,
+                        minimum: 0,
+                        maximum: MaxCount::Exact(1),
+                    },
+                    OutputSpec {
+                        object: ObjectId::PlainLbtc,
+                        minimum: 0,
+                        maximum: MaxCount::Exact(1),
+                    },
+                ],
+            ),
+            F::OutputFamilies,
+        ),
+        (
+            same_members(
+                operation.canonical_deltas,
+                &[
+                    CanonicalDeltaSpec {
+                        asset: AssetId::U,
+                        kind: DeltaKind::Destruction,
+                        condition: DeltaCondition::Always,
+                        destruction_tag: Some(TagId::Recon),
+                    },
+                    CanonicalDeltaSpec {
+                        asset: AssetId::U,
+                        kind: DeltaKind::OwnerlessLateral,
+                        condition: DeltaCondition::PositiveAshResidual,
+                        destruction_tag: None,
+                    },
+                ],
+            ),
+            F::CanonicalDelta,
+        ),
+        (
+            same_members(
+                operation.data_outputs,
+                &[DataOutputSpec {
+                    kind: DataOutputKind::Destruction,
+                    tag: TagId::Recon,
+                    asset: Some(AssetId::U),
+                    minimum: 1,
+                    maximum: MaxCount::Exact(1),
+                    condition: DeltaCondition::Always,
+                }],
+            ),
+            F::DataOutputs,
+        ),
+        (
+            same_members(operation.open_flows, &[OpenFlowKind::FeeSponsor]),
+            F::OpenFlows,
+        ),
+        (
+            same_members(
+                operation.value_flows,
+                &[
+                    ValueFlowClass::OwnerlessTerminalSink,
+                    ValueFlowClass::SponsorEnvelope,
+                ],
+            ),
+            F::ValueFlows,
+        ),
+        (
+            same_members(
+                operation.witnesses,
+                &[
+                    WitnessId::CanonicalDelta,
+                    WitnessId::AshLineage,
+                    WitnessId::StateSuccession,
+                    WitnessId::FloorNondecrease,
+                    WitnessId::ValueFlowClosure,
+                    WitnessId::NativeFeeAuction,
+                ],
+            ),
+            F::Witnesses,
+        ),
+        (
+            same_members(
+                operation.bounds,
+                &[BoundId::AshBatchMax, BoundId::FeeSponsorInputMax],
+            ),
+            F::Bounds,
+        ),
+        (
+            same_members(
+                operation.projections,
+                &[
+                    ProjectionSpec {
+                        projection: ProjectionId::TransitionCertificate,
+                        rule: ProjectionRule::Required,
+                    },
+                    ProjectionSpec {
+                        projection: ProjectionId::ClearEvent,
+                        rule: ProjectionRule::Required,
+                    },
+                ],
+            ),
+            F::ProjectionPolicy,
+        ),
+    ];
+    for (holds, field) in checks {
+        if !holds {
+            return Err(clear_mismatch(field));
+        }
+    }
+    validate_clear_objects(architecture)
+}
+
+fn validate_clear_objects(architecture: &Architecture) -> Result<(), RealizationError> {
+    use architecture::{AccountingDomain, AllocatorId, DeallocatorId, LifecycleClass};
+    let state = architecture
+        .object(ObjectId::State)
+        .ok_or(RealizationError::MissingArchitectureObject(ObjectId::State))?;
+    if state.asset != AssetId::Pid
+        || state.lifecycle != LifecycleClass::ConstantRoot
+        || state.accounting_domain != AccountingDomain::None
+        || !state.consensus_value_authoritative
+        || !same_members(state.allocators, &[AllocatorId::Genesis])
+        || !same_members(
+            state.mutators,
+            &[
+                OperationId::AdmitDeposits,
+                OperationId::Cycle,
+                OperationId::Redeem,
+                OperationId::ReceiptRelabel,
+                OperationId::Clear,
+                OperationId::AnnounceMaturity,
+            ],
+        )
+        || !same_members(state.deallocators, &[DeallocatorId::None])
+        || !same_members(state.witnesses, &[WitnessId::StateSuccession])
+    {
+        return Err(clear_mismatch(ArchitectureMismatchField::StateObject));
+    }
+    let ash = architecture
+        .object(ObjectId::Ash)
+        .ok_or(RealizationError::MissingArchitectureObject(ObjectId::Ash))?;
+    if ash.asset != AssetId::U
+        || ash.lifecycle != LifecycleClass::Backlog
+        || ash.accounting_domain != AccountingDomain::Receipt
+        || !ash.consensus_value_authoritative
+        || !same_members(
+            ash.allocators,
+            &[
+                AllocatorId::Operation(OperationId::Burn),
+                AllocatorId::Operation(OperationId::CompactAsh),
+                AllocatorId::Operation(OperationId::Clear),
+            ],
+        )
+        || !same_members(ash.mutators, &[OperationId::CompactAsh, OperationId::Clear])
+        || !same_members(
+            ash.deallocators,
+            &[DeallocatorId::Operation(OperationId::Clear)],
+        )
+        || !same_members(
+            ash.witnesses,
+            &[
+                WitnessId::CanonicalDelta,
+                WitnessId::AshLineage,
+                WitnessId::UtxoLifecycle,
+            ],
+        )
+    {
+        return Err(clear_mismatch(ArchitectureMismatchField::AshOutput));
+    }
+    Ok(())
+}
+
+/// Refuse a missing, changed or duplicated Clear shell member.
+///
+/// # Errors
+/// Returns the relation identity whose complete census differs.
+pub fn validate_clear_declaration(
+    declaration: &crate::OperationRealization,
+) -> Result<(), RealizationError> {
+    use crate::RelationKind as K;
+    let expected = crate::declarations::clear::declaration();
+    crate::burn_clear_laws::validate_expected_relations(
+        OperationId::Clear,
+        &expected.relations,
+        &declaration.relations,
+    )?;
+    crate::burn_clear_laws::validate_clear_law_dependencies(&declaration.relation_dependencies)?;
+    for (holds, kind) in [
+        (
+            same_members(&declaration.expressions, &expected.expressions),
+            K::ClearAssignment,
+        ),
+        (
+            same_members(
+                &declaration.relation_dependencies,
+                &expected.relation_dependencies,
+            ),
+            K::ClearBinding,
+        ),
+        (
+            same_members(
+                &declaration.constructibility_nodes,
+                &expected.constructibility_nodes,
+            ) && same_members(
+                &declaration.constructibility_edges,
+                &expected.constructibility_edges,
+            ),
+            K::Constructibility,
+        ),
+        (
+            same_members(&declaration.lifecycle_nodes, &expected.lifecycle_nodes)
+                && same_members(&declaration.lifecycle_edges, &expected.lifecycle_edges),
+            K::Representation,
+        ),
+        (
+            same_members(&declaration.disclosure_nodes, &expected.disclosure_nodes)
+                && same_members(&declaration.disclosure_edges, &expected.disclosure_edges)
+                && same_members(&declaration.disclosure_seeds, &expected.disclosure_seeds),
+            K::Representation,
+        ),
+    ] {
+        if !holds {
+            return Err(RealizationError::ArchitectureRelationMismatch {
+                relation: crate::RelationId::new(
+                    OperationId::Clear,
+                    kind,
+                    if kind == K::ClearAssignment {
+                        crate::RelationSubject::StateField {
+                            field: crate::StateField::Omega,
+                        }
+                    } else if kind == K::Representation {
+                        crate::RelationSubject::Representation {
+                            object: ObjectId::Ash,
+                        }
+                    } else {
+                        crate::RelationSubject::Operation
+                    },
+                ),
+            });
+        }
+    }
+    Ok(())
 }
 
 /// Compare Burn's inherited architecture coordinates with the adopted contract.

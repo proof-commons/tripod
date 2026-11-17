@@ -2970,6 +2970,7 @@ mod tests {
 
     #[test]
     fn realization_operation_census_retains_only_the_announcement_state_transition() {
+        // Historical pin name is cited by rulings 133 and 189; dispatch does not admit a candidate leaf.
         assert_non_state_operation_declarations();
         let supported: BTreeSet<_> = architecture::ARCHITECTURE
             .operations
@@ -2992,8 +2993,28 @@ mod tests {
             BTreeSet::from([
                 architecture::OperationId::AnnounceMaturity,
                 architecture::OperationId::Burn,
+                architecture::OperationId::Clear,
                 architecture::OperationId::CompactAsh,
                 architecture::OperationId::TransferLive,
+            ])
+        );
+        let state_declarers: BTreeSet<_> = architecture::ARCHITECTURE
+            .operations
+            .iter()
+            .filter(|operation| supported.contains(&operation.id))
+            .filter(|operation| {
+                operation.roots.iter().any(|root| {
+                    root.root == architecture::RootId::State
+                        && root.use_kind == architecture::RootUse::Succession
+                })
+            })
+            .map(|operation| operation.id)
+            .collect();
+        assert_eq!(
+            state_declarers,
+            BTreeSet::from([
+                architecture::OperationId::AnnounceMaturity,
+                architecture::OperationId::Clear,
             ])
         );
     }

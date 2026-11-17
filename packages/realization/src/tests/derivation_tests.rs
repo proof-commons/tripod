@@ -395,6 +395,24 @@ fn burn_is_supported_while_redeem_remains_undeclared() {
     );
 }
 
+#[test]
+fn clear_is_supported_while_redeem_remains_undeclared() {
+    let control = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations([OperationId::Clear]).unwrap(),
+    )
+    .unwrap();
+    assert!(control.operations.contains_key(&OperationId::Clear));
+    assert_eq!(
+        derive(
+            &ARCHITECTURE,
+            RealizationScope::from_operations([OperationId::Redeem]).unwrap(),
+        )
+        .unwrap_err(),
+        RealizationError::UnsupportedOperationDeclaration(OperationId::Redeem),
+    );
+}
+
 // --- S2 disclosure/relation weld: ownership validation proves only
 // that a named relation WOULD belong to the declaring operation. These
 // mutations name a relation that carries the right operation but was

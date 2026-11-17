@@ -241,6 +241,37 @@ fn declared_burn_reaches_unsupported_plan_at_input_binding() {
 }
 
 #[test]
+fn declared_clear_reaches_unsupported_plan_at_input_binding() {
+    let realized = realization::derive(
+        &architecture::ARCHITECTURE,
+        realization::RealizationScope::from_operations([
+            OperationId::TransferLive,
+            OperationId::Clear,
+        ])
+        .unwrap(),
+    )
+    .unwrap();
+    let control_scope = CompilationScope::from_operations([OperationId::TransferLive]).unwrap();
+    assert!(
+        bind_input(
+            &architecture::ARCHITECTURE,
+            realized.clone(),
+            control_scope,
+            test_policy(),
+        )
+        .is_ok()
+    );
+    let scope =
+        CompilationScope::from_operations([OperationId::TransferLive, OperationId::Clear]).unwrap();
+    assert_eq!(
+        bind_input(&architecture::ARCHITECTURE, realized, scope, test_policy()).unwrap_err(),
+        CompileError::UnsupportedOperationPlan {
+            operation: OperationId::Clear,
+        },
+    );
+}
+
+#[test]
 fn scope_outside_the_realization_is_incomplete() {
     // The pilot realization is intentionally partial; requesting Burn
     // must fail rather than silently drop or complete the member.

@@ -395,7 +395,7 @@ The input-boundary entry points report the following failures.
 
 ### From `bind_input`
 
-`InvalidRealization` (the realization failed its owner's re-run validation), `ArchitectureBindingMismatch` (the realization binds a different architecture identity than the one supplied), `IncompleteRealizationScope { operation }` (a scope member the realization does not declare), `UnsupportedOperationPlan { operation }` (a declared Burn requested in compiler scope has no compiler plan), and `UnsupportedRealizationSchema { schema }`.
+`InvalidRealization` (the realization failed its owner's re-run validation), `ArchitectureBindingMismatch` (the realization binds a different architecture identity than the one supplied), `IncompleteRealizationScope { operation }` (a scope member the realization does not declare), `UnsupportedOperationPlan { operation }` (a declared Burn or Clear requested in compiler scope has no compiler plan), and `UnsupportedRealizationSchema { schema }`. A Clear plus `TransferLive` realization reaches this refusal when Clear enters compiler scope; a `TransferLive`-only compiler scope remains accepted. Pilot-only realization still refuses an absent operation as `IncompleteRealizationScope` first.
 
 ### From `analyze_target_requirements`
 

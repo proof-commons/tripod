@@ -107,56 +107,11 @@ fn activated_declaration(operation: OperationId) -> OperationRealization {
             }
         }
     }
-    let mut dependencies = Vec::new();
-    if operation == OperationId::Clear {
-        let clamp = RelationId::new(
-            operation,
-            RelationKind::ClearClamp,
-            RelationSubject::Operation,
-        );
-        let floor = RelationId::new(
-            operation,
-            RelationKind::ClearFloor,
-            RelationSubject::Operation,
-        );
-        let binding = RelationId::new(
-            operation,
-            RelationKind::ClearBinding,
-            RelationSubject::Operation,
-        );
-        for row in &rows {
-            if matches!(
-                row.id.kind(),
-                RelationKind::ClearAssignment
-                    | RelationKind::ClearFlow
-                    | RelationKind::DataOutputs
-                    | RelationKind::CanonicalDeltaPolicy
-            ) {
-                dependencies.push(RelationDependencyDeclaration {
-                    prerequisite: clamp.clone(),
-                    dependent: row.id.clone(),
-                    edge: RelationEdge::StaticRequirement,
-                });
-            }
-            if row.id.kind() == RelationKind::ClearAssignment {
-                dependencies.push(RelationDependencyDeclaration {
-                    prerequisite: row.id.clone(),
-                    dependent: floor.clone(),
-                    edge: RelationEdge::StaticRequirement,
-                });
-            }
-            if matches!(
-                row.id.kind(),
-                RelationKind::ClearFloor | RelationKind::ClearFlow | RelationKind::DataOutputs
-            ) {
-                dependencies.push(RelationDependencyDeclaration {
-                    prerequisite: row.id.clone(),
-                    dependent: binding.clone(),
-                    edge: RelationEdge::StaticRequirement,
-                });
-            }
-        }
-    }
+    let mut dependencies = if operation == OperationId::Clear {
+        crate::burn_clear_laws::clear_law_dependencies()
+    } else {
+        Vec::new()
+    };
     if operation == OperationId::Burn {
         dependencies.extend(burn_law_dependencies());
     }
@@ -503,7 +458,7 @@ pub(super) fn burn() -> (OperationObservation, BurnClearObservation) {
 }
 
 // Literal test inputs and expected successor: no expected value uses the law.
-fn clear(
+pub(super) fn clear(
     b: u64,
     yl: u64,
     yt: u64,
@@ -577,6 +532,75 @@ fn clear(
         },
     };
     (common, extension)
+}
+
+#[test]
+fn clear_law_edges_have_literal_endpoints_and_refuse_omission_or_change() {
+    use RelationKind as K;
+    let id = |kind, subject| RelationId::new(OperationId::Clear, kind, subject);
+    let op = |kind| id(kind, RelationSubject::Operation);
+    let clamp = op(K::ClearClamp);
+    let floor = op(K::ClearFloor);
+    let binding = op(K::ClearBinding);
+    let edge = |prerequisite, dependent| RelationDependencyDeclaration {
+        prerequisite,
+        dependent,
+        edge: RelationEdge::StaticRequirement,
+    };
+    let mut expected = vec![
+        edge(clamp.clone(), op(K::CanonicalDeltaPolicy)),
+        edge(clamp.clone(), op(K::ClearFlow)),
+        edge(clamp.clone(), op(K::DataOutputs)),
+        edge(floor.clone(), binding.clone()),
+        edge(op(K::ClearFlow), binding.clone()),
+        edge(op(K::DataOutputs), binding.clone()),
+    ];
+    for field in StateField::ALL {
+        let assignment = id(
+            K::ClearAssignment,
+            RelationSubject::StateField { field: *field },
+        );
+        expected.push(edge(clamp.clone(), assignment.clone()));
+        expected.push(edge(assignment, floor.clone()));
+    }
+    let actual = crate::burn_clear_laws::clear_law_dependencies();
+    let mut actual_sorted = actual.clone();
+    actual_sorted.sort();
+    expected.sort();
+    assert_eq!(actual_sorted, expected);
+    assert_eq!(
+        crate::burn_clear_laws::validate_clear_law_dependencies(&actual),
+        Ok(())
+    );
+    let error = RealizationError::ArchitectureRelationMismatch { relation: binding };
+    for index in 0..actual.len() {
+        let mut missing = actual.clone();
+        missing.remove(index);
+        assert_eq!(
+            crate::burn_clear_laws::validate_clear_law_dependencies(&missing),
+            Err(error.clone())
+        );
+    }
+    for index in 0..actual.len() {
+        let mut changed = actual.clone();
+        changed[index].edge = RelationEdge::RecognitionBeforeCardinality;
+        assert_eq!(
+            crate::burn_clear_laws::validate_clear_law_dependencies(&changed),
+            Err(error.clone())
+        );
+        let mut duplicate = actual.clone();
+        duplicate.push(actual[index].clone());
+        assert_eq!(
+            crate::burn_clear_laws::validate_clear_law_dependencies(&duplicate),
+            Err(error.clone())
+        );
+    }
+    let mut reversed = actual;
+    reversed.reverse();
+    assert_eq!(
+        crate::burn_clear_laws::validate_clear_law_dependencies(&reversed),
+        Ok(())
+    );
 }
 
 #[test]

@@ -3,6 +3,7 @@ mod burn_clear_projection_tests;
 mod burn_clear_relation_tests;
 mod burn_tests;
 mod clear_state_tests;
+mod clear_tests;
 mod compact_ash_tests;
 mod constructibility_tests;
 mod derivation_tests;

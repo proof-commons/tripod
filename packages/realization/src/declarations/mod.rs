@@ -6,6 +6,7 @@ use crate::{OperationRealization, RealizationError};
 
 pub mod announce_maturity;
 pub mod burn;
+pub mod clear;
 pub mod compact_ash;
 pub mod keyed;
 pub mod keyed_fixed;
@@ -18,6 +19,7 @@ fn derive_attestation_operation(
     match operation {
         OperationId::AnnounceMaturity => announce_maturity::derive(architecture),
         OperationId::Burn => burn::derive(architecture),
+        OperationId::Clear => clear::derive(architecture),
         OperationId::CompactAsh => compact_ash::derive(architecture),
         OperationId::TransferLive => transfer_live::derive(architecture),
         OperationId::CreateRequest
@@ -27,8 +29,9 @@ fn derive_attestation_operation(
         | OperationId::SettleDistribution
         | OperationId::TransferTimeLocked
         | OperationId::Redeem
-        | OperationId::ReceiptRelabel
-        | OperationId::Clear => Err(RealizationError::UnsupportedOperationDeclaration(operation)),
+        | OperationId::ReceiptRelabel => {
+            Err(RealizationError::UnsupportedOperationDeclaration(operation))
+        }
     }
 }
 

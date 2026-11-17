@@ -290,6 +290,53 @@ pub(crate) fn burn_law_dependencies() -> Vec<crate::RelationDependencyDeclaratio
     ]
 }
 
+/// Clear's exact activated law-to-law requirements. The complete declaration
+/// supplies family, authorization, sponsor and representation prerequisites.
+pub(crate) fn clear_law_dependencies() -> Vec<crate::RelationDependencyDeclaration> {
+    use crate::{RelationDependencyDeclaration as D, RelationEdge as E, RelationKind as K};
+    let id = |kind, subject| RelationId::new(OperationId::Clear, kind, subject);
+    let op = |kind| id(kind, RelationSubject::Operation);
+    let clamp = op(K::ClearClamp);
+    let floor = op(K::ClearFloor);
+    let binding = op(K::ClearBinding);
+    let mut edges = Vec::new();
+    for dependent in [
+        op(K::CanonicalDeltaPolicy),
+        op(K::ClearFlow),
+        op(K::DataOutputs),
+    ] {
+        edges.push(D {
+            prerequisite: clamp.clone(),
+            dependent,
+            edge: E::StaticRequirement,
+        });
+    }
+    for field in StateField::ALL {
+        let assignment = id(
+            K::ClearAssignment,
+            RelationSubject::StateField { field: *field },
+        );
+        edges.push(D {
+            prerequisite: clamp.clone(),
+            dependent: assignment.clone(),
+            edge: E::StaticRequirement,
+        });
+        edges.push(D {
+            prerequisite: assignment,
+            dependent: floor.clone(),
+            edge: E::StaticRequirement,
+        });
+    }
+    for prerequisite in [floor, op(K::ClearFlow), op(K::DataOutputs)] {
+        edges.push(D {
+            prerequisite,
+            dependent: binding.clone(),
+            edge: E::StaticRequirement,
+        });
+    }
+    edges
+}
+
 /// Exact activated subgraph census; complete declarations may add incoming
 /// family requirements, but cannot omit or replace a law-to-law edge.
 pub(crate) fn validate_burn_law_dependencies(
@@ -312,6 +359,34 @@ pub(crate) fn validate_burn_law_dependencies(
             relation: RelationId::new(
                 OperationId::Burn,
                 RelationKind::BurnBinding,
+                RelationSubject::Operation,
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Refuse an omitted, changed or duplicated activated Clear edge.
+pub(crate) fn validate_clear_law_dependencies(
+    dependencies: &[crate::RelationDependencyDeclaration],
+) -> Result<(), RealizationError> {
+    let laws = burn_clear_laws(OperationId::Clear)
+        .iter()
+        .map(|law| law.relation_declaration().id)
+        .collect::<BTreeSet<_>>();
+    let mut actual = dependencies
+        .iter()
+        .filter(|edge| laws.contains(&edge.prerequisite) && laws.contains(&edge.dependent))
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut expected = clear_law_dependencies();
+    actual.sort();
+    expected.sort();
+    if actual != expected {
+        return Err(RealizationError::ArchitectureRelationMismatch {
+            relation: RelationId::new(
+                OperationId::Clear,
+                RelationKind::ClearBinding,
                 RelationSubject::Operation,
             ),
         });

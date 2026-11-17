@@ -368,6 +368,10 @@ These rulings adopt the typed Burn and Clear execution contract and are open to 
 
 Number 190 remains unused: carrier order is already ruling 157, with Wave-4 measurement and conditional reopening before target declarations. The drafts retain their proposals; adopted consumers, allocations and ledgers are at (`tab:backlog:wave2-consumers`), (`tab:realization:burn-clear-vocabulary`) and (`tab:realization:burn-clear-interfaces`).
 
+**Record (Clear declaration reopening)** · `rec:phase7:wave2-clear-reopening`
+
+The bite-2.6 declaration reopens ruling 138's sponsorless and sponsored emitted-Clear identities and ruling 133's announced-state premise, `16.6 / wrong-control-recipe` finality, and conjunct-5 successor-recipe retirement. (`rec:backlog:wave2-clear-reopenings`) retains each old/new premise, control, removal subject, observed boundary and present standing. Declaration dispatch includes Clear; the pinned candidate still emits no Clear leaf or announced-STATE spender. Historical final and retired findings remain recorded under their original candidate premise, while bite 2.9 owns their separate candidate-bound disposition. No emitted-path or native credit follows from declaration availability.
+
 
 ### Fixed-form keyed covenant rulings · `rule:phase7:fixed-form-rulings`
 
