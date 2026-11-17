@@ -310,6 +310,8 @@ the kernel execute first; only after a successful transition does it project
 primitive facts for a realization check.
 
 - `observe_compact_ash(&ExecutedTransition<CompactAsh>) -> Result<ModelConformanceObservation, ConformanceProjectionError>`
+- `observe_burn(&ExecutedTransition<BurnReceipts>) -> Result<ModelBurnConformanceObservation, ConformanceProjectionError>` projects the certificate's fresh ASH and ordered record family with the model's request signers and bounds. The returned extension, event and accounting are comparison data; the model's independent credit verdict comes from `BurnTransaction::records_accepted()` on the executed history. Burn-only realization evaluates the bound extension; record credit remains a separate verdict, including an overclaim that does not invalidate Burn. Substrate conservation is discharged here only by the model's invariant-wrapped execution, never as target evidence.
+- `ModelBurnConformanceObservation` holds public projection data for comparison. Its `common` member alone carries the model-only established-evidence provenance; callers can copy or mutate the other carriers without changing model acceptance.
 - `observe_live_transfer(&ExecutedTransition<TransferReceipts>) -> Result<..>`
   — refuses a non-`Live` receipt class with `WrongBranch`.
 - `ModelConformanceObservation` — private fields, producible only by those

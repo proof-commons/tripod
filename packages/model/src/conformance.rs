@@ -14,9 +14,9 @@ use realization::{
 };
 
 use crate::{
-    AnnounceMaturity, Asset, BranchKind, CompactAsh, ExecutedTransition, Meta, OutPoint,
-    ReceiptClass, RootEdge, Sat, SignerSet, Tag, TransferReceipts, TransitionCertificate, Utxo,
-    World,
+    AnnounceMaturity, Asset, BranchKind, BurnReceipts, CompactAsh, ExecutedTransition, Meta,
+    OutPoint, ReceiptClass, RootEdge, Sat, SignerSet, Tag, TransferReceipts, TransitionCertificate,
+    Utxo, World,
 };
 
 /// Failure while projecting a model transition into realization facts.
@@ -88,6 +88,133 @@ impl ConformanceProjectionError {
 pub struct ModelConformanceObservation {
     observation: OperationObservation,
     established_evidence: BTreeSet<realization::ExternalEvidenceRequirement>,
+}
+
+/// Independently projected Burn facts and model-side comparison values.
+/// The context tokens identify this model execution; they are not signatures.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModelBurnConformanceObservation {
+    /// Bound model observation and model-only established evidence.
+    pub common: ModelConformanceObservation,
+    /// Primitive carrier projected from the executed certificate.
+    pub extension: realization::BurnClearObservation,
+    /// Event facts projected from the same model execution.
+    pub event: realization::BurnEventProjection,
+    /// Accounting values projected from the executed record family and ASH.
+    pub accounting: realization::AccountingProjection,
+}
+
+/// Project the certificate and bound request of an accepted model Burn.
+///
+/// # Errors
+///
+/// Returns [`ConformanceProjectionError`] if the execution's certificate or
+/// primitive amounts cannot be projected into realization's domain.
+pub fn observe_burn(
+    execution: &ExecutedTransition<BurnReceipts>,
+) -> Result<ModelBurnConformanceObservation, ConformanceProjectionError> {
+    let span = tracing::debug_span!(target: "model::conformance", "observe_burn", branch = "burn");
+    let _entered = span.enter();
+    let result = observe_burn_core(execution);
+    record_projection(&result, "burn");
+    result
+}
+
+fn observe_burn_core(
+    execution: &ExecutedTransition<BurnReceipts>,
+) -> Result<ModelBurnConformanceObservation, ConformanceProjectionError> {
+    let request = execution.request();
+    let common = bind_model_evidence(observe_transition(
+        execution.before(),
+        execution.after(),
+        BranchKind::Burn,
+        "burn",
+        owner_ids(&request.signers),
+        owner_ids(&request.fee_envelope.signers),
+        RepresentationMode::Explicit,
+    )?);
+    let certificate = appended_certificate(execution.before(), execution.after())?;
+    // A bound Burn cannot reach this point without its kernel-derived projection.
+    let burn = certificate
+        .burn
+        .as_ref()
+        .ok_or(ConformanceProjectionError::WrongBranch {
+            expected: BranchKind::Burn,
+            actual: certificate.branch,
+        })?;
+    let fresh_ash = certificate
+        .created
+        .iter()
+        .position(|outpoint| *outpoint == burn.ash_output)
+        .and_then(|ordinal| u32::try_from(ordinal).ok())
+        .map(|ordinal| ObservedObjectRef {
+            side: ObservedSide::Output,
+            ordinal,
+        })
+        .ok_or(ConformanceProjectionError::MissingCreatedObject(
+            burn.ash_output,
+        ))?;
+    let records = burn
+        .records
+        .iter()
+        .map(|record| {
+            Ok(realization::BurnRecord {
+                ordinal: record.record_index,
+                address: realization::BurnAddress(record.address.0),
+                amount: observed_amount(record.amount)?,
+                tag: architecture::TagId::Burn,
+                fresh_ash,
+            })
+        })
+        .collect::<Result<Vec<_>, ConformanceProjectionError>>()?;
+    let record_total: u128 = burn
+        .records
+        .iter()
+        .map(|record| u128::from(record.amount.get()))
+        .sum();
+    let fresh_amount = observed_amount(burn.ash_value)?;
+    let mut transaction = [0; 32];
+    transaction[..8].copy_from_slice(&certificate.order.height.to_le_bytes());
+    transaction[8..12].copy_from_slice(&certificate.order.tx_index.to_le_bytes());
+    let mut certificate_token = transaction;
+    certificate_token[12..20].copy_from_slice(&burn.ash_output.to_le_bytes());
+    let context = realization::BurnClearContext::bind_observation(
+        common.observation().clone(),
+        transaction,
+        certificate_token,
+    )
+    .map_err(ConformanceProjectionError::InvalidObservation)?;
+    let extension = realization::BurnClearObservation {
+        context: context.clone(),
+        payload: realization::BurnClearPayload::Burn {
+            fresh_ash,
+            records: records.clone(),
+        },
+    };
+    let event = realization::BurnEventProjection {
+        context: context.clone(),
+        fresh_ash,
+        fresh_amount,
+        records,
+    };
+    let accounting = realization::AccountingProjection {
+        context,
+        values: realization::AccountingValues::Burn {
+            record_total,
+            fresh_amount,
+        },
+        event: certificate
+            .burn
+            .as_ref()
+            .map(|_| architecture::ProjectionId::BurnEvent),
+        distribution_residue: certificate.distribution_residue.is_some(),
+    };
+    Ok(ModelBurnConformanceObservation {
+        common,
+        extension,
+        event,
+        accounting,
+    })
 }
 
 impl ModelConformanceObservation {
@@ -251,10 +378,7 @@ fn observe_live_transfer_core(
     Ok(bind_model_evidence(observation))
 }
 
-fn record_projection(
-    result: &Result<ModelConformanceObservation, ConformanceProjectionError>,
-    branch: &'static str,
-) {
+fn record_projection<T>(result: &Result<T, ConformanceProjectionError>, branch: &'static str) {
     match result {
         Ok(_) => tracing::debug!(
             target: "model::conformance",

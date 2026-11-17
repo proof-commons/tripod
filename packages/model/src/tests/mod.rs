@@ -89,6 +89,7 @@ mod attestation_reorg_tests;
 mod authorization_tests;
 mod bound_conformance_tests;
 mod burn_attestation_tests;
+mod burn_realization_conformance_tests;
 mod canonical_closure_tests;
 mod canonical_rejection_tests;
 mod checkpoint_semantics_tests;
