@@ -12,6 +12,57 @@
 
 use realization::{AvailabilityClass, RepresentationMode};
 
+/// Closed semantic fields of Burn and Clear observations. Values such as a
+/// record ordinal or amount are operands, never part of this identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum BurnClearCoordinate {
+    DataOutputSchema(architecture::DataOutputKind),
+    DataOutputFamilyCount(architecture::DataOutputKind),
+    DataOutputTag(architecture::DataOutputKind),
+    DataOutputAsset(architecture::DataOutputKind),
+    DataOutputCondition(architecture::DataOutputKind),
+    RecordOrdinal,
+    RecordAddress,
+    DataOutputScalar(architecture::DataOutputKind),
+    RecordFreshAsh,
+    DestructionFlow,
+    TransactionContext,
+    CertificateContext,
+    BurnEventType,
+    ClearEventType,
+    BurnFreshAmountEvent,
+    ClearDestroyedAmountEvent,
+    ClearOmegaEvent,
+    ClearResidualEvent,
+}
+
+impl BurnClearCoordinate {
+    /// Stable, injective subject code, separate from realization fact codes.
+    #[must_use]
+    pub const fn subject_code(self) -> [u16; 2] {
+        match self {
+            Self::DataOutputSchema(kind) => [13, kind.code()],
+            Self::DataOutputFamilyCount(kind) => [14, kind.code()],
+            Self::DataOutputTag(kind) => [15, kind.code()],
+            Self::DataOutputAsset(kind) => [16, kind.code()],
+            Self::DataOutputCondition(kind) => [17, kind.code()],
+            Self::RecordOrdinal => [18, 0],
+            Self::RecordAddress => [19, 0],
+            Self::DataOutputScalar(kind) => [20, kind.code()],
+            Self::RecordFreshAsh => [21, 0],
+            Self::DestructionFlow => [22, 0],
+            Self::TransactionContext => [23, 0],
+            Self::CertificateContext => [24, 0],
+            Self::BurnEventType => [25, 0],
+            Self::ClearEventType => [26, 0],
+            Self::BurnFreshAmountEvent => [27, 0],
+            Self::ClearDestroyedAmountEvent => [28, 0],
+            Self::ClearOmegaEvent => [29, 0],
+            Self::ClearResidualEvent => [30, 0],
+        }
+    }
+}
+
 /// Stable identity of one relation operand.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct OperandId {
@@ -82,6 +133,9 @@ pub enum OperandRole {
     ExternalEvidence {
         requirement: realization::ExternalEvidenceRequirement,
     },
+
+    /// One Burn/Clear primitive or report anchor, without a target position.
+    BurnClear(BurnClearCoordinate),
 }
 
 /// How one operand's source must be authenticated. The source proof

@@ -428,6 +428,31 @@ fn operand_source(
             AvailabilityClass::Public,
             RequirementActivation::Always,
         ),
+
+        OperandRole::BurnClear(coordinate) => (
+            burn_clear_source_kind(*coordinate),
+            AvailabilityClass::Public,
+            RequirementActivation::Always,
+        ),
+    }
+}
+
+const fn burn_clear_source_kind(
+    coordinate: crate::source::BurnClearCoordinate,
+) -> RequiredSourceKind {
+    use crate::source::BurnClearCoordinate as C;
+    match coordinate {
+        C::DataOutputScalar(_) => RequiredSourceKind::AuthenticatedConsensusValue,
+        C::BurnEventType
+        | C::ClearEventType
+        | C::BurnFreshAmountEvent
+        | C::ClearDestroyedAmountEvent
+        | C::ClearOmegaEvent
+        | C::ClearResidualEvent => RequiredSourceKind::ExternalEvidence,
+        C::TransactionContext | C::CertificateContext => {
+            RequiredSourceKind::AuthenticatedTransitionCertificate
+        }
+        _ => RequiredSourceKind::AuthenticatedOutputObject,
     }
 }
 
@@ -632,6 +657,13 @@ pub fn operand_key(operand: &OperandId) -> core::OperandKey {
                     operation: super::operation_key(*operation),
                     asset: asset.code(),
                 },
+            }),
+        ),
+        OperandRole::BurnClear(coordinate) => (
+            17,
+            P::Fact(crate::engine_proof::FactKey {
+                namespace: super::ATTESTATION,
+                subject: coordinate.subject_code().to_vec(),
             }),
         ),
     };

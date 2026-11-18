@@ -517,6 +517,7 @@ impl FirstPartyRefusal {
             RelationMutation::ExternalEvidenceIdentityMismatch => {
                 "external_evidence_identity_mismatch"
             }
+            RelationMutation::BurnClearCoordinateChanged(_) => "burn_clear_coordinate_changed",
         }
     }
 }

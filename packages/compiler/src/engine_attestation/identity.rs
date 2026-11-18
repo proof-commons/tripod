@@ -104,6 +104,10 @@ fn source(value: &crate::source::SourceRequirement) -> Part {
             }),
         ],
         O::ExternalEvidence { requirement } => vec![word(16u16), evidence(requirement)],
+        O::BurnClear(coordinate) => vec![
+            word(17u16),
+            sequence(coordinate.subject_code().into_iter().map(word)),
+        ],
     };
     let availability =
         crate::engine_attestation::constructibility::availability_key(value.availability);
@@ -230,6 +234,10 @@ fn mutation(value: crate::coverage::RelationMutation) -> Part {
         M::ExternalEvidenceMissing => (25, vec![]),
         M::ExternalEvidenceFailed => (26, vec![]),
         M::ExternalEvidenceIdentityMismatch => (27, vec![]),
+        M::BurnClearCoordinateChanged(coordinate) => (
+            28,
+            coordinate.subject_code().into_iter().map(word).collect(),
+        ),
     };
     sequence([word(tag), sequence(payload)])
 }

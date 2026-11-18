@@ -84,7 +84,8 @@ pub use crate::{
     },
     requirement::{ProofDisposition, RepresentationSelection},
     source::{
-        OperandId, OperandRole, RequiredSourceKind, RequirementActivation, SourceRequirement,
+        BurnClearCoordinate, OperandId, OperandRole, RequiredSourceKind, RequirementActivation,
+        SourceRequirement,
     },
     target::ExternalEvidenceRole,
 };

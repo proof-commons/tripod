@@ -85,6 +85,41 @@ fn pilots() -> [Coverage; 2] {
     ]
 }
 
+#[test]
+fn new_coverage_coordinates_keep_their_boundary() {
+    use crate::source::BurnClearCoordinate as C;
+
+    let control = Relation::PermissionlessAuthorization;
+    assert!(relation_mutations(&control, ConservedAmountVisibility::Readable).is_ok());
+    let subject = Relation::DataOutputs {
+        expected: Vec::new(),
+    };
+    assert_eq!(
+        relation_mutations(&subject, ConservedAmountVisibility::Readable),
+        Err(CompileError::UnsupportedRelationPlan),
+    );
+
+    let record = RelationMutation::BurnClearCoordinateChanged(C::RecordOrdinal);
+    let address = RelationMutation::BurnClearCoordinateChanged(C::RecordAddress);
+    let structural = crate::engine_attestation::identity::attestation_purpose(
+        &CoveragePurpose::StructuralRejection(record),
+    );
+    let other_coordinate = crate::engine_attestation::identity::attestation_purpose(
+        &CoveragePurpose::StructuralRejection(address),
+    );
+    let runtime = crate::engine_attestation::identity::attestation_purpose(
+        &CoveragePurpose::FocusedReject(record),
+    );
+    assert_ne!(structural, other_coordinate);
+    assert_ne!(structural, runtime);
+    assert_ne!(
+        structural,
+        crate::engine_attestation::identity::attestation_purpose(
+            &CoveragePurpose::StructuralRejection(RelationMutation::AmountMismatch),
+        ),
+    );
+}
+
 impl Coverage {
     fn relation_ids(&self) -> BTreeSet<RelationId> {
         self.relations

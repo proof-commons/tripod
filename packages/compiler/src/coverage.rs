@@ -100,7 +100,9 @@ pub enum CardinalityCeiling {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RelationMutation {
     CardinalityBelowMinimum,
-    CardinalityAboveMaximum { ceiling: CardinalityCeiling },
+    CardinalityAboveMaximum {
+        ceiling: CardinalityCeiling,
+    },
     UndeclaredObjectFamily,
     WrongRecognizedAsset,
     WrongRecognizedObject,
@@ -127,6 +129,8 @@ pub enum RelationMutation {
     ExternalEvidenceMissing,
     ExternalEvidenceFailed,
     ExternalEvidenceIdentityMismatch,
+    /// One declared Burn/Clear primitive or event coordinate changed.
+    BurnClearCoordinateChanged(crate::source::BurnClearCoordinate),
 }
 
 /// What one coverage requirement asks a later evidence package for.

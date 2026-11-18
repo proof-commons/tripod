@@ -510,6 +510,14 @@ produces today can be mistaken for a completed analysis.
 
 ## Residuals
 
+The operation-plan API re-exports `BurnClearCoordinate` through `OperandRole`
+and the corresponding `RelationMutation`. These are closed semantic field
+identities for future Burn/Clear source and coverage rows. The source key uses
+an appended operand role and a fact subject outside the existing fact domain;
+the mutation uses an appended purpose code. They carry no transaction position
+or observed value. Burn and Clear remain refused by the public input and
+direct relation-plan guards until their lowering packets land.
+
 Two notes for a consumer reading this as a manual rather than as prose:
 
 - `OperandId` is re-exported at the crate root, but its constructor

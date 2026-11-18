@@ -37,6 +37,87 @@ fn declaration(
 }
 
 #[test]
+fn operand_codes_are_injective_and_preserve_pilots() {
+    use crate::source::BurnClearCoordinate as C;
+    use architecture::DataOutputKind;
+
+    let relation = declaration(
+        OperationId::CompactAsh,
+        RelationKind::Authorization,
+        Relation::PermissionlessAuthorization,
+    );
+    let row = derive_source_requirements(&relation, ProofKind::PublicConstructibility)
+        .expect("pilot source")
+        .pop()
+        .expect("pilot operand");
+    let pilot = crate::engine_attestation::source::operand_key(&row.operand);
+    assert_eq!(pilot.role, 4);
+    assert_eq!(pilot.payload, crate::engine_source::Payload::None);
+
+    let coordinates = [
+        C::DataOutputSchema(DataOutputKind::BurnRecord),
+        C::DataOutputSchema(DataOutputKind::Destruction),
+        C::DataOutputFamilyCount(DataOutputKind::BurnRecord),
+        C::DataOutputFamilyCount(DataOutputKind::Destruction),
+        C::DataOutputTag(DataOutputKind::BurnRecord),
+        C::DataOutputTag(DataOutputKind::Destruction),
+        C::DataOutputAsset(DataOutputKind::BurnRecord),
+        C::DataOutputAsset(DataOutputKind::Destruction),
+        C::DataOutputCondition(DataOutputKind::BurnRecord),
+        C::DataOutputCondition(DataOutputKind::Destruction),
+        C::RecordOrdinal,
+        C::RecordAddress,
+        C::DataOutputScalar(DataOutputKind::BurnRecord),
+        C::DataOutputScalar(DataOutputKind::Destruction),
+        C::RecordFreshAsh,
+        C::DestructionFlow,
+        C::TransactionContext,
+        C::CertificateContext,
+        C::BurnEventType,
+        C::ClearEventType,
+        C::BurnFreshAmountEvent,
+        C::ClearDestroyedAmountEvent,
+        C::ClearOmegaEvent,
+        C::ClearResidualEvent,
+    ];
+    let keys = coordinates
+        .iter()
+        .map(|coordinate| {
+            crate::engine_attestation::source::operand_key(&crate::source::OperandId::new(
+                relation.id.clone(),
+                OperandRole::BurnClear(*coordinate),
+            ))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(keys.len(), keys.iter().collect::<BTreeSet<_>>().len());
+    assert!(keys.iter().all(|key| key.role == 17));
+    assert!(keys.iter().all(|key| match &key.payload {
+        crate::engine_source::Payload::Fact(fact) => fact.subject[0] > 11,
+        _ => false,
+    }));
+
+    let table = crate::engine_source::SourceTable {
+        relation: pilot.relation.clone(),
+        proof_namespace: crate::engine_identity::ATTESTATION,
+        proof_kind: ProofKind::PublicConstructibility as u16,
+        expected: vec![pilot],
+        rows: vec![crate::engine_attestation::source::row_key(&row)],
+    };
+    let mut records = crate::engine_source::SourceRecords {
+        tables: vec![table],
+        regions: Vec::new(),
+    };
+    assert!(crate::engine_source::analyze_sources(&records).is_ok());
+    records.tables[0].rows[0].operand = keys[0].clone();
+    assert_eq!(
+        crate::engine_source::analyze_sources(&records),
+        Err(crate::engine_source::SourceError::ForeignOperand(
+            keys[0].clone()
+        )),
+    );
+}
+
+#[test]
 fn source_lowering_refuses_operations_without_plans() {
     let control = declaration(
         OperationId::AnnounceMaturity,

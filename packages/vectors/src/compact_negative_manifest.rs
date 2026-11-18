@@ -201,6 +201,9 @@ impl CompactNegativeRow {
             M::ExpressionPredicateFalse => {
                 "change the named expression's operand to falsify its predicate"
             }
+            M::BurnClearCoordinateChanged(_) => {
+                "Burn or Clear coordinate change has no compact subject recipe"
+            }
         }
     }
 }
