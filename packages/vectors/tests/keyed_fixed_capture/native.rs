@@ -1918,7 +1918,9 @@ pub fn run(family: CaptureFamily) {
         .unwrap();
     let subscriber = tracing_subscriber::fmt()
         .json()
-        .with_max_level(tracing::Level::DEBUG)
+        .with_env_filter(tracing_subscriber::EnvFilter::new(
+            "vectors::native_test=debug,vectors::keyed_fixed_capture=debug,target_elements_conformance::executor=debug",
+        ))
         .with_writer(timing_file)
         .finish();
     tracing::subscriber::set_global_default(subscriber).unwrap();
@@ -1949,7 +1951,13 @@ pub fn run(family: CaptureFamily) {
     let config = ExecutorConfiguration::new(
         &adapter,
         ExecutorTrust::ReviewedNonMock,
-        Duration::from_secs(600),
+        // Four times the first campaign's measured 509-second scaling transport,
+        // rounded up to a minute; the 3600-second family guard still governs.
+        Duration::from_secs(if family == CaptureFamily::Scaling {
+            2040
+        } else {
+            600
+        }),
         ExecutorDiagnostics::in_directory(&directory.join("diagnostics")),
     )
     .with_expected_provenance(

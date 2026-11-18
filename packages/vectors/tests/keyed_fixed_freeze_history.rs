@@ -855,6 +855,31 @@ const POST_S8A2: &[Row] = &[
     },
 ];
 
+const POST_TIMING: &[Row] = &[
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture/native.rs",
+        previous: Some([
+            148, 88, 148, 72, 43, 83, 125, 137, 221, 55, 70, 31, 77, 79, 158, 40, 145, 156, 234,
+            184, 196, 131, 229, 57, 157, 154, 117, 81, 163, 27, 155, 205,
+        ]),
+        current: [
+            2, 250, 241, 222, 240, 221, 99, 130, 223, 252, 214, 88, 25, 113, 71, 49, 20, 77, 184,
+            122, 23, 13, 236, 0, 102, 217, 14, 124, 10, 138, 69, 144,
+        ],
+    },
+    Row {
+        path: "scripts/keyed-fixed-capture/run-one.sh",
+        previous: Some([
+            1, 255, 209, 187, 22, 4, 85, 245, 197, 191, 59, 179, 61, 108, 164, 88, 27, 187, 172,
+            148, 237, 157, 56, 13, 0, 165, 170, 168, 201, 45, 10, 37,
+        ]),
+        current: [
+            57, 38, 50, 45, 190, 203, 214, 109, 79, 9, 9, 39, 189, 232, 30, 117, 130, 116, 75, 174,
+            111, 40, 20, 188, 81, 150, 166, 216, 90, 209, 242, 133,
+        ],
+    },
+];
+
 const POST_CAMPAIGN: &[Row] = &[
     Row {
         path: "packages/vectors/src/keyed_fixed_capture.rs",
@@ -918,9 +943,14 @@ const CAMPAIGN_IDENTITY: [u8; 32] = [
     147, 125, 197, 29, 49, 72, 24, 7, 0, 40, 192, 99,
 ];
 
-const S8_IDENTITY: [u8; 32] = [
+const REPAIR_IDENTITY: [u8; 32] = [
     218, 35, 55, 144, 83, 242, 241, 183, 175, 104, 183, 234, 137, 108, 240, 71, 144, 171, 10, 93,
     2, 15, 211, 126, 220, 196, 17, 12, 137, 176, 214, 211,
+];
+
+const S8_IDENTITY: [u8; 32] = [
+    108, 73, 51, 47, 171, 113, 91, 114, 228, 216, 93, 148, 147, 93, 246, 244, 197, 32, 52, 208, 39,
+    17, 14, 32, 60, 94, 234, 131, 247, 169, 112, 146,
 ];
 
 const S8A2_IDENTITY: [u8; 32] = [
@@ -1089,13 +1119,37 @@ fn fixed_capture_refreeze_history() {
     assert!(S5_SOURCES.windows(2).all(|rows| rows[0].0 < rows[1].0));
     assert!(REVIEW.windows(2).all(|rows| rows[0].path < rows[1].path));
 
+    assert_eq!(POST_TIMING.len(), 2);
+    assert!(
+        POST_TIMING
+            .windows(2)
+            .all(|rows| rows[0].path < rows[1].path)
+    );
+    let mut repair = current.clone();
+    for row in POST_TIMING {
+        let source = repair
+            .sources
+            .iter_mut()
+            .find(|source| source.path == row.path)
+            .unwrap();
+        assert_eq!(source.digest, row.current);
+        source.digest = row.previous.unwrap();
+    }
+    let repair_encoding = independent_encoding(&repair, 15);
+    assert_eq!(repair_encoding.len(), 8853);
+    assert_eq!(
+        sha256::Hash::hash(&repair_encoding).to_byte_array(),
+        REPAIR_IDENTITY
+    );
+    assert_eq!(repair.clone().validate(q), Err(FreezeRefusal::Inventory));
+
     assert_eq!(POST_CAMPAIGN.len(), 5);
     assert!(
         POST_CAMPAIGN
             .windows(2)
             .all(|rows| rows[0].path < rows[1].path)
     );
-    let mut campaign = current.clone();
+    let mut campaign = repair.clone();
     for row in POST_CAMPAIGN {
         let source = campaign
             .sources

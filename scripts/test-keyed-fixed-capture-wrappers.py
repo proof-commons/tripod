@@ -69,6 +69,12 @@ def selection_controls(root, env):
                "printf '%s\\n' '{\"fields\":{\"message\":\"fixed-form native exchange retained\",\"prefix\":\"exchange-00001\",\"wall_us\":7}}' >\"$TRIPOD_CAPTURE_TEST_ROOT/phase-timing.jsonl\"\n")
     cases = [("one-passing", passing, lambda c: c == 0, ORDINARY_GUARD),
              ("missing-exchange-timing", "printf 'running 1 test\\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 filtered out; finished in 0s\\n'\n", lambda c: c != 0, ORDINARY_GUARD),
+             ("excess-timing-lines", passing +
+              "for n in $(seq 1 34); do printf '{}\\n' >>\"$TRIPOD_CAPTURE_TEST_ROOT/phase-timing.jsonl\"; done\n",
+              lambda c: c != 0, ORDINARY_GUARD),
+             ("excess-timing-bytes", passing +
+              "python3 -c 'import json; print(json.dumps({\"fields\": {\"pad\": \"x\" * 9000}}))' >>\"$TRIPOD_CAPTURE_TEST_ROOT/phase-timing.jsonl\"\n",
+              lambda c: c != 0, ORDINARY_GUARD),
              ("nonzero-test", "exit 7\n", lambda c: c == 7, ORDINARY_GUARD),
              ("empty-selection", "printf 'running 0 tests\\ntest result: ok. 0 passed; 0 failed; 0 ignored;\\n'\n", lambda c: c != 0, ORDINARY_GUARD),
              ("test-timeout", "sleep 20\n", lambda c: c == 124, 1)]
@@ -76,7 +82,11 @@ def selection_controls(root, env):
         executable(root / "keyed_fixed_capture", body)
         for file in ('test.exit','selection.exit','phase-timing.jsonl','exchange-00001-request.json','exchange-00001-response.json'):
             (root/file).unlink(missing_ok=True)
-        run(name, [str(WRAPPERS / "run-one.sh"), "clauses"], env, expected, guard)
+        output = run(name, [str(WRAPPERS / "run-one.sh"), "clauses"], env, expected, guard)
+        if name == 'excess-timing-lines':
+            assert 'timing lines exceed exchange allowance' in output
+        if name == 'excess-timing-bytes':
+            assert 'timing bytes exceed exchange allowance' in output
         if name == 'one-passing': assert (root/'selection.exit').read_text().strip() == '0'
         if name == 'empty-selection':
             assert (root/'test.exit').read_text().strip() == '0'

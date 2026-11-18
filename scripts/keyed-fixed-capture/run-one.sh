@@ -45,10 +45,19 @@ import json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 requests = sorted(root.glob('exchange-*-request.json'))
 responses = sorted(root.glob('exchange-*-response.json'))
-rows = [json.loads(line) for line in (root/'phase-timing.jsonl').read_text().splitlines()]
-exchanges = [row['fields'] for row in rows
-             if row.get('fields', {}).get('message') == 'fixed-form native exchange retained']
-assert requests and len(requests) == len(responses) == len(exchanges), 'per-exchange timing required'
+assert requests and len(requests) == len(responses), 'paired exchanges required'
+timing = root/'phase-timing.jsonl'
+assert timing.stat().st_size <= max(8192, 2048 * len(requests)), 'timing bytes exceed exchange allowance'
+exchanges = []
+line_count = 0
+with timing.open(encoding='utf-8') as stream:
+    for line in stream:
+        line_count += 1
+        assert line_count <= 2 * len(requests) + 32, 'timing lines exceed exchange allowance'
+        row = json.loads(line)
+        if row.get('fields', {}).get('message') == 'fixed-form native exchange retained':
+            exchanges.append(row['fields'])
+assert len(requests) == len(exchanges), 'per-exchange timing required'
 assert {field['prefix'] for field in exchanges} == {
     path.name.removesuffix('-request.json') for path in requests}, 'timing prefixes must match requests'
 assert all(isinstance(field.get('wall_us'), int) for field in exchanges), 'microsecond walls required'
