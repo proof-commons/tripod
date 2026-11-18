@@ -1020,7 +1020,7 @@ A step builds the few tests its design names for basic confidence in the functio
 
 The Wave-2 closure record (`rec:backlog:wave2-closure`) in `plans/backlog.md` joins the twelve original packet gates in the adopted strategy (`sec:wave2:execution`) and the added union packet under ruling 213, the eight deliverables, seven consuming entry rows, dispositions 1/7/10/12, both compact reopenings, ruling 133's three reopening subjects, the six interface ledgers, baseline comparisons, full gate logs and absent dimensions. It closes no Wave-3 plan proof, Wave-4 carrier measurement, linked constructor equality, Wave-7 STATE generation, target signature, native execution, or Waves-10–12 report-production obligation. A consuming result updates current implementation standing without rewriting the historical preflight finding.
 
-The frozen delivery judgment and Wave-3 handoff are (`rec:backlog:wave2-frozen`) and (`rec:backlog:wave2-wave3-receiver`), on `0.7.188-dev`; full-gate costs and baseline limits are (`rec:history:wave2-frozen-gate`).
+The frozen delivery judgment and Wave-3 handoff are (`rec:backlog:wave2-frozen`) and (`rec:backlog:wave2-wave3-receiver`), on `0.7.188-dev`; full-gate costs and baseline limits are (`rec:history:wave2-frozen-gate`). Wave 2 closes with the reviewed packet `0.7.189-dev` and its own import gate, including plans/labels; (`rec:history:wave2-closure-import`) records the 3,218s green and resource comparison.
 
 **Assumption (wave2 — Inherited inputs)** · `assum:guide15-exec:wave2-inherited-inputs`
 

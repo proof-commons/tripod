@@ -16,6 +16,7 @@ them still resolves.
 |---|---|---|
 | [Closed Wave-2 implementation records](#closed-wave-2-implementation-records) | backlog Wave-2 receipts, completed designs and path-count derivation | 2026-11-17 |
 | Frozen Wave-2 gate and baseline, (`rec:history:wave2-frozen-gate`) | evidence authored directly in history; maintained judgment in backlog | 2026-11-17 |
+| Wave-2 closure import, (`rec:history:wave2-closure-import`) | evidence authored directly in history; bite 2.10 import receipt | 2026-11-18 |
 | [Historical gate timing detail](#historical-gate-timing-detail) | test-performance historical measurement and tables | 2026-11-17 |
 | [Closed wave records](#closed-wave-records) | backlog Wave-0/1 evidence, early Wave-2 receipts and Phase-2 narratives | 2026-11-17 |
 | [Later Phase-6 task rows](#later-phase-6-closed-task-rows) | backlog §11, closed rows without current readers | 2026-11-17 |
@@ -4064,3 +4065,82 @@ The recounted lists contain 84 distinct paths: 71 adoption-existing, 13 delibera
 The Files paragraphs in (`sec:wave2:execution`), with the adopted expansions below, are the exact lists. Counts distinguish adoption-existing paths from declared new files; new files are named at creation and cited by creating bite thereafter. The selected 2.6 design adds two existing reopening records already allocated to 2.9: its count becomes 14 / 4 (18 paths), with no new union member. The union remains 84 = 71 adoption-existing + 13 deliberately new (twelve now present, one awaiting creation); 2.7a remains 7 / 2 (nine paths), with no additional owner required.
 
 The maintained closing allocation is (`tab:backlog:wave2-paths`).
+
+## Wave-2 closure import receipt · `rec:history:wave2-closure-import`
+
+The closing packet landed as `0.7.189-dev` after independent review and corrections; its own gate of record satisfies bite 2.10's import condition and closes Wave 2 under (`gate:wave2:closing`) and (`rec:guide15-exec:wave2-carrier`). The implementation remains frozen at `0.7.188-dev`; the intervening diff changes only four planning files. This receipt is authored directly in history on 2026-11-18, with the maintained standing at (`rec:backlog:wave2-frozen`).
+
+Source: hub ref refs/handoff/w20b1/record-0.7.189-gate-log, read as blob data, not checked in. Retained node evidence: /var/home/tripod/loops/evidence/wave2/record-0.7.189-dev, including the main log, separate warmup logs, CI and document journals and manifest. Start 2026-11-18T08:30:27Z; terminal record green 2026-11-18T09:24:05Z; wall 3218s; chain-rc=0; slot wait 0s. All nine battery exit codes are zero. CI Meson: 124 OK / 0 failed; real-document subset: 5 OK / 0 failed. In CI, documentation+generated - tripod:labels-check passed at 0.04s and documentation - tripod:plans-check at 0.03s; in the real-document subset they passed at 0.01s and 0.00s respectively. Thus the records' own plans/labels import condition is met, not borrowed from the implementation gate. Diff-check and clean-tree before/after passed; the initial state was zero entries.
+
+The command form and toolchains match (`rec:history:wave2-frozen-gate`): mock-mode setup; separate gate/release warmups; unchanged sh scripts/ci.sh; real-TeX setup, papers compile and documentation/generated tests; cargo fmt --all --check; cargo clippy --workspace --all-targets -- -D warnings. Both logs declare warm shared caches, 30 CPUs, the same container image and nice -n 19 / ionice -c3 on the podman client. Advertised header budgets still differ from actual start budgets: both builds start with 5400s and CI with 7200s; this inherited metadata discrepancy is not erased. Warnings do not change the zero exit codes. No Rust total is inferred from the journal archive's file count.
+
+**Resource scope and units.** Every row below samples the gate's own entered cgroup, including its containers: /sys/fs/cgroup/user.slice/user-2001.slice/user@2001.service/app.slice/tripod-record-gate-20261118T083027Z.service. CPU and pressure totals/deltas are microseconds; memory is bytes. Start → end (delta) is calculated from the logged samples and checked against the logged delta. Memory peak is the cgroup's cumulative high-water mark, not a battery allocation. Shell-child user/system seconds are process accounting, not container CPU. Host load is context, not gate-attributable work. These tables retain the start/end samples, deltas and PSI averages for req:environment:gate-resource-deltas.
+
+| Battery | Wall s / rc | CPU use start → end (delta) | CPU user start → end (delta) | CPU system start → end (delta) | Nice CPU start → end (delta) | Shell child user/system s |
+|---|---|---|---|---|---|---|
+| ci-setup | 1 / 0 | 7293431 → 10438694 (+3145263) | 2460912 → 3894452 (+1433540) | 4832518 → 6544242 (+1711724) | 0 → 1421955 (+1421955) | 1.4/1.7 |
+| ci-build-gate | 234 / 0 | 10474987 → 1623269583 (+1612794596) | 3901954 → 1511513774 (+1507611820) | 6573032 → 111755808 (+105182776) | 1423927 → 1510734894 (+1509310967) | 1.6/1.8 |
+| ci-build-release | 1684 / 0 | 1623304349 → 9731556687 (+8108252338) | 1511516043 → 9383360529 (+7871844486) | 111788306 → 348196158 (+236407852) | 1510734894 → 9393405897 (+7882671003) | 2.4/2.5 |
+| ci.sh | 1269 / 0 | 9731601127 → 17982350947 (+8250749820) | 9383371144 → 17189395010 (+7806023866) | 348229983 → 792955936 (+444725953) | 9393406879 → 17258993154 (+7865586275) | 2.5/2.6 |
+| document-setup | 1 / 0 | 17982384334 → 17985508164 (+3123830) | 17189407786 → 17190680808 (+1273022) | 792976548 → 794827356 (+1850808) | 17258994149 → 17260417968 (+1423819) | 1.3/1.8 |
+| document-compile | 18 / 0 | 17985546243 → 18005348553 (+19802310) | 17190691273 → 17207105617 (+16414344) | 794854969 → 798242935 (+3387966) | 17260420929 → 17276871355 (+16450426) | 1.5/1.7 |
+| document-test | 1 / 0 | 18005382803 → 18009605888 (+4223085) | 17207117969 → 17209128558 (+2010589) | 798264833 → 800477330 (+2212497) | 17276872350 → 17278962995 (+2090645) | 1.5/1.8 |
+| fmt | 5 / 0 | 18009640455 → 18016486732 (+6846277) | 17209136335 → 17214230775 (+5094440) | 800504119 → 802255957 (+1751838) | 17278962995 → 17284036347 (+5073352) | 1.4/1.6 |
+| clippy | 1 / 0 | 18016535697 → 18019952979 (+3417282) | 17214238366 → 17215772451 (+1534085) | 802297331 → 804180527 (+1883196) | 17284040265 → 17285604431 (+1564166) | 1.4/1.8 |
+| whole gate | 3218 / 0 | 32041 → 18023438819 (+18023406778) | 6716 → 17217401203 (+17217394487) | 25325 → 806037616 (+806012291) | 0 → 17285604431 (+17285604431) | 18.4/23.9 |
+
+Period, throttling, burst and forced-idle CPU counters start and end at zero throughout. Nice CPU is a CPU accounting subset, not additional CPU use.
+
+| Battery | Memory.current start → end (delta) | Memory.peak start → end (delta) | Host load 1/5/15 min start → end |
+|---|---|---|---|
+| ci-setup | 197496832 → 215183360 (+17686528) | 304451584 → 304451584 (+0) | 8.38,2.19,0.73 → 8.38,2.19,0.73 |
+| ci-build-gate | 200687616 → 4911554560 (+4710866944) | 304451584 → 8610934784 (+8306483200) | 8.38,2.19,0.73 → 14.69,9.08,3.91 |
+| ci-build-release | 4904808448 → 613933056 (-4290875392) | 8610934784 → 18964062208 (+10353127424) | 14.69,9.08,3.91 → 27.36,59.60,48.90 |
+| ci.sh | 595398656 → 2730926080 (+2135527424) | 18964062208 → 18964062208 (+0) | 27.36,59.60,48.90 → 10.05,18.49,35.77 |
+| document-setup | 2709721088 → 2729181184 (+19460096) | 18964062208 → 18964062208 (+0) | 10.05,18.49,35.77 → 10.05,18.49,35.77 |
+| document-compile | 2713800704 → 2801053696 (+87252992) | 18964062208 → 18964062208 (+0) | 10.05,18.49,35.77 → 9.37,17.92,35.31 |
+| document-test | 2779897856 → 2809520128 (+29622272) | 18964062208 → 18964062208 (+0) | 9.37,17.92,35.31 → 9.10,17.73,35.16 |
+| fmt | 2791444480 → 2810494976 (+19050496) | 18964062208 → 18964062208 (+0) | 9.10,17.73,35.16 → 9.10,17.73,35.16 |
+| clippy | 2810773504 → 2815553536 (+4780032) | 18964062208 → 18964062208 (+0) | 9.10,17.73,35.16 → 9.01,17.56,35.01 |
+| whole gate | 3710976 → 2799202304 (+2795491328) | 4530176 → 18964062208 (+18959532032) | 7.72,1.95,0.65 → 9.01,17.56,35.01 |
+
+Pressure averages are percentages in 10/60/300-second order; some/full have separate samples. These are observed stalls, not a causal allocation of the wall difference.
+
+| Battery / pressure | Some total start → end (delta) | Full total start → end (delta) | Some averages start → end | Full averages start → end |
+|---|---|---|---|---|
+| ci-setup / cpu | 45614 → 56775 (+11161) | 21214 → 26969 (+5755) | 0.36/0.06/0.01 → 0.36/0.06/0.01 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| ci-setup / memory | 0 → 0 (+0) | 0 → 0 (+0) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| ci-setup / io | 4909 → 4993 (+84) | 4897 → 4979 (+82) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| ci-build-gate / cpu | 56881 → 5852849 (+5795968) | 27075 → 1699579 (+1672504) | 0.36/0.06/0.01 → 5.44/3.07/1.32 | 0.00/0.00/0.00 → 1.39/0.86/0.33 |
+| ci-build-gate / memory | 0 → 66351 (+66351) | 0 → 65984 (+65984) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| ci-build-gate / io | 4993 → 21577 (+16584) | 4979 → 13488 (+8509) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| ci-build-release / cpu | 5852947 → 201767474 (+195914527) | 1699678 → 123616320 (+121916642) | 4.46/2.97/1.31 → 0.00/3.20/15.70 | 1.14/0.84/0.33 → 0.00/2.16/9.71 |
+| ci-build-release / memory | 66351 → 1020211 (+953860) | 65984 → 731912 (+665928) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| ci-build-release / io | 21598 → 86703 (+65105) | 13509 → 64939 (+51430) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| ci.sh / cpu | 201767816 → 483304390 (+281536574) | 123616662 → 275151543 (+151534881) | 0.00/3.20/15.70 → 0.11/0.11/4.63 | 0.00/2.16/9.71 → 0.00/0.00/3.02 |
+| ci.sh / memory | 1020211 → 1881310 (+861099) | 731912 → 1592450 (+860538) | 0.00/0.00/0.00 → 0.00/0.10/0.08 | 0.00/0.00/0.00 → 0.00/0.10/0.08 |
+| ci.sh / io | 86759 → 255008 (+168249) | 64996 → 101739 (+36743) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| document-setup / cpu | 483304434 → 483311597 (+7163) | 275151587 → 275157789 (+6202) | 0.11/0.11/4.63 → 0.09/0.11/4.60 | 0.00/0.00/3.02 → 0.00/0.00/3.00 |
+| document-setup / memory | 1881310 → 1881310 (+0) | 1592450 → 1592450 (+0) | 0.00/0.10/0.08 → 0.00/0.10/0.08 | 0.00/0.10/0.08 → 0.00/0.10/0.08 |
+| document-setup / io | 255008 → 255084 (+76) | 101739 → 101816 (+77) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| document-compile / cpu | 483311779 → 483322440 (+10661) | 275157831 → 275167735 (+9904) | 0.09/0.11/4.60 → 0.01/0.08/4.35 | 0.00/0.00/3.00 → 0.00/0.00/2.84 |
+| document-compile / memory | 1881310 → 1881310 (+0) | 1592450 → 1592450 (+0) | 0.00/0.10/0.08 → 0.00/0.07/0.07 | 0.00/0.10/0.08 → 0.00/0.07/0.07 |
+| document-compile / io | 255084 → 275429 (+20345) | 101816 → 122135 (+20319) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| document-test / cpu | 483322488 → 483331946 (+9458) | 275167783 → 275174944 (+7161) | 0.01/0.08/4.35 → 0.01/0.08/4.32 | 0.00/0.00/2.84 → 0.00/0.00/2.82 |
+| document-test / memory | 1881310 → 1881310 (+0) | 1592450 → 1592450 (+0) | 0.00/0.07/0.07 → 0.00/0.07/0.07 | 0.00/0.07/0.07 → 0.00/0.07/0.07 |
+| document-test / io | 275429 → 276431 (+1002) | 122135 → 123136 (+1001) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| fmt / cpu | 483331986 → 483337905 (+5919) | 275174985 → 275180531 (+5546) | 0.01/0.08/4.32 → 0.00/0.07/4.23 | 0.00/0.00/2.82 → 0.00/0.00/2.76 |
+| fmt / memory | 1881310 → 1881310 (+0) | 1592450 → 1592450 (+0) | 0.00/0.07/0.07 → 0.00/0.06/0.07 | 0.00/0.07/0.07 → 0.00/0.06/0.07 |
+| fmt / io | 276431 → 276564 (+133) | 123136 → 123269 (+133) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| clippy / cpu | 483338055 → 483344655 (+6600) | 275180587 → 275186702 (+6115) | 0.00/0.07/4.23 → 0.00/0.07/4.23 | 0.00/0.00/2.76 → 0.00/0.00/2.76 |
+| clippy / memory | 1881310 → 1881310 (+0) | 1592450 → 1592450 (+0) | 0.00/0.06/0.07 → 0.00/0.06/0.07 | 0.00/0.06/0.07 → 0.00/0.06/0.07 |
+| clippy / io | 276564 → 278251 (+1687) | 123269 → 124957 (+1688) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+| whole gate / cpu | 46 → 483351461 (+483351415) | 46 → 275192689 (+275192643) | 0.00/0.00/0.00 → 0.00/0.06/4.20 | 0.00/0.00/0.00 → 0.00/0.00/2.74 |
+| whole gate / memory | 0 → 1881310 (+1881310) | 0 → 1592450 (+1592450) | 0.00/0.00/0.00 → 0.00/0.06/0.07 | 0.00/0.00/0.00 → 0.00/0.06/0.07 |
+| whole gate / io | 0 → 278380 (+278380) | 0 → 125086 (+125086) | 0.00/0.00/0.00 → 0.00/0.00/0.00 | 0.00/0.00/0.00 → 0.00/0.00/0.00 |
+
+**Wall comparison and disposition.** Against `0.7.188-dev`, whole wall increased from 1198s to 3218s, +2020s. Battery differences in table order are 0/+200/+1198/+621/−2/+11/−2/−3/−1s; they sum to +2022s, with the remaining gate overhead decreasing by 2s. Build-release and CI account for +1819s. Own CPU use also increased, from 12051839040 to 18023406778 µs (+5971567738 µs), so this is not merely the same measured CPU work waiting longer. Build-gate CPU increased by 1373628266 µs, build-release by 3250355551 µs and CI by 1344168007 µs. The retained warmup logs, not reproduced in this blob, would be needed to identify exactly what rebuild/cache work accounts for those increases.
+
+CPU PSI some/full increased from 149889380/38950092 to 483351415/275192643 µs. Memory PSI some/full increased from 433607/398373 to 1881310/1592450 µs; IO PSI decreased from 366634/201946 to 278380/125086 µs. Peak memory decreased from 19788025856 to 18964062208 bytes. Whole-run load endpoints were 7.72/1.95/0.65 → 9.01/17.56/35.01; release ended and CI began at 27.36/59.60/48.90. These samples support substantial shared-node CPU contention during the longer run; endpoints are not maxima. The watcher's approximately 72 load at 09:08Z is external context supplied with this receipt, not a sample in this retained log.
+
+Finding: the measured cost increase is real, including extra own CPU, but no candidate-code change or changed gate command/toolchain/priority form is shown. The tree difference is planning-only; the gate still runs its full warmups and suites. Do not explain the entire +2020s as node load, and do not infer a product regression or speed claim from unmatched shared-cache runs. All actual budgets and correctness gates passed. This disposes the closure's cost observation as an unmatched run with higher CPU pressure and unallocated extra own work, retaining the warmup logs for any later profiling; no interface, threshold, gate waiver or Wave-3 decision is introduced.

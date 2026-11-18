@@ -501,7 +501,7 @@ The verbatim packet receipt is in [backlog history](history/backlog-history.md#c
 | Bite 1.5 | DONE | Reader, premise form and six report families: (`rec:w1b15:closed`). |
 | Bite 1.6 | DONE | Final native subjects, admission, reviewed packet, full gate and separate closure: (`rec:w1b16:closed`). |
 | Wave 1 | CLOSED | Three criteria and exact domain: (`rec:w1b16:wave1-exit`), ruling 181 at (`rule:phase7:wave1-exit-ruling`). |
-| Wave 2 | CLOSED | Frozen semantic delivery at (`rec:backlog:wave2-frozen`); later-wave obligations remain open. |
+| Wave 2 | CLOSED | Closure imported and gated as `0.7.189-dev`; frozen semantic delivery at (`rec:backlog:wave2-frozen`); later-wave obligations remain open. |
 
 The realized domain is one once-reviewed template with conditional authentication, observed under two representative public keys. Every 32-byte key is data; commitment succeeds or returns its reviewed typed refusal. Per-key construction, reading and premises remain necessary, but a key-specific campaign is not a precondition of use under unchanged frozen conditions. There is no deployment activation/finality, calibration, universal-security or constant-native-cost claim (`sec:w1b16:packet-domain`). All seven follow-ups above have named dispositions at (`tab:w1b16:packet-followups`); profiling, runner counter identity and history phase tracing remain open with their reasons.
 
@@ -527,13 +527,13 @@ The join covers thirteen packet gates, eight deliverables, seven entry rows, dis
 | (`step:backlog:wave2-bite-2-7a`) | DONE | Shared operation-graph union; (`gate:backlog:wave2-bite-2-7a`). Landed as `0.7.185-dev` after independent review; full repository gate green at 2026-11-17T17:12:01Z, 3,106s, also covering `0.7.184-dev`. Receipt below. |
 | (`step:wave2:bite-2-8`) | DONE | Joint region/projection/public-dependency evidence; (`gate:wave2:bite-2-8`); selected design at (`sec:backlog:wave2-joint-design`). Landed as `0.7.186-dev` after independent review; full repository gate green at 2026-11-17T17:41:48Z, 950s. Supplies the compact comparison producer and substituted-region subject. Raw Burn/Clear tokens remain incomparable across operations. Receipt below. |
 | (`step:wave2:bite-2-9`) | DONE | Candidate-bound dispositions at (`rec:backlog:wave2-candidate-dispositions`); landed as `0.7.188-dev` after independent review. Full repository gate green at 2026-11-17T18:53:06Z, 1,198s, also covering `0.7.187-dev`. Receipt below; (`gate:wave2:bite-2-9`). |
-| (`step:wave2:bite-2-10`) | TODO | Frozen implementation packet on gated `0.7.188-dev`, individual evidence and Wave-3 receiver below; (`gate:wave2:closing`). Implementation closure is established; this records bite becomes DONE only when its own import gate's plans/labels lanes pass. A lane documents gate does not substitute for that import receipt. |
+| (`step:wave2:bite-2-10`) | DONE | Closing packet landed as `0.7.189-dev` after independent review and corrections; its own full repository gate green at 2026-11-18T09:24:05Z, 3,218s. Both tripod:labels-check and tripod:plans-check passed in CI and the real-document subset. (`gate:wave2:closing`) is met; receipt and resources at (`rec:history:wave2-closure-import`). |
 
 Bite 2.9 receipt: `0.7.188-dev` retains the five candidate-bound dispositions in (`rec:backlog:wave2-candidate-dispositions`). Independent review confirmed that compact_clear_declaration_reopenings_keep_both_keys asserts the validator's actual returned values and that the two emitted-Clear keys are two coverage identities over one comparison, not independent observations. The landing includes narrower records and explicit compact tree, archive and STATE digest evidence. Full repository gate green at 2026-11-17T18:53:06Z, 1,198s, also covering `0.7.187-dev`.
 
 ### Frozen Wave-2 closing packet · `rec:backlog:wave2-frozen`
 
-The implementation is frozen at `0.7.188-dev`. The gate (`gate:guide15-exec:wave2-gate`) is MET for complete typed declarations and independent semantic conformance, with the bounded evidence below. (`gate:wave2:closing`) joins that result without claiming compiler plans, emitted Clear, target authentication or a new protocol. The full gate and baseline comparison are (`rec:history:wave2-frozen-gate`); the already-adopted Wave-3 assumption is (`assum:guide15-exec:wave3-inherited-inputs`). This is the current consuming result, not a rewrite of preflight history. Closed implementation receipts/designs below move verbatim to history; live gates, interface contracts, consumers and follow-ups remain maintained.
+The implementation is frozen at `0.7.188-dev`. Wave 2 and bite 2.10 are closed on the reviewed closing packet `0.7.189-dev`, whose own plans/labels import condition passed; (`rec:history:wave2-closure-import`) retains its full-gate receipt and the wall comparison. The gate (`gate:guide15-exec:wave2-gate`) is MET for complete typed declarations and independent semantic conformance, with the bounded evidence below. (`gate:wave2:closing`) joins that result without claiming compiler plans, emitted Clear, target authentication or a new protocol. The full gate and baseline comparison are (`rec:history:wave2-frozen-gate`); the already-adopted Wave-3 assumption is (`assum:guide15-exec:wave3-inherited-inputs`). This is the current consuming result, not a rewrite of preflight history. Closed implementation receipts/designs below move verbatim to history; live gates, interface contracts, consumers and follow-ups remain maintained.
 
 **Table (Delivered semantic items)** · `tab:backlog:wave2-delivered`
 
@@ -692,7 +692,7 @@ These are full repository receipts, not lane-only gates. Earlier receipts remain
 | 2.7a | `0.7.185-dev` (also covers `0.7.184-dev`) | 2026-11-17T17:12:01Z | 3106 |
 | 2.8 | `0.7.186-dev` | 2026-11-17T17:41:48Z | 950 |
 | 2.9 | `0.7.188-dev` (also covers `0.7.187-dev`) | 2026-11-17T18:53:06Z | 1198 |
-| 2.10 frozen implementation join | `0.7.188-dev`, same run, not an additional observation | 2026-11-17T18:53:06Z | 1198 |
+| 2.10 closing packet import | `0.7.189-dev`, own full repository gate, including plans/labels | 2026-11-18T09:24:05Z | 3218 |
 
 No wave gate item above lacks its bounded evidence. The untouched later-wave obligations are not met by this closure. Ruling 133 remains open for Cycle, Redeem, AdmitDeposits and ReceiptRelabel STATE exits; later realization reopens its premise. An absent candidate position is a census-supported finding with a register label, not a refusal. Shared follow-ups remain choices unless a product defect appears. The frozen draft stays a proposal record, and no accepted ruling is rewritten.
 
