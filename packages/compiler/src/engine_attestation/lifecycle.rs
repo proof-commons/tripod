@@ -14,10 +14,10 @@ use crate::{
 };
 use architecture::{ObjectId, OperationId};
 use realization::{
-    LifecycleEdge, LifecycleGraphProjection, LifecycleNode, LifecycleNodeId, Relation,
-    RelationDeclaration, RepresentationMode,
+    LifecycleEdge, LifecycleGraphProjection, LifecycleNode, LifecycleNodeId, ObservedSide,
+    Relation, RelationDeclaration, RepresentationMode, TransactionSide,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub struct LoweredLifecycle {
     pub records: LifecycleRecords,
@@ -37,6 +37,7 @@ pub fn lower<'a>(
     let declarations = declarations.collect::<Vec<_>>();
     let mut records =
         LifecycleRecords::empty(scope.iter().copied().map(super::operation_key).collect());
+    records.input_admissions = input_admissions(&declarations);
     for declaration in &declarations {
         if let Relation::Representation { object, allowed } = &declaration.relation {
             let mut candidates = allowed.iter().copied().map(mode_key).collect::<Vec<_>>();
@@ -97,6 +98,56 @@ pub fn lower<'a>(
             .map(|node| (node_key(&node.id), node.id.clone()))
             .collect(),
     }
+}
+
+fn input_admissions(declarations: &[&RelationDeclaration]) -> Vec<ChoiceRecord> {
+    let input_objects = declarations
+        .iter()
+        .filter_map(|declaration| match &declaration.relation {
+            Relation::Cardinality {
+                side: ObservedSide::Input,
+                object,
+                ..
+            } => Some((
+                super::operation_key(declaration.id.operation()),
+                object_key(*object),
+            )),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let mut admissions = declarations
+        .iter()
+        .filter_map(|declaration| match &declaration.relation {
+            Relation::SideRepresentation {
+                side: TransactionSide::Input,
+                object,
+                allowed,
+            } => Some(ChoiceRecord {
+                operation: super::operation_key(declaration.id.operation()),
+                object: object_key(*object),
+                candidates: allowed.iter().copied().map(mode_key).collect(),
+            }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    for declaration in declarations {
+        if let Relation::Representation { object, allowed } = &declaration.relation {
+            let operation = super::operation_key(declaration.id.operation());
+            let object = object_key(*object);
+            if input_objects.contains(&(operation, object))
+                && !admissions
+                    .iter()
+                    .any(|row| row.operation == operation && row.object == object)
+            {
+                admissions.push(ChoiceRecord {
+                    operation,
+                    object,
+                    candidates: allowed.iter().copied().map(mode_key).collect(),
+                });
+            }
+        }
+    }
+    admissions
 }
 
 impl LoweredLifecycle {

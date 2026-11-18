@@ -1980,6 +1980,85 @@ fn an_outside_scope_exit_marked_available_is_rejected() {
 }
 
 #[test]
+fn unavailable_exit_survives_internal_projection() {
+    let mut candidate = first_plan(&COMPACT_ASH.program);
+    let row = candidate
+        .lifecycle
+        .iter_mut()
+        .find(|row| row.status == LifecycleExitStatus::DeclaredOutsideCompilerScope)
+        .expect("an outstanding lifecycle exit");
+    row.status = LifecycleExitStatus::UnavailableInCompilerScope;
+    let changed = row.clone();
+    let LifecycleCompleteness::Incomplete { obligations } =
+        crate::analyzed::lifecycle_completeness(&candidate)
+    else {
+        panic!("unavailable exit must remain outstanding");
+    };
+    assert!(obligations.contains(&changed));
+
+    let mut offered = COMPACT_ASH.program.clone();
+    let plan = plan_mut(&mut offered);
+    let relation = plan
+        .relation_requirements
+        .iter()
+        .find(|(_, bundle)| {
+            bundle
+                .lifecycle
+                .iter()
+                .any(|row| row.status == LifecycleExitStatus::DeclaredOutsideCompilerScope)
+        })
+        .map(|(relation, _)| relation.clone())
+        .expect("relation owning a lifecycle exit");
+    let bundle = plan
+        .relation_requirements
+        .get_mut(&relation)
+        .expect("relation bundle");
+    let mut row = bundle
+        .lifecycle
+        .iter()
+        .find(|row| row.status == LifecycleExitStatus::DeclaredOutsideCompilerScope)
+        .expect("outside lifecycle row")
+        .clone();
+    bundle.lifecycle.remove(&row);
+    row.status = LifecycleExitStatus::UnavailableInCompilerScope;
+    bundle.lifecycle.insert(row.clone());
+    let projected = crate::operation_plan::project_lifecycle(plan, &BTreeSet::from([relation]));
+    assert!(
+        projected
+            .outstanding()
+            .any(|outstanding| outstanding == &row)
+    );
+    assert!(!projected.implemented().any(|exit| exit == row.exit));
+
+    let error = COMPACT_ASH.corrupt(|program| {
+        let plan = plan_mut(program);
+        let relation = plan
+            .relation_requirements
+            .iter()
+            .find(|(_, bundle)| !bundle.lifecycle.is_empty())
+            .map(|(relation, _)| relation.clone())
+            .expect("a relation owning a lifecycle exit");
+        let bundle = plan
+            .relation_requirements
+            .get_mut(&relation)
+            .expect("relation bundle");
+        let mut row = bundle
+            .lifecycle
+            .iter()
+            .next()
+            .expect("lifecycle row")
+            .clone();
+        bundle.lifecycle.remove(&row);
+        row.status = LifecycleExitStatus::UnavailableInCompilerScope;
+        bundle.lifecycle.insert(row);
+    });
+    assert!(matches!(
+        error,
+        CompileError::AnalyzedLifecycleClosureMismatch { .. }
+    ));
+}
+
+#[test]
 fn an_undeclared_lifecycle_exit_is_rejected() {
     let error = COMPACT_ASH.corrupt(|program| {
         let plan = plan_mut(program);

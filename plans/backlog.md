@@ -918,7 +918,9 @@ Divergences are recorded at (`tab:drafts:index`): expanded consumers, admission/
 
 Packet 3.0 adopts rulings 221–234 at (`rule:phase7:wave3-rulings`) from the corrected drafts on `0.7.193-dev`. It opens on the closed Wave-2 receiver (`rec:backlog:wave2-wave3-receiver`), preserving its evidence limits. The two pre-code readings are confirmed at (`rec:w3:precode`); no compiler implementation or wave gate is credited here.
 
-Implementation reads the live packet order/file-package limits at (`tab:guide15-exec:wave3-bites`), exact paths at (`tab:guide15-exec:wave3-paths`), selected tests at (`sec:guide15-exec:wave3-execution`), receiver accounting at (`tab:guide15-exec:wave3-receivers`) and settings at (`rule:guide15-exec:wave3-settings`). All eighteen remaining packets are open; 3.1a is next, and 3.5c follows vocabulary before actual Burn lowering. Detailed completed receipts append to plans/history/wave3-compiler-records.md; current contracts remain (`sec:compiler:wave3-plans`) and (`sec:realization:wave3-admission`). The frozen wave gate, full baseline comparison and Wave-4 handoff remain outstanding.
+Implementation reads the live packet order/file-package limits at (`tab:guide15-exec:wave3-bites`), exact paths at (`tab:guide15-exec:wave3-paths`), selected tests at (`sec:guide15-exec:wave3-execution`), receiver accounting at (`tab:guide15-exec:wave3-receivers`) and settings at (`rule:guide15-exec:wave3-settings`). Packet 3.5c follows vocabulary before actual Burn lowering. Detailed completed receipts append to plans/history/wave3-compiler-records.md; current contracts remain (`sec:compiler:wave3-plans`) and (`sec:realization:wave3-admission`).
+
+Packet 3.1a's operation-local choice and input-admission work is recorded at (`rec:w3:packet-3-1a`); its node gate is green, while independent review and the full import gate remain pending. Packet 3.1b remains next in landing order. The frozen wave gate, full baseline comparison and Wave-4 handoff remain outstanding.
 
 ## 4. Compact historical record · `sec:backlog:history`
 

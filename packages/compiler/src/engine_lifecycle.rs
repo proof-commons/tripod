@@ -62,6 +62,8 @@ pub struct LifecycleRecords {
     pub scope: Vec<OperationKey>,
     pub choices: Vec<ChoiceRecord>,
     pub required_choices: Vec<(OperationKey, ObjectKey)>,
+    /// Modes accepted as input by each operation for an object.
+    pub input_admissions: Vec<ChoiceRecord>,
     pub nodes: Vec<LifecycleNodeKey>,
     pub edges: Vec<LifecycleDependency>,
 }
@@ -72,6 +74,7 @@ impl LifecycleRecords {
             scope,
             choices: Vec::new(),
             required_choices: Vec::new(),
+            input_admissions: Vec::new(),
             nodes: Vec::new(),
             edges: Vec::new(),
         }
@@ -154,10 +157,10 @@ fn analyze_core(records: &LifecycleRecords) -> Result<LifecycleAnalysis, Lifecyc
     choices.sort_by_key(|choice| (choice.operation, choice.object));
     let choice_objects = choices
         .iter()
-        .map(|choice| choice.object)
+        .map(|choice| (choice.operation, choice.object))
         .collect::<BTreeSet<_>>();
     for (operation, object) in &records.required_choices {
-        if !choice_objects.contains(object) {
+        if !choice_objects.contains(&(*operation, *object)) {
             return Err(LifecycleRecordError::MissingRepresentationChoice {
                 operation: *operation,
                 object: *object,
@@ -167,7 +170,11 @@ fn analyze_core(records: &LifecycleRecords) -> Result<LifecycleAnalysis, Lifecyc
     let nodes = records
         .nodes
         .iter()
-        .filter(|node| choice_objects.contains(&node.object()))
+        .filter(|node| {
+            choice_objects
+                .iter()
+                .any(|(_, object)| *object == node.object())
+        })
         .cloned()
         .collect::<Vec<_>>();
     let mut graph = DiGraph::with_capacity(nodes.len(), records.edges.len());
@@ -209,7 +216,15 @@ fn analyze_core(records: &LifecycleRecords) -> Result<LifecycleAnalysis, Lifecyc
                 });
             }
             let status = if records.scope.contains(operation) {
-                LifecycleExitStatus::AvailableInCompilerScope
+                if records.input_admissions.iter().any(|admission| {
+                    admission.operation == *operation
+                        && admission.object == *object
+                        && admission.candidates.contains(mode)
+                }) {
+                    LifecycleExitStatus::AvailableInCompilerScope
+                } else {
+                    LifecycleExitStatus::UnavailableInCompilerScope
+                }
             } else {
                 LifecycleExitStatus::DeclaredOutsideCompilerScope
             };

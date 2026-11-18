@@ -354,7 +354,8 @@ impl TargetLifecycleStatus {
         self.implemented.iter().copied()
     }
 
-    /// Every required exit declared outside the compiler scope.
+    /// Every required exit unavailable in scope, whether outside it or
+    /// unadmitted for the exit operation's input representation.
     pub fn outstanding(&self) -> impl Iterator<Item = &LifecycleRequirement> {
         self.outstanding.iter()
     }
@@ -1015,7 +1016,7 @@ pub(crate) fn project_lifecycle(
         outstanding: owned
             .into_iter()
             .filter(|requirement| {
-                requirement.status == LifecycleExitStatus::DeclaredOutsideCompilerScope
+                requirement.status != LifecycleExitStatus::AvailableInCompilerScope
             })
             .collect(),
     }

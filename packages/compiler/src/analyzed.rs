@@ -371,8 +371,9 @@ fn missing_architecture_operations(input: &BoundCompilerInput) -> BTreeSet<Opera
 
 /// Derive one plan's lifecycle completeness (§5.4, §17 step 9).
 ///
-/// Every requirement whose exit is declared outside the compiler scope
-/// is retained as an explicit obligation. The candidate's own lifecycle
+/// Every requirement whose exit is unavailable in the compiler scope,
+/// whether outside it or unadmitted for this input representation, is
+/// retained as an explicit obligation. The candidate's own lifecycle
 /// rows are the source: the requirement stage already proved they are
 /// exactly the rows the plan's selected representations imply.
 #[must_use]
@@ -380,9 +381,7 @@ pub fn lifecycle_completeness(candidate: &ProofPlanCandidate) -> LifecycleComple
     let obligations = candidate
         .lifecycle
         .iter()
-        .filter(|requirement| {
-            requirement.status == LifecycleExitStatus::DeclaredOutsideCompilerScope
-        })
+        .filter(|requirement| requirement.status != LifecycleExitStatus::AvailableInCompilerScope)
         .cloned()
         .collect::<BTreeSet<_>>();
 

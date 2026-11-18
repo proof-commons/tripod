@@ -819,6 +819,52 @@ fn private_input_is_not_admitted_by_the_input_change_mode_union() {
 }
 
 #[test]
+fn transfer_company_keeps_burn_input_explicit_only() {
+    let realized = derive(
+        &ARCHITECTURE,
+        RealizationScope::from_operations([OperationId::TransferLive, OperationId::Burn]).unwrap(),
+    )
+    .expect("mixed realization");
+    let (mut common, extension) = control();
+    assert!(
+        realized
+            .evaluate_operation_with_burn_clear(&bind(&common, &extension))
+            .unwrap()
+            .is_conformant()
+    );
+    require_lifecycle_exit(
+        &realized.lifecycle_graph,
+        &realized.lifecycle_node_by_id,
+        ObjectId::ReceiptLive,
+        RepresentationMode::PrivateCommitted,
+        OperationId::Burn,
+    )
+    .expect("declared private receipt exit");
+    common.objects[0].representation = RepresentationMode::PrivateCommitted;
+    let report = realized
+        .evaluate_operation_with_burn_clear(&bind(&common, &extension))
+        .unwrap();
+    let input = rid(
+        RelationKind::SideRepresentation,
+        RelationSubject::SideRepresentation {
+            side: TransactionSide::Input,
+            object: ObjectId::ReceiptLive,
+        },
+    );
+    assert_eq!(
+        report
+            .verdicts
+            .iter()
+            .find(|row| row.relation == input)
+            .unwrap()
+            .status,
+        RelationStatus::Failed {
+            reason: RelationFailure::BurnClearLaw
+        }
+    );
+}
+
+#[test]
 fn fresh_ash_keeps_both_public_modes_and_refuses_private_commitments() {
     let realized = realized();
     let (mut common, extension) = control();

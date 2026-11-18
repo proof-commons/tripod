@@ -40,6 +40,8 @@ pub struct RepresentationChoice {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LifecycleExitStatus {
     AvailableInCompilerScope,
+    /// The exit is in scope but does not admit this input representation.
+    UnavailableInCompilerScope,
     DeclaredOutsideCompilerScope,
 }
 
