@@ -1020,6 +1020,8 @@ A step builds the few tests its design names for basic confidence in the functio
 
 The Wave-2 closure record (`rec:backlog:wave2-closure`) in `plans/backlog.md` joins the twelve original packet gates in the adopted strategy (`sec:wave2:execution`) and the added union packet under ruling 213, the eight deliverables, seven consuming entry rows, dispositions 1/7/10/12, both compact reopenings, ruling 133's three reopening subjects, the six interface ledgers, baseline comparisons, full gate logs and absent dimensions. It closes no Wave-3 plan proof, Wave-4 carrier measurement, linked constructor equality, Wave-7 STATE generation, target signature, native execution, or Waves-10–12 report-production obligation. A consuming result updates current implementation standing without rewriting the historical preflight finding.
 
+The frozen delivery judgment and Wave-3 handoff are (`rec:backlog:wave2-frozen`) and (`rec:backlog:wave2-wave3-receiver`), on `0.7.188-dev`; full-gate costs and baseline limits are (`rec:history:wave2-frozen-gate`).
+
 **Assumption (wave2 — Inherited inputs)** · `assum:guide15-exec:wave2-inherited-inputs`
 
 Wave 0 supplies the model-law census, region-refit evidence, and accepted generation/record dispositions from bites 0.2 and 0.7; Wave 1 supplies the validated architecture-to-realization boundary and declaration weld from 1.1, never the attestation declarations themselves. (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave1`).
@@ -1090,7 +1092,7 @@ The retained semantic and delivery reference is (`task:guide15:wave2`); the impl
 
 Wave 0 supplies the closure-exact audit and region evidence from 0.2 and 0.3; Wave 1 supplies the validated placement and carrier assignment from 1.2 separating reader-owned from emitted relations, without supplying burn/clear plan proofs. (`task:guide15-exec:wave0`); (`task:guide15-exec:wave1`); (`task:guide15:wave2`).
 
-Wave 2 supplies complete validated Burn/Clear declarations, assignment/projection/flow laws, public dependency and lifecycle censuses, independent model conformance, exact changed-interface ledgers and ruling-133/138 reopening records, and the rule that an explicit-only Burn does not discharge the PrivateCommitted live-receipt Burn exit; these are inputs to compiler plans and do not supply their proofs. The exact declaration, witness and graph census is (`sec:realization:burn-clear`); silent consumers and their reaching-subject obligations are (`tab:backlog:wave2-consumers`).
+Wave 2 supplies complete validated Burn/Clear declarations, assignment/projection/flow laws, public dependency and lifecycle censuses, independent model conformance, exact changed-interface ledgers and ruling-133/138 reopening records, and the rule that an explicit-only Burn does not discharge the PrivateCommitted live-receipt Burn exit; these are inputs to compiler plans and do not supply their proofs. The exact declaration, witness and graph census is (`sec:realization:burn-clear`); silent consumers and their reaching-subject obligations are (`tab:backlog:wave2-consumers`). The consuming closure obligations are joined at (`rec:backlog:wave2-wave3-receiver`).
 
 **Gate (wave3 — Gate)** · `gate:guide15-exec:wave3-gate`
 
