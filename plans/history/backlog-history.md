@@ -17,6 +17,7 @@ them still resolves.
 | [Closed Wave-2 implementation records](#closed-wave-2-implementation-records) | backlog Wave-2 receipts, completed designs and path-count derivation | 2026-11-17 |
 | Frozen Wave-2 gate and baseline, (`rec:history:wave2-frozen-gate`) | evidence authored directly in history; maintained judgment in backlog | 2026-11-17 |
 | Wave-2 closure import, (`rec:history:wave2-closure-import`) | evidence authored directly in history; bite 2.10 import receipt | 2026-11-18 |
+| Fixed-form S8a campaign, (`rec:history:fixed-form-s8a-campaign`) | reviewed native campaign, archive and limits; maintained status in backlog | 2026-11-18 |
 | [Historical gate timing detail](#historical-gate-timing-detail) | test-performance historical measurement and tables | 2026-11-17 |
 | [Closed wave records](#closed-wave-records) | backlog Wave-0/1 evidence, early Wave-2 receipts and Phase-2 narratives | 2026-11-17 |
 | [Later Phase-6 task rows](#later-phase-6-closed-task-rows) | backlog §11, closed rows without current readers | 2026-11-17 |
@@ -4144,3 +4145,73 @@ Pressure averages are percentages in 10/60/300-second order; some/full have sepa
 CPU PSI some/full increased from 149889380/38950092 to 483351415/275192643 µs. Memory PSI some/full increased from 433607/398373 to 1881310/1592450 µs; IO PSI decreased from 366634/201946 to 278380/125086 µs. Peak memory decreased from 19788025856 to 18964062208 bytes. Whole-run load endpoints were 7.72/1.95/0.65 → 9.01/17.56/35.01; release ended and CI began at 27.36/59.60/48.90. These samples support substantial shared-node CPU contention during the longer run; endpoints are not maxima. The watcher's approximately 72 load at 09:08Z is external context supplied with this receipt, not a sample in this retained log.
 
 Finding: the measured cost increase is real, including extra own CPU, but no candidate-code change or changed gate command/toolchain/priority form is shown. The tree difference is planning-only; the gate still runs its full warmups and suites. Do not explain the entire +2020s as node load, and do not infer a product regression or speed claim from unmatched shared-cache runs. All actual budgets and correctness gates passed. This disposes the closure's cost observation as an unmatched run with higher CPU pressure and unallocated extra own work, retaining the warmup logs for any later profiling; no interface, threshold, gate waiver or Wave-3 decision is introduced.
+
+The retained release warmup log of this closure has 52 compile lines against three in the preceding gate's log, observing that another tree had turned over the shared release cache between the two gates.
+
+## Fixed-form S8a campaign receipt · `rec:history:fixed-form-s8a-campaign`
+
+**Campaign of record.** `20261118t1348z-fixed-campaign3` ran on kranich from source commit `0.7.195-dev` (full provenance `a99da5ec9286b76409dc3e868f335cee2274b526`) under the 98-pin record-triple freeze identity `6c49332fab715b72e4d85d94935df6f4c52034d027110e203c5eea83f7a97092`. It ended 2026-11-18T14:12:17Z. Preparation took 248 s; the host load average was about 70 at the start and 18 at the end, with other work throughout. The independent review at `review/w20b1/keyed-fixed-form-campaign-review.md` gives **CAMPAIGN SOUND WITH RECORDED LIMITS**: its own parser, signature check and freeze rebuild found zero discrepancies in all 4,220 subject records, their parents, weights, sponsor signatures, node answers, predictions and earlier same-family controls. Every family sealed. No family runs again for S8a.
+
+| Family | Driver wall | Exchanges | Subject records | Timing lines | Transport / admission | Evidence and limit |
+|---|---:|---:|---:|---:|---:|---|
+| Clauses | 22 s | 102 | 32 | 140 | 16.55 / 1.66 s | Both triples' SOURCE and MERGEs relay; two surplus destinations relay. Nine refusals include the successor/payment, malformed-control and key-path attempts, beside earlier controls. Seven equality refusals retain only the opcode class. |
+| Policy | 6 s | 9 | 3 | 17 | 2.44 / 0.16 s | Value 15 relays; 14 is refused at relay as dust and mined directly. The zero-fee subject is refused at relay for fee and mined directly. Default relay rate is 100 sat/kvB. |
+| Scaling | 1,133 s | 12,052 | 4,017 | 16,262 | 985.75 / 142.34 s | SOURCE and MERGEs through 1,299 relay with node weights equal to ruling 214's formula. The typed 1,300 refuses before bytes; the structural 1,300 weighs 400,184 WU, is refused at relay as `tx-size`, then mined directly. |
+| Histories | 31 s | 504 | 168 | 690 | 24.45 / 3.77 s | All events relay. The six retained shapes have 4, 5, 16, 17, 64 and 65 edges; the binary asserts the readings and missing-branch result, with all reader input bytes retained. |
+
+The scaling timing file has 3,381,744 bytes. Its 16,262 lines, and every other family's count, equal exchanges plus one progress line per 64 exchanges plus submissions plus history reads plus five family/phase lines. Each exchange has one `wall_us` event. The retained request/response file times have nanosecond resolution. `wall_us` includes the response file and directory syncs; the file-time span includes the request's syncs instead, so sync stalls up to about 0.6 s explain the largest differences. The cgroup samples include each container, as its retained membership shows; no family was throttled or OOM-killed. Refusal reasons are the node's RPC answers retained by the adapter; default node logs contain no rejection lines, although their `UpdateTip` lines corroborate accepted readback blocks and heights.
+
+**Archive of record.** Each hub ref holds one pax tar.xz blob. The digest is SHA-256 of that exact blob; the object id locates it in the hub. The root and preparation blobs were also read as data here, with their supplied SHA-256 values checked before their seal listings were transcribed. The family blobs omit their node data directories and `work` and `tmp` trees.
+
+| Hub ref suffix under `refs/handoff/w20b1/fixed-campaign3-` | Bytes | SHA-256 | Blob id |
+|---|---:|---|---|
+| `clauses` | 106,424 | `809a12275049cc106088d2dc06bd3f1eccf445c7d8f0ecc80780616b16a82dba` | `2f7eea109eeb615b939d07794f544b56bc137e04` |
+| `policy` | 32,992 | `dae769f9ba57a0b06ed6947dfcbeb9fcf8426e0cadcbbe6a9d2aab1adb8e767c` | `63c5d7298ece39649be100a34ae1cff1bff9d5e3` |
+| `scaling` | 15,948,068 | `bd99f6c58e958a0e87767ed7fbf68497dde3ea80040b979b195555ff20d625c1` | `a526fcfe61b8a969f2506df8a6f2cb647c15a53a` |
+| `histories` | 575,644 | `674e1d7f55fc7b13f42512731ed4dda886c5ec182ff471d1ec136bf13b732a57` | `648f8d431ae5ff59bf8b05b88c4709901b2ffc2e` |
+| `root` | 5,676 | `0309909a066346921d78a08df171a8ac36d6174cca2c4895d1e21a1fad5e7c23` | `8ab73157125227cad3697a79701bd1061594b8c9` |
+| `preparation` | 28,372 | `29db14bfc98299a910fe0704d0ce167e604e9cf97f0b8843783a245b42b41545` | `496230dcb0b6c40f6003863c05025cf0508cbe29` |
+
+The root seal lists the following exact paths and SHA-256 values relative to the run. `capture-unit`, `run-one`, `start.utc` and `tools.txt` are in the root blob; each non-pilot family `capture.env` is in that family's blob; `build/retention.sha256`, `prepare.pid` and `pilot/capture.env` are in the preparation blob. The root blob also carries the intentionally unsealed `prepare.log` marker.
+
+```text
+eb322caa6ca76432476f32ab2c89d663f91deb84a55c9d42c2a9697b62c59739  build/retention.sha256
+fd79053c54ce1f3055ee45a55be02396e31af4a39e6eaf82657b553ffcc8f314  capture-unit
+5b5b2449ff58ca67f528a5275e63736af46949b7d62d460e7cd49c3adb9193df  clauses/capture.env
+5b5b2449ff58ca67f528a5275e63736af46949b7d62d460e7cd49c3adb9193df  histories/capture.env
+5b5b2449ff58ca67f528a5275e63736af46949b7d62d460e7cd49c3adb9193df  pilot/capture.env
+5b5b2449ff58ca67f528a5275e63736af46949b7d62d460e7cd49c3adb9193df  policy/capture.env
+0b7d0451f13914ed64e4c89a2e4ff74570b9cb6c20ad81f79f4c5c3e8f675e4b  prepare.pid
+3926322dbecbd66d4f090927bde81e7582744bae6f2814bc5196a6d85ad1f285  run-one
+5b5b2449ff58ca67f528a5275e63736af46949b7d62d460e7cd49c3adb9193df  scaling/capture.env
+551e624bb4724bcb32777a59d207281977f21179531dae7a2020d2d2ee2a6c87  start.utc
+e485aa65cae8e5e60dbb3ff29b03e9bed2e9971795c388fdc8ebfd76d1150cc4  tools.txt
+```
+
+`build/retention.sha256` in the preparation blob lists the following exact digests. All named files except `keyed_fixed_capture` are in that blob, including `prepared.json`, the build command and resolved `Cargo.lock`. The 14,687,376-byte test binary is retained only in the node's `/var/home/tripod/loops/evidence/fixed-form/20261118t1348z-fixed-campaign3/build/` directory with the digest below; it is not in a hub ref. Its asserted equality with preparation and its execution remain the binary's in-container check.
+
+```text
+a23dcfad1e178c21cdac19ee0eeabe693ec7445e84d072879fdf7373479e2c07  Cargo.lock
+885b32553cbcbce19260a7af16ea3035d0a98d31835972321c634162c7d088f5  build-command.shell
+7ea48f8286acd56d45cb097be2b450f557d1c99630dc3e5aae01fd1f02cc3edd  build-final-state.json
+574d56da086357cf034ab47ff9236d794ea99d0a89f0427dff6fe2f89894336a  build-remove.log
+9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa  build.exit
+e09243d555572a4675c2572bee10faebe0a9d3d1ce5011815a1b2b1e13af9b09  build.jsonl
+07486438f6d86338aca7ca6adefbe0e38fc661cdaa76fbed4ce9f8a325a22fff  build.stderr
+4bad395f8b42a28dbe30d32ea494850047c291c884715effed1f87c0bfe479a8  image.id
+2768d0a2d73ff97fcd0103209b540b9c1037ea4f5e6913d08779aaa0c1ddbddd  keyed_fixed_capture
+99f219aaccecc81aa831668e058c11b08b754551d62659e47d3e820d38373d15  node.txt
+a465e775566c08c15631694911c1a877a89c2ce8a46c183ba97d5cb9163e389e  prepared.json
+160bdf8bf1f8a49d1941529a8f0cac0daaca5ee5c6a8af6eea4139372e94fb14  provenance-final-state.json
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  provenance-inspect.stderr
+4cb786d1c9dd763774a0ef64d0b9218ca47c6340e332ab302f8c0b21315070b0  provenance-remove.log
+4cb786d1c9dd763774a0ef64d0b9218ca47c6340e332ab302f8c0b21315070b0  provenance-stop.log
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  toolchain.stderr
+044228db5314162d85d4313b53d8a3b5ae625d65996a2fa5e487255a5c838988  toolchain.txt
+```
+
+The archive manifest's omissions are explicit. Each family's sealed `work/.elements/liquidv1/settings.json` is in the preparation blob, not its family blob; the adapter's version probe created it. The four isolated `regtest/` data directories were outside the seals and are outside the hub blobs by design. Each family's other `work` and `tmp` files are also omitted. The preparation archive makes the root-sealed provenance files available to S8b without a node, while the binary's executed identity remains an in-container assertion checked against its retained digest.
+
+**Five limits and receivers.** First, provenance equality to preparation for the executable rests on the binary's in-container check, although the preparation records and its build seal are now retained for independent offline comparison. Second, seven script refusals name only a failed `OP_EQUALVERIFY`; the exact equality site remains **OPEN** until S8b's bounded model attributes it from the paired bytes. Third, the six history readings and missing-branch Incomplete result were asserted inside the binary, with no retained reader output or per-row admission trace; all input bytes survive for offline repetition. Fourth, refusal reasons are retained RPC answers, not node-log rejection lines. Fifth, scaling's measured transport 985.75 s has 2.07-fold headroom against its 2,040 s bound, and its approximately 1,129 s unit has 3.19-fold against the 3,600 s guard on a loaded node. That fails ruling 215's fourfold measured-headroom condition, without invalidating this completed capture. A future scaling capture splits the family or derives a bound from a loaded run; neither guard is silently raised.
+
+**S8b handoff.** Rebuild and validate capture-time freezes from their retained encodings and the preparation archive; independently verify transaction/parent bytes, stripped txids, weights and sponsor messages; replay fund/sign/submit adjacency and funded-coin use. Derive control family, run, earlier ordinal and disjoint inputs from the packet; `CENSUS.json` names kinds but not their counts, so count actual records. Derive `WrongKey`'s K = 43, v = 60 foreign program from the recipe, since no retained encoding names it. Replay the typed 1,300 refusal from the structural record's 1,300 member parents and exchange 12049's sponsor readback. Rebuild the six history graphs and the missing-branch Incomplete reading from retained events and parents, because memberships and reader output were not retained. Bind the seven equality refusals to model sites or leave those sites OPEN; the RPC answers and txid binding remain the refusal evidence without a node-log rejection line or retained block. Retain per-exchange/phase walls and the measured cgroup scope without treating them as clause costs. The first campaign, second run and pilot packets remain separate evidence at their own capture-time identities; no rerun or relabelling is needed.
