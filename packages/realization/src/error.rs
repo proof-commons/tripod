@@ -178,6 +178,22 @@ pub enum ArchitectureMismatchField {
     Witnesses,
 }
 
+/// Unsupported reason entry into a multiply declared bound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SharedBoundDependencyKind {
+    IncomingEdge,
+    Seed,
+}
+
+impl std::fmt::Display for SharedBoundDependencyKind {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::IncomingEdge => "incoming edge",
+            Self::Seed => "seed",
+        })
+    }
+}
+
 /// Failure while constructing or validating target-independent
 /// realization values.
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -455,6 +471,15 @@ pub enum RealizationError {
     ForeignDisclosureOwnership {
         operation: OperationId,
         node: DisclosureNodeId,
+    },
+
+    /// A multiply declared bound has an incoming dependency or explicit seed.
+    /// Reason propagation across operation declarations is not admitted.
+    #[error("operation {operation} declares unsupported {kind} on shared bound {bound:?}")]
+    UnsupportedSharedBoundDependency {
+        bound: BoundId,
+        operation: OperationId,
+        kind: SharedBoundDependencyKind,
     },
 
     /// A disclosure node, edge endpoint, or seed reason named a
@@ -800,6 +825,7 @@ impl RealizationError {
             Self::ForeignProofAlternativeBinding { .. } => "foreign_proof_alternative_binding",
             Self::ForeignConstructibilityOwnership { .. } => "foreign_constructibility_ownership",
             Self::ForeignDisclosureOwnership { .. } => "foreign_disclosure_ownership",
+            Self::UnsupportedSharedBoundDependency { .. } => "unsupported_shared_bound_dependency",
             Self::UnknownDisclosureRelation { .. } => "unknown_disclosure_relation",
             Self::MissingArchitectureOperation(_) => "missing_architecture_operation",
             Self::ArchitectureOperationMismatch { .. } => "architecture_operation_mismatch",

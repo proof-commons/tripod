@@ -4,16 +4,136 @@ use petgraph::visit::EdgeRef;
 
 use crate::{
     ArchitectureBinding, DisclosureDependencyDeclaration, DisclosureEdge, DisclosureNode,
-    DisclosureNodeId, DisclosureReason, FactId, InitialVisibility, RealizationError,
-    RealizationScope, TransactionSide,
+    DisclosureNodeId, DisclosureReason, DisclosureSeed, FactId, InitialVisibility,
+    RealizationError, RealizationScope, TransactionSide,
     declassification::{
         analysis_from_reason_map, build_disclosure_graph, disclosure_reasons_by_node,
         phase1_disclosure_declarations,
     },
     derive,
     derive::assemble_scoped_realization,
+    error::SharedBoundDependencyKind,
     phase1_declassification,
 };
+
+fn shared_bound_seed_free_control() -> (RealizationScope, crate::ScopedRealizationSpec) {
+    use architecture::{ARCHITECTURE, OperationId};
+    let scope = RealizationScope::from_operations([OperationId::Burn, OperationId::Clear]).unwrap();
+    let control = derive(&ARCHITECTURE, scope.clone()).unwrap();
+    (scope, control)
+}
+
+#[test]
+fn shared_bounds_without_incoming_dependencies_merge() {
+    use architecture::{BoundId, OperationId};
+    let (_, control) = shared_bound_seed_free_control();
+    let shared = DisclosureNodeId::Fact(FactId::BoundValue {
+        bound: BoundId::FeeSponsorInputMax,
+    });
+    for operation in [OperationId::Burn, OperationId::Clear] {
+        assert!(
+            control.operations[&operation]
+                .disclosure_nodes
+                .iter()
+                .any(|node| node.id() == shared)
+        );
+        assert!(
+            control.operations[&operation]
+                .disclosure_edges
+                .iter()
+                .all(|edge| edge.target != shared)
+        );
+        assert!(
+            control.operations[&operation]
+                .disclosure_seeds
+                .iter()
+                .all(|seed| seed.node != shared)
+        );
+    }
+    assert_eq!(
+        control
+            .disclosure_graph
+            .node_weights()
+            .filter(|node| node.id() == shared)
+            .count(),
+        1
+    );
+    super::derivation_tests::assert_pair_disclosure_union(
+        &control,
+        [OperationId::Burn, OperationId::Clear],
+    );
+}
+
+#[test]
+fn incoming_dependency_on_shared_bound_is_refused() {
+    use architecture::{ARCHITECTURE, BoundId, OperationId};
+    let (scope, control) = shared_bound_seed_free_control();
+    let mut operations = control.operations;
+    operations
+        .get_mut(&OperationId::Burn)
+        .unwrap()
+        .disclosure_edges
+        .push(DisclosureDependencyDeclaration {
+            source: DisclosureNodeId::Fact(FactId::BoundValue {
+                bound: BoundId::BurnInputMax,
+            }),
+            target: DisclosureNodeId::Fact(FactId::BoundValue {
+                bound: BoundId::FeeSponsorInputMax,
+            }),
+            edge: DisclosureEdge::PublicObservableInput,
+        });
+    let error = assemble_scoped_realization(
+        &ARCHITECTURE,
+        ArchitectureBinding::from_architecture(&ARCHITECTURE).unwrap(),
+        scope,
+        operations,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        RealizationError::UnsupportedSharedBoundDependency {
+            bound: BoundId::FeeSponsorInputMax,
+            operation: OperationId::Burn,
+            kind: SharedBoundDependencyKind::IncomingEdge,
+        }
+    );
+    assert_eq!(error.trace_kind(), "unsupported_shared_bound_dependency");
+    assert!(error.to_string().contains("incoming edge"));
+}
+
+#[test]
+fn seed_on_shared_bound_is_refused() {
+    use architecture::{ARCHITECTURE, BoundId, OperationId};
+    let (scope, control) = shared_bound_seed_free_control();
+    let mut operations = control.operations;
+    operations
+        .get_mut(&OperationId::Clear)
+        .unwrap()
+        .disclosure_seeds
+        .push(DisclosureSeed {
+            node: DisclosureNodeId::Fact(FactId::BoundValue {
+                bound: BoundId::FeeSponsorInputMax,
+            }),
+            reason: DisclosureReason::PublicInterface,
+        });
+    let error = assemble_scoped_realization(
+        &ARCHITECTURE,
+        ArchitectureBinding::from_architecture(&ARCHITECTURE).unwrap(),
+        scope,
+        operations,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        RealizationError::UnsupportedSharedBoundDependency {
+            bound: BoundId::FeeSponsorInputMax,
+            operation: OperationId::Clear,
+            kind: SharedBoundDependencyKind::Seed,
+        }
+    );
+    assert_eq!(error.trace_kind(), "unsupported_shared_bound_dependency");
+    assert!(error.to_string().contains("seed"));
+}
 
 #[test]
 fn union_refuses_conflicting_disclosure_visibility() {

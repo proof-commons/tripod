@@ -2,23 +2,25 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use architecture::{Architecture, OperationId};
+use architecture::{Architecture, BoundId, OperationId};
 use petgraph::graph::{DiGraph, NodeIndex};
 
 use crate::{
     ArchitectureBinding, ConstructibilityAuthorization, ConstructibilityEdge,
     ConstructibilityGraphProjection, ConstructibilityNode, ConstructibilityNodeId,
     DeclassificationAnalysis, DependencyEdge, DisclosureEdge, DisclosureGraphProjection,
-    DisclosureNode, ExprId, ExpressionDeclaration, LifecycleDependencyDeclaration, LifecycleEdge,
-    LifecycleGraphProjection, LifecycleNode, LifecycleNodeId, OperationObservation,
-    OperationRealization, OperationRealizationProjection, RealizationError, RealizationScope,
-    RelationDeclaration, RelationEdge, RelationGraphProjection, RelationId,
+    DisclosureNode, DisclosureNodeId, ExprId, ExpressionDeclaration, FactId,
+    LifecycleDependencyDeclaration, LifecycleEdge, LifecycleGraphProjection, LifecycleNode,
+    LifecycleNodeId, OperationObservation, OperationRealization, OperationRealizationProjection,
+    RealizationError, RealizationScope, RelationDeclaration, RelationEdge, RelationGraphProjection,
+    RelationId,
     constructibility::{build_constructibility_graph, project_constructibility_graph},
     declarations,
     declassification::{
         analyze_disclosure, build_disclosure_graph, merge_disclosure_nodes,
         project_disclosure_graph,
     },
+    error::SharedBoundDependencyKind,
     expression::{ExpressionGraphProjection, build_expression_graph, project_expression_graph},
     lifecycle::{build_lifecycle_graph, project_lifecycle_graph},
     relation::{build_relation_graph, project_relation_graph},
@@ -449,6 +451,7 @@ fn assemble_scoped_realization_with_phase(
     let (lifecycle_graph, lifecycle_node_by_id, _lifecycle_order) =
         build_lifecycle_graph(lifecycle_nodes, lifecycle_edges)?;
 
+    validate_shared_bound_dependencies(&operations)?;
     let disclosure_nodes = merge_disclosure_nodes(
         operations
             .values()
@@ -512,6 +515,60 @@ fn assemble_scoped_realization_with_phase(
     crate::validate::validate_scoped_realization(architecture, &result)?;
 
     Ok(result)
+}
+
+/// Keep shared bounds as equal-visibility union nodes without admitting
+/// cross-operation reason propagation through an incoming edge or seed.
+fn validate_shared_bound_dependencies(
+    operations: &BTreeMap<OperationId, OperationRealization>,
+) -> Result<(), RealizationError> {
+    let mut declaring_operations = BTreeMap::<BoundId, BTreeSet<OperationId>>::new();
+    for (operation, declaration) in operations {
+        for node in &declaration.disclosure_nodes {
+            if let DisclosureNodeId::Fact(FactId::BoundValue { bound }) = node.id() {
+                declaring_operations
+                    .entry(bound)
+                    .or_default()
+                    .insert(*operation);
+            }
+        }
+    }
+    let shared = declaring_operations
+        .into_iter()
+        .filter_map(|(bound, owners)| (owners.len() > 1).then_some(bound))
+        .collect::<BTreeSet<_>>();
+    for (operation, declaration) in operations {
+        let dependencies = declaration
+            .disclosure_edges
+            .iter()
+            .map(|edge| (&edge.target, SharedBoundDependencyKind::IncomingEdge))
+            .chain(
+                declaration
+                    .disclosure_seeds
+                    .iter()
+                    .map(|seed| (&seed.node, SharedBoundDependencyKind::Seed)),
+            );
+        for (node, kind) in dependencies {
+            let DisclosureNodeId::Fact(FactId::BoundValue { bound }) = node else {
+                continue;
+            };
+            if shared.contains(bound) {
+                tracing::debug!(
+                    target: "realization::derive",
+                    ?bound,
+                    ?operation,
+                    %kind,
+                    "shared bound dependency refused"
+                );
+                return Err(RealizationError::UnsupportedSharedBoundDependency {
+                    bound: *bound,
+                    operation: *operation,
+                    kind,
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn merge_lifecycle_rows(
