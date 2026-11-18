@@ -191,7 +191,8 @@ impl Wire {
         let predicted = expected_layer(subject).expect("submitted census subject");
         assert_eq!(
             response.observed_layer, predicted,
-            "stage drift for {subject:?}"
+            "stage drift for {subject:?}; node detail: {:?}",
+            response.observed_detail
         );
         let control = expected_control(subject).map(|wanted| {
             Box::new(
@@ -897,16 +898,11 @@ fn event_with_replacement(
         | CaptureSubject::MalformedPaymentValue
         | CaptureSubject::MalformedPaymentValueForm
         | CaptureSubject::LaterPosition
-        | CaptureSubject::ConfidentialValue => {
+        | CaptureSubject::ConfidentialValue
+        | CaptureSubject::KeyPathAttempt => {
             assert_eq!(
                 answer.observed_layer,
                 ObservedOutcomeLayer::ScriptPathRejection
-            );
-        }
-        CaptureSubject::KeyPathAttempt => {
-            assert_eq!(
-                answer.observed_layer,
-                ObservedOutcomeLayer::KeyPathRejection
             );
         }
         CaptureSubject::ZeroFeeFloor => {
@@ -1925,7 +1921,7 @@ pub fn run(family: CaptureFamily) {
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(timing_file)
         .finish();
-    let _subscriber = tracing::subscriber::set_default(subscriber);
+    tracing::subscriber::set_global_default(subscriber).unwrap();
     let _span = tracing::info_span!(target: "vectors::native_test", "keyed_fixed_capture", ?family)
         .entered();
     assert_eq!(
@@ -2093,7 +2089,13 @@ pub fn run(family: CaptureFamily) {
                     sponsor_index: row.control.as_ref().unwrap().sponsor_index,
                 }),
         };
-        bind_journal(&freeze, &observed_row, &binding).unwrap();
+        bind_journal(&freeze, &observed_row, &binding).unwrap_or_else(|refusal| {
+            panic!(
+                "journal admission refused row {} subject {:?}: {refusal:?}",
+                path.display(),
+                row.subject
+            )
+        });
     }
     for selected in subjects(family) {
         if selected == CaptureSubject::WeightMerge(1300) {

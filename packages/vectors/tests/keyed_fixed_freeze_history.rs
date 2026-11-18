@@ -855,9 +855,72 @@ const POST_S8A2: &[Row] = &[
     },
 ];
 
+const POST_CAMPAIGN: &[Row] = &[
+    Row {
+        path: "packages/vectors/src/keyed_fixed_capture.rs",
+        previous: Some([
+            165, 239, 139, 125, 203, 72, 140, 62, 157, 219, 154, 164, 164, 218, 90, 244, 177, 47,
+            223, 10, 246, 77, 137, 207, 67, 66, 217, 39, 158, 91, 117, 233,
+        ]),
+        current: [
+            5, 169, 137, 226, 10, 253, 46, 46, 247, 27, 195, 96, 205, 161, 98, 224, 178, 64, 210,
+            96, 68, 11, 237, 148, 228, 59, 27, 8, 66, 121, 137, 35,
+        ],
+    },
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture.rs",
+        previous: Some([
+            11, 198, 99, 249, 235, 65, 60, 20, 170, 135, 11, 47, 64, 237, 18, 107, 52, 230, 120,
+            59, 211, 181, 94, 230, 113, 177, 23, 191, 101, 99, 31, 114,
+        ]),
+        current: [
+            223, 168, 107, 56, 82, 68, 60, 122, 217, 227, 134, 94, 189, 16, 154, 28, 15, 248, 73,
+            147, 101, 184, 15, 26, 94, 189, 97, 219, 236, 27, 99, 116,
+        ],
+    },
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture/native.rs",
+        previous: Some([
+            196, 12, 168, 158, 56, 148, 48, 75, 208, 223, 35, 85, 109, 35, 111, 3, 88, 143, 220,
+            139, 89, 246, 113, 174, 51, 34, 189, 203, 200, 107, 68, 99,
+        ]),
+        current: [
+            148, 88, 148, 72, 43, 83, 125, 137, 221, 55, 70, 31, 77, 79, 158, 40, 145, 156, 234,
+            184, 196, 131, 229, 57, 157, 154, 117, 81, 163, 27, 155, 205,
+        ],
+    },
+    Row {
+        path: "scripts/keyed-fixed-capture/capture-unit.sh",
+        previous: Some([
+            25, 74, 77, 229, 5, 95, 65, 205, 108, 108, 74, 54, 55, 163, 58, 200, 176, 56, 32, 128,
+            151, 229, 85, 13, 249, 240, 27, 58, 119, 220, 198, 249,
+        ]),
+        current: [
+            253, 121, 5, 60, 84, 206, 31, 48, 85, 238, 69, 165, 91, 224, 35, 150, 227, 26, 244,
+            163, 158, 110, 175, 130, 101, 123, 85, 63, 252, 200, 243, 20,
+        ],
+    },
+    Row {
+        path: "scripts/keyed-fixed-capture/run-one.sh",
+        previous: Some([
+            83, 26, 188, 99, 36, 236, 1, 147, 57, 239, 172, 184, 24, 232, 207, 170, 167, 162, 75,
+            107, 251, 143, 139, 181, 13, 6, 122, 226, 113, 229, 192, 93,
+        ]),
+        current: [
+            1, 255, 209, 187, 22, 4, 85, 245, 197, 191, 59, 179, 61, 108, 164, 88, 27, 187, 172,
+            148, 237, 157, 56, 13, 0, 165, 170, 168, 201, 45, 10, 37,
+        ],
+    },
+];
+
+const CAMPAIGN_IDENTITY: [u8; 32] = [
+    101, 145, 251, 179, 124, 252, 31, 188, 241, 255, 225, 74, 82, 18, 161, 75, 201, 25, 65, 111,
+    147, 125, 197, 29, 49, 72, 24, 7, 0, 40, 192, 99,
+];
+
 const S8_IDENTITY: [u8; 32] = [
-    0x65, 0x91, 0xfb, 0xb3, 0x7c, 0xfc, 0x1f, 0xbc, 0xf1, 0xff, 0xe1, 0x4a, 0x52, 0x12, 0xa1, 0x4b,
-    0xc9, 0x19, 0x41, 0x6f, 0x93, 0x7d, 0xc5, 0x1d, 0x31, 0x48, 0x18, 0x07, 0x00, 0x28, 0xc0, 0x63,
+    218, 35, 55, 144, 83, 242, 241, 183, 175, 104, 183, 234, 137, 108, 240, 71, 144, 171, 10, 93,
+    2, 15, 211, 126, 220, 196, 17, 12, 137, 176, 214, 211,
 ];
 
 const S8A2_IDENTITY: [u8; 32] = [
@@ -1002,7 +1065,7 @@ fn independent_encoding(m: &FreezeManifest, codes: u16) -> Vec<u8> {
 }
 
 #[test]
-#[allow(clippy::too_many_lines)] // Three retained freeze states share one ordered independent encoding control.
+#[allow(clippy::too_many_lines)] // Four retained freeze states share one ordered independent encoding control.
 fn fixed_capture_refreeze_history() {
     let q = parameters();
     let current = FreezeManifest::offer(q).unwrap();
@@ -1026,11 +1089,35 @@ fn fixed_capture_refreeze_history() {
     assert!(S5_SOURCES.windows(2).all(|rows| rows[0].0 < rows[1].0));
     assert!(REVIEW.windows(2).all(|rows| rows[0].path < rows[1].path));
 
+    assert_eq!(POST_CAMPAIGN.len(), 5);
+    assert!(
+        POST_CAMPAIGN
+            .windows(2)
+            .all(|rows| rows[0].path < rows[1].path)
+    );
+    let mut campaign = current.clone();
+    for row in POST_CAMPAIGN {
+        let source = campaign
+            .sources
+            .iter_mut()
+            .find(|source| source.path == row.path)
+            .unwrap();
+        assert_eq!(source.digest, row.current);
+        source.digest = row.previous.unwrap();
+    }
+    let campaign_encoding = independent_encoding(&campaign, 15);
+    assert_eq!(campaign_encoding.len(), 8853);
+    assert_eq!(
+        sha256::Hash::hash(&campaign_encoding).to_byte_array(),
+        CAMPAIGN_IDENTITY
+    );
+    assert_eq!(campaign.clone().validate(q), Err(FreezeRefusal::Inventory));
+
     let previous = S5_SOURCES
         .iter()
         .copied()
         .collect::<std::collections::BTreeMap<_, _>>();
-    let actual = current
+    let actual = campaign
         .sources
         .iter()
         .filter_map(|source| {
@@ -1049,7 +1136,7 @@ fn fixed_capture_refreeze_history() {
     assert_eq!(actual, reviewed);
     assert_eq!(POST_S8A2.len(), 2);
     assert!(POST_S8A2.windows(2).all(|rows| rows[0].path < rows[1].path));
-    let mut s8a2 = current.clone();
+    let mut s8a2 = campaign;
     for row in POST_S8A2 {
         let source = s8a2
             .sources
@@ -1072,7 +1159,7 @@ fn fixed_capture_refreeze_history() {
             .windows(2)
             .all(|rows| rows[0].path < rows[1].path)
     );
-    let mut pilot = s8a2.clone();
+    let mut pilot = s8a2;
     for row in POST_PILOT {
         let source = pilot
             .sources
@@ -1113,7 +1200,7 @@ fn fixed_capture_refreeze_history() {
     let mut stale = current.clone();
     stale.sources[0].digest[0] ^= 1;
     assert_eq!(stale.validate(q), Err(FreezeRefusal::Inventory));
-    let mut stale = current.clone();
+    let mut stale = current;
     stale.envelope.maximum_members = None;
     assert_eq!(stale.validate(q), Err(FreezeRefusal::Envelope));
     let legacy = vectors::keyed_final_manifest::FreezeManifest::offer(q.key)

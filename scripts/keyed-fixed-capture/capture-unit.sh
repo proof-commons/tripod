@@ -49,7 +49,9 @@ if [[ $mode != run ]]; then
                 # invent a start time or wait with a freshly renewed budget.
                 if [[ ! -f "$run_dir/start.utc" ]]; then
                     printf 'capture-state=still-running awaiting-start=yes\n'
-                    exit 75
+                    if [[ $mode == check ]]; then exit 75; fi
+                    sleep 1
+                    continue
                 fi
                 # Reconnection cannot renew a run's budget.
                 timeout --kill-after=5 10 python3 - "$run_dir/start.utc" "$guard" <<'BOUND'

@@ -63,14 +63,18 @@ def artifact_controls(root, env):
 
 def selection_controls(root, env):
     env = dict(env, TRIPOD_CAPTURE_STANDIN="1", TRIPOD_CAPTURE_TEST_ROOT=str(root))
-    passing = "printf 'running 1 test\\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 filtered out; finished in 0s\\n'\n"
+    passing = ("printf 'running 1 test\\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 filtered out; finished in 0s\\n'\n"
+               "printf '{}\\n' >\"$TRIPOD_CAPTURE_TEST_ROOT/exchange-00001-request.json\"\n"
+               "printf '{}\\n' >\"$TRIPOD_CAPTURE_TEST_ROOT/exchange-00001-response.json\"\n"
+               "printf '%s\\n' '{\"fields\":{\"message\":\"fixed-form native exchange retained\",\"prefix\":\"exchange-00001\",\"wall_us\":7}}' >\"$TRIPOD_CAPTURE_TEST_ROOT/phase-timing.jsonl\"\n")
     cases = [("one-passing", passing, lambda c: c == 0, ORDINARY_GUARD),
+             ("missing-exchange-timing", "printf 'running 1 test\\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 filtered out; finished in 0s\\n'\n", lambda c: c != 0, ORDINARY_GUARD),
              ("nonzero-test", "exit 7\n", lambda c: c == 7, ORDINARY_GUARD),
              ("empty-selection", "printf 'running 0 tests\\ntest result: ok. 0 passed; 0 failed; 0 ignored;\\n'\n", lambda c: c != 0, ORDINARY_GUARD),
              ("test-timeout", "sleep 20\n", lambda c: c == 124, 1)]
     for name, body, expected, guard in cases:
         executable(root / "keyed_fixed_capture", body)
-        for file in ('test.exit','selection.exit'):
+        for file in ('test.exit','selection.exit','phase-timing.jsonl','exchange-00001-request.json','exchange-00001-response.json'):
             (root/file).unlink(missing_ok=True)
         run(name, [str(WRAPPERS / "run-one.sh"), "clauses"], env, expected, guard)
         if name == 'one-passing': assert (root/'selection.exit').read_text().strip() == '0'
@@ -189,6 +193,17 @@ def unit_controls(root, env):
     directory, command, selected = case('running')
     output = run('check-starting', [command[0], '--check', *command[1:]], dict(selected,CAPTURE_ACTIVE='activating'), lambda c:c==75)
     assert 'awaiting-start=yes' in output
+    # A foreground waiter must stay with a unit that has not written start.utc.
+    executable(tools / 'systemctl', 'case "$*" in *ActiveState*) if [ ! -f "$CAPTURE_UNIT_DIR/start.utc" ]; then echo activating; else echo inactive; fi;; *) echo 0;; esac\n')
+    (directory/'unit.log').write_text('KFF_CAPTURE_DONE target=clauses exit=0\n')
+    process = subprocess.Popen([command[0], '--wait', *command[1:]], env=selected, cwd=ROOT,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    time.sleep(1.2)
+    assert process.poll() is None, 'waiter exited while awaiting start'
+    (directory/'start.utc').write_text(time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())+'\n')
+    output, _ = process.communicate(timeout=ORDINARY_GUARD)
+    assert process.returncode == 0, output.decode(errors='replace')
+    executable(tools / 'systemctl', 'case "$*" in *ActiveState*) echo "${CAPTURE_ACTIVE:-inactive}";; *) echo 0;; esac\n')
     (directory/'start.utc').write_text(time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())+'\n')
     output = run('check-running', [command[0], '--check', *command[1:]], dict(selected,CAPTURE_ACTIVE='active'), lambda c:c==75)
     assert 'capture-state=still-running' in output

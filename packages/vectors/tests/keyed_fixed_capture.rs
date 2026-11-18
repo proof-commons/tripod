@@ -179,7 +179,12 @@ fn fixed_capture_policy_envelope() {
     assert!(14 < floor(145, 100));
     assert!(15 >= floor(145, 100));
     let scaling = subjects(CaptureFamily::Scaling);
+    assert!(scaling.contains(&S::PublicSource(42)));
     assert!(scaling.contains(&S::WeightSource));
+    assert_eq!(
+        vectors::keyed_fixed_capture::expected_layer(S::KeyPathAttempt),
+        Some(target_elements_conformance::protocol::ObservedOutcomeLayer::ScriptPathRejection)
+    );
     for count in [1, 2, 251, 252, 253, 650, 1299, 1300] {
         assert!(scaling.contains(&S::WeightMerge(count)));
     }
@@ -432,6 +437,11 @@ fn fixed_capture_journal_binding() {
         control: None,
     };
     assert_eq!(bind_journal(&freeze, &positive, &positive_binding), Ok(()));
+    let scaling_funding = JournalBinding {
+        family: CaptureFamily::Scaling,
+        ..positive_binding
+    };
+    assert_eq!(bind_journal(&freeze, &positive, &scaling_funding), Ok(()));
     let mut direct_acceptance = positive.clone();
     direct_acceptance.response.observed_detail = Some(
         serde_json::json!({"route":"direct-block","relay_allowed":false,"relay_detail":"fee"})

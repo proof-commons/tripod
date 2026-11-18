@@ -38,5 +38,23 @@ assert len(re.findall(r'^test result:', text, re.M)) == 1, 'one result required'
 PY
 selection=$?
 set -e
+if [[ $selection == 0 ]]; then
+set +e
+python3 - "$capture" <<'TIMING'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+requests = sorted(root.glob('exchange-*-request.json'))
+responses = sorted(root.glob('exchange-*-response.json'))
+rows = [json.loads(line) for line in (root/'phase-timing.jsonl').read_text().splitlines()]
+exchanges = [row['fields'] for row in rows
+             if row.get('fields', {}).get('message') == 'fixed-form native exchange retained']
+assert requests and len(requests) == len(responses) == len(exchanges), 'per-exchange timing required'
+assert {field['prefix'] for field in exchanges} == {
+    path.name.removesuffix('-request.json') for path in requests}, 'timing prefixes must match requests'
+assert all(isinstance(field.get('wall_us'), int) for field in exchanges), 'microsecond walls required'
+TIMING
+selection=$?
+set -e
+fi
 printf '%s\n' "$selection" >"$capture/selection.exit"
 exit "$selection"

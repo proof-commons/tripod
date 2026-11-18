@@ -160,6 +160,8 @@ pub fn subjects(family: CaptureFamily) -> Vec<CaptureSubject> {
             vec![S::Floor(15), S::Floor(14), S::ZeroFeeFloor]
         }
         CaptureFamily::Scaling => vec![
+            // Each MERGE journals its separately funded member SOURCEs.
+            S::PublicSource(42),
             S::WeightSource,
             S::WeightMerge(1),
             S::WeightMerge(2),
@@ -400,6 +402,9 @@ pub const fn expected_control(subject: CaptureSubject) -> Option<CaptureSubject>
 
 /// The target layer predicted for a submitted census subject; the script
 /// instruction site still requires the bounded model and its paired facts.
+///
+/// A mixed ordinary sponsor input makes the adapter classify a member's
+/// key-path attempt under its generic mandatory script-verification layer.
 #[must_use]
 pub fn expected_layer(subject: CaptureSubject) -> Option<ObservedOutcomeLayer> {
     use ObservedOutcomeLayer as O;
@@ -412,8 +417,8 @@ pub fn expected_layer(subject: CaptureSubject) -> Option<ObservedOutcomeLayer> {
         | CaptureBoundary::InputPair
         | CaptureBoundary::BirthFirst
         | CaptureBoundary::Continuation
-        | CaptureBoundary::Commitment => O::ScriptPathRejection,
-        CaptureBoundary::KeyPath => O::KeyPathRejection,
+        | CaptureBoundary::Commitment
+        | CaptureBoundary::KeyPath => O::ScriptPathRejection,
         CaptureBoundary::TypedConstruction | CaptureBoundary::IncompleteHistory => return None,
     })
 }
@@ -424,6 +429,7 @@ fn matches_relay_prediction(subject: CaptureSubject, response: &NativeOperationR
         CaptureSubject::ZeroFeeFloor => "fee",
         CaptureSubject::StructuralWeight1300 => "tx-size",
         CaptureSubject::MalformedControl => "witness program hash mismatch",
+        CaptureSubject::KeyPathAttempt => "invalid schnorr signature",
         _ => {
             if subject.boundary() != Some(CaptureBoundary::Acceptance) {
                 return true;
@@ -445,7 +451,10 @@ fn matches_relay_prediction(subject: CaptureSubject, response: &NativeOperationR
     else {
         return false;
     };
-    let route_matches = if subject == CaptureSubject::MalformedControl {
+    let route_matches = if matches!(
+        subject,
+        CaptureSubject::MalformedControl | CaptureSubject::KeyPathAttempt
+    ) {
         detail["route"] == "refused"
     } else {
         detail["route"] == "direct-block"
