@@ -25,6 +25,7 @@ Archived history is excluded from the load-bearing documentation weight budget a
 | [phase-6-closed-records.md](phase-6-closed-records.md) | Closed Phase-6 plan findings, route and classification records, questions, carrier and declaration records, moved verbatim from the Phase-6 card. |
 | [phase-7-engine-records.md](phase-7-engine-records.md) | Closed shared-engine probe, refit and Wave-1 packet records moved verbatim from the Phase-7 card; rulings and current acceptance conditions stay maintained. |
 | [wave0-preflight-semantic-census.md](wave0-preflight-semantic-census.md) | Closed Wave-0 preflight semantic census, including its carrier and Clear-schedule tables, moved verbatim from the backlog. |
+| [wave3-compiler-records.md](wave3-compiler-records.md) | Closed Wave-3 adoption and pre-code readings; later completed packet receipts append here, while settings, paths and contracts remain in their live owners. |
 
 ## Archive rule · `rule:history:authority`
 

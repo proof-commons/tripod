@@ -13,4 +13,5 @@ plans_history_files = files(
   'phase-6-closed-records.md',
   'phase-7-engine-records.md',
   'wave0-preflight-semantic-census.md',
+  'wave3-compiler-records.md',
 )

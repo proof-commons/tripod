@@ -1102,6 +1102,599 @@ All three validated plans reconcile relation/carrier/layout/coverage/lifecycle c
 
 `compiler: expose burn ASH and clear target plans`. (`task:guide15:wave2`).
 
+**Rule (Wave 3 files, packages and advancement)** · `rule:guide15-exec:wave3-settings`
+
+Wave 3 lands the nineteen packets in (`tab:guide15-exec:wave3-bites`) in that order, including 3.5c immediately after 3.2a. Dependency-independent packets with disjoint code path sets may be prepared on two lanes concurrently; 3.1a and 3.1b qualify. Each still lands through its own independent review and gate. Shared planning/receipt files are reconciled and appended in landing order, never overwritten from a stale base. The per-packet file limit is the exact expansion at (`tab:guide15-exec:wave3-paths`), including registrations; packages are limited to those owning these writable files. Additional gate packages are read-only selections, not edit permission. The table's package descriptions do not widen its exact paths. No glob, nearest-registration exception or unlisted facade correction is implicit. The live packets below supersede the historical drafts for execution; governing rulings are (`rule:phase7:wave3-rulings`), with package meanings at (`sec:compiler:wave3-plans`) and (`sec:realization:wave3-admission`).
+
+A needed extra consumer path with no interface, contract or ruling change pauses edits to that path for a loop-reviewed packet amendment and updated census, following (`rule:guide15-exec:fixed-form-settings`); it does not require a new ruling. An uncovered interface, contract, ruling, semantic owner or mechanism requires renewed adoption. Check the upper design estimate before starting and revise/split a design that exceeds it then; report a line overrun discovered during work, stopping for it only if the design changed. Core scheduling deltas follow the per-packet shares below; the repository weight rule remains authoritative. A necessary edit to any source in either complete freeze inventory stops for a paired re-pin, history row, retained evidence and independent review under (`rule:vectors:keyed-refreeze`). Do not add fields to records constructed by pinned keyed producers. Preserve the five engine-base capture digests and lengths; a formatter or identity mismatch is a finding, never permission to re-baseline. The adoption reading confirmed the two pre-code premises at (`rec:w3:precode`); actual behavior remains each producing packet's proof.
+
+Each implementation packet has independent review and its own full import gate before advancement, in addition to its selected focused tests. Public activation includes the independent oracle and the mixed-scope controls; inherited laws or structure are not plan evidence (`rule:guide15-exec:consuming-evidence`). Build the few selected tests, each with its accepted control and changed subject at the owning boundary; further subjects are follow-ups unless they expose a product defect. Oracles construct expectations independently of the publication checked. Review the upper size band before a packet starts and record actual walls; nineteen full gates cost an estimated 18,050–81,035 seconds before other work. A timeout is unfinished evidence. Later target, signing, linked equality and native/report acceptance remain outside Wave 3.
+
+Current obligations remain in the live phase/package/backlog owners and this guide; only completed receipts enter plans/history/wave3-compiler-records.md. Guide detail is archive-class under (`rule:plans:weight`); this does not turn the history file into an execution authority. The initial 3.0 submission added 17,146 net core bytes, leaving 3,334 of its former 20 KiB wave reserve; that allowance is superseded, not claimed intact. The deliberate reserve for 3.1a–3.8 is 24 KiB (24,576 bytes): seventeen implementation packets target at most 1 KiB each for status and links, closing 3.8 targets at most 6 KiB, with 1 KiB unallocated contingency. Completed detailed evidence belongs in the history receipt; active decisions remain in their live owners or this guide. A packet exceeding its share reports the delta; the scheduling stop applies only when its own net core delta would exceed twice its share (2 KiB for an implementation packet, 12 KiB for closing). Record actual consumption and reforecast at every landing. This is a scheduling guard, not a replacement or relaxation of (`rule:plans:weight`): the hard cap still applies. The 24 KiB reservation leaves 60,919 bytes of the pre-correction 85,495-byte headroom for fixed-form and other work, before the contract deduplication below; no numeric remaining core allowance was found in the fixed-form strategy, route study or vectors contract, so their actual deltas must still be reconciled at landing. Recheck overlapping plans/backlog.md, plans/phases/07-burn-and-clear.md, plans/guides/guide_fifteen.md, plans/packages/compiler.md and plans/packages/realization.md before each landing; no other track's text is silently replaced.
+
+#### Operation-plan contract detail · `sec:guide15-exec:wave3-contracts`
+
+Under (`rule:phase7:wave3-rulings`), retain the compact facade's public name and add validated Burn, Clear and Phase-7 sibling facades over existing attestation lowering and the shared engine. Construction is private; validators freshly derive canonical source, relation, carrier, layout, coverage and lifecycle projections and refuse focused offered changes. Public activation waits for its own independent oracle and mixed-scope controls. The exact packets and operand allocation are (`tab:guide15-exec:wave3-bites`), (`tab:guide15-exec:wave3-paths`) and (`tab:guide15-exec:wave3-operands`); unlisted interfaces or paths stop the packet.
+
+Each relation owns only its operation's selected lifecycle rows for its object, using the output-side choice when qualified. Required input choices are operation-local; another operation or an output choice cannot repair a missing input choice. Exit eligibility uses the exit operation's input admission, not scope membership alone: Burn accepts Explicit ReceiptLive input only, so PrivateCommitted receipt-to-Burn stays unavailable and outstanding. The full candidate union may serve plan-level completeness; the scope also publishes declared obligations omitted by selected facade modes.
+
+Existing facades derive exits per mode from the bound scope. Each mode partitions implemented/outstanding exits; live common summaries use implemented intersection and outstanding union, preserving their existing type shape. TransferLive+Burn has Explicit 2/1 and private 1/2; announcement+Clear has 2/4; compact+Clear has 2/0 and scoped release completeness. Singleton baselines stay fixed. Phase-7 consumes one bound input containing Burn, CompactAsh and Clear, rather than joining standalone plans. No mixed-scope emission is claimed: tapscript's bundle refuses the release-complete compact plan at packages/tapscript/src/bundle.rs:1804–1811. Six typed ASH producer/recognizer comparisons do not establish linked byte equality.
+
+Side qualification is confined to key types and new enum variants; no existing enum variant or other struct in the hashed analyzed projection gains a field, and no new fields enter pinned literal-built engine_cases::Case/Tables, engine_case_facts::Facts or engine_proof/program::Records. Empty qualification preserves encodings and Debug capture bytes. The five compiler engine-base digests and lengths remain unchanged; tests/fixtures/engine_base/MANIFEST and src/tests/engine_base_capture.rs are read-only. Operation-local row ownership, absent-qualifier formatting and the Burn-only mixed visibility exception are required behavior, not implementations claimed at adoption. Ruling 234's reading confirmation is (`rec:w3:precode`).
+
+Rulings 224, 225 and 234 at (`rule:phase7:wave3-rulings`) adopt normalized Explicit input and private output change within Wave 3; they do not admit private input or supply target proofs. The earlier proof-alternative paragraph records the present PublicArithmetic-only implementation and Wave-2 evidence limit. Packet 3.5d will add the existing ConfidentialConservation alternative in Burn's declaration and exact validation census. No new ProofKind or edit to frozen relation.rs is authorized.
+
+Burn Ash still admits Explicit/PublicCommitted semantically. For Burn conservation only, owner lowering replaces the generic compatibility selection with exact tuple exclusions: PublicArithmetic excludes private ReceiptLive output; ConfidentialConservation excludes Explicit ReceiptLive output and PublicCommitted Ash. Input stays Explicit. For E-input/E-Ash/PrivC-change alone, case visibility is Committed; existing placement/coverage then carries target-owned ConfidentialValueConservation with no carrier arithmetic discharge. Every other mixed case retains its typed refusal. Existing explicit amounts remain public operands of other relations. The code-reading confirmation and required later checks are (`rec:w3:precode`); the global proof compatibility rule is not weakened.
+
+Burn DataOutputs owns no representation objects; Clear DataOutputs owns State/Ash with ClearClamp dependency. Multi-object None means no single representation summary, not absence of dependence: exact sources, side activations, cases and dependencies carry it. The event/credit/context/STATE boundaries of (`sec:realization:burn-clear`) remain separate. Wave 4 receives the private-change proof requirements for target assessment and carrier fit, not an emitted or authenticated result.
+
+#### Consumer, freeze and concurrency dispositions · `sec:guide15-exec:wave3-consumers`
+
+The inherited (`tab:backlog:wave2-consumers`) remains the semantic-match superset. ACTIVE/CASE/COMPILER/SILENT sites receive staged per-operation meanings; COVERAGE/SUPPLEMENT joins receive exact tables; OWNER/ADAPTER model acceptance stays read-only except the named Burn proof-alternative declaration/validation and shared-bound assembler changes. CONDITIONAL fold/expression remain unchanged because no new expression member is selected. SEPARATE keyed producers retain empty choices; their unpinned construction tests adapt the new generic qualifier. TRACING error names/events follow their actual owner. EVIDENCE readers update actual new-coordinate handling without new native claims. REFREEZE governs every source in both full inventories.
+
+OperandRole/RelationMutation coordinate types need operation_plan.rs re-exports because their definition modules are private. The initial vocabulary bite does not change LayoutRequirement or RequiredSourceKind, so it drops the four unrelated tapscript paths. The early side-layout extension genuinely reaches operation_assessment, maturity_assessment, their tests and upstream re-exports; those are listed in that packet. Linker case accessors mostly forward the type and remain read-only unless a listed literal constructor needs adaptation. No transaction production or keyed capture script is selected.
+
+Mixed-key constructors and interpreters were searched for RepresentationChoiceId, ChoiceKey, ChoiceRecord, ExecutionCaseId, WhenRepresentation and EnforceRepresentation. Shared kernel schemas and attestation case/source/layout encoders are included. Keyed production Case records have empty representation maps and do not construct ChoiceKey; keyed refusal/negative tests do, and are listed. This is why a shared key extension can avoid the pinned producers, not an assumption that only seven compiler paths matter (`packages/compiler/src/engine_keyed.rs:856`), (`packages/compiler/src/engine_keyed_fixed.rs:940`), (`packages/compiler/src/engine_keyed/program/refusal_tests.rs:540`), (`packages/compiler/src/engine_keyed_fixed/program/negative_tests.rs:20`).
+
+Known S8b/S8c/S9 overlaps are planning receivers: plans/backlog.md and plans/phases/07-burn-and-clear.md; S9 also plans/guides/guide_fifteen.md and plans/packages/compiler.md and plans/packages/realization.md. The new receipt file avoids sharing S8's engine-history receipt. No selected vectors attestation reader is in the present fixed-form S8 source roster. Recompute if S8c expands its paths or freeze; do not overwrite another track's receipt or infer behavioral independence solely from disjoint files (`plans/backlog.md:3044–3074`).
+
+The per-candidate retained/disclosed result from engine_proof.rs:271–278 is not copied into the existing facade projections compared for equality. Announcement's disclosure checks read the bound source realization/declassification and its operation-owned public facts, not a partner-varying candidate disclosure (`packages/compiler/src/maturity_announcement_plan.rs:1410–1438,1748–1770`). Preserve that distinction in new facades; whole-scope disclosure remains separate evidence, so no extra per-candidate ambiguity is introduced. The literal-construction invariant above also governs every consumer adaptation; editing an engine record module is not permission to add a field to a pinned-built struct.
+
+**Table (Eight-item interface ledger)** · `tab:guide15-exec:wave3-interfaces`
+
+| Missing fact / inherited type | Smallest change | Regression / identity impact | Evidence / dependency impact | Selected control / subject |
+|---|---|---|---|---|
+| Input-local choice and unavailable in-scope exit / LifecycleRecords, status | Operation-local required-choice membership, input eligibility table and unavailable status | Old pilot rows unchanged; keyed empty records unchanged; no serialization | Every non-available row remains outstanding; full lifecycle analysis feeds scope | Lifecycle/engine Burn-owned records / own choice removed with TransferLive present; complete analysis follows dormant lowering |
+| Per-representation scoped exits / live and announcement common closures | Scope-derived per-mode rows; common implemented intersection/outstanding union | Old standalone sets preserved; new mixed status rows explicit; no byte pin change | No equality assumption across live modes; one-bound Phase-7 scope | Explicit/private TransferLive+Burn and announcement+Clear / changed status |
+| Side-distinct selections / object-only choice and case keys | Optional qualifier and side map; new side activations/layout obligation | Empty maps preserve old keys; actual literal consumers listed, including keyed tests | Owner tuple policy over same engine, no second planner | E input/PrivC output / swapped side and missing output choice |
+| Burn mixed proof / sole PublicArithmetic alternative | Existing ConfidentialConservation alternative plus exact owner tuple/source constraints | Existing explicit plan retained; exact Burn alternative census updated; no ProofKind change | Target-owned commitment evidence unresolved, public A not private C | Complete mixed plan / missing commitment source or wrong tuple |
+| New law coordinates / OperandRole | Reuse ObjectFamilyAmount/Count, RuntimeBound and existing STATE facts where exact; add only absent data-schema/ordinal/tag/address/association/context and event-role coordinates | Preserve old codes; new Payload::Fact code domain disjoint from constructibility::fact_key, reviewed literal injectivity | No target position or arbitrary string; report anchors distinct from coordinator sources | Complete primitive-coordinate table / alias or missing anchor |
+| New corruption coordinates / RelationMutation | Closed Burn/Clear coordinate enum and append-only purpose encoding | Re-export via operation_plan.rs; compact 74 negatives unchanged | Required evidence subject, not observation | Expected row / altered boundary |
+| Validated sibling/scope publication / compact-only facade | Private-field constructors and fresh validators, scope includes unselected lifecycle obligations | Existing compact name and API retained; no wire format or digest | Target/graph handles absent, no unchecked constructor | Complete facade/scope / dropped relation or unselected obligation |
+| Shared-bound incoming edge/seed / union merge | Existing owner rejects unsupported shared dependency with typed error | Singleton and seed-free union unchanged | Prospective admission tightening, no propagation algorithm | Seed-free / one edge / one seed |
+
+Each row records concrete missing fact, inherited type, smallest change, regressions, identity/schema, evidence, dependencies and tests; exact path and test selection is in this guide. New amount coordinates duplicating ObjectFamilyAmount are not proposed (`packages/compiler/src/source.rs:41–85`).
+
+**Table (Binding and DataOutputs discharge)** · `tab:guide15-exec:wave3-boundaries`
+
+| Body | Carrier/static obligations | Report/target obligations |
+|---|---|---|
+| Burn DataOutputs | Canonical record schema/count/tag/association; no representation dependency | Record credit/event authenticity is not inferred from structural binding |
+| BurnBinding | Owner/partition/conservation association and record closure at receipt/coordinator roles | Event-type/value authentication remains report-owned; mixed conservation target evidence stays external |
+| Clear DataOutputs | Exact destruction quantity joined to clamp, schema/asset/Recon tag | Target transaction conservation and event report remain separate |
+| ClearBinding | STATE succession and declared event-presence association | Event authentication, root freshness and later public recovery are not marked emitted |
+| ClearClamp/Assignment/Floor/Flow/Delta | STATE/ASH public source arithmetic and exact conditional destruction/residual rows | No runtime floor counterexample fabricated after accepted clamp; target/report checks retain their owners |
+
+This split follows concept 8.6 and the actual bound laws (`plans/guides/guide_fifteen_concept.md:1803–1833`), (`packages/realization/src/burn_clear_laws.rs:771–811`). A body may demand several evidence boundaries; no report anchor is credited as an emitted predicate.
+
+#### Operand-coordinate allocation · `tab:guide15-exec:wave3-operands`
+
+The table closes 3.0's operand ledger against packages/compiler/src/source.rs:41–85 and the actual primitive observations. These are semantic field coordinates, never transaction positions, concrete values or a new interchange schema. 3.2a uses one closed Burn/Clear coordinate vocabulary carried through OperandRole and re-exported by operation_plan.rs; lowerers supply the operation/data-family/event discriminants. Existing SourceRequirement availability and source kinds keep authentication distinct from successful proof. The names below describe required coordinates rather than authorizing duplicate roles for existing amounts, bounds or STATE fields.
+
+| New coordinate | Existing role that cannot carry it / reason | Semantic owner and boundary |
+|---|---|---|
+| Data-output schema/kind | ObjectFamilyMembers enumerates objects, not the distinct data-output families; ProjectionSet enumerates projections, not permitted data schemas | DataOutputSpec.kind; packages/architecture/src/spec.rs:116–125; structural schema |
+| Data-output family count | ObjectFamilyCount requires ObjectId; BurnRecord and Destruction are DataOutputKind, not object IDs | DataOutputSpec.minimum/maximum and BurnRecord family; the bound itself reuses RuntimeBound |
+| Data-output tag and asset | Representation names an object mode, not Burn/Recon tag or optional data asset; ObjectFamilyMembers cannot bind these fields | DataOutputSpec.tag/asset and BurnRecord/Destruction; exact structural discriminator |
+| Data-output condition | RootEffects and OpenFlowSet cannot select a data schema's conditional presence | DataOutputSpec.condition; ClearClamp dependency remains separate |
+| Record ordinal | CanonicalPartition orders source/flow partitions, not contiguous record-family ordinals | BurnRecord.ordinal, packages/realization/src/burn_clear_observation.rs:54–65; semantic order, no transaction index |
+| Record address | ObjectFamilyOwners names protocol owners, not independently offered record beneficiaries; repetitions are allowed | BurnRecord.address; no invented uniqueness or signer requirement |
+| Data-output scalar | ObjectFamilyAmount names an object-family aggregate, not a BurnRecord claim or Destruction amount | BurnRecord.amount / Destruction.amount, packages/realization/src/burn_clear_observation.rs:54–80; no credit inferred from structure |
+| Record-to-fresh-ASH association | ObjectFamilyMembers gives membership, not the exact output each record names | BurnRecord.fresh_ash; binding to the enclosing snapshot |
+| Destruction-to-flow association | OpenFlowSet supplies the flow set, not the designated flow of this data output | Destruction.flow; exact normalized association |
+| Observation context: transaction and certificate | CanonicalPartition and ProjectionSet contain neither producer equality token; ExternalEvidence's current variants name conservation/authorization, not context identity | BurnClearContext, packages/realization/src/burn_clear_observation.rs:16–35; equality is not authentication |
+| Event-type anchor | ProjectionSet / ExprId::Fact(ProjectionPresent) carry presence only, not the distinct report's event-type authentication obligation | BurnEvent/ClearEvent versus compact silence; report boundary at packages/realization/src/burn_clear_projection.rs:15–67 |
+| Event-value anchor | ObjectFamilyAmount carries the quantity, not its event role; ExternalEvidence's conservation variant cannot prove event authenticity | Burn fresh A, Clear X/omega and residual distinctions; packages/realization/src/burn_clear_projection.rs:15–67; report-owned anchor |
+
+Reuse ObjectFamilyMembers/Count/Amount for real object families, RuntimeBound for BurnRecordMax and existing bounds, ObjectFamilyOwners/ProtocolSignerSet for authorization, and ExpressionResult with existing FactId::StateField or relation ExprRole for STATE/clamp/assignment values. Fresh ASH, compact output and residual use their existing side/object amount roles plus the owning relation/event coordinate, never a duplicate scalar role. Credit verdict, event authenticity and construction observation remain distinct; no new role promotes one into another. A genuinely missing fact beyond this table returns through the eight-item interface ledger before adding it.
+
+Existing operand role codes 0–16 are unchanged (packages/compiler/src/engine_attestation/source.rs:559–637). New closed-coordinate encoding appends after them; any Payload::Fact encoding uses a distinct leading subject code outside constructibility::fact_key's current 0–11 domain (packages/compiler/src/engine_attestation/constructibility.rs:339–382), with literal injectivity and old-pilot preservation selected at 3.2a. Field values such as an ordinal are operands, not identity codes. Side-qualified Representation and its activation/layout variants belong to 3.5c and retain the key/capture constraints of ruling 234.
+
+#### 1. Complete delivery and receiver trace · `sec:guide15-exec:wave3-required-output`
+
+| Deliverable | Producing packets and evidence |
+|---|---|
+| Validated Burn | 3.2b, 3.3a/b explicit milestone; 3.5c–f required side-qualified private-change alternative before closure |
+| Revalidated compact ASH | 3.4 immediately after Burn lowering and before first activation; exact pins rerun through Clear and side-key changes |
+| Validated Clear | 3.2c dormant lowering, 3.5a validator and 3.5b oracle/activation |
+| Phase-7 scope | 3.6a/b from one bound scope, with declared unselected lifecycle obligations published |
+| Five reconciled censuses | Each facade/activation and scope compares relation, carrier, layout, coverage and lifecycle memberships/joins |
+| ASH constructor closure | 3.6a/b six typed producer/recognizer comparisons; linked equality later |
+| Corruption-resistant validators | Facade/corruption packets plus activation reaching controls and the full required-coordinate table |
+| Independent small-instance oracles | Each activation has its own oracle; one Guide-7 independence rule, exact bounded subset enumeration |
+
+This is the full scope of (`task:guide15-exec:wave3`) and (`sec:guide15:compiler`). Both preflight rows are retained: operation-specific sponsor opacity for Burn, compact and Clear, and target conservation carried as external evidence rather than model-proved substrate acceptance (`plans/guides/guide_fifteen.md:242,271`). No explicit-only final narrowing is adopted.
+
+**Table (Receiver and follow-up dispositions)** · `tab:guide15-exec:wave3-receivers`
+
+| Receiver | Selected evidence / retained disposition |
+|---|---|
+| Closing B1, private receipt→Burn | 3.1a own-choice/eligibility; 3.3b live PrivateCommitted in TransferLive+Burn is unavailable while Explicit implements Burn; 3.6b publishes the row absent from selected facades |
+| 2.7a B1 realization pin | 3.1a Burn+TransferLive preserves explicit-only input admission despite output/private lifecycle union |
+| 2.7a B2 mixed compiler scopes, before activation | 3.3b transfer/Burn; 3.5b compact/Clear and announcement/Clear; 3.6b full three-operation scope. Allow exact partner-exit status changes and literal shared reasons, not arbitrary drift |
+| 2.7a B3 local closure | 3.1a compiler required choice cannot come from company; 3.6b realization local lifecycle omission still refuses |
+| 2.7a B4 and 2.8 B4 | 3.1b shared-bound incoming-edge/seed guard, seed-free control; `plans/backlog.md:740–741` |
+| Provisional relation_objects | 3.2b Burn and 3.2c Clear before activation; operation-specific DataOutputs and exact two-object activations/source evidence |
+| Joint role results and premises | 3.6 preserves operation/event/credit/silence/accounting/STATE distinctions, original model provenance and realization-only synthetic catalogs |
+| Ruling 217 | Authorization's UnexpectedProtocolAuthorization, Constructibility blocked; 3.3/3.5 validator subjects and 3.8 handoff to Waves 5/7/8/11 |
+| Rulings 133/138 | 3.7 five individually disposed subjects with actual control/refusal, leaf, successor witness, compact tree/archive, STATE digest and realization transition support |
+| Later construction | 3.8 retains carrier policy, linked equality, native successor, signatures/public recovery and report duties for the actual later owners |
+| 2.7a B5/B6; longer histories, random order/subsets, tracing/scaling | Deferred follow-ups, not landing claims; missing product behavior still requires disposition |
+| 2.9 B1 per-key literal routes | Deferred; manifest/ledger/corpus remain distinct evidence. 2.9 B2 support selection is taken at 3.7 |
+| Frozen relation comment | Leave realization relation.rs unchanged; editorial update waits for authorized re-freeze |
+| Other 2.5/2.6/2.7/2.8 optional adapter/law permutations | Retain (`tab:backlog:wave2-design-followups`) statuses; no raw model transition or adapter edit selected |
+| Additional subjects | Broad published-lifecycle properties, extended five-operation costs and randomized scope permutations remain deferred; exact partition and three-operation counts are selected; qualification is settled by ruling 222 |
+
+This table disposes every (`rec:backlog:wave2-wave3-receiver`) row and the addressed deferred choices. The full inherited consumer categories have live dispositions at (`sec:guide15-exec:wave3-consumers`), not an implied licence to edit every census entry.
+
+#### 2. Gates, estimates and whole-wave cost · `sec:guide15-exec:wave3-verification`
+
+**Definition (Exact packet)** · `def:guide15-exec:wave3-packet`
+
+Each packet names its goal, exact paths, focused tests, gate, output and non-claims. Needed paths use the loop-reviewed amendment route in (`rule:guide15-exec:wave3-settings`); additional mechanisms, changed semantic owners and uncovered interfaces/contracts/rulings need renewed adoption. Each implementation packet receives independent review and a full import gate before dependent advancement. New code uses existing structured tracing owners (`[ADR026-dec:tracing:core]`). Tests named below are proposed allocations unless described as existing; no name embeds wave/bite chronology.
+
+D is the existing plans/labels/census/generated/document surface; documents-only packets need no Rust lane. C is formatting in place, workspace Clippy with warnings denied, selected package tests under the gate profile, and existing compatibility tests for changed shared vocabularies. The full import gate remains `scripts/ci.sh` through canonical Meson; C/D alone is not that full result. Use one toolchain/target directory, record cold build separately, and format last. No compiler or gate is run locally by a boxed writer; its authorized build lane supplies these results (`AGENTS.md`), (`gate:plans:verification`).
+
+Wave-2 full gates took 950–4,265 s (`plans/backlog.md:683–695`); the frozen gate took 1,198 s (`rec:history:wave2-frozen-gate`) and closure-import 3,218 s (`rec:history:wave2-closure-import`), an increase whose cause is not established. Budget about one hour ordinarily and reserve the observed upper wall plus queue/review overhead; never treat a one-hour estimate as proof a 4,265-second gate will fit. Scope/oracle wall estimates below are unmeasured and must be replaced by actual counts and wall.
+
+Precedent at the reading base: announcement facade 2,125 lines, plan tests 542, corruption tests 1,366, oracle 893; live facade 2,430 and tests 1,135; compact facade 1,263, plan tests 880 and validation tests 651 (the corresponding files under `packages/compiler/src/` and `src/tests/`). The facade/validator halves therefore budget thousands of lines, with independent oracle/activation halves. Dormant lowering is cut by operation; mixed-change work is four packets, not hidden in a small Burn estimate.
+
+**Table (Ordered packet sizes and focused costs)** · `tab:guide15-exec:wave3-bites`
+
+| Packet | Goal | Packages | Pinned source | Estimated changed size | Focused gate / wall after build | Exact file limit |
+|---|---|---|---|---|---|---|
+| 3.0 | Adopt readings, interfaces and exact settings | planning | No selected edit | initial 3.0 delta +17,146 core bytes; correction/reallocation at (`rec:w3:adoption-correction`) | D; 1–5 min warm estimate | 9 |
+| 3.1a | Operation-local choices and qualified exits | compiler, realization tests, tapscript, vectors | No selected edit | 500–900 lines | C: compiler, realization, tapscript, vectors; 1–3 min estimate | 25 |
+| 3.1b | Shared-bound guard | realization | No selected edit | 200–400 lines | C: realization; under 2 min estimate | 13 |
+| 3.2a | Owned vocabulary and public re-exports | compiler, vectors | No selected edit | 400–800 lines | C: compiler, vectors; 1–3 min estimate | 25 |
+| 3.5c | Qualified selection keys and side cases | compiler, tapscript | No selected edit | 800–1,400 lines | C: compiler, tapscript plus all keyed compatibility tests; 2–6 min estimate | 78 |
+| 3.2b | Dormant Burn lowering and guard relocation | compiler | No selected edit | 900–1,600 lines | C: compiler; 2–5 min estimate | 43 |
+| 3.4 | Compact revalidation before first activation | compiler, linker tests, vectors | No selected edit | 150–350 lines | C: compiler, linker, vectors; 2–5 min estimate | 11 |
+| 3.3a | Burn explicit facade, validator and corruptions | compiler, documentation | No selected edit | 2,600–4,200 lines | C: compiler; 2–6 min estimate | 52 |
+| 3.3b | Burn oracle, mixed live scope and explicit activation | compiler, realization documentation | No selected edit | 900–1,500 lines | C: compiler; oracle target under 2 min, suite 2–6 min estimate | 53 |
+| 3.2c | Dormant Clear lowering | compiler | No selected edit | 1,200–2,000 lines | C: compiler; 2–6 min estimate | 43 |
+| 3.5a | Clear facade, validator and corruptions | compiler, documentation | No selected edit | 3,000–4,800 lines | C: compiler; 2–6 min estimate | 56 |
+| 3.5b | Clear oracle, mixed scopes and activation | compiler, realization documentation | No selected edit | 1,000–1,700 lines | C: compiler; oracle target under 2 min, suite 2–6 min estimate | 57 |
+| 3.5d | Mixed conservation declaration and lowering | compiler, realization, planning contracts | No selected edit | 1,000–1,800 lines | C: compiler, realization; 2–6 min estimate | 78 |
+| 3.5e | Mixed Burn facade and fresh validator | compiler | No selected edit | 1,500–2,700 lines | C: compiler; 2–6 min estimate | 71 |
+| 3.5f | Mixed Burn oracle and alternative activation | compiler | No selected edit | 800–1,400 lines | C: compiler; oracle target under 2 min, suite 2–6 min estimate | 72 |
+| 3.6a | One-bound Phase-7 facade and typed ASH closure | compiler | No selected edit | 1,500–2,500 lines | C: compiler; focused wall unmeasured, 10 min diagnostic budget | 26 |
+| 3.6b | Scope oracle and complete publication | compiler, realization tests | No selected edit | 600–1,100 lines | C: compiler, realization; wall unmeasured, 10 min diagnostic budget | 29 |
+| 3.7 | Candidate-bound reopenings and support pins | vectors, compiler/tapscript tests; read-only realization and target-elements-conformance | No selected edit | 100–300 lines plus 3 KiB receipt | C: vectors, compiler, tapscript, realization, tripod-target-elements-conformance; 2–10 min estimate | 10 |
+| 3.8 | Frozen Wave-3 gate and Wave-4 handoff | planning | No selected edit | up to 6 KiB core; detailed receipt archive-class | D plus own full import gate; 950–4,265s historical gate range | 6 |
+
+The nineteen packets include seventeen implementation/test packets and two documents packets. Planning for one independent review and one full import gate per packet means nineteen review slots and 18,050–81,035 gate seconds (5.01–22.51 hours) before queueing, implementation, focused checks or rework. The seventeen code packets alone account for 16,150–72,505 seconds (4.49–20.14 hours). Four private-change packets contribute 3,800–17,060 seconds (1.06–4.74 hours) of that total. This is a workload estimate from the measured range, not a timing acceptance threshold. A bounced review/gate adds another measured round.
+
+Review the upper size estimate before starting each packet; revise or split before work if its design exceeds that bound. During work report line overruns; they stop the packet only when the design changed. Per-packet core scheduling shares and their double-share stop are separate from changed-code size estimates. There is no blanket 1,400-line ceiling that will predictably fire midway through a 4,000-line facade. Public activation remains atomic with the complete oracle and mixed-scope controls. New small oracles target under two minutes per module with at most 4,096 products per tiny instance; focused suites use a ten-minute diagnostic budget unless their brief names a justified larger one. A timeout is unfinished evidence. The full three-operation analysis has no measured two-to-five-minute promise: record global proof-plan count, each operation's placement-factor counts and wall, and retain factorization rather than materializing their Cartesian product (`plans/guides/guide_seven.md:56`).
+
+#### 3. Ordered packets · `sec:guide15-exec:wave3-execution`
+
+##### 3.0 — Adopt readings, interfaces and exact settings · `step:guide15-exec:wave3-bite-3-0`
+
+Goal and design: Adopt or revise proposed rulings 221–234. Mint a Wave-3 settings rule beside the execution section; the Wave-2 rule is precedent only. Register plans/history/wave3-compiler-records.md and its index/census, record divergences in the drafts README, and keep the proposal bodies historical after adoption. Confirm the side-key extension, factorable mixed tuple, exact operand/evidence ledger and current full freeze inventories before code. Two explicit pre-code checks are mandatory: the proposed Debug form must preserve all five engine-base captures without manifest changes; and the Ash PublicCommitted incompatibility plus admitted-tuple Committed visibility must be expressible in the named owners. Record these decisions before implementation; failure returns the concrete missing mechanism and revised packet, never a silent re-baseline or explicit-only closure.
+
+Focused selection: Select D checks for labels/census/weight/current owners and an independent reading of all twelve questions and receiver rows. No Rust test. The code-reading confirmations and adopted result are (`rec:w3:precode`) and (`rec:w3:adoption`); this packet does not claim implementation.
+
+Files: exactly the 3.0 expansion at (`tab:guide15-exec:wave3-paths`). Gate: D; 1–5 min warm estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: initial 3.0 delta +17,146 core bytes; correction/reallocation at (`rec:w3:adoption-correction`).
+
+Handoff and limits: Hands on accepted meanings, exact paths and focused subjects. The adopted decisions are in (`rule:phase7:wave3-rulings`); this records work to be done, not implementation evidence.
+
+##### 3.1a — Operation-local choices and qualified exits · `step:guide15-exec:wave3-bite-3-1a`
+
+Goal and design: Make required-choice membership (operation, object)-local using lifecycle-lowering/engine records; reserve the actual input-side Burn choice lowering for 3.2b after 3.5c gives it a qualified key. Add the literal input-admission eligibility table, unavailable-in-scope status and all-nonavailable outstanding filters. Keep graph reachability separate; initialize empty records without editing keyed producers.
+
+Focused selection: Select burn_choice_cannot_be_supplied_by_transfer (Burn-owned synthetic lifecycle-lowering/engine records; remove its choice while TransferLive remains; complete analysis waits for 3.2b), exit_eligibility_is_representation_specific (literal input-admission modes and changed eligibility), and unavailable_exit_survives_internal_projection (synthetic engine/analyzed rows, with a status corruption at the validator). Pair the existing Burn-only private_input_is_not_admitted_by_the_input_change_mode_union with new transfer_company_keeps_burn_input_explicit_only in packages/realization/src/tests/burn_tests.rs. In a Burn+TransferLive realization the latter accepts Explicit receipt input, refuses a one-coordinate PrivateCommitted input at Burn's input SideRepresentation, and retains (ReceiptLive, PrivateCommitted, Burn) as a declared required exit. No claim that graph-only validate_compact_lifecycle_projection validates statuses.
+
+Files: exactly the 3.1a expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler, realization, tapscript, vectors; 1–3 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 500–900 lines.
+
+Handoff and limits: Hands on correct internal choices/statuses; public private-row survival waits for 3.3b and complete unselected-row publication for 3.6. No emitted/deployed usability claim.
+
+##### 3.1b — Shared-bound guard · `step:guide15-exec:wave3-bite-3-1b`
+
+Goal and design: Apply the adopted narrow shared-bound admission rule in the existing assembler/declassification owner. Preserve equal-visibility union and singleton semantics. Add UnsupportedSharedBoundDependency with bound, declaring operation and incoming-edge/seed kind and its diagnostic/tracing cases.
+
+Focused selection: Select shared_bounds_without_incoming_dependencies_merge, incoming_dependency_on_shared_bound_is_refused, and seed_on_shared_bound_is_refused in derivation/disclosure tests, sharing one accepted seed-free control.
+
+Files: exactly the 3.1b expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: realization; under 2 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 200–400 lines.
+
+Handoff and limits: Hands on the guarded union for later mixed scopes. Its gate does not claim mixed facade compatibility or full singleton goldens.
+
+##### 3.2a — Owned vocabulary and public re-exports · `step:guide15-exec:wave3-bite-3-2a`
+
+Goal and design: Add only genuinely missing primitive/event/coverage coordinates, with append-only attestation encodings and disjoint Fact subject domain. Re-export carried public coordinate enums from operation_plan.rs. Retain public operation/body guards and existing source/layout kinds. Update the actual vectors exhaustive and wildcard interpretations without attaching old evidence to new coordinates. The four tapscript paths formerly here are removed because this vocabulary does not reach them.
+
+Focused selection: Select operand_codes_are_injective_and_preserve_pilots, new_coverage_coordinates_keep_their_boundary, and existing public surface/error-name tests. Reuse ObjectFamilyAmount/Count and RuntimeBound instead of inventing duplicate Burn/ASH amount operands.
+
+Files: exactly the 3.2a expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler, vectors; 1–3 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 400–800 lines.
+
+Handoff and limits: Hands on typed vocabulary only, not lowered plans or target observations.
+
+##### 3.5c — Qualified selection keys and side cases · `step:guide15-exec:wave3-bite-3-5c`
+
+Goal and design: Add optional side qualification through choice IDs, core keys/records, case side-map, source activations and side-layout/case-fact projections. Empty/default qualifiers preserve old identities; both keyed owners still publish empty choices. Preserve the engine-base capture as well as key encodings: hand-written Debug for RepresentationChoiceId and ExecutionCaseId omits an absent qualifier or empty side map, preserving the existing derived field order, names and pretty formatting; present qualifiers remain visible. The unchanged preserve_engine_base test must reproduce all five byte lengths and SHA-256 digests in packages/compiler/tests/fixtures/engine_base/MANIFEST (`packages/compiler/src/tests/engine_base_capture.rs:155–229`). Re-baselining is rejected because it would discard the evidence that empty qualifiers preserve old identities. The capture test and MANIFEST remain read-only. Side qualification enters key types (including engine_proof::ChoiceKey, lifecycle ChoiceRecord and ExecutionCaseId) and new activation, structural/compiler requirement and layout enum variants only. Add no fields to the pinned producers' literal-built engine_cases::Case, engine_cases::Tables, engine_case_facts::Facts, engine_proof::Records or engine_program::Records (`packages/compiler/src/engine_keyed.rs:440–452,791–795,842–860`), (`packages/compiler/src/engine_keyed_fixed.rs:480–492,941–945`), (`packages/compiler/src/engine_keyed/program.rs:85`), (`packages/compiler/src/engine_keyed_fixed/program.rs:89`). No pinned producer constructs ChoiceKey or ChoiceRecord. A required new field in those records stops for a separately reviewed re-freeze packet. This packet follows 3.2a directly, before any Burn/Clear facade exists, and before actual Burn choice lowering. This is the only selected shared selection-schema extension; no new search algorithm or pinned producer edit. All literal constructors and actual new layout consumers are in the exact packet.
+
+Focused selection: Select side_choices_do_not_alias_object_choices, unqualified_case_keys_preserve_pilot_identity, and input_choice_cannot_be_repaired_by_output_choice. Existing keyed refusal/negative constructors explicitly use the unqualified form. Re-run the unchanged preserve_engine_base, all compact baseline pins and old live/announcement projections.
+
+Files: exactly the 3.5c expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler, tapscript plus all keyed compatibility tests; 2–6 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 800–1,400 lines.
+
+Handoff and limits: Hands on expressive side-qualified tables while private Burn selection remains refused. If a pinned producer or additional kernel constraint is required, stop and revise before continuing.
+
+##### 3.2b — Dormant Burn lowering and guard relocation · `step:guide15-exec:wave3-bite-3-2b`
+
+Goal and design: Interpret Burn SideRepresentation, BurnBinding and Burn DataOutputs using the complete literal source/proof/object/boundary table. Burn's actual input choice is born side-qualified using 3.5c. A relation owns only the lifecycle rows of its own operation's selected mode for that object — the output-side choice where the object is side-qualified; plan-level completeness may keep the candidate union. Change engine_requirement::owned_lifecycle and both attestation call paths to pass the owning operation and selected qualified choices, rather than filtering only (object, exit). Candidate filtering alone retains modes chosen by any operation and cannot establish this ownership (`packages/compiler/src/engine_proof.rs:279–289`), (`packages/compiler/src/engine_requirement.rs:32–47`), (`packages/compiler/src/engine_attestation/requirement.rs:115,472–482`). Remove per-stage operation checks and retain them at input.rs and engine_attestation.rs binding seams. Enable these body interpreters, including operation-aware DataOutputs dispatch, while public Burn/Clear stay refused. Convert the old synthetic direct-case/source refusal subjects to actual internal-lowering controls and record their replacement at backlog evidence rows. Do not add a test-only Boolean bypass.
+
+Focused selection: Select burn_bodies_have_exact_owned_tables, side_admission_and_sponsor_opacity, active_carriers_and_layout_join, and live_exit_owns_only_its_selected_mode: in TransferLive+Burn, the live private Burn exit owns no Explicit row supplied by Burn's own input choice. Complete validated declaration records reach crate-private stage functions; the control must reach carrier/layout analysis rather than return UnsupportedOperationPlan. One changed carrier proves the actual placement boundary.
+
+Files: exactly the 3.2b expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler; 2–5 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 900–1,600 lines.
+
+Handoff and limits: Hands on independently reviewed dormant Burn tables. Clear-specific bodies remain refused and no public Burn constructor succeeds yet.
+
+##### 3.4 — Compact revalidation before first activation · `step:guide15-exec:wave3-bite-3-4`
+
+Goal and design: Immediately revalidate compact against the modified shared owners, preserving its standalone figures and existing API. Explicitly keep event silence. This order has no dependency on Burn activation.
+
+Focused selection: Select existing compact plan-census tests, the independent placement/coverage/assembly oracles, linker carrier pin and vectors every_coverage_requirement_has_exactly_one_row. Add compact_event_silence_is_retained only if the selected existing corruption does not already prove that coordinate.
+
+Files: exactly the 3.4 expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler, linker, vectors; 2–5 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 150–350 lines.
+
+Handoff and limits: Hands on exact compact baseline. Subsequent Clear and side-key changes rerun these pins; a wider-scope lifecycle result is a new row, not a replacement baseline.
+
+##### 3.3a — Burn explicit facade, validator and corruptions · `step:guide15-exec:wave3-bite-3-3a`
+
+Goal and design: Build the private-field Burn facade and fresh validator from dormant complete analysis, with the 32-relation source census and explicit selection. Public binding still refuses Burn. Crate-private tests derive the facade from complete owner records and freshly validated analysis; they do not manufacture a public unchecked constructor. Lowering owners are writable correction permissions. Prepare scope-derived live-transfer lifecycle summaries and per-representation equivalence normalization without publishing Burn activation.
+
+Focused selection: Select burn_plan_control_and_corruptions for the Burn rows of the corruption table, burn_selection_refuses_private_change at the offered-selection validator returning TargetPlanRepresentationMismatch, and the public API privacy guard. Test omitted lifecycle status at the plan validator.
+
+Files: exactly the 3.3a expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler; 2–6 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 2,600–4,200 lines.
+
+Handoff and limits: Hands on an internally validated facade. The private change refusal is an intermediate documented limit; it cannot be the wave's final state.
+
+##### 3.3b — Burn oracle, mixed live scope and explicit activation · `step:guide15-exec:wave3-bite-3-3b`
+
+Goal and design: Add the independent Burn oracle, then remove only Burn's public operation guard. Body guards no longer reject its three implemented bodies; Clear remains blocked by its operation guard. Convert declared_burn_reaches_unsupported_plan_at_input_binding to public accepted/invalid controls, preserving the old claim in the receipt/backlog. Update realization README's unsupported statement. Apply the scope-derived live facade contract now, before activation is credited.
+
+Focused selection: Select burn_plan_matches_small_oracle and transfer_burn_scope_preserves_representation_specific_exits: in one TransferLive+Burn bound scope Explicit implements Burn, PrivateCommitted retains unavailable Burn, Redeem stays outstanding, and only literal shared-bound reasons differ. The public API test checks both representation projections and notes that complete Phase-7 publication of the unselected row is supplied at 3.6b. Keep incomplete-realization-scope refusal distinct.
+
+Files: exactly the 3.3b expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler; oracle target under 2 min, suite 2–6 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 900–1,500 lines.
+
+Handoff and limits: Hands on a public explicit Burn plan with its oracle and correct private live exit; no mixed Burn alternative yet, and no scope-only direct-private discharge.
+
+##### 3.2c — Dormant Clear lowering · `step:guide15-exec:wave3-bite-3-2c`
+
+Goal and design: Complete Clear-specific bodies and Clear's quantity-dependent DataOutputs, STATE sources, six assignments, clamp/floor/destruction/residual and report splits. Keep the Clear operation check at both binding seams; stage functions already permit internal complete records. Accept None for the two-object single-selection summary only with exact source/activation/dependency tables. Preserve Burn and compact lowerers.
+
+Focused selection: Select clear_bodies_have_exact_owned_tables, clear_data_quantity_keeps_clamp_dependency, and clear_active_carriers_and_layout_join. The DataOutputs expected object set is {State,Ash}; the independent source table and missing-edge subject must show that public quantities are retained.
+
+Files: exactly the 3.2c expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler; 2–6 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 1,200–2,000 lines.
+
+Handoff and limits: Hands on complete dormant Clear lowering, not public plan evidence. Both later Clear packets own these lowerers for corrections.
+
+##### 3.5a — Clear facade, validator and corruptions · `step:guide15-exec:wave3-bite-3-5a`
+
+Goal and design: Build the private-field Clear facade, exact 44-relation and six-field requirement projections, fresh validation and focused corruption table while public binding remains refused. Prepare scope-derived announcement and compact lifecycle behavior. Lowering correction permissions include all carrier/layout/coverage/case owners.
+
+Focused selection: Select clear_plan_control_and_corruptions, clear_sponsor_amount_is_refused (SponsorValueRead at its source boundary), and the API privacy guard. Full/partial/refused-clamp are literal conditional requirement classes. ClearFloor is a plan requirement corruption, not an unreachable complete-operation negative. Preserve Authorization failure and blocked Constructibility for signer insertion.
+
+Files: exactly the 3.5a expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler; 2–6 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 3,000–4,800 lines.
+
+Handoff and limits: Hands on internally validated Clear; no announcement successor execution or linked constructor claim.
+
+##### 3.5b — Clear oracle, mixed scopes and activation · `step:guide15-exec:wave3-bite-3-5b`
+
+Goal and design: Land the independent Clear oracle and the two required mixed pairs before removing Clear's public guard. Convert declared_clear_reaches_unsupported_plan_at_input_binding and update realization/compiler READMEs. Retain the two Unsupported errors as reserved future boundaries, with honest current tests.
+
+Focused selection: Select clear_plan_matches_small_oracle and clear_scopes_preserve_local_requirements: CompactAsh+Clear and AnnounceMaturity+Clear compare standalone projections except exact partner-exit changes and shared-bound reason unions. Explicitly pin compact 1→2 implemented/1→0 outstanding/scoped completeness and announcement 1→2 implemented/5→4 outstanding; retain old standalone expectations. Include Clear sponsor refusal from 3.5a in the activation selection.
+
+Files: exactly the 3.5b expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler; oracle target under 2 min, suite 2–6 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 1,000–1,700 lines.
+
+Handoff and limits: Hands on all three explicit facades and their own oracles; private-change delivery remains a required predecessor of scope closure.
+
+##### 3.5d — Mixed conservation declaration and lowering · `step:guide15-exec:wave3-bite-3-5d`
+
+Goal and design: Add existing ConfidentialConservation as a Burn alternative in declaration/validation, keeping PublicArithmetic for readable cases. Lower the exact E-input/E-ASH/PrivC-change tuple and external commitment-conservation evidence, with public recognition/partition and owner-local change data. Burn's Ash domain remains {Explicit, PublicCommitted}, not fixed Explicit (`packages/realization/src/declarations/burn.rs:303–313`). PublicArithmetic excludes (Burn output ReceiptLive, PrivateCommitted); ConfidentialConservation excludes both (Burn output ReceiptLive, Explicit) and (Burn Ash, PublicCommitted). With normalized Explicit input these unary incompatibilities admit only E-input/E-Ash/PrivC-change for the confidential alternative. For that tuple alone, conserved_amount_visibility returns Committed and discharge is target-owned ConfidentialValueConservation; explicit amounts remain public operands of the other relations. Every other mixed case retains MixedRepresentationConservation. Reading only the object map would falsely classify this case as Readable; reading sides without this exception would refuse it (`packages/compiler/src/case.rs:124–151`), (`packages/compiler/src/placement.rs:303,381,565`), (`packages/compiler/src/coverage.rs:577,690`), (`packages/compiler/src/engine_attestation/coverage.rs:29`). The source table must not disclose C. Review/adopt the specific mixed-route admission in the existing contract; no global PublicArithmetic or proof compatibility weakening. Public mixed selection still refuses. 3.5d must decide and pin its mixed conservation source table explicitly: the current ConfidentialConservation branch makes every ObjectFamilyAmount an AuthenticatedCommitmentRelation with Always activation, including Explicit input and Ash (packages/compiler/src/engine_attestation/source.rs:355–365). Choose and justify either retaining those explicit amounts as public operands of the target equation or splitting the rows by side. The chosen literal table must distinguish explicit values from private change commitments without exposing C; the selected burn_mixed_tuple_selects_commitment_evidence control and changed-source subject check it. The observation that other relations keep public operands does not decide this table.
+
+Focused selection: Select burn_mixed_tuple_selects_commitment_evidence, private_change_never_becomes_public_arithmetic, and burn_proof_alternatives_match_the_reviewed_census. Controls retain explicit Burn and reject private input, swapped sides, missing commitment evidence and cross-product mismatches through the existing finite constraint mechanism. Select admitted_burn_tuple_has_committed_visibility with the admitted tuple as control and one changed Ash mode as the refused subject; also retain the explicit Readable control and assert target-owned ConfidentialValueConservation discharge for the admitted tuple.
+
+Files: exactly the 3.5d expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler, realization; 2–6 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 1,000–1,800 lines.
+
+Handoff and limits: Hands on reviewed mixed law/proof sources and capability obligations, not target verification. If unary incompatibilities cannot enforce the exact tuple, return the concrete combination-constraint gap and revised path/freeze cost.
+
+##### 3.5e — Mixed Burn facade and fresh validator · `step:guide15-exec:wave3-bite-3-5e`
+
+Goal and design: Extend the Burn facade with a separately validated private-change alternative, preserving explicit projections and distinct side/source/evidence rows. Include the new corruption module and exact registration. Constructor and offered-selection validator remain private/dormant for this alternative until its oracle lands; the explicit public route remains available.
+
+Focused selection: Select mixed_burn_plan_preserves_public_ash_and_private_change, mixed_burn_plan_rejects_lost_commitment_evidence, and mixed_burn_plan_rejects_input_output_aliasing. Validate complete tuple/source/layout/coverage/lifecycle joins and no partial plan; the private receipt-to-Burn exit stays unavailable independently of private change output support.
+
+Files: exactly the 3.5e expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler; 2–6 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 1,500–2,700 lines.
+
+Handoff and limits: Hands on validated internal mixed alternative. Do not label external commitment requirements as completed target proofs or emit bytes.
+
+##### 3.5f — Mixed Burn oracle and alternative activation · `step:guide15-exec:wave3-bite-3-5f`
+
+Goal and design: Add independent literal side/evidence and small placement oracle, then admit the mixed offered-selection request. Review exact conditional change/no-change behavior and sponsor isolation; fresh public ASH constructor requirements remain shared with the explicit alternative. Forward both plan alternatives to Wave 4.
+
+Focused selection: Select mixed_burn_plan_matches_small_oracle, normalized_input_with_private_change_is_admitted, and private_input_remains_refused_after_private_change_activation. Re-run explicit Burn/compact/live/announcement regressions and the private lifecycle reaching subject.
+
+Files: exactly the 3.5f expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler; oracle target under 2 min, suite 2–6 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 800–1,400 lines.
+
+Handoff and limits: Hands on the final Wave-3 Burn domain, including accepted private change but no direct-private input. Wave 4 still assesses complete confidential-change proofs/weight/fees/policy.
+
+##### 3.6a — One-bound Phase-7 facade and typed ASH closure · `step:guide15-exec:wave3-bite-3-6a`
+
+Goal and design: Build scope from one BoundCompilerInput containing Burn, CompactAsh and Clear. Freshly derive all plans and six producer/recognizer comparisons. Publish full declared-representation lifecycle obligations not carried by selected facades, derived from lifecycle analysis rather than facade union; validate exact partition with carried obligations. Include private ReceiptLive→Burn even when every selected Burn input is explicit.
+
+Focused selection: Select scope_rejects_operation_and_constructor_corruptions and unselected_representation_obligations_remain_published. A lost private row must fail the scope validator. Retain separate event/record/accounting/model/synthetic provenance.
+
+Files: exactly the 3.6a expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler; focused wall unmeasured, 10 min diagnostic budget; D for changed records, independent review and full repository import gate before advancement. Estimated size: 1,500–2,500 lines.
+
+Handoff and limits: Hands on privately validated scope facade and closure comparison. No linked-byte equality, combined model transition or deployed completeness claim.
+
+##### 3.6b — Scope oracle and complete publication · `step:guide15-exec:wave3-bite-3-6b`
+
+Goal and design: Land independent full-scope expected relation/source/lifecycle/constructor joins and publish the validated scope. The named pair tests already landed with activation; this bite adds the full three-operation scope. Record proof-plan counts, per-operation placement-factor counts and wall; avoid a product of independent factors.
+
+Focused selection: Select scope_matches_independent_rows and declaration_company_cannot_repair_local_lifecycle_omission. Check the exact carried/unselected obligation partition including the private route and six producer/recognizer pairs. A broad randomized property test is a follow-up, not silently included.
+
+Files: exactly the 3.6b expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: compiler, realization; wall unmeasured, 10 min diagnostic budget; D for changed records, independent review and full repository import gate before advancement. Estimated size: 600–1,100 lines.
+
+Handoff and limits: Hands on complete compiler scope evidence for candidate reopening. Timing beyond the finite budget is unfinished evidence and requires a reviewed domain/packet adjustment.
+
+##### 3.7 — Candidate-bound reopenings and support pins · `step:guide15-exec:wave3-bite-3-7`
+
+Goal and design: Re-dispose both compact emitted-Clear keys and all three ruling-133 positions, binding leaf, witness, tree/archive and STATE pins. Changed compiler support is not a new emitted path. All candidate source pins and fixtures remain read-only; correction of an actual emitted validator requires revised scope.
+
+Focused selection: Select compact_clear_declaration_reopenings_keep_both_keys; candidate_leaf_and_transition_censuses_have_no_announced_state_spend; no_announcement_byte_carries_the_successor_recipe; the_fixture_pin_is_the_output_key_this_tree_derives in target-elements-conformance; current_archive_replays_sixteen_rows_after_their_paired_controls; every_staged_subject_matches_its_pin; exact compact negative-manifest/corpus join; and the two realization announce_maturity transition refusals named in the reopening row.
+
+Files: exactly the 3.7 expansion at (`tab:guide15-exec:wave3-paths`). Gate: C: vectors, compiler, tapscript, realization, tripod-target-elements-conformance; 2–10 min estimate; D for changed records, independent review and full repository import gate before advancement. Estimated size: 100–300 lines plus 3 KiB receipt.
+
+Handoff and limits: Hands on five separate dispositions, actual boundaries and supporting unchanged candidate evidence. No native successor or emitted Clear credit.
+
+##### 3.8 — Frozen Wave-3 gate and Wave-4 handoff · `step:guide15-exec:wave3-bite-3-8`
+
+Goal and design: Join all preceding receipts on one candidate, including this closing record's own full gate. Recount the Wave-0 baseline alongside current figures, complete compact pins, all five reopenings, mixed scope and both Burn alternatives. Keep detailed evidence in the history owner and compact current obligations in live owners.
+
+Focused selection: Use the closing checklist below. No code fix is hidden here: reopen its producing packet. Record actual test/gate exits, wall/cold-cache/cgroup scope and real-document/reproducibility status rather than promote a mocked gate.
+
+Files: exactly the 3.8 expansion at (`tab:guide15-exec:wave3-paths`). Gate: D plus own full import gate; 950–4,265s historical gate range; D for changed records, independent review and full repository import gate before advancement. Estimated size: up to 6 KiB core; detailed receipt archive-class.
+
+Handoff and limits: Wave 4 receives both Burn alternatives, compact/Clear/scope plans, five censuses, ASH contracts, external evidence and carrier reopening duties. Signature/native recovery/linked equality and report production remain later-wave obligations.
+
+#### 4. Focused corruption coverage · `tab:guide15-exec:wave3-corruptions`
+
+These are the twenty required coordinates from (`rule:guide15:compiler-validation`), grouped into operation/scope tests, not twenty new harnesses. Each compares an accepted control with one changed coordinate at the owning boundary. A realization weld refusal and a crate-private offered-plan corruption are different subjects; record which one was actually reached.
+
+| Coordinate | Packet and required result |
+|---|---|
+| Remove one operation; merge Burn/compact identities | 3.6a/b scope census/identity refusal, no scope value |
+| Remove owner authorization | 3.3a missing authorization/source requirement |
+| Mark Clear operator-authorized | 3.5a authorization/evidence mismatch |
+| Remove public ASH availability | 3.3a/3.5a/3.6a source/public-dependency mismatch |
+| Change tag-recon; remove Y−1; remove residual condition | 3.5a exact Clear law/conditional-row mismatches |
+| Insert RESV | 3.5a forbidden root requirement |
+| Make compact emit Burn event | 3.4 event-silence/projection refusal |
+| Make Clear emit Burn record | 3.5a wrong data/event requirement |
+| Remove event-value anchor; remove event-type anchor | 3.3a distinct binding/report rows, not emitted credit |
+| Introduce sponsor amount | 3.2b/3.3a Burn and 3.5a/b Clear each reach SponsorValueRead; compact existing public_api.rs:587 subject retained |
+| Remove lifecycle exit | 3.1a/3.3a/3.6a exact path/status/census refusal; no smaller-census success |
+| Assign relation to inactive carrier | 3.2b/3.2c/3.3a placement eligibility refusal |
+| Introduce target type; expose graph handle | Explicitly adopted public API-shape/privacy interpretation at each facade, not fake runtime cases |
+| Duplicate relation | 3.3a multiplicity/census refusal, not deduplication |
+| Change evidence boundary | 3.3a/3.5a exact role/boundary refusal, reports never counted emitted |
+
+The additional selected receiver subjects are operation-local choice, published/unselected private obligations, partner-exit status changes, shared-bound seed/edge and mixed input/output aliasing. Randomized scopes, every field permutation, full-field singleton goldens, long histories and new native subjects remain follow-ups.
+
+#### 5. Baselines, scope figures and closure · `tab:guide15-exec:wave3-baseline`
+
+| Standalone compact figure | Correct pin |
+|---|---|
+| 23 relations / 2 cases / 46 relation-case rows | `packages/compiler/src/tests/operation_plan_tests.rs:144,209,878` |
+| 216 placements | `packages/compiler/src/tests/pilot_program_tests.rs:767`; also analyzed_program_tests.rs:738 |
+| 63 layout requirements | `packages/compiler/src/tests/operation_plan_tests.rs:274` |
+| Coverage graph 338 nodes / 355 edges | `packages/compiler/src/tests/pilot_program_tests.rs:770–771` |
+| 28 runtime carrier relation-case keys | `packages/linker/src/tests/carrier_tests.rs:32–33,48` |
+| 209 coverage requirements = 135 positive + 74 negative | `packages/vectors/src/plan.rs:1521–1523` |
+
+No packet intentionally moves those standalone counts or old encoded case identities. The side qualifier is absent for old pilots and its encoder retains old bytes. A proposed change names affected rows, reason and downstream evidence before its producing packet; updating a golden after a surprise is not disposition (`obl:guide15-exec:baseline-comparison`).
+
+Scope-derived lifecycle is an intentional interface change, with exact expected figures at (`proposal:w3route:scope`): live Explicit in TransferLive+Burn implemented 1→2/outstanding 2→1, private live unchanged in cardinality but Burn outside→unavailable; common summary intersection/union remains 1/2. Announcement+Clear implemented 1→2, outstanding 5→4. Compact+Clear implemented 1→2, outstanding 1→0 and scoped completeness false→true. Standalone tests retain old values. Update live plan tests at :278 and lifecycle corruption/equivalence checks, announcement plan tests :484–488 and corruption/equivalence checks, compact plan test :472 and status corruptions. These are semantic status changes on wider scopes, not a new emitted leaf or candidate-byte/freeze update. Mixed-change plan counts are new and must be enumerated, never inferred by adding 32 relations twice.
+
+At closure also recount beside Wave 0: Safety 206/177/29; observed/final/retired/waiting 177/27/2/0; classes 81/12/39/15/16/14; relation links 14/108/84; reasons 55/9/9/0/11; conjunct parts 10 MET/9 RETIRED/0 WAITING. These are retained comparison figures from `plans/backlog.md:779`, not predicted new counts. Publish actual current identities/counts and explain every movement or unchanged result; preserve T11-064/T11-063/T4-009/T11-110 on their own criteria. Compact-only figures do not satisfy this obligation (`rule:guide15-exec:later-wave-entry`), (`obl:guide15-exec:baseline-comparison`).
+
+**Gate (Closing checklist)** · `gate:guide15-exec:wave3-closing`
+
+“All three validated plans reconcile relation/carrier/layout/coverage/lifecycle censuses, reject focused corruptions, and agree with independent small-instance oracles.” (`gate:guide15-exec:wave3-gate`).
+
+| Conjunct / accompanying obligation | Receipt evidence |
+|---|---|
+| Three validated plans | Burn explicit and private-change alternatives, existing compact API revalidated, Clear complete; private fields, fresh validators, no partial values |
+| Relation census | Exact identities/bodies, multiplicity, active/inactive cases, selected domains and two-object representation/source meaning |
+| Carrier census | Every active runtime obligation has reachable eligible carrier, every-member/local/coordinator roles distinct; reports never emitted |
+| Layout census | Exact side/source/authentication/coordinator obligations and joins, no lost private commitment source |
+| Coverage census | Positive/negative/structural/report requirements, dependency collateral and actual refusal ownership |
+| Lifecycle census | Input-local choices, qualified status, declared graph retained, carried/unselected partition complete; private Burn exit published outstanding |
+| Focused corruptions | Every required coordinate plus selected receivers and accepted controls, actual typed/static boundary |
+| Independent oracles | Common Guide-7 rule; domains/products/branch classes; expected-side independence and actual counts/wall |
+| Cross-operation/ASH closure | One bound input, all three facades, six typed constructor comparisons and exact permitted partner-status/reason changes |
+| Baseline and candidate obligations | Full Wave-0 recount above, compact pins, separate new plan counts and five ruling-133/138 dispositions with support pins |
+| Reviewed candidate and gates | Every packet review/full gate, source/records identity, final records' own gate, wall/cgroup/cache scope, skipped real-document/reproducibility dimensions stated |
+| Wave-4 handoff | Both Burn alternatives and confidential-change capability/evidence duties; typed carrier/schema assumptions and affected Wave-2/3 rows for any reopening |
+
+Wave 4 assesses complete transaction forms and confidential change proofs/weight/fees/policy; on refusal its ruling names the declarations and plans reopened. Later waves retain linked ASH equality, STATE generation, signatures/public recovery and report production. Forward Authorization/blocked Constructibility and the outstanding direct-private receipt route unchanged (`rec:backlog:wave2-wave3-receiver`), (`cond:guide15-exec:carrier-reopening`). Closure does not close Phase 7.
+
+#### 6. Exact writable-path census · `sec:guide15-exec:wave3-paths`
+
+**Table (Literal path sets)** · `tab:guide15-exec:wave3-paths`
+
+Each prefix and basename expands to one exact path; no glob or “nearest registration” is implicit. A listed path is permission, not a mandate to edit it. All facade/validator and oracle/activation packets include their lowering correction owners, including engine_requirement (operation-local lifecycle ownership), carrier, placement, layout, coverage/coverage_graph, sponsor_region and attestation placement/operation/coverage/coverage_join/case_facts/cases/constructibility. Module/test/Meson registration is explicit. Read-only regression packages do not acquire write permission.
+
+There are 140 distinct paths: 128 existing and 12 allocated new, mechanically checked against this tree. Intersections with all 98 fixed-form and all 35 legacy inventory paths are both empty. The 757 packet-path occurrences expand to that union. The earlier 97/34 inventory counts omitted root Cargo.toml; both complete counts include it. New allocations are the receipt, three facade modules and eight operation/mixed/scope test modules. E/N below is relative to first use: later consumers of an allocated file are E. No Cargo manifest/dependency or new runner is selected.
+
+| Packet | E/N | Prefix | Basenames |
+|---|---|---|---|
+| 3.0 | E | `plans/` | `backlog.md` |
+| 3.0 | E | `plans/guides/` | `guide_fifteen.md` |
+| 3.0 | E | `plans/phases/` | `07-burn-and-clear.md` |
+| 3.0 | E | `plans/packages/` | `compiler.md`, `realization.md` |
+| 3.0 | N | `plans/history/` | `wave3-compiler-records.md` |
+| 3.0 | E | `plans/history/` | `README.md`, `meson.build` |
+| 3.0 | E | `plans/drafts/` | `README.md` |
+| 3.1a | E | `plans/` | `backlog.md` |
+| 3.1a | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.1a | E | `packages/compiler/` | `README.md`, `TRACING.md` |
+| 3.1a | E | `packages/compiler/src/` | `engine_lifecycle.rs`, `lifecycle.rs`, `analyzed.rs`, `analyzed_validate.rs`, `operation_plan.rs` |
+| 3.1a | E | `packages/compiler/src/engine_attestation/` | `lifecycle.rs`, `proof.rs`, `requirement.rs` |
+| 3.1a | E | `packages/compiler/src/tests/` | `engine_lifecycle_tests.rs`, `lifecycle_tests.rs`, `compact_validation_tests.rs`, `analyzed_program_oracle_tests.rs`, `analyzed_corruption_tests.rs`, `requirement_tests.rs`, `operation_plan_tests.rs`, `tracing_boundary_tests.rs` |
+| 3.1a | E | `packages/tapscript/src/` | `bundle.rs` |
+| 3.1a | E | `packages/tapscript/src/tests/` | `compact_validation_tests.rs` |
+| 3.1a | E | `packages/vectors/src/` | `first_party.rs` |
+| 3.1a | E | `packages/realization/src/tests/` | `burn_tests.rs`, `live_transfer_tests.rs` |
+| 3.1b | E | `plans/` | `backlog.md` |
+| 3.1b | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.1b | E | `packages/realization/` | `README.md`, `TRACING.md` |
+| 3.1b | E | `packages/realization/src/` | `derive.rs`, `declassification.rs`, `error.rs` |
+| 3.1b | E | `packages/realization/src/tests/` | `derivation_tests.rs`, `disclosure_tests.rs`, `lifecycle_tests.rs`, `clear_tests.rs`, `tracing_tests.rs`, `tracing_refusal_tests.rs` |
+| 3.2a | E | `plans/` | `backlog.md` |
+| 3.2a | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.2a | E | `packages/compiler/` | `README.md`, `TRACING.md` |
+| 3.2a | E | `packages/compiler/src/` | `source.rs`, `coverage.rs`, `error.rs`, `operation_plan.rs` |
+| 3.2a | E | `packages/compiler/src/engine_attestation/` | `source.rs`, `identity.rs` |
+| 3.2a | E | `packages/compiler/src/tests/` | `tracing_capture.rs`, `tracing_boundary_tests.rs`, `source_tests.rs`, `coverage_tests.rs` |
+| 3.2a | E | `packages/compiler/tests/` | `public_api.rs` |
+| 3.2a | E | `packages/vectors/src/` | `report.rs`, `violation.rs`, `plan.rs`, `maturity_safety.rs`, `live_safety.rs`, `compact_campaign.rs`, `compact_campaign_second.rs`, `compact_negative_manifest.rs`, `compact_corpus.rs`, `first_party.rs` |
+| 3.5c | E | `plans/` | `backlog.md` |
+| 3.5c | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.5c | E | `packages/compiler/src/` | `engine_program.rs`, `placement.rs`, `layout.rs`, `engine_cases.rs`, `analyzed_operation.rs`, `coverage.rs`, `operation_plan.rs`, `case.rs`, `analyzed_validate.rs`, `carrier.rs`, `source.rs`, `maturity_announcement_plan.rs`, `lifecycle.rs`, `coverage_graph.rs`, `requirement.rs`, `proof.rs`, `error.rs`, `engine_lifecycle.rs`, `engine_requirement.rs`, `engine_proof.rs`, `live_transfer_plan.rs`, `disclosure.rs`, `engine_source.rs`, `engine_case_facts.rs`, `engine_records.rs`, `analyzed.rs` |
+| 3.5c | E | `packages/compiler/src/engine_keyed_fixed/program/` | `refusal_tests.rs`, `negative_tests.rs` |
+| 3.5c | E | `packages/compiler/src/engine_attestation/` | `source.rs`, `requirement.rs`, `operation.rs`, `cases.rs`, `placement.rs`, `identity.rs`, `case_facts.rs`, `proof.rs`, `lifecycle.rs` |
+| 3.5c | E | `packages/compiler/src/engine_keyed/program/` | `refusal_tests.rs`, `negative_tests.rs` |
+| 3.5c | E | `packages/compiler/src/tests/` | `source_tests.rs`, `coverage_tests.rs`, `coverage_oracle_tests.rs`, `analyzed_program_oracle_tests.rs`, `engine_program_tests.rs`, `engine_lifecycle_tests.rs`, `requirement_tests.rs`, `lifecycle_tests.rs`, `proof_tests.rs`, `compact_validation_tests.rs`, `layout_tests.rs`, `placement_tests.rs`, `case_tests.rs`, `placement_oracle_tests.rs`, `carrier_tests.rs`, `pilot_placement_tests.rs`, `disclosure_tests.rs`, `analyzed_corruption_tests.rs`, `pilot_coverage_tests.rs`, `coverage_graph_tests.rs`, `oracle_tests.rs`, `maturity_announcement_oracle_tests.rs`, `operation_plan_tests.rs`, `maturity_announcement_plan_tests.rs`, `maturity_announcement_corruption_tests.rs`, `engine_proof_tests.rs`, `engine_source_tests.rs`, `engine_cases_tests.rs`, `tracing_capture.rs`, `tracing_boundary_tests.rs` |
+| 3.5c | E | `packages/tapscript/src/` | `upstream.rs`, `maturity_assessment.rs`, `operation_assessment.rs` |
+| 3.5c | E | `packages/tapscript/src/tests/` | `maturity_assessment_tests.rs` |
+| 3.5c | E | `packages/compiler/` | `README.md`, `TRACING.md` |
+| 3.5c | E | `packages/compiler/tests/` | `public_api.rs` |
+| 3.2b | E | `plans/` | `backlog.md` |
+| 3.2b | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.2b | E | `packages/compiler/` | `README.md`, `TRACING.md` |
+| 3.2b | E | `packages/compiler/src/` | `engine_attestation.rs`, `case.rs`, `source.rs`, `carrier.rs`, `placement.rs`, `layout.rs`, `coverage.rs`, `coverage_graph.rs`, `requirement.rs`, `sponsor_region.rs`, `analyzed.rs`, `analyzed_operation.rs`, `analyzed_validate.rs`, `input.rs`, `error.rs`, `engine_requirement.rs` |
+| 3.2b | E | `packages/compiler/src/engine_attestation/` | `source.rs`, `requirement.rs`, `proof.rs`, `foundation.rs`, `constructibility.rs`, `lifecycle.rs`, `case_facts.rs`, `cases.rs`, `placement.rs`, `operation.rs`, `coverage.rs`, `coverage_join.rs` |
+| 3.2b | E | `packages/compiler/src/tests/` | `source_tests.rs`, `requirement_tests.rs`, `case_tests.rs`, `coverage_tests.rs`, `carrier_tests.rs`, `placement_tests.rs`, `layout_tests.rs`, `proof_tests.rs`, `analyzed_program_oracle_tests.rs`, `tracing_capture.rs`, `tracing_boundary_tests.rs` |
+| 3.4 | E | `plans/` | `backlog.md` |
+| 3.4 | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.4 | E | `packages/compiler/` | `README.md` |
+| 3.4 | E | `packages/compiler/src/` | `operation_plan.rs` |
+| 3.4 | E | `packages/compiler/src/tests/` | `operation_plan_tests.rs`, `pilot_program_tests.rs`, `placement_oracle_tests.rs`, `coverage_oracle_tests.rs`, `analyzed_program_oracle_tests.rs` |
+| 3.4 | E | `packages/linker/src/tests/` | `carrier_tests.rs` |
+| 3.4 | E | `packages/vectors/src/` | `plan.rs` |
+| 3.3a | E | `plans/` | `backlog.md` |
+| 3.3a | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.3a | E | `packages/compiler/` | `README.md`, `TRACING.md`, `meson.build` |
+| 3.3a | E | `packages/compiler/src/` | `lib.rs`, `input.rs`, `engine_attestation.rs`, `case.rs`, `analyzed.rs`, `analyzed_validate.rs`, `error.rs`, `source.rs`, `carrier.rs`, `placement.rs`, `layout.rs`, `coverage.rs`, `coverage_graph.rs`, `requirement.rs`, `sponsor_region.rs`, `analyzed_operation.rs`, `live_transfer_plan.rs`, `engine_requirement.rs` |
+| 3.3a | E | `packages/compiler/src/engine_attestation/` | `source.rs`, `requirement.rs`, `proof.rs`, `foundation.rs`, `lifecycle.rs`, `constructibility.rs`, `case_facts.rs`, `cases.rs`, `placement.rs`, `operation.rs`, `coverage.rs`, `coverage_join.rs` |
+| 3.3a | N | `packages/compiler/src/` | `burn_operation_plan.rs` |
+| 3.3a | N | `packages/compiler/src/tests/` | `burn_operation_plan_tests.rs` |
+| 3.3a | E | `packages/compiler/src/tests/` | `mod.rs`, `source_tests.rs`, `case_tests.rs`, `tracing_capture.rs`, `tracing_boundary_tests.rs`, `requirement_tests.rs`, `coverage_tests.rs`, `carrier_tests.rs`, `placement_tests.rs`, `layout_tests.rs`, `proof_tests.rs`, `analyzed_program_oracle_tests.rs`, `live_transfer_plan_tests.rs` |
+| 3.3a | E | `packages/compiler/tests/` | `public_api.rs` |
+| 3.3a | E | `packages/realization/` | `README.md` |
+| 3.3b | E | `plans/` | `backlog.md` |
+| 3.3b | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.3b | E | `packages/compiler/` | `README.md`, `TRACING.md`, `meson.build` |
+| 3.3b | E | `packages/compiler/src/` | `lib.rs`, `input.rs`, `engine_attestation.rs`, `case.rs`, `analyzed.rs`, `analyzed_validate.rs`, `error.rs`, `burn_operation_plan.rs`, `source.rs`, `carrier.rs`, `placement.rs`, `layout.rs`, `coverage.rs`, `coverage_graph.rs`, `requirement.rs`, `sponsor_region.rs`, `analyzed_operation.rs`, `live_transfer_plan.rs`, `engine_requirement.rs` |
+| 3.3b | E | `packages/compiler/src/engine_attestation/` | `source.rs`, `requirement.rs`, `proof.rs`, `foundation.rs`, `lifecycle.rs`, `constructibility.rs`, `case_facts.rs`, `cases.rs`, `placement.rs`, `operation.rs`, `coverage.rs`, `coverage_join.rs` |
+| 3.3b | E | `packages/compiler/src/tests/` | `burn_operation_plan_tests.rs`, `mod.rs`, `source_tests.rs`, `case_tests.rs`, `tracing_capture.rs`, `tracing_boundary_tests.rs`, `requirement_tests.rs`, `coverage_tests.rs`, `carrier_tests.rs`, `placement_tests.rs`, `layout_tests.rs`, `proof_tests.rs`, `analyzed_program_oracle_tests.rs`, `live_transfer_plan_tests.rs` |
+| 3.3b | N | `packages/compiler/src/tests/` | `burn_plan_oracle_tests.rs` |
+| 3.3b | E | `packages/compiler/tests/` | `public_api.rs` |
+| 3.3b | E | `packages/realization/` | `README.md` |
+| 3.2c | E | `plans/` | `backlog.md` |
+| 3.2c | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.2c | E | `packages/compiler/` | `README.md`, `TRACING.md` |
+| 3.2c | E | `packages/compiler/src/` | `engine_attestation.rs`, `case.rs`, `source.rs`, `carrier.rs`, `placement.rs`, `layout.rs`, `coverage.rs`, `coverage_graph.rs`, `requirement.rs`, `sponsor_region.rs`, `analyzed.rs`, `analyzed_operation.rs`, `analyzed_validate.rs`, `input.rs`, `error.rs`, `engine_requirement.rs` |
+| 3.2c | E | `packages/compiler/src/engine_attestation/` | `source.rs`, `requirement.rs`, `proof.rs`, `foundation.rs`, `constructibility.rs`, `lifecycle.rs`, `case_facts.rs`, `cases.rs`, `placement.rs`, `operation.rs`, `coverage.rs`, `coverage_join.rs` |
+| 3.2c | E | `packages/compiler/src/tests/` | `source_tests.rs`, `requirement_tests.rs`, `case_tests.rs`, `coverage_tests.rs`, `carrier_tests.rs`, `placement_tests.rs`, `layout_tests.rs`, `proof_tests.rs`, `analyzed_program_oracle_tests.rs`, `tracing_capture.rs`, `tracing_boundary_tests.rs` |
+| 3.5a | E | `plans/` | `backlog.md` |
+| 3.5a | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.5a | E | `packages/compiler/` | `README.md`, `TRACING.md`, `meson.build` |
+| 3.5a | E | `packages/compiler/src/` | `lib.rs`, `input.rs`, `engine_attestation.rs`, `case.rs`, `analyzed.rs`, `analyzed_validate.rs`, `error.rs`, `source.rs`, `carrier.rs`, `placement.rs`, `layout.rs`, `coverage.rs`, `coverage_graph.rs`, `requirement.rs`, `sponsor_region.rs`, `analyzed_operation.rs`, `operation_plan.rs`, `maturity_announcement_plan.rs`, `engine_requirement.rs` |
+| 3.5a | E | `packages/compiler/src/engine_attestation/` | `source.rs`, `requirement.rs`, `proof.rs`, `foundation.rs`, `lifecycle.rs`, `constructibility.rs`, `case_facts.rs`, `cases.rs`, `placement.rs`, `operation.rs`, `coverage.rs`, `coverage_join.rs` |
+| 3.5a | N | `packages/compiler/src/` | `clear_operation_plan.rs` |
+| 3.5a | N | `packages/compiler/src/tests/` | `clear_operation_plan_tests.rs` |
+| 3.5a | E | `packages/compiler/src/tests/` | `mod.rs`, `source_tests.rs`, `case_tests.rs`, `tracing_capture.rs`, `tracing_boundary_tests.rs`, `requirement_tests.rs`, `coverage_tests.rs`, `carrier_tests.rs`, `placement_tests.rs`, `layout_tests.rs`, `proof_tests.rs`, `analyzed_program_oracle_tests.rs`, `maturity_announcement_plan_tests.rs`, `maturity_announcement_corruption_tests.rs`, `maturity_announcement_oracle_tests.rs`, `operation_plan_tests.rs` |
+| 3.5a | E | `packages/compiler/tests/` | `public_api.rs` |
+| 3.5a | E | `packages/realization/` | `README.md` |
+| 3.5b | E | `plans/` | `backlog.md` |
+| 3.5b | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.5b | E | `packages/compiler/` | `README.md`, `TRACING.md`, `meson.build` |
+| 3.5b | E | `packages/compiler/src/` | `lib.rs`, `input.rs`, `engine_attestation.rs`, `case.rs`, `analyzed.rs`, `analyzed_validate.rs`, `error.rs`, `clear_operation_plan.rs`, `source.rs`, `carrier.rs`, `placement.rs`, `layout.rs`, `coverage.rs`, `coverage_graph.rs`, `requirement.rs`, `sponsor_region.rs`, `analyzed_operation.rs`, `operation_plan.rs`, `maturity_announcement_plan.rs`, `engine_requirement.rs` |
+| 3.5b | E | `packages/compiler/src/engine_attestation/` | `source.rs`, `requirement.rs`, `proof.rs`, `foundation.rs`, `lifecycle.rs`, `constructibility.rs`, `case_facts.rs`, `cases.rs`, `placement.rs`, `operation.rs`, `coverage.rs`, `coverage_join.rs` |
+| 3.5b | E | `packages/compiler/src/tests/` | `clear_operation_plan_tests.rs`, `mod.rs`, `source_tests.rs`, `case_tests.rs`, `tracing_capture.rs`, `tracing_boundary_tests.rs`, `requirement_tests.rs`, `coverage_tests.rs`, `carrier_tests.rs`, `placement_tests.rs`, `layout_tests.rs`, `proof_tests.rs`, `analyzed_program_oracle_tests.rs`, `maturity_announcement_plan_tests.rs`, `maturity_announcement_corruption_tests.rs`, `maturity_announcement_oracle_tests.rs`, `operation_plan_tests.rs` |
+| 3.5b | N | `packages/compiler/src/tests/` | `clear_plan_oracle_tests.rs` |
+| 3.5b | E | `packages/compiler/tests/` | `public_api.rs` |
+| 3.5b | E | `packages/realization/` | `README.md` |
+| 3.5d | E | `plans/` | `backlog.md` |
+| 3.5d | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.5d | E | `packages/compiler/` | `README.md`, `TRACING.md`, `meson.build` |
+| 3.5d | E | `packages/compiler/src/` | `lib.rs`, `input.rs`, `engine_attestation.rs`, `case.rs`, `analyzed.rs`, `analyzed_validate.rs`, `error.rs`, `burn_operation_plan.rs`, `source.rs`, `carrier.rs`, `placement.rs`, `layout.rs`, `coverage.rs`, `coverage_graph.rs`, `requirement.rs`, `sponsor_region.rs`, `analyzed_operation.rs`, `live_transfer_plan.rs`, `engine_program.rs`, `engine_cases.rs`, `operation_plan.rs`, `maturity_announcement_plan.rs`, `lifecycle.rs`, `proof.rs`, `engine_lifecycle.rs`, `engine_requirement.rs`, `engine_proof.rs`, `disclosure.rs`, `engine_source.rs`, `engine_case_facts.rs`, `engine_records.rs` |
+| 3.5d | E | `packages/compiler/src/engine_attestation/` | `source.rs`, `requirement.rs`, `proof.rs`, `foundation.rs`, `lifecycle.rs`, `constructibility.rs`, `case_facts.rs`, `cases.rs`, `placement.rs`, `operation.rs`, `coverage.rs`, `coverage_join.rs`, `identity.rs` |
+| 3.5d | E | `packages/compiler/src/tests/` | `burn_operation_plan_tests.rs`, `burn_plan_oracle_tests.rs`, `mod.rs`, `source_tests.rs`, `case_tests.rs`, `tracing_capture.rs`, `tracing_boundary_tests.rs`, `requirement_tests.rs`, `coverage_tests.rs`, `carrier_tests.rs`, `placement_tests.rs`, `layout_tests.rs`, `proof_tests.rs`, `analyzed_program_oracle_tests.rs`, `live_transfer_plan_tests.rs` |
+| 3.5d | E | `packages/compiler/tests/` | `public_api.rs` |
+| 3.5d | E | `packages/realization/` | `README.md`, `TRACING.md` |
+| 3.5d | E | `packages/compiler/src/engine_keyed_fixed/program/` | `refusal_tests.rs`, `negative_tests.rs` |
+| 3.5d | E | `packages/compiler/src/engine_keyed/program/` | `refusal_tests.rs`, `negative_tests.rs` |
+| 3.5d | E | `packages/realization/src/declarations/` | `burn.rs` |
+| 3.5d | E | `packages/realization/src/` | `burn_clear_laws.rs`, `validate.rs` |
+| 3.5d | E | `packages/realization/src/tests/` | `burn_tests.rs`, `burn_clear_relation_tests.rs` |
+| 3.5d | E | `plans/packages/` | `realization.md`, `compiler.md` |
+| 3.5e | E | `plans/` | `backlog.md` |
+| 3.5e | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.5e | E | `packages/compiler/` | `README.md`, `TRACING.md`, `meson.build` |
+| 3.5e | E | `packages/compiler/src/` | `lib.rs`, `input.rs`, `engine_attestation.rs`, `case.rs`, `analyzed.rs`, `analyzed_validate.rs`, `error.rs`, `burn_operation_plan.rs`, `source.rs`, `carrier.rs`, `placement.rs`, `layout.rs`, `coverage.rs`, `coverage_graph.rs`, `requirement.rs`, `sponsor_region.rs`, `analyzed_operation.rs`, `live_transfer_plan.rs`, `engine_program.rs`, `engine_cases.rs`, `operation_plan.rs`, `maturity_announcement_plan.rs`, `lifecycle.rs`, `proof.rs`, `engine_lifecycle.rs`, `engine_requirement.rs`, `engine_proof.rs`, `disclosure.rs`, `engine_source.rs`, `engine_case_facts.rs`, `engine_records.rs` |
+| 3.5e | E | `packages/compiler/src/engine_attestation/` | `source.rs`, `requirement.rs`, `proof.rs`, `foundation.rs`, `lifecycle.rs`, `constructibility.rs`, `case_facts.rs`, `cases.rs`, `placement.rs`, `operation.rs`, `coverage.rs`, `coverage_join.rs`, `identity.rs` |
+| 3.5e | E | `packages/compiler/src/tests/` | `burn_operation_plan_tests.rs`, `burn_plan_oracle_tests.rs`, `mod.rs`, `source_tests.rs`, `case_tests.rs`, `tracing_capture.rs`, `tracing_boundary_tests.rs`, `requirement_tests.rs`, `coverage_tests.rs`, `carrier_tests.rs`, `placement_tests.rs`, `layout_tests.rs`, `proof_tests.rs`, `analyzed_program_oracle_tests.rs`, `live_transfer_plan_tests.rs` |
+| 3.5e | E | `packages/compiler/tests/` | `public_api.rs` |
+| 3.5e | E | `packages/realization/` | `README.md` |
+| 3.5e | E | `packages/compiler/src/engine_keyed_fixed/program/` | `refusal_tests.rs`, `negative_tests.rs` |
+| 3.5e | E | `packages/compiler/src/engine_keyed/program/` | `refusal_tests.rs`, `negative_tests.rs` |
+| 3.5e | N | `packages/compiler/src/tests/` | `burn_mixed_plan_tests.rs` |
+| 3.5f | E | `plans/` | `backlog.md` |
+| 3.5f | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.5f | E | `packages/compiler/` | `README.md`, `TRACING.md`, `meson.build` |
+| 3.5f | E | `packages/compiler/src/` | `lib.rs`, `input.rs`, `engine_attestation.rs`, `case.rs`, `analyzed.rs`, `analyzed_validate.rs`, `error.rs`, `burn_operation_plan.rs`, `source.rs`, `carrier.rs`, `placement.rs`, `layout.rs`, `coverage.rs`, `coverage_graph.rs`, `requirement.rs`, `sponsor_region.rs`, `analyzed_operation.rs`, `live_transfer_plan.rs`, `engine_program.rs`, `engine_cases.rs`, `operation_plan.rs`, `maturity_announcement_plan.rs`, `lifecycle.rs`, `proof.rs`, `engine_lifecycle.rs`, `engine_requirement.rs`, `engine_proof.rs`, `disclosure.rs`, `engine_source.rs`, `engine_case_facts.rs`, `engine_records.rs` |
+| 3.5f | E | `packages/compiler/src/engine_attestation/` | `source.rs`, `requirement.rs`, `proof.rs`, `foundation.rs`, `lifecycle.rs`, `constructibility.rs`, `case_facts.rs`, `cases.rs`, `placement.rs`, `operation.rs`, `coverage.rs`, `coverage_join.rs`, `identity.rs` |
+| 3.5f | E | `packages/compiler/src/tests/` | `burn_operation_plan_tests.rs`, `burn_plan_oracle_tests.rs`, `mod.rs`, `source_tests.rs`, `case_tests.rs`, `tracing_capture.rs`, `tracing_boundary_tests.rs`, `requirement_tests.rs`, `coverage_tests.rs`, `carrier_tests.rs`, `placement_tests.rs`, `layout_tests.rs`, `proof_tests.rs`, `analyzed_program_oracle_tests.rs`, `live_transfer_plan_tests.rs`, `burn_mixed_plan_tests.rs` |
+| 3.5f | E | `packages/compiler/tests/` | `public_api.rs` |
+| 3.5f | E | `packages/realization/` | `README.md` |
+| 3.5f | E | `packages/compiler/src/engine_keyed_fixed/program/` | `refusal_tests.rs`, `negative_tests.rs` |
+| 3.5f | E | `packages/compiler/src/engine_keyed/program/` | `refusal_tests.rs`, `negative_tests.rs` |
+| 3.5f | N | `packages/compiler/src/tests/` | `burn_mixed_oracle_tests.rs` |
+| 3.6a | E | `plans/` | `backlog.md` |
+| 3.6a | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.6a | E | `packages/compiler/` | `README.md`, `TRACING.md`, `meson.build` |
+| 3.6a | E | `packages/compiler/src/` | `lib.rs`, `operation_plan.rs`, `burn_operation_plan.rs`, `clear_operation_plan.rs`, `error.rs`, `analyzed.rs`, `analyzed_validate.rs`, `live_transfer_plan.rs`, `maturity_announcement_plan.rs`, `engine_lifecycle.rs`, `engine_requirement.rs` |
+| 3.6a | N | `packages/compiler/src/` | `phase7_plan.rs` |
+| 3.6a | E | `packages/compiler/src/engine_attestation/` | `requirement.rs`, `lifecycle.rs` |
+| 3.6a | N | `packages/compiler/src/tests/` | `phase7_plan_tests.rs` |
+| 3.6a | E | `packages/compiler/src/tests/` | `mod.rs`, `tracing_capture.rs`, `tracing_boundary_tests.rs`, `live_transfer_plan_tests.rs`, `maturity_announcement_plan_tests.rs` |
+| 3.6a | E | `packages/compiler/tests/` | `public_api.rs` |
+| 3.6b | E | `plans/` | `backlog.md` |
+| 3.6b | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.6b | E | `packages/compiler/` | `README.md`, `TRACING.md`, `meson.build` |
+| 3.6b | E | `packages/compiler/src/` | `lib.rs`, `operation_plan.rs`, `burn_operation_plan.rs`, `clear_operation_plan.rs`, `error.rs`, `analyzed.rs`, `analyzed_validate.rs`, `phase7_plan.rs`, `live_transfer_plan.rs`, `maturity_announcement_plan.rs`, `engine_lifecycle.rs`, `engine_requirement.rs` |
+| 3.6b | E | `packages/compiler/src/engine_attestation/` | `requirement.rs`, `lifecycle.rs` |
+| 3.6b | E | `packages/compiler/src/tests/` | `phase7_plan_tests.rs`, `mod.rs`, `tracing_capture.rs`, `tracing_boundary_tests.rs`, `live_transfer_plan_tests.rs`, `maturity_announcement_plan_tests.rs` |
+| 3.6b | E | `packages/compiler/tests/` | `public_api.rs` |
+| 3.6b | N | `packages/compiler/src/tests/` | `phase7_plan_oracle_tests.rs` |
+| 3.6b | E | `packages/realization/src/tests/` | `derivation_tests.rs`, `lifecycle_tests.rs` |
+| 3.7 | E | `plans/` | `backlog.md` |
+| 3.7 | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.7 | E | `packages/vectors/src/` | `first_party.rs`, `compact_negative_manifest.rs`, `compact_corpus.rs`, `maturity_mutants.rs`, `maturity_safety.rs` |
+| 3.7 | E | `packages/vectors/src/maturity_mutants/` | `native_staging.rs` |
+| 3.7 | E | `packages/compiler/src/tests/` | `lifecycle_tests.rs` |
+| 3.7 | E | `packages/tapscript/src/tests/` | `compact_validation_tests.rs` |
+| 3.8 | E | `plans/` | `backlog.md` |
+| 3.8 | E | `plans/history/` | `wave3-compiler-records.md` |
+| 3.8 | E | `plans/guides/` | `guide_fifteen.md` |
+| 3.8 | E | `plans/phases/` | `07-burn-and-clear.md` |
+| 3.8 | E | `plans/packages/` | `compiler.md`, `realization.md` |
+
 ### Wave 4 — Target and representation closure · `task:guide15-exec:wave4`
 
 **Record (Wave 4 semantic and delivery reference)** · `rec:guide15-exec:wave4-reference`
