@@ -3,7 +3,9 @@
 # audit fails the build. The parent meson.build accumulates this list
 # into its role group.
 vectors_source_files = files(
+  'src/keyed_fixed_capture.rs',
   'src/keyed_fixed_constructor.rs',
+  'src/keyed_fixed_corpus.rs',
   'src/keyed_fixed_evidence.rs',
   'src/keyed_fixed_history_model.rs',
   'src/keyed_fixed_history_reader.rs',
@@ -13,6 +15,7 @@ vectors_source_files = files(
   'src/keyed_fixed_history_reader/identity.rs',
   'src/keyed_fixed_history_reader/refusal.rs',
   'src/keyed_fixed_manifest.rs',
+  'src/keyed_fixed_native.rs',
   'src/keyed_fixed_stack_model.rs',
   'src/keyed_fixed_manifest/encoding.rs',
   'src/keyed_fixed_manifest/pins.rs',
@@ -438,7 +441,7 @@ vectors_fixture_files = files(
 # (ADR-014): integration-test sources are cargo test inputs, not label
 # subjects. The census audit accepts the exclusion only because it is
 # declared here.
-vectors_excluded_files = files('tests/keyed_fixed_template.rs', 'tests/keyed_fixed_freeze_history.rs', 'tests/keyed_fixed_reproduction.rs', 'tests/keyed_fixed_history.rs') + vectors_fixture_files + files(
+vectors_excluded_files = files('tests/keyed_fixed_capture.rs', 'tests/keyed_fixed_capture/native.rs', 'tests/keyed_fixed_template.rs', 'tests/keyed_fixed_freeze_history.rs', 'tests/keyed_fixed_reproduction.rs', 'tests/keyed_fixed_history.rs') + vectors_fixture_files + files(
   'tools/extract-keyed-final.py',
   'tests/common/legacy.rs',
   'tests/common/mod.rs',

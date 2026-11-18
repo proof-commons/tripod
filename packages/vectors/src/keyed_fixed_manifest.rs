@@ -34,10 +34,14 @@ pub enum ComputedItem {
     EmissionAndClosure,
     MemberCoverage,
     DerivedResources,
+    TransactionShape,
+    CaptureSubjectCensus,
+    ReaderRecurrence,
+    MemberMaximum,
 }
 
-/// No S6 transaction, S7 reading or S8 capture value is claimed frozen here.
-pub const COMPUTED: [ComputedItem; 11] = [
+/// Names the retained computed fields; the extended source inventory binds S6–S8 owners.
+pub const COMPUTED: [ComputedItem; 15] = [
     ComputedItem::Triple,
     ComputedItem::Transcript,
     ComputedItem::PairDigest,
@@ -49,6 +53,10 @@ pub const COMPUTED: [ComputedItem; 11] = [
     ComputedItem::EmissionAndClosure,
     ComputedItem::MemberCoverage,
     ComputedItem::DerivedResources,
+    ComputedItem::TransactionShape,
+    ComputedItem::CaptureSubjectCensus,
+    ComputedItem::ReaderRecurrence,
+    ComputedItem::MemberMaximum,
 ];
 
 /// Derived structural envelope. A missing ceiling means unadmitted, not infinity.
@@ -100,6 +108,28 @@ pub struct ValidatedFreeze {
     encoding: Vec<u8>,
 }
 
+/// One capture-time state reconstructed from its retained source snapshot.
+/// The reviewed identity is independent of the packet that claims it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValidatedCaptureHistory {
+    identity: [u8; 32],
+    parameters: KeyedFixedParameters,
+}
+
+impl ValidatedCaptureHistory {
+    /// The reconstructed capture-time identity.
+    #[must_use]
+    pub const fn identity(&self) -> [u8; 32] {
+        self.identity
+    }
+
+    /// The triple whose descriptor was reconstructed.
+    #[must_use]
+    pub const fn parameters(&self) -> KeyedFixedParameters {
+        self.parameters
+    }
+}
+
 impl ValidatedFreeze {
     /// Immutable complete validated subject.
     #[must_use]
@@ -119,6 +149,47 @@ impl ValidatedFreeze {
 }
 
 impl FreezeManifest {
+    /// Reconstruct a historical freeze from the retained source bytes and a
+    /// separately reviewed identity, without substituting today's inventory.
+    /// # Errors
+    /// Refuses source bytes, triple, recipe or independently reviewed identity drift.
+    pub fn reconstruct_capture_history(
+        &self,
+        parameters: KeyedFixedParameters,
+        sources: &[(String, Vec<u8>)],
+        reviewed_identity: [u8; 32],
+    ) -> Result<ValidatedCaptureHistory, FreezeRefusal> {
+        if sources.len() != self.sources.len()
+            || sources
+                .iter()
+                .zip(&self.sources)
+                .any(|((path, bytes), identity)| {
+                    path != &identity.path || sha256(bytes) != identity.digest
+                })
+        {
+            return Err(FreezeRefusal::Inventory);
+        }
+        if self.descriptor.parameters != parameters {
+            return Err(FreezeRefusal::Triple);
+        }
+        // A later producer may change the descriptor, code list or envelope.
+        // The reviewed capture-time identity binds their exact historical bytes.
+        if self.recipe_schema != 1 {
+            return Err(FreezeRefusal::Recipe);
+        }
+        if self.target_version != 2 {
+            return Err(FreezeRefusal::Target);
+        }
+        let identity = sha256(&encoding::encode(self)?);
+        if identity != reviewed_identity {
+            return Err(FreezeRefusal::Inventory);
+        }
+        Ok(ValidatedCaptureHistory {
+            identity,
+            parameters,
+        })
+    }
+
     /// Build an offer from current pins and public parameters; not yet validated.
     /// # Errors
     /// Refuses an unavailable reviewed target or unsuccessful commitment.
@@ -127,6 +198,9 @@ impl FreezeManifest {
             .map_err(|_| FreezeRefusal::Construction)?;
         let descriptor = construct(&target, parameters, &PublicKeyedCurve)
             .map_err(|_| FreezeRefusal::Construction)?;
+        let maximum =
+            transaction::keyed_fixed_construct::keyed_fixed_policy_member_maximum(&target)
+                .map_err(|_| FreezeRefusal::Construction)?;
         Ok(Self {
             sources: pins::SOURCES
                 .iter()
@@ -140,7 +214,9 @@ impl FreezeManifest {
             recipe_schema: 1,
             target_version: target.definition().version().get(),
             envelope: Envelope {
-                maximum_members: None,
+                maximum_members: Some(
+                    u64::try_from(maximum).map_err(|_| FreezeRefusal::Construction)?,
+                ),
                 script_bytes: 104,
                 script_witness_bytes: 140,
                 input_witness_bytes: 143,

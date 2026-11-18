@@ -1,8 +1,874 @@
-//! Initial fixed-form freeze and a synthetic stale-inventory subject.
-//! Source bytes are checked against literal pins; grammar is rebuilt separately.
+//! S5-to-S8 literal source history and independent binary grammar checks.
 use elements::hashes::sha256;
 use realization::keyed_fixed::{KeyedFixedParameters, KeyedFixedValue};
-use vectors::keyed_fixed_manifest::{FreezeManifest, FreezeRefusal};
+use vectors::keyed_fixed_manifest::{FreezeManifest, FreezeRefusal, SourceIdentity};
+
+const S5_SOURCES: &[(&str, [u8; 32])] = &[
+    (
+        "Cargo.toml",
+        [
+            159, 54, 98, 67, 237, 234, 207, 116, 198, 107, 188, 202, 219, 223, 151, 199, 23, 79,
+            78, 98, 211, 61, 223, 80, 101, 200, 155, 236, 95, 57, 116, 66,
+        ],
+    ),
+    (
+        "packages/architecture/Cargo.toml",
+        [
+            168, 139, 239, 152, 98, 81, 200, 159, 198, 174, 195, 45, 78, 47, 239, 157, 167, 82, 34,
+            56, 140, 147, 221, 109, 22, 165, 144, 187, 97, 176, 189, 211,
+        ],
+    ),
+    (
+        "packages/architecture/src/keyed_fixed.rs",
+        [
+            21, 172, 192, 219, 246, 237, 152, 204, 253, 126, 36, 128, 102, 80, 52, 119, 140, 220,
+            155, 233, 50, 244, 69, 155, 44, 148, 8, 186, 252, 149, 242, 133,
+        ],
+    ),
+    (
+        "packages/architecture/src/keyed_fixed/vocabulary.rs",
+        [
+            42, 38, 196, 45, 24, 91, 151, 198, 160, 255, 9, 133, 9, 139, 56, 19, 101, 178, 234,
+            122, 251, 4, 0, 3, 156, 156, 172, 234, 92, 203, 4, 27,
+        ],
+    ),
+    (
+        "packages/architecture/src/semantic.rs",
+        [
+            221, 40, 250, 100, 110, 219, 0, 72, 202, 196, 219, 104, 194, 16, 34, 102, 179, 39, 97,
+            247, 20, 171, 4, 159, 254, 205, 126, 105, 11, 225, 211, 58,
+        ],
+    ),
+    (
+        "packages/compiler/Cargo.toml",
+        [
+            122, 197, 236, 14, 83, 224, 30, 38, 45, 46, 198, 252, 18, 121, 228, 227, 20, 88, 174,
+            180, 239, 64, 59, 237, 112, 13, 239, 14, 63, 242, 237, 18,
+        ],
+    ),
+    (
+        "packages/compiler/src/engine_keyed_fixed.rs",
+        [
+            138, 86, 122, 71, 152, 50, 116, 163, 126, 144, 210, 67, 255, 204, 123, 139, 164, 13,
+            174, 150, 217, 94, 86, 202, 156, 96, 118, 60, 21, 129, 190, 117,
+        ],
+    ),
+    (
+        "packages/compiler/src/engine_keyed_fixed/program.rs",
+        [
+            6, 231, 135, 134, 177, 137, 95, 177, 118, 12, 10, 79, 8, 77, 191, 113, 205, 134, 55,
+            51, 153, 116, 42, 101, 137, 211, 70, 187, 87, 181, 124, 37,
+        ],
+    ),
+    (
+        "packages/compiler/src/engine_keyed_fixed/program/refusal.rs",
+        [
+            40, 83, 93, 100, 45, 74, 116, 254, 150, 179, 197, 52, 234, 180, 86, 169, 47, 20, 199,
+            90, 57, 200, 114, 229, 8, 104, 244, 51, 238, 225, 255, 227,
+        ],
+    ),
+    (
+        "packages/compiler/src/engine_keyed_fixed/program/restore.rs",
+        [
+            9, 176, 254, 222, 166, 42, 185, 84, 7, 239, 239, 226, 85, 156, 237, 218, 159, 196, 180,
+            51, 227, 250, 242, 103, 119, 175, 213, 133, 28, 251, 219, 180,
+        ],
+    ),
+    (
+        "packages/compiler/src/engine_keyed_fixed/program/stage_refusal.rs",
+        [
+            223, 43, 177, 84, 219, 95, 94, 173, 58, 235, 82, 183, 230, 254, 173, 19, 22, 134, 140,
+            182, 2, 213, 111, 171, 140, 97, 125, 113, 185, 161, 120, 134,
+        ],
+    ),
+    (
+        "packages/compiler/src/keyed_fixed_plan.rs",
+        [
+            106, 251, 97, 230, 173, 111, 135, 152, 221, 238, 130, 162, 141, 170, 161, 106, 231,
+            180, 227, 45, 31, 56, 136, 145, 184, 99, 35, 46, 119, 24, 221, 179,
+        ],
+    ),
+    (
+        "packages/linker/Cargo.toml",
+        [
+            162, 218, 78, 245, 190, 54, 130, 202, 42, 124, 36, 156, 82, 40, 174, 204, 43, 46, 166,
+            75, 85, 180, 15, 150, 25, 236, 68, 80, 26, 239, 218, 102,
+        ],
+    ),
+    (
+        "packages/linker/src/keyed_fixed_bundle.rs",
+        [
+            42, 37, 37, 70, 28, 221, 96, 195, 11, 54, 173, 247, 157, 22, 121, 105, 178, 31, 195,
+            25, 90, 53, 32, 229, 28, 76, 114, 147, 92, 1, 215, 62,
+        ],
+    ),
+    (
+        "packages/linker/src/keyed_fixed_reference.rs",
+        [
+            63, 86, 174, 71, 226, 137, 41, 49, 190, 107, 188, 160, 177, 221, 186, 33, 149, 135,
+            174, 128, 116, 253, 92, 159, 232, 189, 204, 125, 86, 101, 166, 223,
+        ],
+    ),
+    (
+        "packages/realization/Cargo.toml",
+        [
+            80, 28, 209, 186, 223, 242, 71, 36, 133, 172, 39, 93, 220, 255, 135, 225, 149, 64, 208,
+            197, 250, 109, 47, 240, 57, 20, 10, 9, 30, 79, 5, 104,
+        ],
+    ),
+    (
+        "packages/realization/src/declarations/keyed_fixed.rs",
+        [
+            215, 171, 226, 229, 30, 29, 133, 111, 255, 226, 178, 248, 75, 56, 245, 80, 2, 175, 135,
+            235, 51, 37, 70, 222, 31, 120, 235, 200, 149, 117, 170, 135,
+        ],
+    ),
+    (
+        "packages/realization/src/keyed_fixed.rs",
+        [
+            191, 53, 245, 2, 159, 222, 240, 56, 104, 205, 138, 102, 197, 2, 157, 78, 49, 121, 164,
+            249, 187, 69, 137, 81, 52, 160, 236, 224, 72, 102, 242, 157,
+        ],
+    ),
+    (
+        "packages/realization/src/keyed_fixed_relation.rs",
+        [
+            42, 213, 40, 130, 53, 168, 107, 28, 85, 101, 24, 217, 144, 255, 53, 53, 174, 25, 9,
+            123, 33, 141, 215, 105, 8, 60, 101, 40, 253, 214, 135, 28,
+        ],
+    ),
+    (
+        "packages/tapscript/Cargo.toml",
+        [
+            157, 236, 89, 208, 250, 215, 70, 3, 89, 104, 199, 162, 252, 150, 23, 229, 182, 28, 63,
+            157, 149, 121, 143, 77, 45, 228, 174, 240, 19, 113, 107, 82,
+        ],
+    ),
+    (
+        "packages/tapscript/src/keyed_constructor.rs",
+        [
+            155, 184, 179, 170, 152, 217, 252, 246, 203, 223, 201, 220, 91, 131, 149, 13, 14, 87,
+            247, 112, 177, 182, 91, 144, 218, 94, 3, 203, 98, 107, 99, 174,
+        ],
+    ),
+    (
+        "packages/tapscript/src/keyed_fixed_bundle.rs",
+        [
+            36, 140, 6, 209, 103, 102, 51, 25, 205, 117, 79, 166, 69, 224, 113, 52, 161, 251, 88,
+            41, 138, 88, 221, 152, 211, 179, 65, 111, 9, 30, 36, 72,
+        ],
+    ),
+    (
+        "packages/tapscript/src/keyed_fixed_constructor.rs",
+        [
+            64, 158, 31, 164, 57, 159, 145, 169, 150, 11, 148, 166, 243, 202, 103, 218, 192, 151,
+            49, 71, 7, 166, 12, 164, 211, 235, 20, 113, 192, 19, 69, 207,
+        ],
+    ),
+    (
+        "packages/tapscript/src/keyed_fixed_members.rs",
+        [
+            182, 76, 29, 20, 139, 14, 205, 207, 60, 119, 134, 47, 177, 61, 35, 198, 241, 81, 162,
+            82, 178, 17, 9, 185, 173, 31, 92, 126, 133, 250, 82, 243,
+        ],
+    ),
+    (
+        "packages/tapscript/src/keyed_fixed_pattern.rs",
+        [
+            51, 186, 214, 18, 29, 169, 207, 30, 153, 1, 169, 247, 17, 245, 116, 134, 118, 131, 8,
+            68, 60, 9, 144, 104, 82, 151, 65, 213, 57, 55, 220, 154,
+        ],
+    ),
+    (
+        "packages/tapscript/src/keyed_fixed_resources.rs",
+        [
+            82, 42, 187, 254, 37, 223, 102, 32, 107, 90, 187, 65, 228, 152, 165, 195, 218, 83, 219,
+            186, 13, 180, 107, 141, 138, 40, 4, 125, 18, 108, 5, 16,
+        ],
+    ),
+    (
+        "packages/tapscript/src/keyed_pattern.rs",
+        [
+            29, 255, 219, 248, 11, 113, 173, 124, 105, 167, 65, 235, 241, 200, 80, 96, 9, 236, 121,
+            177, 251, 60, 235, 71, 2, 197, 18, 94, 93, 0, 44, 59,
+        ],
+    ),
+    (
+        "packages/tapscript/src/keyed_resources.rs",
+        [
+            95, 46, 0, 146, 95, 50, 143, 139, 40, 147, 154, 103, 195, 111, 13, 23, 53, 214, 143,
+            79, 108, 211, 206, 216, 132, 110, 49, 143, 216, 148, 201, 10,
+        ],
+    ),
+    (
+        "packages/tapscript/src/state_constructor.rs",
+        [
+            235, 84, 104, 219, 104, 223, 159, 216, 100, 165, 234, 75, 139, 103, 188, 43, 101, 61,
+            21, 182, 7, 195, 105, 155, 205, 159, 135, 229, 126, 112, 68, 94,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/Cargo.toml",
+        [
+            1, 194, 193, 2, 20, 143, 207, 34, 55, 189, 249, 65, 38, 204, 143, 89, 177, 92, 24, 127,
+            42, 41, 38, 231, 22, 52, 90, 189, 165, 161, 210, 3,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/constructor/curve.rs",
+        [
+            197, 90, 58, 165, 105, 178, 193, 190, 29, 115, 38, 54, 238, 125, 3, 165, 80, 67, 175,
+            89, 30, 32, 129, 250, 87, 195, 246, 177, 238, 244, 205, 81,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/constructor/internal_key.rs",
+        [
+            199, 211, 214, 111, 78, 99, 69, 113, 209, 229, 170, 146, 231, 52, 210, 251, 132, 254,
+            186, 129, 18, 145, 40, 162, 0, 169, 201, 99, 220, 17, 12, 194,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/constructor/tagged.rs",
+        [
+            57, 6, 199, 200, 135, 170, 232, 60, 4, 93, 173, 63, 4, 210, 10, 128, 48, 200, 36, 207,
+            44, 159, 212, 50, 214, 169, 231, 154, 120, 236, 225, 11,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/constructor/tree.rs",
+        [
+            54, 79, 12, 224, 130, 76, 135, 97, 22, 80, 145, 120, 108, 25, 85, 94, 182, 235, 68, 86,
+            128, 42, 178, 39, 152, 91, 52, 150, 116, 148, 140, 34,
+        ],
+    ),
+    (
+        "packages/target-elements/Cargo.toml",
+        [
+            145, 203, 227, 80, 145, 46, 39, 239, 5, 209, 163, 230, 200, 142, 15, 88, 140, 123, 85,
+            200, 104, 100, 159, 103, 218, 99, 180, 233, 43, 205, 58, 99,
+        ],
+    ),
+    (
+        "packages/target-elements/src/definition.rs",
+        [
+            20, 165, 172, 123, 171, 15, 110, 136, 93, 100, 9, 199, 118, 192, 17, 77, 55, 243, 128,
+            255, 121, 233, 36, 36, 34, 124, 143, 115, 160, 152, 134, 192,
+        ],
+    ),
+    (
+        "packages/target-elements/src/encoding.rs",
+        [
+            59, 240, 52, 30, 226, 209, 43, 4, 255, 178, 228, 18, 207, 125, 47, 242, 125, 75, 69,
+            70, 201, 186, 83, 215, 215, 42, 65, 166, 88, 254, 180, 23,
+        ],
+    ),
+    (
+        "packages/target-elements/src/opcode.rs",
+        [
+            150, 145, 101, 249, 176, 96, 179, 189, 60, 136, 150, 184, 101, 139, 184, 175, 114, 126,
+            148, 143, 52, 87, 177, 89, 195, 57, 210, 225, 101, 4, 106, 24,
+        ],
+    ),
+    (
+        "packages/target-elements/src/resource.rs",
+        [
+            237, 203, 54, 224, 73, 224, 81, 28, 200, 131, 40, 58, 106, 227, 42, 201, 7, 9, 126,
+            246, 4, 254, 73, 212, 30, 14, 68, 18, 89, 224, 1, 147,
+        ],
+    ),
+    (
+        "packages/vectors/Cargo.toml",
+        [
+            210, 205, 104, 73, 158, 92, 218, 86, 242, 12, 120, 250, 56, 154, 252, 229, 21, 102,
+            187, 125, 120, 246, 185, 220, 167, 205, 51, 234, 70, 244, 136, 100,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_constructor.rs",
+        [
+            97, 55, 190, 239, 222, 120, 67, 203, 111, 164, 122, 68, 255, 224, 153, 92, 102, 85,
+            136, 59, 174, 147, 53, 176, 66, 11, 130, 159, 13, 66, 169, 116,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_fixed_constructor.rs",
+        [
+            8, 94, 36, 226, 194, 205, 80, 239, 180, 14, 160, 216, 1, 218, 83, 246, 79, 248, 94, 28,
+            38, 141, 40, 208, 142, 114, 208, 93, 16, 155, 99, 99,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_fixed_manifest.rs",
+        [
+            247, 189, 17, 104, 74, 228, 83, 141, 41, 69, 9, 185, 189, 164, 104, 1, 105, 51, 227,
+            77, 127, 10, 37, 138, 29, 243, 130, 76, 128, 177, 148, 231,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_fixed_manifest/encoding.rs",
+        [
+            102, 242, 94, 152, 223, 132, 43, 34, 197, 35, 79, 241, 109, 246, 222, 164, 31, 23, 133,
+            50, 247, 74, 86, 142, 118, 95, 199, 65, 198, 253, 177, 28,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_fixed_stack_model.rs",
+        [
+            248, 32, 242, 120, 190, 170, 71, 184, 142, 131, 114, 240, 219, 74, 107, 168, 116, 116,
+            250, 197, 216, 78, 6, 118, 13, 62, 233, 135, 138, 225, 73, 147,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_stack_core.rs",
+        [
+            35, 39, 168, 161, 45, 99, 87, 59, 244, 23, 200, 133, 119, 192, 1, 107, 166, 254, 203,
+            20, 233, 207, 180, 45, 11, 180, 185, 5, 136, 161, 169, 238,
+        ],
+    ),
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Row {
+    path: &'static str,
+    previous: Option<[u8; 32]>,
+    current: [u8; 32],
+}
+
+// Source additions and paired changed pins. This is an inventory and identity
+// transition; S5 has no fixed-form native archive to reclassify. Legacy archives
+// and the separate first-edition freeze retain their capture-time identities.
+const REVIEW: &[Row] = &[
+    Row {
+        path: "packages/target-elements-conformance/src/commitment_oracle/commitment.rs",
+        previous: None,
+        current: [
+            154, 182, 97, 141, 218, 94, 3, 38, 236, 202, 88, 189, 99, 203, 156, 91, 100, 104, 63,
+            126, 12, 251, 120, 7, 162, 181, 66, 52, 246, 181, 104, 226,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/commitment_oracle/curve.rs",
+        previous: None,
+        current: [
+            86, 27, 135, 54, 23, 20, 101, 234, 162, 119, 103, 199, 126, 224, 0, 35, 200, 29, 237,
+            44, 169, 193, 239, 126, 203, 145, 234, 247, 162, 125, 112, 54,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/commitment_oracle/generator.rs",
+        previous: None,
+        current: [
+            225, 239, 3, 211, 180, 205, 124, 168, 115, 157, 35, 247, 238, 39, 157, 215, 140, 42,
+            100, 163, 92, 186, 175, 96, 214, 148, 187, 144, 246, 153, 128, 221,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/commitment_oracle/mod.rs",
+        previous: None,
+        current: [
+            159, 5, 218, 32, 244, 71, 176, 12, 225, 175, 124, 167, 106, 218, 25, 163, 52, 155, 61,
+            222, 0, 234, 19, 177, 252, 228, 165, 25, 198, 214, 179, 116,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/commitment_oracle/vector.rs",
+        previous: None,
+        current: [
+            148, 140, 91, 193, 62, 60, 175, 188, 51, 67, 18, 234, 87, 109, 121, 119, 59, 161, 157,
+            58, 39, 187, 29, 78, 110, 109, 211, 204, 165, 227, 130, 54,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/confidential_fixture.rs",
+        previous: None,
+        current: [
+            172, 42, 236, 182, 222, 36, 76, 214, 179, 25, 144, 233, 179, 230, 253, 55, 109, 148,
+            151, 63, 238, 23, 116, 76, 206, 143, 27, 12, 127, 221, 16, 246,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/confidential_funding.rs",
+        previous: None,
+        current: [
+            102, 230, 169, 77, 137, 73, 41, 76, 53, 108, 248, 4, 34, 85, 63, 39, 158, 51, 189, 64,
+            104, 63, 3, 48, 207, 226, 167, 212, 105, 169, 124, 151,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/confidential_oracles.rs",
+        previous: None,
+        current: [
+            68, 88, 78, 107, 252, 85, 160, 70, 206, 239, 186, 251, 68, 247, 229, 188, 75, 140, 13,
+            161, 237, 189, 188, 192, 143, 158, 28, 38, 75, 162, 19, 0,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/constructor/canonical.rs",
+        previous: None,
+        current: [
+            198, 154, 32, 155, 144, 39, 221, 142, 174, 168, 152, 194, 241, 11, 110, 173, 245, 93,
+            214, 93, 241, 239, 208, 187, 176, 141, 220, 166, 197, 157, 160, 69,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/constructor/metadata.rs",
+        previous: None,
+        current: [
+            214, 59, 192, 116, 65, 239, 250, 40, 126, 248, 235, 190, 190, 159, 227, 66, 113, 12,
+            62, 254, 112, 95, 247, 135, 169, 239, 69, 9, 14, 91, 239, 141,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/constructor/metadata_leaf.rs",
+        previous: None,
+        current: [
+            211, 49, 214, 187, 44, 150, 71, 124, 220, 184, 207, 114, 47, 125, 163, 97, 151, 17,
+            208, 51, 88, 239, 53, 138, 210, 196, 176, 26, 83, 202, 229, 223,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/constructor/mod.rs",
+        previous: None,
+        current: [
+            55, 72, 218, 75, 68, 159, 217, 209, 167, 197, 246, 103, 16, 56, 166, 242, 32, 92, 183,
+            177, 104, 113, 40, 38, 31, 194, 95, 95, 79, 241, 115, 140,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/constructor/totality.rs",
+        previous: None,
+        current: [
+            152, 1, 4, 12, 201, 97, 249, 136, 173, 58, 72, 1, 101, 46, 254, 232, 113, 42, 76, 118,
+            194, 112, 46, 146, 86, 174, 48, 127, 155, 195, 181, 230,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/error.rs",
+        previous: None,
+        current: [
+            160, 98, 205, 247, 42, 72, 227, 218, 173, 26, 144, 170, 255, 24, 129, 2, 21, 21, 110,
+            83, 59, 169, 64, 44, 120, 101, 136, 172, 200, 61, 84, 101,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/executor.rs",
+        previous: None,
+        current: [
+            225, 115, 177, 171, 86, 65, 29, 60, 99, 80, 126, 12, 251, 165, 178, 98, 1, 16, 176,
+            238, 58, 170, 129, 208, 221, 161, 99, 3, 133, 202, 12, 63,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/fixture.rs",
+        previous: None,
+        current: [
+            54, 203, 47, 113, 186, 139, 233, 46, 110, 83, 135, 115, 78, 1, 221, 70, 250, 58, 151,
+            201, 118, 81, 39, 183, 23, 63, 203, 53, 179, 58, 206, 79,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/protocol.rs",
+        previous: None,
+        current: [
+            143, 237, 241, 161, 202, 242, 132, 246, 113, 113, 214, 253, 61, 24, 70, 134, 71, 67,
+            138, 173, 214, 129, 220, 85, 19, 184, 180, 97, 200, 198, 23, 37,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/prototype.rs",
+        previous: None,
+        current: [
+            156, 219, 13, 27, 184, 238, 21, 92, 142, 238, 238, 16, 29, 223, 27, 52, 241, 221, 113,
+            168, 38, 14, 173, 14, 105, 228, 35, 203, 114, 155, 165, 108,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/prototype_validate.rs",
+        previous: None,
+        current: [
+            80, 128, 191, 44, 12, 190, 166, 56, 184, 250, 64, 124, 4, 185, 244, 120, 83, 203, 122,
+            238, 54, 239, 146, 237, 3, 224, 113, 51, 187, 103, 229, 231,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/provenance.rs",
+        previous: None,
+        current: [
+            100, 223, 152, 191, 245, 123, 59, 164, 149, 12, 151, 173, 224, 249, 90, 89, 181, 114,
+            207, 132, 46, 141, 151, 217, 236, 45, 211, 126, 129, 160, 244, 67,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/sponsor_parent.rs",
+        previous: None,
+        current: [
+            44, 114, 212, 202, 5, 62, 42, 9, 117, 60, 214, 126, 185, 91, 177, 218, 31, 28, 213, 65,
+            212, 170, 247, 60, 198, 80, 248, 108, 77, 39, 110, 172,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/test_material.rs",
+        previous: None,
+        current: [
+            202, 37, 75, 6, 95, 44, 58, 129, 115, 187, 211, 56, 176, 177, 114, 143, 75, 139, 138,
+            206, 199, 242, 221, 31, 26, 154, 12, 194, 116, 115, 145, 252,
+        ],
+    },
+    Row {
+        path: "packages/target-elements-conformance/src/validate.rs",
+        previous: None,
+        current: [
+            243, 30, 116, 106, 139, 98, 144, 21, 46, 50, 168, 9, 76, 119, 248, 78, 139, 28, 19, 87,
+            206, 23, 165, 9, 53, 252, 203, 239, 58, 202, 245, 122,
+        ],
+    },
+    Row {
+        path: "packages/target-elements/src/transaction_form.rs",
+        previous: None,
+        current: [
+            136, 13, 145, 18, 134, 109, 117, 141, 78, 51, 179, 193, 96, 117, 131, 25, 143, 113,
+            130, 116, 52, 14, 186, 131, 245, 79, 145, 12, 105, 237, 169, 166,
+        ],
+    },
+    Row {
+        path: "packages/transaction/Cargo.toml",
+        previous: None,
+        current: [
+            213, 48, 46, 59, 231, 172, 161, 133, 232, 101, 56, 158, 220, 252, 185, 8, 32, 120, 107,
+            193, 224, 178, 123, 152, 160, 191, 18, 130, 92, 193, 86, 106,
+        ],
+    },
+    Row {
+        path: "packages/transaction/src/bytes.rs",
+        previous: None,
+        current: [
+            227, 44, 4, 245, 220, 87, 139, 49, 169, 187, 176, 205, 148, 148, 217, 210, 250, 53,
+            228, 113, 235, 76, 181, 82, 215, 112, 30, 52, 151, 24, 152, 153,
+        ],
+    },
+    Row {
+        path: "packages/transaction/src/construct.rs",
+        previous: None,
+        current: [
+            18, 71, 217, 9, 166, 49, 40, 80, 41, 142, 72, 158, 168, 109, 160, 205, 199, 88, 42, 88,
+            52, 38, 183, 59, 225, 184, 80, 85, 141, 198, 35, 42,
+        ],
+    },
+    Row {
+        path: "packages/transaction/src/keyed_curve.rs",
+        previous: None,
+        current: [
+            176, 16, 59, 115, 144, 212, 220, 4, 174, 244, 125, 95, 84, 163, 42, 230, 76, 140, 8,
+            95, 136, 81, 80, 135, 86, 95, 163, 183, 243, 241, 230, 215,
+        ],
+    },
+    Row {
+        path: "packages/transaction/src/keyed_fixed_abi.rs",
+        previous: None,
+        current: [
+            23, 209, 167, 123, 44, 192, 58, 78, 253, 106, 254, 76, 21, 53, 160, 227, 7, 80, 102,
+            78, 21, 171, 63, 55, 228, 112, 128, 99, 15, 50, 172, 141,
+        ],
+    },
+    Row {
+        path: "packages/transaction/src/keyed_fixed_construct.rs",
+        previous: None,
+        current: [
+            88, 117, 243, 88, 194, 223, 60, 37, 105, 166, 213, 106, 44, 186, 247, 225, 44, 2, 255,
+            120, 67, 7, 128, 56, 175, 139, 157, 61, 101, 12, 57, 172,
+        ],
+    },
+    Row {
+        path: "packages/transaction/src/keyed_fixed_inputs.rs",
+        previous: None,
+        current: [
+            131, 128, 83, 83, 85, 253, 107, 55, 203, 38, 26, 199, 160, 58, 141, 176, 158, 139, 80,
+            158, 188, 15, 202, 144, 2, 159, 144, 120, 115, 100, 200, 200,
+        ],
+    },
+    Row {
+        path: "packages/transaction/src/keyed_fixed_request.rs",
+        previous: None,
+        current: [
+            165, 141, 186, 239, 58, 184, 19, 71, 199, 251, 18, 25, 203, 38, 209, 197, 44, 191, 160,
+            105, 186, 245, 155, 43, 133, 73, 56, 101, 203, 213, 237, 229,
+        ],
+    },
+    Row {
+        path: "packages/transaction/src/keyed_fixed_sponsor.rs",
+        previous: None,
+        current: [
+            158, 29, 128, 153, 231, 156, 238, 189, 56, 172, 199, 97, 197, 105, 117, 1, 121, 188, 4,
+            165, 200, 123, 234, 237, 238, 91, 255, 253, 166, 95, 167, 156,
+        ],
+    },
+    Row {
+        path: "packages/transaction/src/keyed_fixed_taproot.rs",
+        previous: None,
+        current: [
+            200, 249, 245, 103, 32, 92, 2, 77, 40, 28, 31, 115, 159, 214, 129, 8, 234, 135, 32, 39,
+            37, 151, 55, 91, 181, 86, 88, 200, 229, 16, 30, 223,
+        ],
+    },
+    Row {
+        path: "packages/transaction/src/sponsor.rs",
+        previous: None,
+        current: [
+            209, 80, 14, 189, 136, 219, 4, 1, 50, 78, 98, 116, 203, 48, 16, 183, 218, 220, 119,
+            147, 153, 154, 20, 123, 218, 80, 161, 250, 115, 75, 80, 48,
+        ],
+    },
+    Row {
+        path: "packages/transaction/src/taproot.rs",
+        previous: None,
+        current: [
+            196, 22, 181, 13, 154, 119, 92, 192, 55, 110, 140, 10, 251, 115, 237, 210, 81, 144,
+            201, 138, 220, 183, 67, 20, 59, 9, 195, 166, 252, 171, 115, 223,
+        ],
+    },
+    Row {
+        path: "packages/vectors/Cargo.toml",
+        previous: Some([
+            210, 205, 104, 73, 158, 92, 218, 86, 242, 12, 120, 250, 56, 154, 252, 229, 21, 102,
+            187, 125, 120, 246, 185, 220, 167, 205, 51, 234, 70, 244, 136, 100,
+        ]),
+        current: [
+            144, 16, 122, 216, 95, 158, 3, 32, 126, 249, 28, 252, 164, 9, 190, 213, 6, 213, 138,
+            213, 150, 146, 146, 79, 38, 94, 162, 193, 99, 111, 108, 217,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_capture.rs",
+        previous: None,
+        current: [
+            165, 239, 139, 125, 203, 72, 140, 62, 157, 219, 154, 164, 164, 218, 90, 244, 177, 47,
+            223, 10, 246, 77, 137, 207, 67, 66, 217, 39, 158, 91, 117, 233,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_evidence.rs",
+        previous: None,
+        current: [
+            93, 94, 111, 221, 233, 82, 173, 51, 47, 192, 65, 147, 218, 239, 44, 13, 162, 3, 164,
+            57, 84, 22, 154, 30, 235, 10, 58, 165, 238, 97, 55, 198,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_history_model.rs",
+        previous: None,
+        current: [
+            96, 186, 57, 136, 171, 233, 244, 147, 2, 197, 51, 158, 86, 67, 13, 216, 253, 132, 51,
+            202, 110, 231, 230, 111, 183, 187, 228, 83, 64, 69, 234, 54,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_history_reader.rs",
+        previous: None,
+        current: [
+            18, 86, 188, 19, 2, 203, 222, 112, 228, 152, 147, 61, 81, 211, 236, 193, 80, 51, 75,
+            37, 80, 59, 65, 226, 244, 31, 161, 170, 70, 127, 249, 5,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_history_reader/authentication.rs",
+        previous: None,
+        current: [
+            88, 184, 14, 215, 229, 76, 2, 168, 216, 114, 194, 30, 229, 163, 182, 138, 137, 10, 125,
+            31, 124, 136, 93, 252, 145, 185, 205, 174, 112, 217, 199, 67,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_history_reader/evidence.rs",
+        previous: None,
+        current: [
+            138, 39, 84, 135, 80, 114, 156, 208, 153, 219, 29, 125, 78, 88, 134, 5, 196, 146, 96,
+            87, 109, 206, 169, 165, 167, 120, 142, 91, 67, 55, 48, 27,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_history_reader/fold.rs",
+        previous: None,
+        current: [
+            157, 52, 252, 40, 186, 171, 146, 74, 221, 231, 218, 29, 74, 98, 243, 24, 163, 61, 230,
+            65, 124, 110, 143, 99, 219, 106, 45, 181, 135, 81, 245, 226,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_history_reader/identity.rs",
+        previous: None,
+        current: [
+            9, 58, 14, 80, 15, 129, 59, 96, 250, 234, 195, 93, 12, 166, 186, 132, 21, 122, 251,
+            140, 17, 102, 213, 42, 76, 33, 87, 7, 141, 242, 28, 249,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_history_reader/refusal.rs",
+        previous: None,
+        current: [
+            15, 68, 73, 136, 153, 186, 101, 43, 55, 116, 14, 243, 5, 116, 220, 215, 180, 47, 54,
+            21, 119, 115, 236, 10, 214, 147, 193, 91, 190, 56, 13, 12,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_manifest.rs",
+        previous: Some([
+            247, 189, 17, 104, 74, 228, 83, 141, 41, 69, 9, 185, 189, 164, 104, 1, 105, 51, 227,
+            77, 127, 10, 37, 138, 29, 243, 130, 76, 128, 177, 148, 231,
+        ]),
+        current: [
+            96, 69, 83, 247, 139, 148, 28, 228, 141, 61, 109, 232, 181, 200, 214, 113, 81, 136,
+            176, 43, 8, 250, 8, 223, 137, 125, 64, 107, 153, 195, 122, 184,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_manifest/encoding.rs",
+        previous: Some([
+            102, 242, 94, 152, 223, 132, 43, 34, 197, 35, 79, 241, 109, 246, 222, 164, 31, 23, 133,
+            50, 247, 74, 86, 142, 118, 95, 199, 65, 198, 253, 177, 28,
+        ]),
+        current: [
+            178, 222, 14, 192, 223, 152, 213, 57, 174, 225, 5, 252, 99, 141, 187, 90, 101, 170,
+            224, 45, 107, 243, 0, 48, 13, 36, 110, 59, 38, 167, 248, 206,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_native.rs",
+        previous: None,
+        current: [
+            43, 44, 136, 255, 229, 143, 208, 168, 14, 55, 74, 143, 175, 243, 151, 176, 95, 109,
+            176, 59, 74, 175, 115, 19, 153, 64, 54, 227, 160, 86, 16, 226,
+        ],
+    },
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture.rs",
+        previous: None,
+        current: [
+            11, 198, 99, 249, 235, 65, 60, 20, 170, 135, 11, 47, 64, 237, 18, 107, 52, 230, 120,
+            59, 211, 181, 94, 230, 113, 177, 23, 191, 101, 99, 31, 114,
+        ],
+    },
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture/native.rs",
+        previous: None,
+        current: [
+            196, 12, 168, 158, 56, 148, 48, 75, 208, 223, 35, 85, 109, 35, 111, 3, 88, 143, 220,
+            139, 89, 246, 113, 174, 51, 34, 189, 203, 200, 107, 68, 99,
+        ],
+    },
+    Row {
+        path: "scripts/elements-native-executor.py",
+        previous: None,
+        current: [
+            15, 203, 140, 112, 22, 189, 216, 146, 103, 29, 168, 230, 74, 51, 19, 51, 187, 199, 102,
+            87, 6, 148, 158, 217, 95, 11, 217, 210, 247, 16, 76, 137,
+        ],
+    },
+    Row {
+        path: "scripts/keyed-fixed-capture/capture-prepare.sh",
+        previous: None,
+        current: [
+            224, 192, 248, 109, 31, 206, 41, 174, 127, 55, 176, 211, 128, 33, 71, 18, 44, 52, 131,
+            90, 67, 209, 100, 198, 32, 211, 211, 125, 14, 189, 102, 222,
+        ],
+    },
+    Row {
+        path: "scripts/keyed-fixed-capture/capture-unit.sh",
+        previous: None,
+        current: [
+            25, 74, 77, 229, 5, 95, 65, 205, 108, 108, 74, 54, 55, 163, 58, 200, 176, 56, 32, 128,
+            151, 229, 85, 13, 249, 240, 27, 58, 119, 220, 198, 249,
+        ],
+    },
+    Row {
+        path: "scripts/keyed-fixed-capture/run-one.sh",
+        previous: None,
+        current: [
+            83, 26, 188, 99, 36, 236, 1, 147, 57, 239, 172, 184, 24, 232, 207, 170, 167, 162, 75,
+            107, 251, 143, 139, 181, 13, 6, 122, 226, 113, 229, 192, 93,
+        ],
+    },
+];
+
+const POST_PILOT: &[Row] = &[
+    Row {
+        path: "packages/vectors/src/keyed_fixed_capture.rs",
+        previous: Some([
+            119, 189, 152, 236, 222, 73, 37, 127, 29, 12, 10, 101, 153, 204, 206, 88, 219, 56, 25,
+            45, 215, 89, 126, 185, 232, 216, 160, 36, 40, 56, 178, 16,
+        ]),
+        current: [
+            165, 239, 139, 125, 203, 72, 140, 62, 157, 219, 154, 164, 164, 218, 90, 244, 177, 47,
+            223, 10, 246, 77, 137, 207, 67, 66, 217, 39, 158, 91, 117, 233,
+        ],
+    },
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture.rs",
+        previous: Some([
+            200, 126, 108, 159, 185, 156, 16, 54, 11, 8, 189, 127, 182, 116, 23, 158, 167, 225, 13,
+            184, 112, 100, 195, 65, 167, 205, 228, 190, 78, 223, 139, 149,
+        ]),
+        current: [
+            11, 198, 99, 249, 235, 65, 60, 20, 170, 135, 11, 47, 64, 237, 18, 107, 52, 230, 120,
+            59, 211, 181, 94, 230, 113, 177, 23, 191, 101, 99, 31, 114,
+        ],
+    },
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture/native.rs",
+        previous: Some([
+            95, 148, 101, 3, 176, 202, 64, 132, 9, 114, 119, 245, 87, 94, 155, 206, 90, 140, 51,
+            250, 24, 187, 15, 213, 88, 35, 221, 133, 192, 238, 99, 91,
+        ]),
+        current: [
+            146, 53, 57, 199, 163, 255, 42, 99, 196, 67, 252, 151, 221, 214, 98, 56, 133, 91, 198,
+            60, 82, 208, 184, 7, 167, 194, 161, 212, 72, 21, 189, 57,
+        ],
+    },
+];
+
+const S5_IDENTITY: [u8; 32] = [
+    94, 236, 0, 190, 106, 20, 49, 159, 68, 113, 56, 220, 245, 155, 191, 98, 31, 197, 48, 49, 145,
+    138, 17, 212, 168, 35, 18, 184, 74, 61, 147, 12,
+];
+const POST_S8A2: &[Row] = &[
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture/native.rs",
+        previous: Some([
+            146, 53, 57, 199, 163, 255, 42, 99, 196, 67, 252, 151, 221, 214, 98, 56, 133, 91, 198,
+            60, 82, 208, 184, 7, 167, 194, 161, 212, 72, 21, 189, 57,
+        ]),
+        current: [
+            196, 12, 168, 158, 56, 148, 48, 75, 208, 223, 35, 85, 109, 35, 111, 3, 88, 143, 220,
+            139, 89, 246, 113, 174, 51, 34, 189, 203, 200, 107, 68, 99,
+        ],
+    },
+    Row {
+        path: "scripts/keyed-fixed-capture/capture-unit.sh",
+        previous: Some([
+            136, 122, 122, 225, 183, 134, 200, 88, 129, 0, 40, 156, 40, 231, 198, 201, 79, 41, 112,
+            5, 120, 74, 54, 216, 77, 67, 15, 116, 186, 215, 80, 68,
+        ]),
+        current: [
+            25, 74, 77, 229, 5, 95, 65, 205, 108, 108, 74, 54, 55, 163, 58, 200, 176, 56, 32, 128,
+            151, 229, 85, 13, 249, 240, 27, 58, 119, 220, 198, 249,
+        ],
+    },
+];
+
+const S8_IDENTITY: [u8; 32] = [
+    0x65, 0x91, 0xfb, 0xb3, 0x7c, 0xfc, 0x1f, 0xbc, 0xf1, 0xff, 0xe1, 0x4a, 0x52, 0x12, 0xa1, 0x4b,
+    0xc9, 0x19, 0x41, 0x6f, 0x93, 0x7d, 0xc5, 0x1d, 0x31, 0x48, 0x18, 0x07, 0x00, 0x28, 0xc0, 0x63,
+];
+
+const S8A2_IDENTITY: [u8; 32] = [
+    0x24, 0x66, 0x0f, 0xb2, 0x6a, 0x6d, 0xa4, 0x60, 0x10, 0x7d, 0xdd, 0x3b, 0x79, 0x57, 0x46, 0xfb,
+    0x99, 0xa3, 0x53, 0xe8, 0xee, 0x9c, 0xda, 0xf5, 0x85, 0xdc, 0xd6, 0xfb, 0xca, 0x10, 0x30, 0xa5,
+];
+
+const PILOT_IDENTITY: [u8; 32] = [
+    0x02, 0xab, 0xd9, 0x54, 0x56, 0x36, 0x42, 0x68, 0xdb, 0x58, 0x65, 0x11, 0xbe, 0x03, 0xb3, 0x2c,
+    0xc8, 0x64, 0xf8, 0x33, 0x75, 0x3c, 0xda, 0x1d, 0x4a, 0x64, 0x39, 0x21, 0x43, 0x0d, 0x3b, 0x12,
+];
 
 fn parameters() -> KeyedFixedParameters {
     KeyedFixedParameters {
@@ -12,9 +878,60 @@ fn parameters() -> KeyedFixedParameters {
     }
 }
 
-// A separate route writes field groups as independently specified fixed-width
-// records. It never invokes the producer's encoder or hashes its output.
-fn independent_encoding(m: &FreezeManifest) -> Vec<u8> {
+fn literal_hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut result = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        result.push(char::from(DIGITS[usize::from(byte >> 4)]));
+        result.push(char::from(DIGITS[usize::from(byte & 15)]));
+    }
+    result
+}
+
+fn assert_s5_descriptor_literals(m: &FreezeManifest) {
+    let d = &m.descriptor;
+    assert_eq!(
+        literal_hex(&d.transcript),
+        "232323232323232323232323232323232323232323232323232323232323232301010000000000000001"
+    );
+    assert_eq!(
+        literal_hex(&d.pair_digest),
+        "5b44988581fc2179c1112463e2567d7a240d12f0d9a3548f91dcfca85e73f51c"
+    );
+    assert_eq!(
+        literal_hex(&d.leaf),
+        "20000000000000000000000000000000000000000000000000000000000000000075205b44988581fc2179c1112463e2567d7a240d12f0d9a3548f91dcfca85e73f51c7600ce7ec400cf7ec688cdc87ec4cdc97ec688cdc77504000000008875cdca00d17b888851"
+    );
+    assert_eq!(d.leaf_version, 0xc4);
+    assert_eq!(
+        literal_hex(&d.internal_key),
+        "50929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
+    );
+    assert_eq!(
+        literal_hex(&d.root),
+        "2bcdc4bf68e6b681d60a66de3037f0e9c388e989a01792e6ff4da76cf1dc6787"
+    );
+    assert_eq!(
+        literal_hex(&d.tweak),
+        "4f2baa86a37bdd907eabeced1ba96a0a45204b537871e81b13db801cfe306b8b"
+    );
+    assert_eq!(
+        literal_hex(&d.output_key),
+        "c239949d43358c34379ef871493ce5e106d284233cd8fe19bc04a07b72a84d14"
+    );
+    assert_eq!(
+        literal_hex(&d.output_program),
+        "5120c239949d43358c34379ef871493ce5e106d284233cd8fe19bc04a07b72a84d14"
+    );
+    assert_eq!(
+        literal_hex(&d.control),
+        "c550929b74c1a04954b78b4b6035e97a5e078a5a0f28ec96d547bfee9ace803ac0"
+    );
+}
+
+// Field groups are assembled from the record rather than the producer's encoder.
+#[allow(clippy::too_many_lines)] // Historical and current grammar must be compared in one independent route.
+fn independent_encoding(m: &FreezeManifest, codes: u16) -> Vec<u8> {
     let mut groups = vec![b"tripod-keyed-fixed-capture-freeze-v1\0".to_vec()];
     groups.push(
         u32::try_from(m.sources.len())
@@ -22,15 +939,13 @@ fn independent_encoding(m: &FreezeManifest) -> Vec<u8> {
             .to_be_bytes()
             .to_vec(),
     );
-    for s in &m.sources {
-        groups.push(u32::try_from(s.path.len()).unwrap().to_be_bytes().to_vec());
-        groups.push(s.path.as_bytes().to_vec());
-        groups.push(s.digest.to_vec());
+    for SourceIdentity { path, digest } in &m.sources {
+        groups.push(u32::try_from(path.len()).unwrap().to_be_bytes().to_vec());
+        groups.push(path.as_bytes().to_vec());
+        groups.push(digest.to_vec());
     }
-    groups.push(vec![0, 0, 0, 11]);
-    groups.push(vec![
-        0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 10, 0, 11,
-    ]);
+    groups.push(u32::from(codes).to_be_bytes().to_vec());
+    groups.push((1..=codes).flat_map(u16::to_be_bytes).collect());
     let d = &m.descriptor;
     groups.extend([
         d.parameters.key.to_vec(),
@@ -40,98 +955,172 @@ fn independent_encoding(m: &FreezeManifest) -> Vec<u8> {
         d.pair_digest.to_vec(),
     ]);
     groups.extend([
-        vec![0, 0, 0, 104],
+        u32::try_from(d.leaf.len()).unwrap().to_be_bytes().to_vec(),
         d.leaf.clone(),
-        vec![0xc4],
+        vec![d.leaf_version],
         d.internal_key.to_vec(),
         d.root.to_vec(),
         d.tweak.to_vec(),
         d.output_key.to_vec(),
         vec![u8::from(d.parity)],
-        vec![0, 0, 0, 34],
+        u32::try_from(d.output_program.len())
+            .unwrap()
+            .to_be_bytes()
+            .to_vec(),
         d.output_program.clone(),
-        vec![0, 0, 0, 33],
+        u32::try_from(d.control.len())
+            .unwrap()
+            .to_be_bytes()
+            .to_vec(),
         d.control.clone(),
     ]);
-    groups.push(vec![0, 0, 0, 1, 0, 0, 0, 2, 0]);
-    groups.extend([104_u64, 140, 143, 0, 0].map(|n| n.to_be_bytes().to_vec()));
-    groups.push(vec![0, 0, 0, 1]);
+    groups.extend([
+        m.recipe_schema.to_be_bytes().to_vec(),
+        m.target_version.to_be_bytes().to_vec(),
+    ]);
+    match m.envelope.maximum_members {
+        None => groups.push(vec![0]),
+        Some(value) => groups.push([vec![1], value.to_be_bytes().to_vec()].concat()),
+    }
+    groups.extend(
+        [
+            m.envelope.script_bytes,
+            m.envelope.script_witness_bytes,
+            m.envelope.input_witness_bytes,
+            m.envelope.control_depth,
+            m.envelope.argument_items,
+        ]
+        .map(|n| n.to_be_bytes().to_vec()),
+    );
+    groups.push(vec![
+        u8::from(m.envelope.annex),
+        u8::from(m.envelope.issuance),
+        u8::from(m.envelope.peg_in),
+        u8::from(m.envelope.empty_nonce),
+    ]);
     groups.concat()
 }
 
 #[test]
-fn initial_history_independent_encoding_and_named_validation_boundaries() {
+#[allow(clippy::too_many_lines)] // Three retained freeze states share one ordered independent encoding control.
+fn fixed_capture_refreeze_history() {
     let q = parameters();
-    let control = FreezeManifest::offer(q).unwrap();
-    let validated = control.clone().validate(q).unwrap();
-    // Initial S5 snapshot, no historical capture. Expected bytes were assembled
-    // outside these crates from the record: Python hashlib for source/transcript
-    // and tagged hashes, affine secp256k1 addition in JavaScript for the point,
-    // then the explicitly ordered binary grammar. No producer output was read.
-    // Current recipe identity: 5eec00be6a14319f447138dcf59bbf621fc53031918a11d4a82312b84a3d930c
-    assert_eq!(validated.encoding().len(), 4249);
-    assert_eq!(
-        validated.identity(),
-        [
-            94, 236, 0, 190, 106, 20, 49, 159, 68, 113, 56, 220, 245, 155, 191, 98, 31, 197, 48,
-            49, 145, 138, 17, 212, 168, 35, 18, 184, 74, 61, 147, 12,
-        ]
-    );
-    let independent = independent_encoding(&control);
+    let current = FreezeManifest::offer(q).unwrap();
+    let validated = current.clone().validate(q).unwrap();
+    let independent = independent_encoding(&current, 15);
+    assert_eq!(independent.len(), 8853);
     assert_eq!(validated.encoding(), independent);
+    assert_eq!(validated.identity(), S8_IDENTITY);
     assert_eq!(
-        validated.identity(),
-        sha256::Hash::hash(&independent).to_byte_array()
+        sha256::Hash::hash(&independent).to_byte_array(),
+        S8_IDENTITY
     );
+    assert_eq!(current.envelope.maximum_members, Some(1299));
+    assert_eq!(current.computed.len(), 15);
     assert!(
-        control
+        current
             .sources
             .windows(2)
             .all(|rows| rows[0].path < rows[1].path)
     );
-    assert!(control.envelope.maximum_members.is_none());
-    let mut subject = control.clone();
-    subject.sources.pop();
-    assert_eq!(subject.validate(q), Err(FreezeRefusal::Inventory));
-    let mut subject = control.clone();
-    subject.sources.swap(0, 1);
-    assert_eq!(subject.validate(q), Err(FreezeRefusal::Inventory));
-    let mut subject = control.clone();
-    subject.computed.reverse();
-    assert_eq!(subject.validate(q), Err(FreezeRefusal::Inventory));
-    let mut subject = control.clone();
-    subject.descriptor.parameters.key[0] ^= 1;
-    assert_eq!(subject.validate(q), Err(FreezeRefusal::Triple));
-    let mut subject = control.clone();
-    subject.descriptor.output_program[2] ^= 1;
-    assert_eq!(subject.validate(q), Err(FreezeRefusal::Descriptor));
-    let mut subject = control.clone();
-    subject.recipe_schema += 1;
-    assert_eq!(subject.validate(q), Err(FreezeRefusal::Recipe));
-    let mut subject = control.clone();
-    subject.target_version += 1;
-    assert_eq!(subject.validate(q), Err(FreezeRefusal::Target));
-    let mut subject = control;
-    subject.envelope.maximum_members = Some(1564);
-    assert_eq!(subject.validate(q), Err(FreezeRefusal::Envelope));
+    assert!(S5_SOURCES.windows(2).all(|rows| rows[0].0 < rows[1].0));
+    assert!(REVIEW.windows(2).all(|rows| rows[0].path < rows[1].path));
+
+    let previous = S5_SOURCES
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let actual = current
+        .sources
+        .iter()
+        .filter_map(|source| {
+            let before = previous.get(source.path.as_str()).copied();
+            if before == Some(source.digest) {
+                None
+            } else {
+                Some((source.path.as_str(), before, source.digest))
+            }
+        })
+        .collect::<Vec<_>>();
+    let reviewed = REVIEW
+        .iter()
+        .map(|row| (row.path, row.previous, row.current))
+        .collect::<Vec<_>>();
+    assert_eq!(actual, reviewed);
+    assert_eq!(POST_S8A2.len(), 2);
+    assert!(POST_S8A2.windows(2).all(|rows| rows[0].path < rows[1].path));
+    let mut s8a2 = current.clone();
+    for row in POST_S8A2 {
+        let source = s8a2
+            .sources
+            .iter_mut()
+            .find(|source| source.path == row.path)
+            .unwrap();
+        assert_eq!(source.digest, row.current);
+        source.digest = row.previous.unwrap();
+    }
+    let s8a2_encoding = independent_encoding(&s8a2, 15);
+    assert_eq!(s8a2_encoding.len(), 8853);
+    assert_eq!(
+        sha256::Hash::hash(&s8a2_encoding).to_byte_array(),
+        S8A2_IDENTITY
+    );
+    assert_eq!(s8a2.clone().validate(q), Err(FreezeRefusal::Inventory));
+    assert_eq!(POST_PILOT.len(), 3);
+    assert!(
+        POST_PILOT
+            .windows(2)
+            .all(|rows| rows[0].path < rows[1].path)
+    );
+    let mut pilot = s8a2.clone();
+    for row in POST_PILOT {
+        let source = pilot
+            .sources
+            .iter_mut()
+            .find(|source| source.path == row.path)
+            .unwrap();
+        assert_eq!(source.digest, row.current);
+        source.digest = row.previous.unwrap();
+    }
+    let pilot_encoding = independent_encoding(&pilot, 15);
+    assert_eq!(pilot_encoding.len(), 8853);
+    assert_eq!(
+        sha256::Hash::hash(&pilot_encoding).to_byte_array(),
+        PILOT_IDENTITY
+    );
+    assert_eq!(pilot.validate(q), Err(FreezeRefusal::Inventory));
+    let mut historical = current.clone();
+    historical.sources = S5_SOURCES
+        .iter()
+        .map(|(path, digest)| SourceIdentity {
+            path: (*path).into(),
+            digest: *digest,
+        })
+        .collect();
+    historical.computed.truncate(11);
+    historical.envelope.maximum_members = None;
+    assert_s5_descriptor_literals(&historical);
+    let old_encoding = independent_encoding(&historical, 11);
+    assert_eq!(old_encoding.len(), 4249);
+    assert_eq!(
+        sha256::Hash::hash(&old_encoding).to_byte_array(),
+        S5_IDENTITY
+    );
+    assert_eq!(historical.validate(q), Err(FreezeRefusal::Inventory));
+    let mut stale = current.clone();
+    stale.sources.pop();
+    assert_eq!(stale.validate(q), Err(FreezeRefusal::Inventory));
+    let mut stale = current.clone();
+    stale.sources[0].digest[0] ^= 1;
+    assert_eq!(stale.validate(q), Err(FreezeRefusal::Inventory));
+    let mut stale = current.clone();
+    stale.envelope.maximum_members = None;
+    assert_eq!(stale.validate(q), Err(FreezeRefusal::Envelope));
     let legacy = vectors::keyed_final_manifest::FreezeManifest::offer(q.key)
         .capture_encoding()
         .unwrap();
-    assert_ne!(validated.encoding(), legacy.as_bytes());
     assert_ne!(
         validated.identity(),
         sha256::Hash::hash(legacy.as_bytes()).to_byte_array()
     );
-}
-
-#[test]
-fn synthetic_stale_source_inventory_is_refused() {
-    let q = parameters();
-    let validated = FreezeManifest::offer(q).unwrap().validate(q).unwrap();
-    // This is a test-owned stale subject, not a historical landed freeze.
-    let mut stale = validated.manifest().clone();
-    stale.sources[0].digest[0] ^= 1;
-    let stale_identity = sha256::Hash::hash(&independent_encoding(&stale)).to_byte_array();
-    assert_ne!(stale_identity, validated.identity());
-    assert_eq!(stale.validate(q), Err(FreezeRefusal::Inventory));
 }

@@ -131,6 +131,10 @@ const fn code(item: ComputedItem) -> u16 {
         ComputedItem::EmissionAndClosure => 9,
         ComputedItem::MemberCoverage => 10,
         ComputedItem::DerivedResources => 11,
+        ComputedItem::TransactionShape => 12,
+        ComputedItem::CaptureSubjectCensus => 13,
+        ComputedItem::ReaderRecurrence => 14,
+        ComputedItem::MemberMaximum => 15,
     }
 }
 

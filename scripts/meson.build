@@ -23,10 +23,14 @@ script_source_files = files(
   'test-executor-classification.py',
   'test-executor-request-comparisons.py',
   'test-keyed-final-capture-wrappers.py',
+  'test-keyed-fixed-capture-wrappers.py',
 )
 
 # Nested shell helpers are explicit census exclusions, not label subjects.
 script_excluded_files = files(
+  'keyed-fixed-capture/capture-prepare.sh',
+  'keyed-fixed-capture/capture-unit.sh',
+  'keyed-fixed-capture/run-one.sh',
   'keyed-final-capture/capture-prepare.sh',
   'keyed-final-capture/capture-unit.sh',
   'keyed-final-capture/run-one.sh',
@@ -36,6 +40,17 @@ test(
   'keyed-final-capture-wrappers',
   find_program('python3'),
   args: [files('test-keyed-final-capture-wrappers.py')],
+  suite: 'lint',
+  timeout: 300,
+)
+
+# Provisional stand-in expected wall: 19 s (independent S8a review).
+# Tolerance is report-only until isolated and loaded node measurements exist;
+# the 300 s timeout is a hang guard, not a performance threshold.
+test(
+  'keyed-fixed-capture-wrappers',
+  find_program('python3'),
+  args: [files('test-keyed-fixed-capture-wrappers.py')],
   suite: 'lint',
   timeout: 300,
 )

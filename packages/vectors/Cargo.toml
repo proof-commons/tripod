@@ -123,13 +123,15 @@ tapscript = { workspace = true }
 target-elements = { workspace = true }
 target-elements-conformance = { workspace = true }
 transaction = { workspace = true }
+# The fixed-form capture journal and structural route decode proof-bearing
+# parents with the reference Elements serializer, including forms the shared
+# first-party decoder deliberately does not admit into full-reader histories.
+elements = { workspace = true }
 # The archive admission root decodes the retained subjects and responses.
 serde_json = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
-# Independent SegWit-v0 encoding comparison on production-constructed bytes.
-elements = { workspace = true }
 lzma-rust2 = { workspace = true }
 nix = { workspace = true }
 tempfile = { workspace = true }

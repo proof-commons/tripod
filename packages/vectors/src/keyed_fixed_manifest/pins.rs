@@ -1,5 +1,5 @@
-//! Initial S5 whole-file pins. The pin table is represented in the encoded
-//! inventory itself; hashing this table into itself would be circular.
+//! S8 reviewed whole-file pins. The pin table represents itself through the
+//! encoded inventory and is never hashed into itself.
 
 pub(super) const SOURCES: &[(&str, &[u8], [u8; 32])] = &[
     (
@@ -245,6 +245,96 @@ pub(super) const SOURCES: &[(&str, &[u8], [u8; 32])] = &[
         ],
     ),
     (
+        "packages/target-elements-conformance/src/commitment_oracle/commitment.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/commitment_oracle/commitment.rs"
+        ),
+        [
+            154, 182, 97, 141, 218, 94, 3, 38, 236, 202, 88, 189, 99, 203, 156, 91, 100, 104, 63,
+            126, 12, 251, 120, 7, 162, 181, 66, 52, 246, 181, 104, 226,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/commitment_oracle/curve.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/commitment_oracle/curve.rs"
+        ),
+        [
+            86, 27, 135, 54, 23, 20, 101, 234, 162, 119, 103, 199, 126, 224, 0, 35, 200, 29, 237,
+            44, 169, 193, 239, 126, 203, 145, 234, 247, 162, 125, 112, 54,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/commitment_oracle/generator.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/commitment_oracle/generator.rs"
+        ),
+        [
+            225, 239, 3, 211, 180, 205, 124, 168, 115, 157, 35, 247, 238, 39, 157, 215, 140, 42,
+            100, 163, 92, 186, 175, 96, 214, 148, 187, 144, 246, 153, 128, 221,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/commitment_oracle/mod.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/commitment_oracle/mod.rs"
+        ),
+        [
+            159, 5, 218, 32, 244, 71, 176, 12, 225, 175, 124, 167, 106, 218, 25, 163, 52, 155, 61,
+            222, 0, 234, 19, 177, 252, 228, 165, 25, 198, 214, 179, 116,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/commitment_oracle/vector.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/commitment_oracle/vector.rs"
+        ),
+        [
+            148, 140, 91, 193, 62, 60, 175, 188, 51, 67, 18, 234, 87, 109, 121, 119, 59, 161, 157,
+            58, 39, 187, 29, 78, 110, 109, 211, 204, 165, 227, 130, 54,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/confidential_fixture.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/confidential_fixture.rs"
+        ),
+        [
+            172, 42, 236, 182, 222, 36, 76, 214, 179, 25, 144, 233, 179, 230, 253, 55, 109, 148,
+            151, 63, 238, 23, 116, 76, 206, 143, 27, 12, 127, 221, 16, 246,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/confidential_funding.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/confidential_funding.rs"
+        ),
+        [
+            102, 230, 169, 77, 137, 73, 41, 76, 53, 108, 248, 4, 34, 85, 63, 39, 158, 51, 189, 64,
+            104, 63, 3, 48, 207, 226, 167, 212, 105, 169, 124, 151,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/confidential_oracles.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/confidential_oracles.rs"
+        ),
+        [
+            68, 88, 78, 107, 252, 85, 160, 70, 206, 239, 186, 251, 68, 247, 229, 188, 75, 140, 13,
+            161, 237, 189, 188, 192, 143, 158, 28, 38, 75, 162, 19, 0,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/constructor/canonical.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/constructor/canonical.rs"
+        ),
+        [
+            198, 154, 32, 155, 144, 39, 221, 142, 174, 168, 152, 194, 241, 11, 110, 173, 245, 93,
+            214, 93, 241, 239, 208, 187, 176, 141, 220, 166, 197, 157, 160, 69,
+        ],
+    ),
+    (
         "packages/target-elements-conformance/src/constructor/curve.rs",
         include_bytes!("../../../../packages/target-elements-conformance/src/constructor/curve.rs"),
         [
@@ -263,6 +353,34 @@ pub(super) const SOURCES: &[(&str, &[u8], [u8; 32])] = &[
         ],
     ),
     (
+        "packages/target-elements-conformance/src/constructor/metadata.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/constructor/metadata.rs"
+        ),
+        [
+            214, 59, 192, 116, 65, 239, 250, 40, 126, 248, 235, 190, 190, 159, 227, 66, 113, 12,
+            62, 254, 112, 95, 247, 135, 169, 239, 69, 9, 14, 91, 239, 141,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/constructor/metadata_leaf.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/constructor/metadata_leaf.rs"
+        ),
+        [
+            211, 49, 214, 187, 44, 150, 71, 124, 220, 184, 207, 114, 47, 125, 163, 97, 151, 17,
+            208, 51, 88, 239, 53, 138, 210, 196, 176, 26, 83, 202, 229, 223,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/constructor/mod.rs",
+        include_bytes!("../../../../packages/target-elements-conformance/src/constructor/mod.rs"),
+        [
+            55, 72, 218, 75, 68, 159, 217, 209, 167, 197, 246, 103, 16, 56, 166, 242, 32, 92, 183,
+            177, 104, 113, 40, 38, 31, 194, 95, 95, 79, 241, 115, 140,
+        ],
+    ),
+    (
         "packages/target-elements-conformance/src/constructor/tagged.rs",
         include_bytes!(
             "../../../../packages/target-elements-conformance/src/constructor/tagged.rs"
@@ -273,11 +391,103 @@ pub(super) const SOURCES: &[(&str, &[u8], [u8; 32])] = &[
         ],
     ),
     (
+        "packages/target-elements-conformance/src/constructor/totality.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/constructor/totality.rs"
+        ),
+        [
+            152, 1, 4, 12, 201, 97, 249, 136, 173, 58, 72, 1, 101, 46, 254, 232, 113, 42, 76, 118,
+            194, 112, 46, 146, 86, 174, 48, 127, 155, 195, 181, 230,
+        ],
+    ),
+    (
         "packages/target-elements-conformance/src/constructor/tree.rs",
         include_bytes!("../../../../packages/target-elements-conformance/src/constructor/tree.rs"),
         [
             54, 79, 12, 224, 130, 76, 135, 97, 22, 80, 145, 120, 108, 25, 85, 94, 182, 235, 68, 86,
             128, 42, 178, 39, 152, 91, 52, 150, 116, 148, 140, 34,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/error.rs",
+        include_bytes!("../../../../packages/target-elements-conformance/src/error.rs"),
+        [
+            160, 98, 205, 247, 42, 72, 227, 218, 173, 26, 144, 170, 255, 24, 129, 2, 21, 21, 110,
+            83, 59, 169, 64, 44, 120, 101, 136, 172, 200, 61, 84, 101,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/executor.rs",
+        include_bytes!("../../../../packages/target-elements-conformance/src/executor.rs"),
+        [
+            225, 115, 177, 171, 86, 65, 29, 60, 99, 80, 126, 12, 251, 165, 178, 98, 1, 16, 176,
+            238, 58, 170, 129, 208, 221, 161, 99, 3, 133, 202, 12, 63,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/fixture.rs",
+        include_bytes!("../../../../packages/target-elements-conformance/src/fixture.rs"),
+        [
+            54, 203, 47, 113, 186, 139, 233, 46, 110, 83, 135, 115, 78, 1, 221, 70, 250, 58, 151,
+            201, 118, 81, 39, 183, 23, 63, 203, 53, 179, 58, 206, 79,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/protocol.rs",
+        include_bytes!("../../../../packages/target-elements-conformance/src/protocol.rs"),
+        [
+            143, 237, 241, 161, 202, 242, 132, 246, 113, 113, 214, 253, 61, 24, 70, 134, 71, 67,
+            138, 173, 214, 129, 220, 85, 19, 184, 180, 97, 200, 198, 23, 37,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/prototype.rs",
+        include_bytes!("../../../../packages/target-elements-conformance/src/prototype.rs"),
+        [
+            156, 219, 13, 27, 184, 238, 21, 92, 142, 238, 238, 16, 29, 223, 27, 52, 241, 221, 113,
+            168, 38, 14, 173, 14, 105, 228, 35, 203, 114, 155, 165, 108,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/prototype_validate.rs",
+        include_bytes!(
+            "../../../../packages/target-elements-conformance/src/prototype_validate.rs"
+        ),
+        [
+            80, 128, 191, 44, 12, 190, 166, 56, 184, 250, 64, 124, 4, 185, 244, 120, 83, 203, 122,
+            238, 54, 239, 146, 237, 3, 224, 113, 51, 187, 103, 229, 231,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/provenance.rs",
+        include_bytes!("../../../../packages/target-elements-conformance/src/provenance.rs"),
+        [
+            100, 223, 152, 191, 245, 123, 59, 164, 149, 12, 151, 173, 224, 249, 90, 89, 181, 114,
+            207, 132, 46, 141, 151, 217, 236, 45, 211, 126, 129, 160, 244, 67,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/sponsor_parent.rs",
+        include_bytes!("../../../../packages/target-elements-conformance/src/sponsor_parent.rs"),
+        [
+            44, 114, 212, 202, 5, 62, 42, 9, 117, 60, 214, 126, 185, 91, 177, 218, 31, 28, 213, 65,
+            212, 170, 247, 60, 198, 80, 248, 108, 77, 39, 110, 172,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/test_material.rs",
+        include_bytes!("../../../../packages/target-elements-conformance/src/test_material.rs"),
+        [
+            202, 37, 75, 6, 95, 44, 58, 129, 115, 187, 211, 56, 176, 177, 114, 143, 75, 139, 138,
+            206, 199, 242, 221, 31, 26, 154, 12, 194, 116, 115, 145, 252,
+        ],
+    ),
+    (
+        "packages/target-elements-conformance/src/validate.rs",
+        include_bytes!("../../../../packages/target-elements-conformance/src/validate.rs"),
+        [
+            243, 30, 116, 106, 139, 98, 144, 21, 46, 50, 168, 9, 76, 119, 248, 78, 139, 28, 19, 87,
+            206, 23, 165, 9, 53, 252, 203, 239, 58, 202, 245, 122,
         ],
     ),
     (
@@ -321,11 +531,115 @@ pub(super) const SOURCES: &[(&str, &[u8], [u8; 32])] = &[
         ],
     ),
     (
+        "packages/target-elements/src/transaction_form.rs",
+        include_bytes!("../../../../packages/target-elements/src/transaction_form.rs"),
+        [
+            136, 13, 145, 18, 134, 109, 117, 141, 78, 51, 179, 193, 96, 117, 131, 25, 143, 113,
+            130, 116, 52, 14, 186, 131, 245, 79, 145, 12, 105, 237, 169, 166,
+        ],
+    ),
+    (
+        "packages/transaction/Cargo.toml",
+        include_bytes!("../../../../packages/transaction/Cargo.toml"),
+        [
+            213, 48, 46, 59, 231, 172, 161, 133, 232, 101, 56, 158, 220, 252, 185, 8, 32, 120, 107,
+            193, 224, 178, 123, 152, 160, 191, 18, 130, 92, 193, 86, 106,
+        ],
+    ),
+    (
+        "packages/transaction/src/bytes.rs",
+        include_bytes!("../../../../packages/transaction/src/bytes.rs"),
+        [
+            227, 44, 4, 245, 220, 87, 139, 49, 169, 187, 176, 205, 148, 148, 217, 210, 250, 53,
+            228, 113, 235, 76, 181, 82, 215, 112, 30, 52, 151, 24, 152, 153,
+        ],
+    ),
+    (
+        "packages/transaction/src/construct.rs",
+        include_bytes!("../../../../packages/transaction/src/construct.rs"),
+        [
+            18, 71, 217, 9, 166, 49, 40, 80, 41, 142, 72, 158, 168, 109, 160, 205, 199, 88, 42, 88,
+            52, 38, 183, 59, 225, 184, 80, 85, 141, 198, 35, 42,
+        ],
+    ),
+    (
+        "packages/transaction/src/keyed_curve.rs",
+        include_bytes!("../../../../packages/transaction/src/keyed_curve.rs"),
+        [
+            176, 16, 59, 115, 144, 212, 220, 4, 174, 244, 125, 95, 84, 163, 42, 230, 76, 140, 8,
+            95, 136, 81, 80, 135, 86, 95, 163, 183, 243, 241, 230, 215,
+        ],
+    ),
+    (
+        "packages/transaction/src/keyed_fixed_abi.rs",
+        include_bytes!("../../../../packages/transaction/src/keyed_fixed_abi.rs"),
+        [
+            23, 209, 167, 123, 44, 192, 58, 78, 253, 106, 254, 76, 21, 53, 160, 227, 7, 80, 102,
+            78, 21, 171, 63, 55, 228, 112, 128, 99, 15, 50, 172, 141,
+        ],
+    ),
+    (
+        "packages/transaction/src/keyed_fixed_construct.rs",
+        include_bytes!("../../../../packages/transaction/src/keyed_fixed_construct.rs"),
+        [
+            88, 117, 243, 88, 194, 223, 60, 37, 105, 166, 213, 106, 44, 186, 247, 225, 44, 2, 255,
+            120, 67, 7, 128, 56, 175, 139, 157, 61, 101, 12, 57, 172,
+        ],
+    ),
+    (
+        "packages/transaction/src/keyed_fixed_inputs.rs",
+        include_bytes!("../../../../packages/transaction/src/keyed_fixed_inputs.rs"),
+        [
+            131, 128, 83, 83, 85, 253, 107, 55, 203, 38, 26, 199, 160, 58, 141, 176, 158, 139, 80,
+            158, 188, 15, 202, 144, 2, 159, 144, 120, 115, 100, 200, 200,
+        ],
+    ),
+    (
+        "packages/transaction/src/keyed_fixed_request.rs",
+        include_bytes!("../../../../packages/transaction/src/keyed_fixed_request.rs"),
+        [
+            165, 141, 186, 239, 58, 184, 19, 71, 199, 251, 18, 25, 203, 38, 209, 197, 44, 191, 160,
+            105, 186, 245, 155, 43, 133, 73, 56, 101, 203, 213, 237, 229,
+        ],
+    ),
+    (
+        "packages/transaction/src/keyed_fixed_sponsor.rs",
+        include_bytes!("../../../../packages/transaction/src/keyed_fixed_sponsor.rs"),
+        [
+            158, 29, 128, 153, 231, 156, 238, 189, 56, 172, 199, 97, 197, 105, 117, 1, 121, 188, 4,
+            165, 200, 123, 234, 237, 238, 91, 255, 253, 166, 95, 167, 156,
+        ],
+    ),
+    (
+        "packages/transaction/src/keyed_fixed_taproot.rs",
+        include_bytes!("../../../../packages/transaction/src/keyed_fixed_taproot.rs"),
+        [
+            200, 249, 245, 103, 32, 92, 2, 77, 40, 28, 31, 115, 159, 214, 129, 8, 234, 135, 32, 39,
+            37, 151, 55, 91, 181, 86, 88, 200, 229, 16, 30, 223,
+        ],
+    ),
+    (
+        "packages/transaction/src/sponsor.rs",
+        include_bytes!("../../../../packages/transaction/src/sponsor.rs"),
+        [
+            209, 80, 14, 189, 136, 219, 4, 1, 50, 78, 98, 116, 203, 48, 16, 183, 218, 220, 119,
+            147, 153, 154, 20, 123, 218, 80, 161, 250, 115, 75, 80, 48,
+        ],
+    ),
+    (
+        "packages/transaction/src/taproot.rs",
+        include_bytes!("../../../../packages/transaction/src/taproot.rs"),
+        [
+            196, 22, 181, 13, 154, 119, 92, 192, 55, 110, 140, 10, 251, 115, 237, 210, 81, 144,
+            201, 138, 220, 183, 67, 20, 59, 9, 195, 166, 252, 171, 115, 223,
+        ],
+    ),
+    (
         "packages/vectors/Cargo.toml",
         include_bytes!("../../../../packages/vectors/Cargo.toml"),
         [
-            210, 205, 104, 73, 158, 92, 218, 86, 242, 12, 120, 250, 56, 154, 252, 229, 21, 102,
-            187, 125, 120, 246, 185, 220, 167, 205, 51, 234, 70, 244, 136, 100,
+            144, 16, 122, 216, 95, 158, 3, 32, 126, 249, 28, 252, 164, 9, 190, 213, 6, 213, 138,
+            213, 150, 146, 146, 79, 38, 94, 162, 193, 99, 111, 108, 217,
         ],
     ),
     (
@@ -337,6 +651,14 @@ pub(super) const SOURCES: &[(&str, &[u8], [u8; 32])] = &[
         ],
     ),
     (
+        "packages/vectors/src/keyed_fixed_capture.rs",
+        include_bytes!("../../../../packages/vectors/src/keyed_fixed_capture.rs"),
+        [
+            165, 239, 139, 125, 203, 72, 140, 62, 157, 219, 154, 164, 164, 218, 90, 244, 177, 47,
+            223, 10, 246, 77, 137, 207, 67, 66, 217, 39, 158, 91, 117, 233,
+        ],
+    ),
+    (
         "packages/vectors/src/keyed_fixed_constructor.rs",
         include_bytes!("../../../../packages/vectors/src/keyed_fixed_constructor.rs"),
         [
@@ -345,19 +667,93 @@ pub(super) const SOURCES: &[(&str, &[u8], [u8; 32])] = &[
         ],
     ),
     (
+        "packages/vectors/src/keyed_fixed_evidence.rs",
+        include_bytes!("../../../../packages/vectors/src/keyed_fixed_evidence.rs"),
+        [
+            93, 94, 111, 221, 233, 82, 173, 51, 47, 192, 65, 147, 218, 239, 44, 13, 162, 3, 164,
+            57, 84, 22, 154, 30, 235, 10, 58, 165, 238, 97, 55, 198,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_fixed_history_model.rs",
+        include_bytes!("../../../../packages/vectors/src/keyed_fixed_history_model.rs"),
+        [
+            96, 186, 57, 136, 171, 233, 244, 147, 2, 197, 51, 158, 86, 67, 13, 216, 253, 132, 51,
+            202, 110, 231, 230, 111, 183, 187, 228, 83, 64, 69, 234, 54,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_fixed_history_reader.rs",
+        include_bytes!("../../../../packages/vectors/src/keyed_fixed_history_reader.rs"),
+        [
+            18, 86, 188, 19, 2, 203, 222, 112, 228, 152, 147, 61, 81, 211, 236, 193, 80, 51, 75,
+            37, 80, 59, 65, 226, 244, 31, 161, 170, 70, 127, 249, 5,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_fixed_history_reader/authentication.rs",
+        include_bytes!(
+            "../../../../packages/vectors/src/keyed_fixed_history_reader/authentication.rs"
+        ),
+        [
+            88, 184, 14, 215, 229, 76, 2, 168, 216, 114, 194, 30, 229, 163, 182, 138, 137, 10, 125,
+            31, 124, 136, 93, 252, 145, 185, 205, 174, 112, 217, 199, 67,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_fixed_history_reader/evidence.rs",
+        include_bytes!("../../../../packages/vectors/src/keyed_fixed_history_reader/evidence.rs"),
+        [
+            138, 39, 84, 135, 80, 114, 156, 208, 153, 219, 29, 125, 78, 88, 134, 5, 196, 146, 96,
+            87, 109, 206, 169, 165, 167, 120, 142, 91, 67, 55, 48, 27,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_fixed_history_reader/fold.rs",
+        include_bytes!("../../../../packages/vectors/src/keyed_fixed_history_reader/fold.rs"),
+        [
+            157, 52, 252, 40, 186, 171, 146, 74, 221, 231, 218, 29, 74, 98, 243, 24, 163, 61, 230,
+            65, 124, 110, 143, 99, 219, 106, 45, 181, 135, 81, 245, 226,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_fixed_history_reader/identity.rs",
+        include_bytes!("../../../../packages/vectors/src/keyed_fixed_history_reader/identity.rs"),
+        [
+            9, 58, 14, 80, 15, 129, 59, 96, 250, 234, 195, 93, 12, 166, 186, 132, 21, 122, 251,
+            140, 17, 102, 213, 42, 76, 33, 87, 7, 141, 242, 28, 249,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_fixed_history_reader/refusal.rs",
+        include_bytes!("../../../../packages/vectors/src/keyed_fixed_history_reader/refusal.rs"),
+        [
+            15, 68, 73, 136, 153, 186, 101, 43, 55, 116, 14, 243, 5, 116, 220, 215, 180, 47, 54,
+            21, 119, 115, 236, 10, 214, 147, 193, 91, 190, 56, 13, 12,
+        ],
+    ),
+    (
         "packages/vectors/src/keyed_fixed_manifest.rs",
         include_bytes!("../../../../packages/vectors/src/keyed_fixed_manifest.rs"),
         [
-            247, 189, 17, 104, 74, 228, 83, 141, 41, 69, 9, 185, 189, 164, 104, 1, 105, 51, 227,
-            77, 127, 10, 37, 138, 29, 243, 130, 76, 128, 177, 148, 231,
+            96, 69, 83, 247, 139, 148, 28, 228, 141, 61, 109, 232, 181, 200, 214, 113, 81, 136,
+            176, 43, 8, 250, 8, 223, 137, 125, 64, 107, 153, 195, 122, 184,
         ],
     ),
     (
         "packages/vectors/src/keyed_fixed_manifest/encoding.rs",
         include_bytes!("../../../../packages/vectors/src/keyed_fixed_manifest/encoding.rs"),
         [
-            102, 242, 94, 152, 223, 132, 43, 34, 197, 35, 79, 241, 109, 246, 222, 164, 31, 23, 133,
-            50, 247, 74, 86, 142, 118, 95, 199, 65, 198, 253, 177, 28,
+            178, 222, 14, 192, 223, 152, 213, 57, 174, 225, 5, 252, 99, 141, 187, 90, 101, 170,
+            224, 45, 107, 243, 0, 48, 13, 36, 110, 59, 38, 167, 248, 206,
+        ],
+    ),
+    (
+        "packages/vectors/src/keyed_fixed_native.rs",
+        include_bytes!("../../../../packages/vectors/src/keyed_fixed_native.rs"),
+        [
+            43, 44, 136, 255, 229, 143, 208, 168, 14, 55, 74, 143, 175, 243, 151, 176, 95, 109,
+            176, 59, 74, 175, 115, 19, 153, 64, 54, 227, 160, 86, 16, 226,
         ],
     ),
     (
@@ -374,6 +770,54 @@ pub(super) const SOURCES: &[(&str, &[u8], [u8; 32])] = &[
         [
             35, 39, 168, 161, 45, 99, 87, 59, 244, 23, 200, 133, 119, 192, 1, 107, 166, 254, 203,
             20, 233, 207, 180, 45, 11, 180, 185, 5, 136, 161, 169, 238,
+        ],
+    ),
+    (
+        "packages/vectors/tests/keyed_fixed_capture.rs",
+        include_bytes!("../../../../packages/vectors/tests/keyed_fixed_capture.rs"),
+        [
+            11, 198, 99, 249, 235, 65, 60, 20, 170, 135, 11, 47, 64, 237, 18, 107, 52, 230, 120,
+            59, 211, 181, 94, 230, 113, 177, 23, 191, 101, 99, 31, 114,
+        ],
+    ),
+    (
+        "packages/vectors/tests/keyed_fixed_capture/native.rs",
+        include_bytes!("../../../../packages/vectors/tests/keyed_fixed_capture/native.rs"),
+        [
+            196, 12, 168, 158, 56, 148, 48, 75, 208, 223, 35, 85, 109, 35, 111, 3, 88, 143, 220,
+            139, 89, 246, 113, 174, 51, 34, 189, 203, 200, 107, 68, 99,
+        ],
+    ),
+    (
+        "scripts/elements-native-executor.py",
+        include_bytes!("../../../../scripts/elements-native-executor.py"),
+        [
+            15, 203, 140, 112, 22, 189, 216, 146, 103, 29, 168, 230, 74, 51, 19, 51, 187, 199, 102,
+            87, 6, 148, 158, 217, 95, 11, 217, 210, 247, 16, 76, 137,
+        ],
+    ),
+    (
+        "scripts/keyed-fixed-capture/capture-prepare.sh",
+        include_bytes!("../../../../scripts/keyed-fixed-capture/capture-prepare.sh"),
+        [
+            224, 192, 248, 109, 31, 206, 41, 174, 127, 55, 176, 211, 128, 33, 71, 18, 44, 52, 131,
+            90, 67, 209, 100, 198, 32, 211, 211, 125, 14, 189, 102, 222,
+        ],
+    ),
+    (
+        "scripts/keyed-fixed-capture/capture-unit.sh",
+        include_bytes!("../../../../scripts/keyed-fixed-capture/capture-unit.sh"),
+        [
+            25, 74, 77, 229, 5, 95, 65, 205, 108, 108, 74, 54, 55, 163, 58, 200, 176, 56, 32, 128,
+            151, 229, 85, 13, 249, 240, 27, 58, 119, 220, 198, 249,
+        ],
+    ),
+    (
+        "scripts/keyed-fixed-capture/run-one.sh",
+        include_bytes!("../../../../scripts/keyed-fixed-capture/run-one.sh"),
+        [
+            83, 26, 188, 99, 36, 236, 1, 147, 57, 239, 172, 184, 24, 232, 207, 170, 167, 162, 75,
+            107, 251, 143, 139, 181, 13, 6, 122, 226, 113, 229, 192, 93,
         ],
     ),
 ];
