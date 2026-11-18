@@ -8,6 +8,7 @@ plans_drafts_files = files(
   'guide15-admission-study.md',
   'keyed-fixed-form-completion-strategy.md',
   'keyed-fixed-form-route-study.md',
+  'keyed-fixed-s8b-admission-study.md',
   'relay-witness-constant-elision-proposal.md',
   'relay-witness-split-study.md',
   'wave0-completion-strategy.md',
