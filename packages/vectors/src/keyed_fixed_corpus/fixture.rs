@@ -24,7 +24,7 @@ mod history;
 mod sponsor;
 
 const CENSUS: &str = include_str!("../../fixtures/keyed-fixed-native/CENSUS.json");
-const CENSUS_PIN: &str = "fe2345f624b912e4b50230d043f365752e7a33db45b2c4073e2fe37ddb5c51d6";
+const CENSUS_PIN: &str = "176697aace3fa413c4ede2bb08d0e01899d4c301a5ba40811adac94460223002";
 const SCALING_FULL: [usize; 17] = [
     3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 774, 1533, 2295, 4248, 8148, 12052,
 ];
@@ -321,7 +321,7 @@ impl Packet {
         }
         let sponsor = Self {
             family: CaptureFamily::Sponsor,
-            epoch: CaptureEpoch::Sponsor,
+            epoch: CaptureEpoch::SponsorCorrected,
             name: "sponsor",
             run: run.clone(),
             files: files.clone(),
@@ -329,7 +329,7 @@ impl Packet {
         };
         let legacy = Self {
             family: CaptureFamily::LegacyCopy,
-            epoch: CaptureEpoch::Sponsor,
+            epoch: CaptureEpoch::SponsorCorrected,
             name: "legacy-copy",
             run,
             files,
@@ -338,7 +338,7 @@ impl Packet {
         sponsor.check_seals()?;
         legacy.check_seals()?;
         sponsor.check_campaign_seal()?;
-        sponsor.check_census(8, 24)?;
+        sponsor.check_census(6, 18)?;
         legacy.check_census(3, 9)?;
         Ok((sponsor, legacy))
     }
@@ -412,7 +412,7 @@ impl Packet {
             CaptureFamily::Policy | CaptureFamily::LegacyCopy => (3, 9),
             CaptureFamily::Scaling => (17, 52),
             CaptureFamily::Histories => (168, 504),
-            CaptureFamily::Sponsor => (8, 24),
+            CaptureFamily::Sponsor => (6, 18),
             CaptureFamily::Pilot => return Err(CorpusRefusal::Census),
         };
         self.check_census(records, exchanges)
@@ -500,7 +500,10 @@ impl Packet {
                 if hex(&sha256(bytes)) != digest {
                     return Err(CorpusRefusal::Seal);
                 }
-            } else if self.epoch == CaptureEpoch::Sponsor {
+            } else if matches!(
+                self.epoch,
+                CaptureEpoch::Sponsor | CaptureEpoch::SponsorCorrected
+            ) {
                 if self
                     .archive_addressed
                     .get(&named)

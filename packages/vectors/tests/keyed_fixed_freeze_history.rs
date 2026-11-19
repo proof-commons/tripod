@@ -1065,6 +1065,65 @@ const POST_S8C: &[Row] = &[
     },
 ];
 
+const POST_S8C_CENSUS: &[Row] = &[Row {
+    path: "packages/vectors/tests/keyed_fixed_capture/native.rs",
+    previous: Some([
+        69, 221, 17, 252, 246, 127, 107, 4, 204, 34, 213, 94, 241, 69, 28, 164, 179, 23, 2, 19,
+        245, 52, 65, 5, 212, 242, 9, 124, 91, 188, 118, 46,
+    ]),
+    current: [
+        64, 78, 199, 253, 78, 196, 224, 31, 106, 46, 130, 205, 46, 74, 109, 2, 83, 36, 166, 227,
+        244, 249, 11, 243, 230, 176, 92, 164, 213, 251, 51, 155,
+    ],
+}];
+
+const POST_S8C_NONCE: &[Row] = &[
+    Row {
+        path: "packages/vectors/src/keyed_fixed_capture.rs",
+        previous: Some([
+            242, 244, 27, 163, 54, 121, 80, 234, 22, 231, 71, 122, 130, 154, 39, 254, 214, 192,
+            236, 255, 129, 171, 171, 12, 148, 123, 113, 49, 142, 2, 5, 124,
+        ]),
+        current: [
+            189, 241, 6, 119, 35, 171, 73, 11, 77, 160, 233, 57, 131, 118, 73, 95, 65, 13, 102, 43,
+            57, 130, 218, 231, 90, 2, 125, 0, 19, 190, 206, 178,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_manifest.rs",
+        previous: Some([
+            249, 104, 110, 180, 57, 42, 148, 26, 192, 108, 201, 61, 22, 103, 71, 56, 53, 94, 75,
+            90, 234, 192, 138, 38, 188, 70, 89, 0, 66, 30, 131, 155,
+        ]),
+        current: [
+            108, 230, 208, 195, 216, 250, 225, 219, 111, 32, 150, 201, 191, 176, 130, 195, 16, 10,
+            146, 142, 11, 54, 186, 238, 149, 90, 18, 196, 68, 34, 211, 75,
+        ],
+    },
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture.rs",
+        previous: Some([
+            146, 171, 180, 244, 24, 128, 184, 47, 113, 163, 204, 167, 127, 116, 212, 243, 189, 147,
+            28, 178, 156, 178, 248, 195, 96, 223, 28, 62, 250, 252, 121, 169,
+        ]),
+        current: [
+            31, 144, 202, 251, 170, 133, 178, 164, 43, 141, 240, 222, 156, 252, 110, 229, 150, 176,
+            125, 167, 35, 224, 244, 192, 161, 49, 127, 142, 64, 191, 80, 68,
+        ],
+    },
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture/native.rs",
+        previous: Some([
+            187, 58, 218, 28, 91, 44, 52, 192, 54, 96, 68, 127, 244, 111, 198, 127, 59, 173, 13,
+            207, 83, 180, 242, 28, 218, 5, 62, 16, 54, 140, 123, 131,
+        ]),
+        current: [
+            69, 221, 17, 252, 246, 127, 107, 4, 204, 34, 213, 94, 241, 69, 28, 164, 179, 23, 2, 19,
+            245, 52, 65, 5, 212, 242, 9, 124, 91, 188, 118, 46,
+        ],
+    },
+];
+
 const POST_S8C_REVIEW: &[Row] = &[
     Row {
         path: "packages/vectors/src/keyed_fixed_manifest.rs",
@@ -1113,6 +1172,16 @@ const S8B_IDENTITY: [u8; 32] = [
 const PRE_REVIEW_IDENTITY: [u8; 32] = [
     43, 97, 114, 168, 14, 118, 116, 112, 245, 168, 241, 116, 200, 73, 123, 34, 123, 174, 166, 213,
     8, 229, 139, 3, 132, 151, 113, 215, 68, 95, 128, 156,
+];
+
+const S8C_PRE_CENSUS_IDENTITY: [u8; 32] = [
+    215, 50, 130, 33, 155, 99, 63, 248, 242, 179, 3, 128, 226, 39, 71, 97, 252, 250, 59, 59, 108,
+    81, 212, 197, 173, 119, 175, 234, 20, 167, 197, 165,
+];
+
+const S8C_CORRECTED_IDENTITY: [u8; 32] = [
+    184, 130, 190, 246, 188, 112, 202, 61, 136, 30, 27, 2, 142, 95, 76, 149, 74, 25, 188, 216, 14,
+    130, 0, 134, 42, 244, 71, 193, 209, 130, 248, 148,
 ];
 
 const S8C_IDENTITY: [u8; 32] = [
@@ -1270,7 +1339,7 @@ fn fixed_capture_refreeze_history() {
     let independent = independent_encoding(&current, 15);
     assert_eq!(independent.len(), 8853);
     assert_eq!(validated.encoding(), independent);
-    assert_eq!(validated.identity(), S8C_IDENTITY);
+    assert_eq!(validated.identity(), S8C_CORRECTED_IDENTITY);
     let sponsor_q = KeyedFixedParameters {
         key: [42; 32],
         asset: vectors::maturity_observer::decode_hex(
@@ -1287,16 +1356,16 @@ fn fixed_capture_refreeze_history() {
         .unwrap();
     assert_eq!(
         FreezeManifest::reconstruct_epoch_freeze(
-            vectors::keyed_fixed_manifest::CaptureEpoch::Sponsor,
+            vectors::keyed_fixed_manifest::CaptureEpoch::SponsorCorrected,
             sponsor.encoding(),
             &[],
         ),
-        Ok(sponsor),
-        "the immutable sponsor map equals current pin digests"
+        Ok(sponsor.clone()),
+        "the corrected immutable sponsor map equals current pin digests"
     );
     assert_eq!(
         sha256::Hash::hash(&independent).to_byte_array(),
-        S8C_IDENTITY
+        S8C_CORRECTED_IDENTITY
     );
     assert_eq!(current.envelope.maximum_members, Some(1299));
     assert_eq!(current.computed.len(), 15);
@@ -1325,7 +1394,75 @@ fn fixed_capture_refreeze_history() {
             .windows(2)
             .all(|rows| rows[0].path < rows[1].path)
     );
-    let mut pre_review = current.clone();
+    assert_eq!(POST_S8C_NONCE.len(), 4);
+    assert!(
+        POST_S8C_NONCE
+            .windows(2)
+            .all(|rows| rows[0].path < rows[1].path)
+    );
+    assert_eq!(POST_S8C_CENSUS.len(), 1);
+    let mut prior_corrected = current.clone();
+    for row in POST_S8C_CENSUS {
+        let source = prior_corrected
+            .sources
+            .iter_mut()
+            .find(|source| source.path == row.path)
+            .unwrap();
+        assert_eq!(source.digest, row.current);
+        source.digest = row.previous.unwrap();
+    }
+    assert_eq!(
+        sha256::Hash::hash(&independent_encoding(&prior_corrected, 15)).to_byte_array(),
+        S8C_PRE_CENSUS_IDENTITY
+    );
+    assert_eq!(
+        prior_corrected.clone().validate(q),
+        Err(FreezeRefusal::Inventory)
+    );
+    let mut prior_sponsor = sponsor.manifest().clone();
+    for row in POST_S8C_CENSUS {
+        prior_sponsor
+            .sources
+            .iter_mut()
+            .find(|source| source.path == row.path)
+            .unwrap()
+            .digest = row.previous.unwrap();
+    }
+    assert_eq!(
+        literal_hex(&sha256::Hash::hash(&independent_encoding(&prior_sponsor, 15)).to_byte_array()),
+        "3da39a6415b17e78adb2faa1a112c0eb6dab71598d815407d6885964a2ed3353"
+    );
+    let mut failed = prior_corrected;
+    for row in POST_S8C_NONCE {
+        let source = failed
+            .sources
+            .iter_mut()
+            .find(|source| source.path == row.path)
+            .unwrap();
+        assert_eq!(source.digest, row.current);
+        source.digest = row.previous.unwrap();
+    }
+    assert_eq!(
+        sha256::Hash::hash(&independent_encoding(&failed, 15)).to_byte_array(),
+        S8C_IDENTITY
+    );
+    assert_eq!(failed.clone().validate(q), Err(FreezeRefusal::Inventory));
+    let mut failed_sponsor = prior_sponsor;
+    for row in POST_S8C_NONCE {
+        failed_sponsor
+            .sources
+            .iter_mut()
+            .find(|source| source.path == row.path)
+            .unwrap()
+            .digest = row.previous.unwrap();
+    }
+    assert_eq!(
+        literal_hex(
+            &sha256::Hash::hash(&independent_encoding(&failed_sponsor, 15)).to_byte_array()
+        ),
+        "17a7b1da3385f79d2ec5a3587e8f35c25bba87cc760aae2c35d35e8e40c94480"
+    );
+    let mut pre_review = failed;
     for row in POST_S8C_REVIEW {
         let source = pre_review
             .sources

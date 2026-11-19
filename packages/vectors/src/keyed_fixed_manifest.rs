@@ -27,6 +27,8 @@ pub enum CaptureEpoch {
     CampaignThree,
     /// The sponsor campaign's three fixed-form encodings.
     Sponsor,
+    /// The reduced sponsor campaign after the nonce submission disposition.
+    SponsorCorrected,
 }
 
 /// One retained historical version, addressed by logical path and digest.
@@ -202,6 +204,13 @@ impl FreezeManifest {
                     digest: *digest,
                 })
                 .collect(),
+            CaptureEpoch::SponsorCorrected => pins::CORRECTED_SPONSOR_SOURCES
+                .iter()
+                .map(|(path, digest)| SourceIdentity {
+                    path: (*path).into(),
+                    digest: *digest,
+                })
+                .collect(),
         };
         let manifest = encoding::decode(encoded, expected_sources.len())?;
         let parameters = manifest.descriptor.parameters;
@@ -223,10 +232,13 @@ impl FreezeManifest {
                 let known_sponsor = pins::SPONSOR_SOURCES
                     .iter()
                     .any(|(path, digest)| *path == version.path && *digest == version.digest);
+                let known_corrected = pins::CORRECTED_SPONSOR_SOURCES
+                    .iter()
+                    .any(|(path, digest)| *path == version.path && *digest == version.digest);
                 let known_older = pins::OLDER_SOURCE_VERSIONS
                     .iter()
                     .any(|(path, digest)| *path == version.path && *digest == version.digest);
-                !known_campaign && !known_sponsor && !known_older
+                !known_campaign && !known_sponsor && !known_corrected && !known_older
             })
         {
             return Err(FreezeRefusal::Inventory);
@@ -266,6 +278,7 @@ impl FreezeManifest {
         let identities = match epoch {
             CaptureEpoch::CampaignThree => pins::CAMPAIGN_IDENTITIES.as_slice(),
             CaptureEpoch::Sponsor => pins::S8C_IDENTITIES.as_slice(),
+            CaptureEpoch::SponsorCorrected => pins::S8C_CORRECTED_IDENTITIES.as_slice(),
         };
         if !identities.contains(&identity.as_str()) {
             return Err(FreezeRefusal::Inventory);

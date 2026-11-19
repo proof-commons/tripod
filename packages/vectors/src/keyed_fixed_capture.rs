@@ -220,8 +220,6 @@ pub fn subjects(family: CaptureFamily) -> Vec<CaptureSubject> {
             S::ConfidentialValue,
             S::SponsorPayment,
             S::MalformedPaymentValueForm,
-            S::PresentNonceFloor(18),
-            S::PresentNonceFloor(17),
         ],
         CaptureFamily::LegacyCopy => vec![
             S::LegacyConfidentialSource,

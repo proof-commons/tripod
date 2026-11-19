@@ -204,10 +204,7 @@ fn fixed_capture_policy_envelope() {
         Some(CaptureBoundary::RelayPolicy)
     );
     assert_eq!(S::DirectBlock1300.boundary(), None);
-    assert_eq!(
-        S::PresentNonceFloor(17).boundary(),
-        Some(CaptureBoundary::RelayPolicy)
-    );
+    assert_eq!(S::PresentNonceFloor(17).boundary(), None);
     assert_eq!(S::Floor(14).boundary(), Some(CaptureBoundary::RelayPolicy));
     assert_eq!(S::ZeroFeeFloor.boundary(), Some(CaptureBoundary::FeePolicy));
     assert_eq!(S::Floor(13).boundary(), None);
@@ -880,7 +877,7 @@ fn fixed_capture_sponsor_packet() {
 
     let sponsor = subjects(CaptureFamily::Sponsor);
     let legacy = subjects(CaptureFamily::LegacyCopy);
-    assert_eq!(sponsor.len(), 8);
+    assert_eq!(sponsor.len(), 6);
     assert_eq!(legacy.len(), 3);
     let rows = sponsor
         .iter()
@@ -888,14 +885,14 @@ fn fixed_capture_sponsor_packet() {
         .map(|(index, subject)| (*subject, subject.role(), 3 * (index + 1)))
         .collect::<Vec<_>>();
     assert_eq!(
-        validate_s8c_census(CaptureFamily::Sponsor, &rows, 24),
+        validate_s8c_census(CaptureFamily::Sponsor, &rows, 18),
         Ok(())
     );
     assert_eq!(
         rows.iter()
             .filter(|row| row.1 == CaptureRole::Primary)
             .count(),
-        5
+        3
     );
     assert_eq!(
         rows.iter()
@@ -921,11 +918,11 @@ fn fixed_capture_sponsor_packet() {
     let mut wrong_role = rows.clone();
     wrong_role[4].1 = CaptureRole::Primary;
     assert_eq!(
-        validate_s8c_census(CaptureFamily::Sponsor, &wrong_role, 24),
+        validate_s8c_census(CaptureFamily::Sponsor, &wrong_role, 18),
         Err(JournalRefusal::Census)
     );
     assert_eq!(
-        validate_s8c_census(CaptureFamily::Sponsor, &rows, 23),
+        validate_s8c_census(CaptureFamily::Sponsor, &rows, 17),
         Err(JournalRefusal::Census)
     );
 
@@ -949,7 +946,7 @@ fn fixed_capture_sponsor_packet() {
         101,
         true,
         ObservedOutcomeLayer::ScriptPathRejection,
-        provenance.clone(),
+        provenance,
     );
     assert_eq!(validate_journal_transport(&freeze, &refusal), Ok(()));
     let mut foreign_txid = refusal;
@@ -962,62 +959,7 @@ fn fixed_capture_sponsor_packet() {
         Err(JournalRefusal::Response)
     );
 
-    let q17 = parameters(42, 17);
-    let q18 = parameters(42, 18);
-    let freeze17 = FreezeManifest::offer(q17).unwrap().validate(q17).unwrap();
-    let freeze18 = FreezeManifest::offer(q18).unwrap().validate(q18).unwrap();
-    let mut provenance17 = provenance.clone();
-    provenance17.freeze_identity = freeze17.identity();
-    let mut provenance18 = provenance;
-    provenance18.freeze_identity = freeze18.identity();
-    let mut floor17 = signed_mock_journal(
-        17,
-        17,
-        102,
-        false,
-        ObservedOutcomeLayer::Accepted,
-        provenance17.clone(),
-    );
-    floor17.response.observed_detail = Some(
-        serde_json::json!({
-            "route":"direct-block","relay_allowed":false,"relay_detail":"dust"
-        })
-        .to_string(),
-    );
-    let floor18 = signed_mock_journal(
-        18,
-        18,
-        103,
-        false,
-        ObservedOutcomeLayer::Accepted,
-        provenance18,
-    );
-    let binding = JournalBinding {
-        family: CaptureFamily::Sponsor,
-        subject: CaptureSubject::PresentNonceFloor(17),
-        sponsor_index: 0,
-        prepared_provenance: &provenance17,
-        control: Some(PairControl {
-            subject: CaptureSubject::PresentNonceFloor(18),
-            freeze: &freeze18,
-            row: &floor18,
-            sponsor_index: 0,
-        }),
-    };
-    assert_eq!(bind_journal(&freeze17, &floor17, &binding), Ok(()));
-    let changed_control = JournalBinding {
-        control: Some(PairControl {
-            subject: CaptureSubject::Floor(15),
-            freeze: &freeze18,
-            row: &floor18,
-            sponsor_index: 0,
-        }),
-        ..binding
-    };
-    assert_eq!(
-        bind_journal(&freeze17, &floor17, &changed_control),
-        Err(JournalRefusal::Control)
-    );
+    native::mocked_failed_response_retention();
 }
 
 const fn output_with_program(asset: [u8; 32], value: u64, program: Vec<u8>) -> TargetOutput {
@@ -1605,6 +1547,144 @@ fn fixed_capture_proofs_and_sponsor() {
         ),
         Ok(()),
     );
+    for committed in [false, true] {
+        for present in [false, true] {
+            let value = if committed {
+                ValueField::Commitment(first_commitment)
+            } else {
+                ValueField::Explicit(60)
+            };
+            let change_value = if committed {
+                ValueField::Commitment(second_commitment)
+            } else {
+                ValueField::Explicit(930)
+            };
+            let nonce = if present {
+                NonceField::Commitment(first_nonce)
+            } else {
+                NonceField::Null
+            };
+            let change_nonce = if present {
+                NonceField::Commitment(second_nonce)
+            } else {
+                NonceField::Null
+            };
+            let formed = TargetTransaction::with_output_witnesses(
+                unsigned.version(),
+                unsigned.inputs().to_vec(),
+                vec![
+                    TargetOutput::new(
+                        outputs[0].asset(),
+                        value,
+                        nonce,
+                        outputs[0].program().to_vec(),
+                    ),
+                    TargetOutput::new(
+                        outputs[1].asset(),
+                        change_value,
+                        change_nonce,
+                        outputs[1].program().to_vec(),
+                    ),
+                    outputs[2].clone(),
+                ],
+                unsigned.lock_time(),
+                unsigned.witnesses().to_vec(),
+                vec![
+                    if committed {
+                        unsigned.output_witnesses()[0].clone()
+                    } else {
+                        OutputWitness::empty()
+                    },
+                    if committed {
+                        unsigned.output_witnesses()[1].clone()
+                    } else {
+                        OutputWitness::empty()
+                    },
+                    OutputWitness::empty(),
+                ],
+            )
+            .unwrap();
+            let frozen = formed.encode_without_witness();
+            let digest =
+                transaction::keyed_fixed_sponsor::keyed_fixed_sponsor_digest(&frozen, 0, spent)
+                    .unwrap();
+            let independent: elements::Transaction =
+                elements::encode::deserialize(&formed.encode()).unwrap();
+            assert_eq!(
+                digest,
+                elements::sighash::SighashCache::new(&independent)
+                    .segwitv0_sighash(
+                        0,
+                        &script,
+                        elements::confidential::Value::Explicit(1_000),
+                        elements::EcdsaSighashType::All
+                    )
+                    .to_byte_array()
+            );
+            let mut signature = secp
+                .sign_ecdsa(&Message::from_digest(digest), &key)
+                .serialize_der()
+                .to_vec();
+            signature.push(1);
+            let witness = vec![signature, public.to_vec()];
+            assert_eq!(
+                transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+                    &frozen, 0, spent, &witness
+                ),
+                Ok(())
+            );
+            let mut changed = formed.outputs().to_vec();
+            changed[0] = TargetOutput::new(
+                changed[0].asset(),
+                changed[0].value(),
+                if present {
+                    NonceField::Commitment(second_nonce)
+                } else {
+                    NonceField::Commitment(first_nonce)
+                },
+                changed[0].program().to_vec(),
+            );
+            let changed = TargetTransaction::with_output_witnesses(
+                formed.version(),
+                formed.inputs().to_vec(),
+                changed,
+                formed.lock_time(),
+                formed.witnesses().to_vec(),
+                formed.output_witnesses().to_vec(),
+            )
+            .unwrap();
+            let changed_frozen = changed.encode_without_witness();
+            assert_eq!(
+                transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+                    &changed_frozen,
+                    0,
+                    spent,
+                    &witness
+                ),
+                Err(transaction::keyed_fixed_sponsor::KeyedFixedSponsorRefusal::InvalidSignature)
+            );
+            let changed_digest = transaction::keyed_fixed_sponsor::keyed_fixed_sponsor_digest(
+                &changed_frozen,
+                0,
+                spent,
+            )
+            .unwrap();
+            let mut replacement = secp
+                .sign_ecdsa(&Message::from_digest(changed_digest), &key)
+                .serialize_der()
+                .to_vec();
+            replacement.push(1);
+            assert_eq!(
+                transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+                    &changed_frozen,
+                    0,
+                    spent,
+                    &[replacement, public.to_vec()]
+                ),
+                Ok(())
+            );
+        }
+    }
     let mut wrong_stack = stack;
     let mut unequal_digest = digest;
     unequal_digest[0] ^= 1;

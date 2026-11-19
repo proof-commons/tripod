@@ -128,6 +128,31 @@ fn mocked_s8c_packet() -> (Packet, Packet) {
         let directory = temp.path().join(name);
         std::fs::create_dir(&directory).unwrap();
         native::mocked_campaign(family, &directory);
+        let census = native::s8c_census(family);
+        std::fs::write(
+            directory.join("CENSUS.json"),
+            serde_json::to_vec(&census).unwrap(),
+        )
+        .unwrap();
+        native::check_s8c_census(&directory, family);
+        if family == CaptureFamily::Sponsor {
+            let mut stale = census.clone();
+            stale["primary"] = serde_json::json!(5);
+            std::fs::write(
+                directory.join("CENSUS.json"),
+                serde_json::to_vec(&stale).unwrap(),
+            )
+            .unwrap();
+            assert!(
+                std::panic::catch_unwind(|| native::check_s8c_census(&directory, family)).is_err(),
+                "the producer refuses a stale sponsor primary count"
+            );
+            std::fs::write(
+                directory.join("CENSUS.json"),
+                serde_json::to_vec(&census).unwrap(),
+            )
+            .unwrap();
+        }
         let mut files = BTreeMap::new();
         for entry in std::fs::read_dir(&directory).unwrap() {
             let entry = entry.unwrap();
@@ -153,31 +178,6 @@ fn mocked_s8c_packet() -> (Packet, Packet) {
                 serde_json::to_vec(&process).unwrap(),
             );
         }
-        let selected = vectors::keyed_fixed_capture::subjects(family);
-        let rows = selected.iter().enumerate().map(|(index, subject)| {
-            serde_json::json!({"subject":subject,"role":subject.role(),"boundary":subject.boundary(),
-                "ordinal":3 * (index + 1)})
-        }).collect::<Vec<_>>();
-        let primary = selected
-            .iter()
-            .filter(|subject| subject.role() == vectors::keyed_fixed_capture::CaptureRole::Primary)
-            .count();
-        let supporting_member = selected
-            .iter()
-            .filter(|subject| {
-                subject.role() == vectors::keyed_fixed_capture::CaptureRole::SupportingMember
-            })
-            .count();
-        let supporting_payment = selected
-            .iter()
-            .filter(|subject| {
-                subject.role() == vectors::keyed_fixed_capture::CaptureRole::SupportingPayment
-            })
-            .count();
-        files.insert("CENSUS.json".into(), serde_json::to_vec(&serde_json::json!({
-            "family":family,"subjects":rows,"records":selected.len(),"exchanges":3 * selected.len(),
-            "primary":primary,"supporting_member":supporting_member,"supporting_payment":supporting_payment
-        })).unwrap());
         files.insert("observed-provenance.json".into(), serde_json::to_vec(&serde_json::json!({
             "executable_digest":vec![2_u8;32],"executor_digest":vec![3_u8;32],"dependency_lock_digest":vec![4_u8;32],
             "daemon_digest":vec![5_u8;32],"zk_library_digest":vec![6_u8;32],"zk_library_loading":"present-not-loaded"
@@ -649,42 +649,125 @@ fn fixed_corpus_epoch_sources() {
         FreezeManifest::reconstruct_epoch_freeze(CaptureEpoch::CampaignThree, original, &sources)
             .unwrap();
     let q60 = campaign.manifest().descriptor.parameters;
-    let anchors = [60, 17, 18].map(|value| {
-        let q = KeyedFixedParameters {
-            value: KeyedFixedValue::new(value).unwrap(),
-            ..q60
-        };
-        vectors::maturity_observer::encode_hex(
-            &FreezeManifest::offer(q)
-                .unwrap()
-                .validate(q)
-                .unwrap()
-                .identity(),
-        )
-    });
+    let corrected = FreezeManifest::offer(q60).unwrap().validate(q60).unwrap();
     assert_eq!(
-        anchors.each_ref().map(String::as_str),
-        [
-            "17a7b1da3385f79d2ec5a3587e8f35c25bba87cc760aae2c35d35e8e40c94480",
-            "3353d21e195b40379ec6d4923f1393e8cee785ad25587c01987da07d7775f331",
-            "5980c072960539d7b0c28dbab308987548fd51fc9e9514b1265aed603990a9e1",
-        ],
-        "reviewed S8c identity anchors"
+        vectors::maturity_observer::encode_hex(&corrected.identity()),
+        "bdeb5788ff13893ddb100ec5c24a19e234adbb594678a43442ec5d349c563c85"
     );
-    for value in [60, 17, 18] {
+    assert_eq!(
+        FreezeManifest::reconstruct_epoch_freeze(
+            CaptureEpoch::Sponsor,
+            corrected.encoding(),
+            &sources
+        ),
+        Err(FreezeRefusal::Inventory)
+    );
+    assert_eq!(
+        FreezeManifest::reconstruct_epoch_freeze(
+            CaptureEpoch::SponsorCorrected,
+            corrected.encoding(),
+            &sources
+        ),
+        Ok(corrected)
+    );
+    let prior = [
+        (
+            "packages/vectors/src/keyed_fixed_capture.rs",
+            "f2f41ba3367950ea16e7477a829a27fed6c0ecff81abab0c947b71318e02057c",
+        ),
+        (
+            "packages/vectors/src/keyed_fixed_manifest.rs",
+            "f9686eb4392a941ac06cc93d16674738355e4b5aeac08a26bc465900421e839b",
+        ),
+        (
+            "packages/vectors/tests/keyed_fixed_capture.rs",
+            "92abb4f41880b82f71a3cca77f74d4f3bd931cb29cb2f8c360df1c3efafc79a9",
+        ),
+        (
+            "packages/vectors/tests/keyed_fixed_capture/native.rs",
+            "bb3ada1c5b2c34c03660447ff46fc67f3bad0dcf53b4f21cda053e10368c7b83",
+        ),
+    ];
+    for (value, expected) in [
+        (
+            60,
+            "17a7b1da3385f79d2ec5a3587e8f35c25bba87cc760aae2c35d35e8e40c94480",
+        ),
+        (
+            17,
+            "3353d21e195b40379ec6d4923f1393e8cee785ad25587c01987da07d7775f331",
+        ),
+        (
+            18,
+            "5980c072960539d7b0c28dbab308987548fd51fc9e9514b1265aed603990a9e1",
+        ),
+    ] {
         let q = KeyedFixedParameters {
             value: KeyedFixedValue::new(value).unwrap(),
             ..q60
         };
         let current = FreezeManifest::offer(q).unwrap().validate(q).unwrap();
+        let mut failed_encoding = current.encoding().to_vec();
+        for (path, old_hex) in prior {
+            let current_digest = current
+                .manifest()
+                .sources
+                .iter()
+                .find(|entry| entry.path == path)
+                .unwrap()
+                .digest;
+            let previous: [u8; 32] = vectors::maturity_observer::decode_hex(old_hex)
+                .unwrap()
+                .try_into()
+                .unwrap();
+            let positions = failed_encoding
+                .windows(32)
+                .enumerate()
+                .filter_map(|(index, bytes)| (bytes == current_digest).then_some(index))
+                .collect::<Vec<_>>();
+            assert_eq!(positions.len(), 1);
+            failed_encoding[positions[0]..positions[0] + 32].copy_from_slice(&previous);
+        }
         assert_eq!(
+            vectors::maturity_observer::encode_hex(
+                &target_elements_conformance::constructor::tagged::sha256(&failed_encoding)
+            ),
+            expected
+        );
+        assert!(
             FreezeManifest::reconstruct_epoch_freeze(
                 CaptureEpoch::Sponsor,
-                current.encoding(),
+                &failed_encoding,
+                &sources
+            )
+            .is_ok()
+        );
+        assert_eq!(
+            FreezeManifest::reconstruct_epoch_freeze(
+                CaptureEpoch::SponsorCorrected,
+                &failed_encoding,
                 &sources
             ),
-            Ok(current)
+            Err(FreezeRefusal::Inventory)
         );
+        if value == 60 {
+            let missing_native = sources
+                .iter()
+                .copied()
+                .filter(|entry| {
+                    !(entry.path == prior[3].0
+                        && vectors::maturity_observer::encode_hex(&entry.digest) == prior[3].1)
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                FreezeManifest::reconstruct_epoch_freeze(
+                    CaptureEpoch::Sponsor,
+                    &failed_encoding,
+                    &missing_native
+                ),
+                Err(FreezeRefusal::Inventory)
+            );
+        }
     }
     assert!(matches!(
         Packet::load_s8c(b"{}", "unreviewed-index", [&[], &[], &[]]),
@@ -692,7 +775,7 @@ fn fixed_corpus_epoch_sources() {
     ));
     assert_eq!(clauses.admit_s8c(), Err(CorpusRefusal::Census));
     let (sponsor, legacy) = mocked_s8c_packet();
-    assert_eq!(sponsor.admit_s8c(), Ok(8));
+    assert_eq!(sponsor.admit_s8c(), Ok(6));
     assert_eq!(legacy.admit_s8c(), Ok(3));
     let mut wrong_step = sponsor;
     let mut request: serde_json::Value = serde_json::from_slice(

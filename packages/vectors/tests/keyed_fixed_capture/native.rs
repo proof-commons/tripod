@@ -20,9 +20,10 @@ use target_elements_conformance::executor::{
     OperationStep, PlanRefused, TargetOperationPlanner, execute_operations_captured,
 };
 use target_elements_conformance::protocol::{
-    NATIVE_PROTOCOL_SCHEMA, NativeOperationRequest, NativeOperationResponse, ObservedOutcomeLayer,
-    OperationCaseId, OperationSubject, TargetSponsorFundingSubject, TargetSponsorSigningSubject,
-    TargetSubmissionSubject, WireOutpoint, WireSighashProfile, WireSpentOutput,
+    NATIVE_PROTOCOL_SCHEMA, NativeOperationRequest, NativeOperationResponse,
+    NativeResourceObservation, ObservedOutcomeLayer, OperationCaseId, OperationSubject,
+    TargetSponsorFundingSubject, TargetSponsorSigningSubject, TargetSubmissionSubject,
+    WireOutpoint, WireSighashProfile, WireSpentOutput,
 };
 use target_elements_conformance::provenance::ExpectedExecutorProvenance;
 use target_elements_conformance::sponsor_parent::bind_sponsor_parent;
@@ -40,8 +41,8 @@ use transaction::{
     TargetTransaction, Txid, ValueField,
 };
 use vectors::keyed_fixed_capture::{
-    CaptureFamily, CaptureProvenance, CaptureSubject, JournalBinding, JournalRow, PairControl,
-    bind_capture_freeze, bind_journal, expected_control, expected_layer, subjects,
+    CaptureFamily, CaptureProvenance, CaptureRole, CaptureSubject, JournalBinding, JournalRow,
+    PairControl, bind_capture_freeze, bind_journal, expected_control, expected_layer, subjects,
 };
 use vectors::keyed_fixed_history_reader as reader;
 use vectors::keyed_fixed_manifest::FreezeManifest;
@@ -120,6 +121,13 @@ impl Wire {
             .send(Some(step))
             .expect("native executor is live");
         let response = self.answers.recv().expect("native response or refusal");
+        store(
+            &self.directory.join(format!("{prefix}-response.json")),
+            &response,
+        );
+        tracing::debug!(target: "vectors::native_test", %prefix,
+            wall_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+            "fixed-form native exchange retained");
         assert_eq!(response.case, request.case, "native response case drift");
         response.validate_shape().expect("native response shape");
         if let OperationSubject::Submission(subject) = &request.subject {
@@ -157,18 +165,11 @@ impl Wire {
                 );
             }
         }
-        store(
-            &self.directory.join(format!("{prefix}-response.json")),
-            &response,
-        );
         if self.ordinal % 64 == 0 {
             tracing::info!(target: "vectors::native_test",
                 completed_count = u64::try_from(self.ordinal).unwrap_or(u64::MAX),
                 "fixed-form native exchanges retained");
         }
-        tracing::debug!(target: "vectors::native_test", %prefix,
-            wall_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
-            "fixed-form native exchange retained");
         response
     }
 
@@ -262,6 +263,83 @@ impl Wire {
         }
         response
     }
+}
+
+pub fn mocked_failed_response_retention() {
+    let directory = tempfile::tempdir().unwrap();
+    let timing_file = std::fs::File::create(directory.path().join("phase-timing.jsonl")).unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .json()
+        .with_env_filter(tracing_subscriber::EnvFilter::new(
+            "vectors::native_test=debug",
+        ))
+        .with_writer(timing_file)
+        .finish();
+    let transaction = TargetTransaction::new(
+        2,
+        vec![TargetInput::new(
+            Outpoint::new(Txid::from_internal([1; 32]), 0).unwrap(),
+            0x8000_0001,
+        )],
+        vec![TargetOutput::new(
+            AssetField::Explicit(AssetId::from_internal(POLICY_ASSET)),
+            ValueField::Explicit(18),
+            NonceField::Null,
+            vec![],
+        )],
+        0,
+        vec![InputWitness::new(vec![])],
+    )
+    .unwrap();
+    let step = OperationStep::new(
+        "fixed-submit-1",
+        OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+            transaction_bytes: transaction.encode(),
+        })),
+    );
+    let response = NativeOperationResponse {
+        schema: NATIVE_PROTOCOL_SCHEMA,
+        case: step.case().clone(),
+        observed_layer: ObservedOutcomeLayer::ExecutorInfrastructureFailure,
+        observed_detail: Some("mock missing weight".into()),
+        issued_asset: None,
+        funded_outputs: vec![],
+        confidential_funded_outputs: vec![],
+        mined_readback: None,
+        accepted_txid: None,
+        sponsor_witness: vec![],
+        script_path_witness: vec![],
+        signer_public_key: None,
+        signed_profile: None,
+        signing_genesis: None,
+        signature_bound_to: None,
+        resources: NativeResourceObservation::default(),
+    };
+    let (steps, _received_steps) = mpsc::channel();
+    let (sender, answers) = mpsc::channel();
+    sender.send(response.clone()).unwrap();
+    let mut wire = Wire {
+        steps,
+        answers,
+        directory: directory.path().to_path_buf(),
+        ordinal: 0,
+        completed: vec![],
+    };
+    let failure = tracing::subscriber::with_default(subscriber, || {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| wire.ask(step)))
+    });
+    assert!(failure.is_err(), "missing weight still fails the family");
+    let retained: NativeOperationResponse = serde_json::from_slice(
+        &std::fs::read(directory.path().join("exchange-00001-response.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(retained, response);
+    assert!(
+        std::fs::read_to_string(directory.path().join("phase-timing.jsonl"))
+            .unwrap()
+            .contains("fixed-form native exchange retained"),
+        "response timing precedes the failing comparison"
+    );
 }
 
 struct Planner {
@@ -2197,16 +2275,6 @@ fn campaign(wire: &mut Wire, family: CaptureFamily) {
                 &[(first, 0, true), (funding, vout, false)],
                 Some((confidential_payment, payment_vout, 60, true)),
             );
-            let floor = KeyedFixedParameters {
-                value: KeyedFixedValue::new(18).unwrap(),
-                ..q
-            };
-            funded_source(wire, floor, CaptureSubject::PresentNonceFloor(18));
-            let floor = KeyedFixedParameters {
-                value: KeyedFixedValue::new(17).unwrap(),
-                ..floor
-            };
-            funded_source(wire, floor, CaptureSubject::PresentNonceFloor(17));
         }
         CaptureFamily::LegacyCopy => legacy_copy_campaign(wire),
     }
@@ -2329,10 +2397,37 @@ fn executor(directory: &Path, prepared: &serde_json::Value) -> PathBuf {
     path
 }
 
-fn check_s8c_census(directory: &Path, family: CaptureFamily) {
+pub fn s8c_census(family: CaptureFamily) -> serde_json::Value {
+    assert!(matches!(
+        family,
+        CaptureFamily::Sponsor | CaptureFamily::LegacyCopy
+    ));
+    let selected = subjects(family);
+    let rows = selected
+        .iter()
+        .enumerate()
+        .map(|(index, subject)| {
+            serde_json::json!({"subject":subject,"boundary":subject.boundary(),
+                "role":subject.role(),"ordinal":3 * (index + 1)})
+        })
+        .collect::<Vec<_>>();
+    let count = |role| {
+        selected
+            .iter()
+            .filter(|subject| subject.role() == role)
+            .count()
+    };
+    serde_json::json!({"family":family,"subjects":rows,
+        "records":selected.len(),"exchanges":3 * selected.len(),
+        "primary":count(CaptureRole::Primary),
+        "supporting_member":count(CaptureRole::SupportingMember),
+        "supporting_payment":count(CaptureRole::SupportingPayment)})
+}
+
+pub fn check_s8c_census(directory: &Path, family: CaptureFamily) {
     let selected = subjects(family);
     let expected_records = if family == CaptureFamily::Sponsor {
-        8
+        6
     } else {
         3
     };
@@ -2368,6 +2463,16 @@ fn check_s8c_census(directory: &Path, family: CaptureFamily) {
         let role = serde_json::from_value(rows[index]["role"].clone()).unwrap();
         actual_rows.push((actual, role, ordinal));
     }
+    let role_count = |role| actual_rows.iter().filter(|row| row.1 == role).count();
+    assert_eq!(census["primary"], role_count(CaptureRole::Primary));
+    assert_eq!(
+        census["supporting_member"],
+        role_count(CaptureRole::SupportingMember)
+    );
+    assert_eq!(
+        census["supporting_payment"],
+        role_count(CaptureRole::SupportingPayment)
+    );
     vectors::keyed_fixed_capture::validate_s8c_census(family, &actual_rows, 3 * expected_records)
         .unwrap();
     for (suffix, count) in [
@@ -2425,31 +2530,16 @@ pub fn run(family: CaptureFamily) {
     let runtime = runtime_observed(&prepared);
     store(&directory.join("observed-provenance.json"), &runtime);
     let s8c = matches!(family, CaptureFamily::Sponsor | CaptureFamily::LegacyCopy);
-    let census = subjects(family)
-        .into_iter()
-        .enumerate()
-        .map(|(index, subject)| {
-            if s8c {
-                serde_json::json!({"subject":subject,"boundary":subject.boundary(),
-                    "role":subject.role(),"ordinal":3 * (index + 1)})
-            } else {
-                serde_json::json!({"subject":subject,"boundary":subject.boundary()})
-            }
-        })
-        .collect::<Vec<_>>();
-    store(
-        &directory.join("CENSUS.json"),
-        &if s8c {
-            serde_json::json!({"family":family,"subjects":census,
-                "records":if family == CaptureFamily::Sponsor {8} else {3},
-                "exchanges":if family == CaptureFamily::Sponsor {24} else {9},
-                "primary":if family == CaptureFamily::Sponsor {5} else {3},
-                "supporting_member":if family == CaptureFamily::Sponsor {2} else {0},
-                "supporting_payment":u8::from(family == CaptureFamily::Sponsor)})
-        } else {
-            serde_json::json!({"family":family,"subjects":census})
-        },
-    );
+    let census = if s8c {
+        s8c_census(family)
+    } else {
+        let rows = subjects(family)
+            .into_iter()
+            .map(|subject| serde_json::json!({"subject":subject,"boundary":subject.boundary()}))
+            .collect::<Vec<_>>();
+        serde_json::json!({"family":family,"subjects":rows})
+    };
+    store(&directory.join("CENSUS.json"), &census);
     let adapter = executor(directory, &prepared);
     let config = ExecutorConfiguration::new(
         &adapter,
