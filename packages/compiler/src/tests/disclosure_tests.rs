@@ -11,8 +11,11 @@ use architecture::OperationId::AnnounceMaturity;
 use super::{announcement_input, bound_input};
 use crate::{
     CompileError,
-    disclosure::{derive_disclosure, is_sponsor_amount, validate_disclosure},
+    disclosure::{
+        CompilerDisclosureReason, derive_disclosure, is_sponsor_amount, validate_disclosure,
+    },
     lifecycle::RepresentationChoiceId,
+    requirement::{derive_relation_requirements, validate_disclosure_closure},
 };
 
 fn live_amount(side: TransactionSide) -> FactId {
@@ -89,6 +92,63 @@ fn private_live_transfer_retains_private_amounts() {
         assert!(private.retained_private.contains(&live_amount(side)));
     }
     validate_disclosure(&private).expect("consistent");
+}
+
+#[test]
+fn burn_output_choice_alone_discloses_its_change_amount() {
+    let control = super::source_tests::burn_control();
+    let change = FactId::FamilyAmount {
+        operation: OperationId::Burn,
+        side: TransactionSide::Output,
+        object: ObjectId::ReceiptLive,
+    };
+    let output_choice = RepresentationChoiceId {
+        operation: OperationId::Burn,
+        side: Some(TransactionSide::Output),
+        object: ObjectId::ReceiptLive,
+    };
+    let mut private_choices = control.candidate.representations.clone();
+    private_choices.insert(output_choice, RepresentationMode::PrivateCommitted);
+    let private = derive_disclosure(
+        control.input.realization().declassification(),
+        &private_choices,
+    )
+    .expect("private Burn output disclosure");
+    assert!(private.retained_private.contains(&change));
+    assert!(!private.added_required_public.contains_key(&change));
+
+    let reason = CompilerDisclosureReason::SideRepresentationSelection {
+        operation: OperationId::Burn,
+        side: TransactionSide::Output,
+        object: ObjectId::ReceiptLive,
+        representation: RepresentationMode::Explicit,
+    };
+    assert!(control.candidate.disclosure.added_required_public[&change].contains(&reason));
+    let construction = crate::constructibility::build_constructibility_analysis(&control.input)
+        .expect("constructibility");
+    let requirements =
+        derive_relation_requirements(&control.relations, &construction, &control.candidate)
+            .expect("Burn requirements");
+    validate_disclosure_closure(&control.input, &control.candidate, &requirements)
+        .expect("output-side reason closes");
+
+    let mut subject = control.candidate.clone();
+    let reasons = subject
+        .disclosure
+        .added_required_public
+        .get_mut(&change)
+        .expect("Burn change disclosure");
+    assert!(reasons.remove(&reason));
+    reasons.insert(CompilerDisclosureReason::SideRepresentationSelection {
+        operation: OperationId::Burn,
+        side: TransactionSide::Input,
+        object: ObjectId::ReceiptLive,
+        representation: RepresentationMode::Explicit,
+    });
+    assert_eq!(
+        validate_disclosure_closure(&control.input, &subject, &requirements),
+        Err(CompileError::AnalyzedDisclosureClosureMismatch),
+    );
 }
 
 #[test]

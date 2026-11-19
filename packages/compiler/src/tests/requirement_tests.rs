@@ -731,9 +731,8 @@ fn an_added_disclosure_reason_naming_an_unselected_mode_is_rejected() {
                     // A mode no pilot representation relation admits.
                     representation: RepresentationMode::PublicCommitted,
                 },
-                other @ crate::disclosure::CompilerDisclosureReason::ProofRequirement { .. } => {
-                    other.clone()
-                }
+                other @ (crate::disclosure::CompilerDisclosureReason::SideRepresentationSelection { .. }
+                | crate::disclosure::CompilerDisclosureReason::ProofRequirement { .. }) => other.clone(),
             })
             .collect();
     }

@@ -31,6 +31,13 @@ pub enum CompilerDisclosureReason {
         object: architecture::ObjectId,
         representation: RepresentationMode,
     },
+
+    SideRepresentationSelection {
+        operation: architecture::OperationId,
+        side: realization::TransactionSide,
+        object: architecture::ObjectId,
+        representation: RepresentationMode,
+    },
 }
 
 /// One plan candidate's complete disclosure analysis.

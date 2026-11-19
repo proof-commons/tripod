@@ -650,11 +650,19 @@ fn layout_verdict(requirement: LayoutRequirement) -> OperationVerdict {
         // The selected representation is enforced by the prefix
         // comparison every recognition fragment opens its value check
         // with.
-        LayoutRequirement::EnforceRepresentation { .. }
-        | LayoutRequirement::EnforceSideRepresentation { .. } => (
+        LayoutRequirement::EnforceRepresentation { .. } => (
             D::CompleteBackendPattern,
             G::ApprovedPattern,
             BTreeSet::from([P::CompactAshObjectRecognitionV1]),
+            BTreeSet::new(),
+        ),
+
+        // No approved compact pattern enforces a side-qualified mode;
+        // fail closed like routing_verdict does for unproduced requirements.
+        LayoutRequirement::EnforceSideRepresentation { .. } => (
+            D::BackendPatternRequired,
+            G::NoApprovedPattern,
+            BTreeSet::new(),
             BTreeSet::new(),
         ),
 

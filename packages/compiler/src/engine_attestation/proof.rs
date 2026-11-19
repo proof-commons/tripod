@@ -396,18 +396,79 @@ impl Lowered {
         source_requirements.sort();
         source_requirements.dedup();
         ProofPlanCandidate {
-            proofs: candidate.proofs.into_iter().map(|(relation, alternative)| (self.relations[&relation].clone(), self.proofs[&alternative].clone())).collect(),
-            representations: candidate.representations.into_iter().map(|(choice, mode)| (self.choices[&choice].clone(), self.modes[&mode])).collect(),
-            required_capabilities: candidate.capabilities, source_requirements,
-            external_evidence: candidate.evidence.iter().map(|key| self.evidence[key].clone()).collect(),
-            lifecycle: candidate.lifecycle.iter().map(|row| self.lifecycle[row].clone()).collect(),
+            proofs: candidate
+                .proofs
+                .into_iter()
+                .map(|(relation, alternative)| {
+                    (
+                        self.relations[&relation].clone(),
+                        self.proofs[&alternative].clone(),
+                    )
+                })
+                .collect(),
+            representations: candidate
+                .representations
+                .into_iter()
+                .map(|(choice, mode)| (self.choices[&choice].clone(), self.modes[&mode]))
+                .collect(),
+            required_capabilities: candidate.capabilities,
+            source_requirements,
+            external_evidence: candidate
+                .evidence
+                .iter()
+                .map(|key| self.evidence[key].clone())
+                .collect(),
+            lifecycle: candidate
+                .lifecycle
+                .iter()
+                .map(|row| self.lifecycle[row].clone())
+                .collect(),
             disclosure: crate::disclosure::CompilerDisclosureAnalysis {
                 inherited_required_public: self.inherited.clone(),
-                added_required_public: candidate.disclosed.into_iter().map(|(fact, reasons)| (self.facts[&fact].clone(), reasons.into_iter().map(|(choice, mode)| { let id = &self.choices[&choice]; crate::disclosure::CompilerDisclosureReason::RepresentationSelection { operation: id.operation, object: id.object, representation: self.modes[&mode] } }).collect())).collect(),
-                retained_private: candidate.retained.iter().map(|key| self.facts[key].clone()).collect(),
+                added_required_public: candidate
+                    .disclosed
+                    .into_iter()
+                    .map(|(fact, reasons)| {
+                        (
+                            self.facts[&fact].clone(),
+                            reasons
+                                .into_iter()
+                                .map(|(choice, mode)| {
+                                    disclosure_reason(&self.choices[&choice], self.modes[&mode])
+                                })
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+                retained_private: candidate
+                    .retained
+                    .iter()
+                    .map(|key| self.facts[key].clone())
+                    .collect(),
             },
         }
     }
+}
+
+fn disclosure_reason(
+    choice: &crate::lifecycle::RepresentationChoiceId,
+    representation: RepresentationMode,
+) -> crate::disclosure::CompilerDisclosureReason {
+    use crate::disclosure::CompilerDisclosureReason;
+
+    choice.side.map_or(
+        CompilerDisclosureReason::RepresentationSelection {
+            operation: choice.operation,
+            object: choice.object,
+            representation,
+        },
+        |side| CompilerDisclosureReason::SideRepresentationSelection {
+            operation: choice.operation,
+            side,
+            object: choice.object,
+            representation,
+        },
+    )
 }
 
 fn construction_requirements(
@@ -453,7 +514,7 @@ fn disclosure_records(
                 mode,
                 RepresentationMode::Explicit | RepresentationMode::PublicCommitted
             ) {
-                let affected = inherited.retained_private.iter().filter(|fact| matches!(fact, realization::FactId::FamilyAmount { operation, object, .. } if *operation == choice.id.operation && *object == choice.id.object)).map(fact_key).collect();
+                let affected = inherited.retained_private.iter().filter(|fact| matches!(fact, realization::FactId::FamilyAmount { operation, side: fact_side, object } if *operation == choice.id.operation && *object == choice.id.object && choice.id.side.is_none_or(|side| *fact_side == side))).map(fact_key).collect();
                 public_effects.insert((choice_key(&choice.id), mode_key(*mode)), affected);
             }
         }
@@ -492,11 +553,7 @@ pub fn derive_disclosure(
         .map(|(choice, mode)| {
             (
                 (choice_key(choice), mode_key(*mode)),
-                crate::disclosure::CompilerDisclosureReason::RepresentationSelection {
-                    operation: choice.operation,
-                    object: choice.object,
-                    representation: *mode,
-                },
+                disclosure_reason(choice, *mode),
             )
         })
         .collect::<BTreeMap<_, _>>();

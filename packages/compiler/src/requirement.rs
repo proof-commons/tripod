@@ -208,19 +208,33 @@ pub fn validate_disclosure_closure(
 
     for reasons in candidate.disclosure.added_required_public.values() {
         for reason in reasons {
-            let CompilerDisclosureReason::RepresentationSelection {
-                operation,
-                object,
-                representation,
-            } = reason
-            else {
-                continue;
-            };
-
-            let choice = RepresentationChoiceId {
-                side: None,
-                operation: *operation,
-                object: *object,
+            let (choice, representation) = match reason {
+                CompilerDisclosureReason::RepresentationSelection {
+                    operation,
+                    object,
+                    representation,
+                } => (
+                    RepresentationChoiceId {
+                        side: None,
+                        operation: *operation,
+                        object: *object,
+                    },
+                    representation,
+                ),
+                CompilerDisclosureReason::SideRepresentationSelection {
+                    operation,
+                    side,
+                    object,
+                    representation,
+                } => (
+                    RepresentationChoiceId {
+                        side: Some(*side),
+                        operation: *operation,
+                        object: *object,
+                    },
+                    representation,
+                ),
+                CompilerDisclosureReason::ProofRequirement { .. } => continue,
             };
 
             if candidate.representations.get(&choice) != Some(representation) {
