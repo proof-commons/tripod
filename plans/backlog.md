@@ -928,6 +928,8 @@ Clear facade packet 3.5a stopped at the complete-placement candidate cap; its st
 
 Packet 3.2d — CODE GREEN, IMPORT PENDING (`rec:w3:3-2d`). The placement owner has a checked canonical factor product, single-member validation and explicitly bounded expansion, exercised by two literal controls. The old enumerator and every production route remain unchanged; Clear stays refused. Compiler gate and preservation details are in the receipt. The full import gate remains pending.
 
+Packet 3.2e — CODE GATE GREEN, JOINT REVIEW PENDING (`rec:w3:3-2e`). Ruling 244 restores ClearFloor's runtime AmountMismatch negative without changing the shared census. Clear's checked factors validate completely; active and keyed complete members and public facade figures are preserved. The granted exact-path amendment updates the tracing-kind census for the packet's one typed error. Joint independent review and full import gate remain pending; public Clear remains refused.
+
 Packet 3.4's compact revalidation is recorded at (`rec:w3:3-4`): unchanged compact, linker, vectors and keyed pins passed the node gate; its event-silence corruption is refused. The full import gate remains pending.
 
 Packet 3.3a's dormant explicit Burn facade, independent plan validator and selected corruptions are recorded at (`rec:w3:3-3a`). Public Burn binding remains refused; the unfiltered node code gate passed after one correction round. The final records-tree gate and full import gate remain pending. The mixed private-change alternative and public activation belong to later packets.

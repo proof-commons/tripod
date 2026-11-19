@@ -44,7 +44,9 @@ use crate::{
         AnalysisExecutionReport, AnalyzedProofPlan, AnalyzedSource, ArchitectureScopeStatus,
         ScopedAnalyzedProgram, lifecycle_completeness, revalidate_input, validate_assembly_closure,
     },
-    analyzed_operation::{AnalyzedOperation, validate_operation_factorization},
+    analyzed_operation::{
+        AnalyzedOperation, AnalyzedPlacements, PlacementProduct, validate_operation_factorization,
+    },
     carrier::CarrierEligibility,
     case::ExecutionCaseId,
     coverage::{
@@ -818,15 +820,30 @@ fn reject_combined_product(
     operation: OperationId,
     factor: &AnalyzedOperation,
 ) -> Result<(), CompileError> {
-    for placement in &factor.feasible_placements {
-        let operations = placement
-            .assignments
-            .keys()
-            .map(|key| key.relation.operation())
-            .collect::<BTreeSet<_>>();
-
-        if operations.len() > 1 {
-            return Err(CompileError::UnexpectedCombinedPlacementProduct { operation });
+    match &factor.feasible_placements {
+        AnalyzedPlacements::Enumerated(members) => {
+            for placement in members {
+                let operations = placement
+                    .assignments
+                    .keys()
+                    .map(|key| key.relation.operation())
+                    .collect::<BTreeSet<_>>();
+                if operations.len() > 1 {
+                    return Err(CompileError::UnexpectedCombinedPlacementProduct { operation });
+                }
+            }
+        }
+        AnalyzedPlacements::Product(product) => {
+            if product
+                .factors
+                .keys()
+                .map(|key| key.relation.operation())
+                .collect::<BTreeSet<_>>()
+                .len()
+                > 1
+            {
+                return Err(CompileError::UnexpectedCombinedPlacementProduct { operation });
+            }
         }
     }
 
@@ -840,26 +857,38 @@ fn validate_placement_closure(
     factor: &AnalyzedOperation,
     required: &AnalyzedOperation,
 ) -> Result<(), CompileError> {
-    for placement in &factor.feasible_placements {
-        validate_placement(
-            &obligations.relation_case_plans,
-            &obligations.eligibility,
-            &restore_placement(placement),
-        )?;
-    }
-
-    if factor.feasible_placements != required.feasible_placements {
-        return Err(CompileError::AnalyzedPlacementFactorMismatch {
-            operation,
-            missing: required
-                .feasible_placements
-                .difference(&factor.feasible_placements)
-                .count(),
-            unexpected: factor
-                .feasible_placements
-                .difference(&required.feasible_placements)
-                .count(),
-        });
+    match (&factor.feasible_placements, &required.feasible_placements) {
+        (AnalyzedPlacements::Enumerated(members), AnalyzedPlacements::Enumerated(expected)) => {
+            for placement in members {
+                validate_placement(
+                    &obligations.relation_case_plans,
+                    &obligations.eligibility,
+                    &restore_placement(placement),
+                )?;
+            }
+            if members != expected {
+                return Err(CompileError::AnalyzedPlacementFactorMismatch {
+                    operation,
+                    missing: expected.difference(members).count(),
+                    unexpected: members.difference(expected).count(),
+                });
+            }
+        }
+        (AnalyzedPlacements::Product(product), AnalyzedPlacements::Product(expected)) => {
+            if product != expected {
+                return Err(CompileError::AnalyzedPlacementProductMismatch {
+                    operation,
+                    key: first_product_difference(product, expected),
+                });
+            }
+        }
+        (offered, expected) => {
+            let key = offered
+                .product()
+                .or_else(|| expected.product())
+                .and_then(|product| product.factors.keys().next().cloned());
+            return Err(CompileError::AnalyzedPlacementProductMismatch { operation, key });
+        }
     }
 
     if factor.layout_requirements != required.layout_requirements {
@@ -867,6 +896,20 @@ fn validate_placement_closure(
     }
 
     Ok(())
+}
+
+fn first_product_difference(
+    offered: &PlacementProduct,
+    expected: &PlacementProduct,
+) -> Option<RelationCaseKey> {
+    offered
+        .factors
+        .keys()
+        .chain(expected.factors.keys())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .find(|key| offered.factors.get(*key) != expected.factors.get(*key))
+        .cloned()
 }
 
 /// The stored projection read back as the value the exact placement
@@ -1212,9 +1255,22 @@ fn validate_factor_sponsor_opacity(factor: &AnalyzedOperation) -> Result<(), Com
         reject_sponsor_layout(requirement)?;
     }
 
-    for placement in &factor.feasible_placements {
-        for requirement in &placement.layout_requirements {
-            reject_sponsor_layout(requirement)?;
+    match &factor.feasible_placements {
+        AnalyzedPlacements::Enumerated(members) => {
+            for placement in members {
+                for requirement in &placement.layout_requirements {
+                    reject_sponsor_layout(requirement)?;
+                }
+            }
+        }
+        AnalyzedPlacements::Product(product) => {
+            for options in product.factors.values() {
+                for option in options {
+                    for requirement in &option.layout_requirements {
+                        reject_sponsor_layout(requirement)?;
+                    }
+                }
+            }
         }
     }
 

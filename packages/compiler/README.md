@@ -290,7 +290,13 @@ target-specific type is not merely discouraged here — it is unnameable.
   construction charges the root, every factor and every option to the state
   limit. Explicit bounded expansion checks its full candidate count first and
   returns no partial set on exhaustion. The existing enumerator still applies
-  both limits to its bounded search as before.
+  both limits to its bounded search as before. Internal Clear analysis selects
+  the checked product through the shared assembly; active attestation and both
+  keyed owners retain enumerated members. Public Clear binding remains refused.
+  The Clear test's literal carrier table and test-side layout rule are independent
+  of product construction, but its source routings and family scope come from
+  `carrier::relation_case_eligibility`, which attestation lowering also calls.
+  The 3.5b oracle owns an independent expectation for Clear's carrier routing.
 - `TargetRequirementSet` — read-only and opaque: private fields, no public
   constructor, no `Default`, no builder. `capabilities() -> impl Iterator<Item = RequiredCapability>`
   and `external_evidence() -> impl Iterator<Item = ExternalEvidenceRole>`, both

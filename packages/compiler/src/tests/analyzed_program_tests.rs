@@ -211,7 +211,13 @@ fn every_plan_stores_exactly_the_scope_operation_factors() {
 
             for (operation, factor) in &analysis.operations {
                 assert_eq!(factor.operation, *operation);
-                assert!(!factor.feasible_placements.is_empty());
+                assert!(
+                    !factor
+                        .feasible_placements
+                        .enumerated()
+                        .expect("enumerated placement")
+                        .is_empty()
+                );
                 assert!(!factor.relation_cases.is_empty());
             }
         }
@@ -365,7 +371,11 @@ fn the_analyzed_program_stores_placement_factors_only() {
             // Every placement is one operation's: a stored combination
             // across operations would name a second operation's
             // relation-case here.
-            for placement in &factor.feasible_placements {
+            for placement in factor
+                .feasible_placements
+                .enumerated()
+                .expect("enumerated placement")
+            {
                 for key in placement.assignments.keys() {
                     assert_eq!(key.relation.operation(), *operation);
                     assert_eq!(key.case.operation, *operation);
@@ -383,7 +393,13 @@ fn the_analyzed_program_stores_placement_factors_only() {
         let stored = analysis
             .operations
             .values()
-            .map(|factor| factor.feasible_placements.len())
+            .map(|factor| {
+                factor
+                    .feasible_placements
+                    .enumerated()
+                    .expect("enumerated placement")
+                    .len()
+            })
             .collect::<Vec<_>>();
         let sum = stored.iter().sum::<usize>();
         let product = stored.iter().product::<usize>();
@@ -715,7 +731,14 @@ fn combined_scope_storage_is_a_sum_over_operations() {
 
     for (plan, analysis) in &COMBINED.program.proof_plans {
         for (operation, factor) in &analysis.operations {
-            stored.insert((plan.clone(), *operation), factor.feasible_placements.len());
+            stored.insert(
+                (plan.clone(), *operation),
+                factor
+                    .feasible_placements
+                    .enumerated()
+                    .expect("enumerated placement")
+                    .len(),
+            );
         }
     }
 
@@ -732,7 +755,13 @@ fn the_combined_scope_stores_two_factors_rather_than_their_product() {
         let factors = analysis
             .operations
             .values()
-            .map(|factor| factor.feasible_placements.len())
+            .map(|factor| {
+                factor
+                    .feasible_placements
+                    .enumerated()
+                    .expect("enumerated placement")
+                    .len()
+            })
             .collect::<Vec<_>>();
 
         assert_eq!(factors, vec![216, 216]);

@@ -1320,7 +1320,11 @@ fn every_pilot_factor_is_exactly_its_measured_census() {
                 "{operation:?}",
             );
             assert_eq!(
-                factor.feasible_placements.len(),
+                factor
+                    .feasible_placements
+                    .enumerated()
+                    .expect("enumerated placement")
+                    .len(),
                 census.placements,
                 "{operation:?}",
             );
@@ -1531,7 +1535,11 @@ fn the_combined_program_stores_no_cross_operation_dependency() {
                 assert_eq!(key.case.operation, *operation);
             }
 
-            for placement in &factor.feasible_placements {
+            for placement in factor
+                .feasible_placements
+                .enumerated()
+                .expect("enumerated placement")
+            {
                 for key in placement.assignments.keys() {
                     assert_eq!(key.relation.operation(), *operation);
                     assert_eq!(key.case.operation, *operation);
@@ -1554,7 +1562,13 @@ fn the_combined_program_stores_no_cross_operation_dependency() {
         let stored = analysis
             .operations
             .values()
-            .map(|factor| factor.feasible_placements.len())
+            .map(|factor| {
+                factor
+                    .feasible_placements
+                    .enumerated()
+                    .expect("enumerated placement")
+                    .len()
+            })
             .collect::<Vec<_>>();
 
         assert_eq!(stored, vec![216, 216]);
@@ -1752,7 +1766,12 @@ fn the_analyzed_program_mints_no_compiler_identity() {
             assert_eq!(coverage.operation, *operation);
             assert_eq!(execution_cases.len(), 2);
             assert!(!relation_cases.is_empty());
-            assert!(!feasible_placements.is_empty());
+            assert!(
+                !feasible_placements
+                    .enumerated()
+                    .expect("enumerated placement")
+                    .is_empty()
+            );
             assert!(!layout_requirements.is_empty());
             assert_ne!(
                 coverage_dependencies.nodes,

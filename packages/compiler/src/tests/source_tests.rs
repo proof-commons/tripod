@@ -729,7 +729,10 @@ fn clear_bodies_have_exact_owned_tables() {
             &Relation::ClearFloor,
             crate::case::ConservedAmountVisibility::Readable,
         ),
-        Ok(Vec::new()),
+        Ok(vec![(
+            crate::coverage::CoverageBoundary::RuntimeCarrier,
+            crate::coverage::RelationMutation::AmountMismatch,
+        )]),
     );
     for row in &rows {
         let expected = match row.relation {

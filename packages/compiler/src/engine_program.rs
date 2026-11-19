@@ -44,12 +44,12 @@ pub struct Records {
     pub cases: engine_cases::Tables,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Plan {
+pub struct Plan<P = Vec<crate::engine_placement::Candidate>> {
     pub requirements: BTreeMap<RelationKey, engine_requirement::Bundle>,
-    pub operations: BTreeMap<OperationKey, engine_operation::Operation>,
+    pub operations: BTreeMap<OperationKey, engine_operation::Operation<P>>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Program {
+pub struct Program<P = Vec<crate::engine_placement::Candidate>> {
     pub source: Source,
     pub relations: engine_records::RelationRecords,
     pub predicates: engine_foundation::Records,
@@ -58,7 +58,7 @@ pub struct Program {
     pub constructibility: engine_constructibility::Records,
     pub construction: Vec<engine_constructibility::OperationAnalysis>,
     pub lifecycle: engine_lifecycle::LifecycleProjection,
-    pub plans: BTreeMap<engine_proof::Candidate, Plan>,
+    pub plans: BTreeMap<engine_proof::Candidate, Plan<P>>,
     pub evidence: BTreeSet<engine_source::Evidence>,
     pub proof_search: crate::proof::ProofSearchReport,
     pub proof_limits: ProofSearchLimits,
@@ -154,6 +154,40 @@ pub fn analyze_prepared(
     placement_limits: PlacementSearchLimits,
     stages: Option<PreparedStages>,
 ) -> Result<Program, Error> {
+    analyze_prepared_with_storage(
+        records,
+        proof_limits,
+        placement_limits,
+        stages,
+        &engine_operation::EnumeratedStorage,
+    )
+}
+
+/// Attestation selects product storage by its own operation keys, outside the
+/// shared engine's semantic policy.
+pub fn analyze_prepared_scoped(
+    records: &Records,
+    proof_limits: ProofSearchLimits,
+    placement_limits: PlacementSearchLimits,
+    stages: Option<PreparedStages>,
+    product_operations: &BTreeSet<OperationKey>,
+) -> Result<Program<engine_operation::StoredPlacements>, Error> {
+    analyze_prepared_with_storage(
+        records,
+        proof_limits,
+        placement_limits,
+        stages,
+        &engine_operation::ScopedStorage { product_operations },
+    )
+}
+
+fn analyze_prepared_with_storage<S: engine_operation::PlacementStorage>(
+    records: &Records,
+    proof_limits: ProofSearchLimits,
+    placement_limits: PlacementSearchLimits,
+    stages: Option<PreparedStages>,
+    storage: &S,
+) -> Result<Program<S::Stored>, Error> {
     let (relations, construction) = match stages {
         Some(stages) => (Some(stages.relations), Some(stages.construction)),
         None => (None, None),
@@ -206,8 +240,13 @@ pub fn analyze_prepared(
         engine_requirement::validate_aggregate(&aggregate, &requirements)
             .map_err(|error| Error::Aggregate(Box::new(error)))?;
         let selected = engine_cases::select(&records.cases, &candidate).map_err(Error::Cases)?;
-        let operations = engine_operation::analyze(&selected, &prerequisites, placement_limits)
-            .map_err(|error| Error::Operations(Box::new(error)))?;
+        let operations = engine_operation::analyze_with_storage(
+            &selected,
+            &prerequisites,
+            placement_limits,
+            storage,
+        )
+        .map_err(|error| Error::Operations(Box::new(error)))?;
         evidence.extend(
             requirements
                 .values()

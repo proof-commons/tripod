@@ -86,6 +86,102 @@ fn pilots() -> [Coverage; 2] {
 }
 
 #[test]
+fn clear_floor_runtime_coverage() {
+    let control = super::source_tests::clear_control();
+    let cases =
+        crate::case::execution_cases(&control.relations, &control.candidate).expect("Clear cases");
+    let plans = classify_relation_cases(&control.relations, &cases).expect("Clear classification");
+    let coverage =
+        analyze_plan_coverage(&control.relations, &plans).expect("complete Clear coverage");
+    let floor = coverage
+        .plans()
+        .find(|row| {
+            row.relation.kind() == RelationKind::ClearFloor
+                && row.activity == RelationActivity::Active
+        })
+        .expect("active Clear floor");
+    let key = floor.key();
+    let expected = [(
+        CoverageBoundary::RuntimeCarrier,
+        RelationMutation::AmountMismatch,
+    )];
+    assert_eq!(
+        floor
+            .negative
+            .iter()
+            .map(|row| (row.id.boundary, row.mutation))
+            .collect::<Vec<_>>(),
+        expected,
+    );
+    let mut removed = coverage.clone();
+    removed
+        .operations
+        .get_mut(&OperationId::Clear)
+        .expect("Clear coverage")
+        .requirements
+        .get_mut(&key)
+        .expect("floor row")
+        .negative
+        .clear();
+    assert_eq!(
+        validate_coverage_census(&plans, &removed),
+        Err(CompileError::MissingNegativeCoverage {
+            relation: key.relation,
+            case: key.case,
+            boundary: CoverageBoundary::RuntimeCarrier,
+        }),
+    );
+}
+
+#[test]
+fn clear_coverage_boundaries_complete() {
+    let control = super::source_tests::clear_control();
+    let candidates = enumerate_feasible_plans(&control.input, &CapabilityView::Unconstrained)
+        .expect("Clear candidates")
+        .candidates;
+    assert_eq!(candidates.len(), 4);
+    for candidate in candidates {
+        let cases =
+            crate::case::execution_cases(&control.relations, &candidate).expect("Clear cases");
+        assert_eq!(cases.len(), 2);
+        let plans =
+            classify_relation_cases(&control.relations, &cases).expect("Clear classification");
+        let coverage =
+            analyze_plan_coverage(&control.relations, &plans).expect("complete Clear coverage");
+        assert_eq!(coverage.keys().len(), plans.len());
+        for plan in &plans {
+            let row = coverage
+                .plan(&RelationCaseKey {
+                    relation: plan.relation.clone(),
+                    case: plan.case.clone(),
+                })
+                .expect("declared Clear row");
+            if plan.activity == RelationActivity::Active {
+                for boundary in &plan.boundaries {
+                    assert!(
+                        row.positive
+                            .iter()
+                            .any(|positive| positive.id.boundary == *boundary)
+                    );
+                    assert!(
+                        row.negative
+                            .iter()
+                            .any(|negative| negative.id.boundary == *boundary)
+                    );
+                }
+            } else {
+                assert!(
+                    row.positive
+                        .iter()
+                        .any(|positive| positive.id.purpose == CoveragePurpose::InactiveAccept)
+                );
+                assert_eq!(row.negative, Vec::new());
+            }
+        }
+    }
+}
+
+#[test]
 fn new_coverage_coordinates_keep_their_boundary() {
     use crate::source::BurnClearCoordinate as C;
 

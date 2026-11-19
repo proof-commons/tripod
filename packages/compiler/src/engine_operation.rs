@@ -10,14 +10,96 @@ use crate::{
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Operation {
+pub struct Operation<P = Vec<placement::Candidate>> {
     pub id: OperationKey,
     pub cases: BTreeSet<CaseKey>,
     pub bundles: BTreeMap<Key, Bundle>,
-    pub placements: Vec<placement::Candidate>,
+    pub placements: P,
     pub layout: BTreeSet<LayoutKey>,
     pub coverage: graph::Projection,
     pub search: PlacementSearchReport,
+}
+
+/// Attestation storage can retain a checked product alongside old members.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StoredPlacements {
+    Enumerated(Vec<placement::Candidate>),
+    Product(placement::Product),
+}
+
+/// Fixed storage choices; only the attestation owner selects product keys.
+pub trait PlacementStorage {
+    type Stored: Clone + std::fmt::Debug + PartialEq + Eq;
+
+    fn place(
+        &self,
+        operation: OperationKey,
+        records: &placement::Records,
+        limits: PlacementSearchLimits,
+        search: &mut PlacementSearchReport,
+    ) -> Result<Self::Stored, placement::Error>;
+
+    fn assignments(&self, stored: &Self::Stored) -> Vec<placement::Assignment>;
+}
+
+pub struct EnumeratedStorage;
+
+impl PlacementStorage for EnumeratedStorage {
+    type Stored = Vec<placement::Candidate>;
+
+    fn place(
+        &self,
+        _operation: OperationKey,
+        records: &placement::Records,
+        limits: PlacementSearchLimits,
+        search: &mut PlacementSearchReport,
+    ) -> Result<Self::Stored, placement::Error> {
+        placement::enumerate(records, limits, search)
+    }
+
+    fn assignments(&self, stored: &Self::Stored) -> Vec<placement::Assignment> {
+        stored
+            .iter()
+            .flat_map(|row| row.assignments.iter().cloned())
+            .collect()
+    }
+}
+
+pub struct ScopedStorage<'a> {
+    pub product_operations: &'a BTreeSet<OperationKey>,
+}
+
+impl PlacementStorage for ScopedStorage<'_> {
+    type Stored = StoredPlacements;
+
+    fn place(
+        &self,
+        operation: OperationKey,
+        records: &placement::Records,
+        limits: PlacementSearchLimits,
+        search: &mut PlacementSearchReport,
+    ) -> Result<Self::Stored, placement::Error> {
+        if self.product_operations.contains(&operation) {
+            placement::product(records, limits, search).map(StoredPlacements::Product)
+        } else {
+            placement::enumerate(records, limits, search).map(StoredPlacements::Enumerated)
+        }
+    }
+
+    fn assignments(&self, stored: &Self::Stored) -> Vec<placement::Assignment> {
+        match stored {
+            StoredPlacements::Enumerated(members) => EnumeratedStorage.assignments(members),
+            StoredPlacements::Product(product) => product
+                .factors()
+                .flat_map(|(key, options)| {
+                    options.iter().map(|option| placement::Assignment {
+                        key: key.clone(),
+                        carriers: option.carriers().to_vec(),
+                    })
+                })
+                .collect(),
+        }
+    }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -37,11 +119,21 @@ pub enum Error {
 }
 
 /// Each operation gets its own search. No product over operations is formed.
+#[cfg(test)]
 pub fn analyze(
     selected: &Selected,
     prerequisites: &[(RelationKey, RelationKey)],
     limits: PlacementSearchLimits,
 ) -> Result<BTreeMap<OperationKey, Operation>, Error> {
+    analyze_with_storage(selected, prerequisites, limits, &EnumeratedStorage)
+}
+
+pub fn analyze_with_storage<S: PlacementStorage>(
+    selected: &Selected,
+    prerequisites: &[(RelationKey, RelationKey)],
+    limits: PlacementSearchLimits,
+    storage: &S,
+) -> Result<BTreeMap<OperationKey, Operation<S::Stored>>, Error> {
     let span = tracing::debug_span!(target: "compiler::engine_operation", "analyze", plan_count = crate::instrumentation::count(selected.placement.plans.len()));
     let _entered = span.enter();
     let operations = selected
@@ -72,18 +164,19 @@ pub fn analyze(
     operations
         .into_iter()
         .map(|operation| {
-            analyze_one(selected, prerequisites, operation, limits)
+            analyze_one(selected, prerequisites, operation, limits, storage)
                 .map(|result| (operation, result))
         })
         .collect()
 }
 
-fn analyze_one(
+fn analyze_one<S: PlacementStorage>(
     selected: &Selected,
     prerequisites: &[(RelationKey, RelationKey)],
     operation: OperationKey,
     limits: PlacementSearchLimits,
-) -> Result<Operation, Error> {
+    storage: &S,
+) -> Result<Operation<S::Stored>, Error> {
     let records = placement::Records {
         plans: selected
             .placement
@@ -101,7 +194,8 @@ fn analyze_one(
             .collect(),
     };
     let mut search = PlacementSearchReport::default();
-    let placements = placement::enumerate(&records, limits, &mut search)
+    let placements = storage
+        .place(operation, &records, limits, &mut search)
         .map_err(|error| Error::Placement(Box::new(error)))?;
     let plans = selected
         .coverage
@@ -117,12 +211,7 @@ fn analyze_one(
         .iter()
         .map(|row| (row.key.clone(), row.entries.clone()))
         .collect::<BTreeMap<_, _>>();
-    let alternatives = join::alternatives(
-        &entries,
-        placements
-            .iter()
-            .flat_map(|row| row.assignments.iter().cloned()),
-    );
+    let alternatives = join::alternatives(&entries, storage.assignments(&placements).into_iter());
     let facts = selected
         .facts
         .iter()

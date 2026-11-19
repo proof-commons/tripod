@@ -26,7 +26,7 @@ fn compile_error_tracing_kinds_are_canonical_snake_case() {
         .0;
     let entries = table.split("Self::").skip(1).collect::<Vec<_>>();
     // Includes typed refusals for unsupported attestation operations and bodies.
-    assert_eq!(entries.len(), 144);
+    assert_eq!(entries.len(), 145);
 
     for entry in entries {
         let variant = entry

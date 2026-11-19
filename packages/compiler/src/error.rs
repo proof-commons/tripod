@@ -1282,6 +1282,15 @@ pub enum CompileError {
         unexpected: usize,
     },
 
+    /// One checked product factor differs from fresh bound-input lowering.
+    #[error("placement product factor {key:?} mismatch for operation {operation:?}")]
+    AnalyzedPlacementProductMismatch {
+        /// The factor's operation.
+        operation: OperationId,
+        /// The first changed relation-case, if either product has a factor.
+        key: Option<crate::placement::RelationCaseKey>,
+    },
+
     /// One operation factor's layout census is not the re-derived one.
     #[error("layout census mismatch for operation {operation:?}")]
     AnalyzedLayoutCensusMismatch {
@@ -1701,6 +1710,7 @@ impl CompileError {
                 "analyzed_relation_requirement_mismatch"
             }
             Self::AnalyzedPlacementFactorMismatch { .. } => "analyzed_placement_factor_mismatch",
+            Self::AnalyzedPlacementProductMismatch { .. } => "analyzed_placement_product_mismatch",
             Self::AnalyzedLayoutCensusMismatch { .. } => "analyzed_layout_census_mismatch",
             Self::AnalyzedRelationCaseMismatch { .. } => "analyzed_relation_case_mismatch",
             Self::AnalyzedCoverageCensusMismatch { .. } => "analyzed_coverage_census_mismatch",

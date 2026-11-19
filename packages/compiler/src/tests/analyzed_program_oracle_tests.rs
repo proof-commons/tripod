@@ -830,9 +830,19 @@ fn the_oracle_reproduces_the_boundary_key_partitions() {
                     true,
                 );
 
-                assert!(!factor.feasible_placements.is_empty());
+                assert!(
+                    !factor
+                        .feasible_placements
+                        .enumerated()
+                        .expect("enumerated placement")
+                        .is_empty()
+                );
 
-                for placement in &factor.feasible_placements {
+                for placement in factor
+                    .feasible_placements
+                    .enumerated()
+                    .expect("enumerated placement")
+                {
                     assert_eq!(
                         placement
                             .assignments
@@ -880,7 +890,11 @@ fn the_oracle_reproduces_the_placement_factors_and_layout_census() {
                 let factor = &plan.operations[&operation];
 
                 assert_eq!(
-                    factor.feasible_placements,
+                    factor
+                        .feasible_placements
+                        .enumerated()
+                        .expect("enumerated placement")
+                        .clone(),
                     expected
                         .feasible_placements
                         .iter()
@@ -901,7 +915,14 @@ fn the_oracle_reproduces_the_placement_factors_and_layout_census() {
 
                 // A factor with one placement would make the product
                 // theorem vacuous for that operation.
-                assert!(factor.feasible_placements.len() > 1);
+                assert!(
+                    factor
+                        .feasible_placements
+                        .enumerated()
+                        .expect("enumerated placement")
+                        .len()
+                        > 1
+                );
             }
         }
     }
@@ -1215,7 +1236,11 @@ fn every_analyzed_constraint_is_operation_owned() {
 
             // No placement names a second operation's obligation: a
             // stored member of the cross-operation product would.
-            for placement in &factor.feasible_placements {
+            for placement in factor
+                .feasible_placements
+                .enumerated()
+                .expect("enumerated placement")
+            {
                 for key in placement.assignments.keys() {
                     assert_eq!(key.relation.operation(), *operation);
                     assert_eq!(key.case.operation, *operation);
@@ -1243,7 +1268,13 @@ fn every_analyzed_constraint_is_operation_owned() {
         let sizes = plan
             .operations
             .values()
-            .map(|factor| factor.feasible_placements.len())
+            .map(|factor| {
+                factor
+                    .feasible_placements
+                    .enumerated()
+                    .expect("enumerated placement")
+                    .len()
+            })
             .collect::<Vec<_>>();
 
         assert!(sizes.iter().sum::<usize>() < sizes.iter().product::<usize>());
@@ -1330,7 +1361,14 @@ fn combined_scope_product_matches_operation_factors() {
             .plan(&entry.proof_plan)
             .operations
             .values()
-            .map(|factor| factor.feasible_placements.iter().collect::<Vec<_>>())
+            .map(|factor| {
+                factor
+                    .feasible_placements
+                    .enumerated()
+                    .expect("enumerated placement")
+                    .iter()
+                    .collect::<Vec<_>>()
+            })
             .collect::<Vec<_>>();
 
         assert_eq!(factors.len(), 2);
@@ -1371,7 +1409,14 @@ fn combined_scope_product_matches_operation_factors() {
         // The production analyzed value stores the factors only: the
         // product just enumerated appears nowhere inside it.
         for factor in analyzed.plan(&entry.proof_plan).operations.values() {
-            assert!(factor.feasible_placements.len() < global.len());
+            assert!(
+                factor
+                    .feasible_placements
+                    .enumerated()
+                    .expect("enumerated placement")
+                    .len()
+                    < global.len()
+            );
         }
     }
     assert_eq!(
@@ -1564,12 +1609,18 @@ fn a_removed_placement_is_rejected_and_disagrees() {
         let factor = factor_mut(program);
         let dropped = factor
             .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
             .iter()
             .next()
             .expect("a feasible placement")
             .clone();
 
-        factor.feasible_placements.remove(&dropped);
+        factor
+            .feasible_placements
+            .enumerated_mut()
+            .expect("enumerated placement")
+            .remove(&dropped);
     });
 
     let expected = oracle_placement_factor(OperationId::CompactAsh, &key)
@@ -1579,7 +1630,11 @@ fn a_removed_placement_is_rejected_and_disagrees() {
         .collect::<BTreeSet<_>>();
 
     assert_ne!(
-        plan_of(&program).operations[&OperationId::CompactAsh].feasible_placements,
+        plan_of(&program).operations[&OperationId::CompactAsh]
+            .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
+            .clone(),
         expected,
     );
 }
@@ -1810,7 +1865,12 @@ fn a_permuted_carrier_order_places_equally() {
                 .iter()
                 .map(PlacementCandidate::project)
                 .collect::<BTreeSet<_>>(),
-            permutable.stored.feasible_placements,
+            permutable
+                .stored
+                .feasible_placements
+                .enumerated()
+                .expect("enumerated placement")
+                .clone(),
             "{:?}",
             permutable.operation,
         );
@@ -1976,7 +2036,11 @@ fn the_placed_carriers_of_one_factor_are_canonical() {
 
     for plan in analyzed.projection.proof_plans.values() {
         for factor in plan.operations.values() {
-            for placement in &factor.feasible_placements {
+            for placement in factor
+                .feasible_placements
+                .enumerated()
+                .expect("enumerated placement")
+            {
                 for carriers in placement.assignments.values() {
                     assert!(!carriers.is_empty());
 

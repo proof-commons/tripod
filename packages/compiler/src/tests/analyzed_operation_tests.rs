@@ -205,7 +205,13 @@ fn pilot_factor_is_exact(operation: OperationId) {
             expected,
         );
         assert_eq!(analyzed.coverage.cases, analyzed.execution_cases);
-        assert!(!analyzed.feasible_placements.is_empty());
+        assert!(
+            !analyzed
+                .feasible_placements
+                .enumerated()
+                .expect("enumerated placement")
+                .is_empty()
+        );
         assert!(!analyzed.layout_requirements.is_empty());
 
         validate_analyzed_operation(&fixture.relations, candidate, &analyzed)
@@ -455,7 +461,11 @@ fn operation_factors_equal_the_whole_plan_analysis() {
                 place_proof_plan(&fixture.relations, candidate, limits()).expect("whole plan");
 
             assert_eq!(
-                analyzed.feasible_placements,
+                analyzed
+                    .feasible_placements
+                    .enumerated()
+                    .expect("enumerated placement")
+                    .clone(),
                 placed
                     .feasible_placements
                     .iter()
@@ -561,7 +571,11 @@ fn combined_scope_factors_are_operation_owned() {
             assert_eq!(key.relation.operation(), *operation);
         }
 
-        for placement in &analyzed.feasible_placements {
+        for placement in analyzed
+            .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
+        {
             for key in placement.assignments.keys() {
                 assert_eq!(key.relation.operation(), *operation);
             }

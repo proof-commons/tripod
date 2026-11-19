@@ -66,12 +66,79 @@ use crate::{
     layout::LayoutRequirement,
     placement::{
         ActivationCondition, BackendStructuralRequirement, CompilerStaticRequirement,
-        DischargeBoundary, PlacementCandidateProjection, RelationActivity, RelationCaseKey,
+        DischargeBoundary, PlacedCarrier, PlacementCandidateProjection, RelationActivity,
+        RelationCaseKey,
     },
     proof::ProofPlanCandidate,
     relation::CompilerRelationAnalysis,
     source::SourceRequirement,
 };
+
+/// One independently checked local carrier option in a represented product.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PlacementFactorOption {
+    pub carriers: BTreeSet<PlacedCarrier>,
+    pub layout_requirements: BTreeSet<LayoutRequirement>,
+}
+
+/// Exact local factors, keyed by the runtime relation and execution case.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlacementProduct {
+    pub factors: BTreeMap<RelationCaseKey, BTreeSet<PlacementFactorOption>>,
+}
+
+/// Internal placement storage. Complete members exist only in the enumerated arm.
+#[derive(Clone, PartialEq, Eq)]
+pub enum AnalyzedPlacements {
+    Enumerated(BTreeSet<PlacementCandidateProjection>),
+    Product(PlacementProduct),
+}
+
+impl std::fmt::Debug for AnalyzedPlacements {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Enumerated(members) => std::fmt::Debug::fmt(members, formatter),
+            Self::Product(product) => formatter.debug_tuple("Product").field(product).finish(),
+        }
+    }
+}
+
+impl AnalyzedPlacements {
+    /// Borrow complete members only when this operation uses enumeration.
+    #[cfg(test)]
+    pub const fn enumerated(&self) -> Option<&BTreeSet<PlacementCandidateProjection>> {
+        match self {
+            Self::Enumerated(members) => Some(members),
+            Self::Product(_) => None,
+        }
+    }
+
+    /// Mutate enumerated members in the existing in-crate corruption controls.
+    #[cfg(test)]
+    pub const fn enumerated_mut(&mut self) -> Option<&mut BTreeSet<PlacementCandidateProjection>> {
+        match self {
+            Self::Enumerated(members) => Some(members),
+            Self::Product(_) => None,
+        }
+    }
+
+    /// Borrow local factors without materializing complete members.
+    pub const fn product(&self) -> Option<&PlacementProduct> {
+        match self {
+            Self::Enumerated(_) => None,
+            Self::Product(product) => Some(product),
+        }
+    }
+
+    /// Mutate a product in focused in-crate corruption controls.
+    #[cfg(test)]
+    pub const fn product_mut(&mut self) -> Option<&mut PlacementProduct> {
+        match self {
+            Self::Enumerated(_) => None,
+            Self::Product(product) => Some(product),
+        }
+    }
+}
 
 /// Why one relation-case requirement bundle is not admissible.
 ///
@@ -175,7 +242,7 @@ pub struct AnalyzedOperation {
     pub operation: OperationId,
     pub execution_cases: BTreeSet<ExecutionCaseId>,
     pub relation_cases: BTreeMap<RelationCaseKey, RelationCaseRequirements>,
-    pub feasible_placements: BTreeSet<PlacementCandidateProjection>,
+    pub feasible_placements: AnalyzedPlacements,
     pub layout_requirements: BTreeSet<LayoutRequirement>,
     pub coverage: OperationCoverageProjection,
     pub coverage_dependencies: CoverageGraphProjection,
@@ -389,11 +456,13 @@ pub fn analyze_operation_reported(
             .map(|case| case.id.clone())
             .collect(),
         relation_cases,
-        feasible_placements: placement
-            .placements
-            .iter()
-            .map(PlacementCandidate::project)
-            .collect(),
+        feasible_placements: AnalyzedPlacements::Enumerated(
+            placement
+                .placements
+                .iter()
+                .map(PlacementCandidate::project)
+                .collect(),
+        ),
         layout_requirements: placement.layout_requirements.iter().cloned().collect(),
         coverage: projection,
         coverage_dependencies: graph.project(),
@@ -707,25 +776,48 @@ fn validate_operation_placement_census(analyzed: &AnalyzedOperation) -> Result<(
         .map(|bundle| bundle.key.clone())
         .collect::<BTreeSet<_>>();
 
-    for placement in &analyzed.feasible_placements {
-        let assigned = placement
-            .assignments
-            .keys()
-            .cloned()
-            .collect::<BTreeSet<_>>();
-
-        if assigned != runtime {
-            return Err(CompileError::PlacementCensusMismatch {
-                missing: runtime.difference(&assigned).cloned().collect(),
-                unexpected: assigned.difference(&runtime).cloned().collect(),
-            });
-        }
-
-        for requirement in &placement.layout_requirements {
-            if !analyzed.layout_requirements.contains(requirement) {
-                return Err(CompileError::UnexpectedLayoutRequirement {
+    let check_layout = |requirements: &BTreeSet<LayoutRequirement>| {
+        requirements.iter().find_map(|requirement| {
+            (!analyzed.layout_requirements.contains(requirement)).then(|| {
+                CompileError::UnexpectedLayoutRequirement {
                     unexpected: vec![requirement.clone()],
+                }
+            })
+        })
+    };
+    match &analyzed.feasible_placements {
+        AnalyzedPlacements::Enumerated(members) => {
+            for placement in members {
+                let assigned = placement
+                    .assignments
+                    .keys()
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                if assigned != runtime {
+                    return Err(CompileError::PlacementCensusMismatch {
+                        missing: runtime.difference(&assigned).cloned().collect(),
+                        unexpected: assigned.difference(&runtime).cloned().collect(),
+                    });
+                }
+                if let Some(error) = check_layout(&placement.layout_requirements) {
+                    return Err(error);
+                }
+            }
+        }
+        AnalyzedPlacements::Product(product) => {
+            let assigned = product.factors.keys().cloned().collect::<BTreeSet<_>>();
+            if assigned != runtime {
+                return Err(CompileError::PlacementCensusMismatch {
+                    missing: runtime.difference(&assigned).cloned().collect(),
+                    unexpected: assigned.difference(&runtime).cloned().collect(),
                 });
+            }
+            for options in product.factors.values() {
+                for option in options {
+                    if let Some(error) = check_layout(&option.layout_requirements) {
+                        return Err(error);
+                    }
+                }
             }
         }
     }
@@ -790,16 +882,28 @@ pub fn validate_operation_factorization(
         validate_analyzed_operation(relations, candidate, analyzed)?;
 
         // Condition 3: no carrier spans operations.
-        for placement in &analyzed.feasible_placements {
-            for carrier in placement.assignments.values().flatten() {
-                if let Some(carried) = carrier_operation(&carrier.carrier)
-                    && carried != *operation
-                {
-                    return Err(CompileError::ForeignOperationFactor {
-                        operation: *operation,
-                        found: carried,
-                    });
-                }
+        let carriers: Box<dyn Iterator<Item = &PlacedCarrier> + '_> =
+            match &analyzed.feasible_placements {
+                AnalyzedPlacements::Enumerated(members) => Box::new(
+                    members
+                        .iter()
+                        .flat_map(|placement| placement.assignments.values().flatten()),
+                ),
+                AnalyzedPlacements::Product(product) => Box::new(
+                    product
+                        .factors
+                        .values()
+                        .flat_map(|options| options.iter().flat_map(|option| &option.carriers)),
+                ),
+            };
+        for carrier in carriers {
+            if let Some(carried) = carrier_operation(&carrier.carrier)
+                && carried != *operation
+            {
+                return Err(CompileError::ForeignOperationFactor {
+                    operation: *operation,
+                    found: carried,
+                });
             }
         }
     }

@@ -653,6 +653,7 @@ fn runtime_mutations(relation: &Relation) -> Result<Vec<RelationMutation>, Compi
         ],
 
         Relation::ClearClamp
+        | Relation::ClearFloor
         | Relation::ClearAssignment {
             expression: None, ..
         }
@@ -695,8 +696,7 @@ fn runtime_mutations(relation: &Relation) -> Result<Vec<RelationMutation>, Compi
             vec![Mutation::ExpressionPredicateFalse]
         }
 
-        Relation::ClearFloor
-        | Relation::SideRepresentation { .. }
+        Relation::SideRepresentation { .. }
         | Relation::DataOutputs { .. }
         | Relation::PermissionlessAuthorization
         | Relation::Constructibility { .. }

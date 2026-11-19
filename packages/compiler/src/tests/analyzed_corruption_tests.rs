@@ -1077,12 +1077,18 @@ fn a_removed_feasible_placement_is_rejected() {
         let factor = ash_factor_mut(program);
         let dropped = factor
             .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
             .iter()
             .next()
             .expect("a placement")
             .clone();
 
-        factor.feasible_placements.remove(&dropped);
+        factor
+            .feasible_placements
+            .enumerated_mut()
+            .expect("enumerated placement")
+            .remove(&dropped);
     });
 
     assert!(matches!(
@@ -1101,6 +1107,8 @@ fn an_infeasible_placement_is_rejected() {
         let factor = ash_factor_mut(program);
         let mut placement = factor
             .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
             .iter()
             .next()
             .expect("a placement")
@@ -1113,7 +1121,11 @@ fn an_infeasible_placement_is_rejected() {
             .clone();
 
         placement.assignments.remove(&dropped);
-        factor.feasible_placements.insert(placement);
+        factor
+            .feasible_placements
+            .enumerated_mut()
+            .expect("enumerated placement")
+            .insert(placement);
     });
 
     assert!(matches!(
@@ -1128,6 +1140,8 @@ fn a_placement_from_another_operation_is_rejected() {
         let key = first_plan(&COMBINED.program);
         COMBINED.program.proof_plans[&key].operations[&OperationId::TransferLive]
             .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
             .iter()
             .next()
             .expect("a live-transfer placement")
@@ -1137,6 +1151,8 @@ fn a_placement_from_another_operation_is_rejected() {
     let error = COMBINED.corrupt(move |program| {
         factor_mut(program, OperationId::CompactAsh)
             .feasible_placements
+            .enumerated_mut()
+            .expect("enumerated placement")
             .insert(foreign);
     });
 
@@ -1155,6 +1171,8 @@ fn a_duplicated_carrier_is_rejected() {
         let factor = ash_factor_mut(program);
         let mut placement = factor
             .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
             .iter()
             .next()
             .expect("a placement")
@@ -1181,7 +1199,11 @@ fn a_duplicated_carrier_is_rejected() {
             carrier: existing.carrier,
             quantification,
         });
-        factor.feasible_placements.insert(placement);
+        factor
+            .feasible_placements
+            .enumerated_mut()
+            .expect("enumerated placement")
+            .insert(placement);
     });
 
     assert!(matches!(error, CompileError::DuplicatePlacedCarrier { .. },));
@@ -1193,6 +1215,8 @@ fn a_redundant_second_carrier_is_rejected() {
         let factor = ash_factor_mut(program);
         let mut placement = factor
             .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
             .iter()
             .next()
             .expect("a placement")
@@ -1217,7 +1241,11 @@ fn a_redundant_second_carrier_is_rejected() {
             .get_mut(&first)
             .expect("the carrier set")
             .insert(borrowed);
-        factor.feasible_placements.insert(placement);
+        factor
+            .feasible_placements
+            .enumerated_mut()
+            .expect("enumerated placement")
+            .insert(placement);
     });
 
     assert!(matches!(
@@ -1232,6 +1260,8 @@ fn a_per_member_carrier_replaced_by_a_coordinator_is_rejected() {
         let factor = ash_factor_mut(program);
         let mut placement = factor
             .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
             .iter()
             .find(|placement| {
                 placement.assignments.values().any(|carriers| {
@@ -1273,7 +1303,11 @@ fn a_per_member_carrier_replaced_by_a_coordinator_is_rejected() {
             carrier: crate::carrier::CarrierRole::InputFamilyCoordinator { object },
             quantification: existing.quantification,
         });
-        factor.feasible_placements.insert(placement);
+        factor
+            .feasible_placements
+            .enumerated_mut()
+            .expect("enumerated placement")
+            .insert(placement);
     });
 
     assert!(matches!(
@@ -1291,6 +1325,8 @@ fn an_optional_sponsor_carrier_on_an_unconditional_relation_is_rejected() {
         let factor = ash_factor_mut(program);
         let mut placement = factor
             .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
             .iter()
             .next()
             .expect("a placement")
@@ -1313,7 +1349,11 @@ fn an_optional_sponsor_carrier_on_an_unconditional_relation_is_rejected() {
             },
             quantification: crate::carrier::CarrierQuantification::PerMember,
         });
-        factor.feasible_placements.insert(placement);
+        factor
+            .feasible_placements
+            .enumerated_mut()
+            .expect("enumerated placement")
+            .insert(placement);
     });
 
     assert!(matches!(
@@ -1328,6 +1368,8 @@ fn a_removed_selected_layout_requirement_is_rejected() {
         let factor = ash_factor_mut(program);
         let mut placement = factor
             .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
             .iter()
             .find(|placement| !placement.layout_requirements.is_empty())
             .expect("a placement with layout dependencies")
@@ -1340,7 +1382,11 @@ fn a_removed_selected_layout_requirement_is_rejected() {
             .clone();
 
         placement.layout_requirements.remove(&dropped);
-        factor.feasible_placements.insert(placement);
+        factor
+            .feasible_placements
+            .enumerated_mut()
+            .expect("enumerated placement")
+            .insert(placement);
     });
 
     assert!(matches!(
@@ -1355,6 +1401,8 @@ fn an_unrelated_layout_requirement_on_a_placement_is_rejected() {
         let factor = ash_factor_mut(program);
         let mut placement = factor
             .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
             .iter()
             .find(|placement| {
                 factor
@@ -1372,7 +1420,11 @@ fn an_unrelated_layout_requirement_on_a_placement_is_rejected() {
             .clone();
 
         placement.layout_requirements.insert(unrelated);
-        factor.feasible_placements.insert(placement);
+        factor
+            .feasible_placements
+            .enumerated_mut()
+            .expect("enumerated placement")
+            .insert(placement);
     });
 
     assert!(matches!(
@@ -2347,6 +2399,8 @@ fn a_stored_combined_placement_product_is_rejected() {
         let key = first_plan(&COMBINED.program);
         COMBINED.program.proof_plans[&key].operations[&OperationId::TransferLive]
             .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
             .iter()
             .next()
             .expect("a live-transfer placement")
@@ -2357,6 +2411,8 @@ fn a_stored_combined_placement_product_is_rejected() {
         let factor = factor_mut(program, OperationId::CompactAsh);
         let mut combined = factor
             .feasible_placements
+            .enumerated()
+            .expect("enumerated placement")
             .iter()
             .next()
             .expect("a compact-ash placement")
@@ -2366,7 +2422,11 @@ fn a_stored_combined_placement_product_is_rejected() {
         combined
             .layout_requirements
             .extend(foreign.layout_requirements);
-        factor.feasible_placements.insert(combined);
+        factor
+            .feasible_placements
+            .enumerated_mut()
+            .expect("enumerated placement")
+            .insert(combined);
     });
 
     assert_eq!(

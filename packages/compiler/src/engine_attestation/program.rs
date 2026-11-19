@@ -9,7 +9,7 @@ use crate::{
     engine_program as core,
     placement::PlacementSearchLimits,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 // Publication still takes expression nodes/edges and the legacy lifecycle
 // analysis from this pass: the predicate records do not encode expression
@@ -317,8 +317,15 @@ pub fn derive(
     let _entered = span.enter();
     revalidate_input(input)?;
     let (prepared, records, stages) = Prepared::new(input)?;
-    let program = crate::analyzed::analyze_bound_prepared(input, limits, (records, stages))
-        .map_err(|error| prepared.refusal(error))?;
+    let product_operations =
+        BTreeSet::from([super::operation_key(architecture::OperationId::Clear)]);
+    let program = crate::analyzed::analyze_bound_prepared_scoped(
+        input,
+        limits,
+        (records, stages),
+        &product_operations,
+    )
+    .map_err(|error| prepared.refusal(error))?;
     let foundation = restore_foundation(&prepared.foundation.project(), &program.relations)?;
     let mut plans = BTreeMap::new();
     let mut obligations = BTreeMap::new();

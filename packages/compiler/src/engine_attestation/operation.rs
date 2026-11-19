@@ -1,7 +1,10 @@
 //! Finite compatibility payloads; restoring a factor never calls an owner back.
 use crate::{
     CompileError,
-    analyzed_operation::{AnalyzedOperation, RelationCaseRequirements},
+    analyzed_operation::{
+        AnalyzedOperation, AnalyzedPlacements, PlacementFactorOption, PlacementProduct,
+        RelationCaseRequirements,
+    },
     coverage::{
         self, CoverageRequirementId, NegativeCoverageRequirement, PositiveCoverageRequirement,
     },
@@ -116,10 +119,10 @@ pub type LayoutRegistry =
 
 pub type Rows = BTreeMap<(Key, Option<crate::engine_proof::AlternativeKey>), Payload>;
 
-pub fn obligations(
+pub fn obligations<P>(
     rows: &Rows,
     candidate: &crate::engine_proof::Candidate,
-    factor: &crate::engine_operation::Operation,
+    factor: &crate::engine_operation::Operation<P>,
 ) -> Result<crate::analyzed_validate::OperationObligations, CompileError> {
     let payloads = factor
         .bundles
@@ -205,19 +208,19 @@ pub fn refusal(
 
 /// Select stored payloads by complete identifiers, then translate the concrete
 /// result. No obligation, carrier or proof is selected by this compatibility view.
-pub fn restore(
+pub fn restore<P: RestorePlacements>(
     rows: &Rows,
     layouts: &LayoutRegistry,
     candidate: &crate::engine_proof::Candidate,
-    factor: &crate::engine_operation::Operation,
+    factor: &crate::engine_operation::Operation<P>,
 ) -> Result<AnalyzedOperation, CompileError> {
     restore_selected(rows, layouts, &candidate.proofs, factor)
 }
-pub fn restore_selected(
+pub fn restore_selected<P: RestorePlacements>(
     rows: &Rows,
     layouts: &LayoutRegistry,
     proofs: &BTreeMap<crate::engine_records::RelationKey, crate::engine_proof::AlternativeKey>,
-    factor: &crate::engine_operation::Operation,
+    factor: &crate::engine_operation::Operation<P>,
 ) -> Result<AnalyzedOperation, CompileError> {
     let span = tracing::debug_span!(target: "compiler::engine_attestation", "restore_operation", case_count = crate::instrumentation::count(factor.bundles.len()));
     let _entered = span.enter();
@@ -250,39 +253,7 @@ pub fn restore_selected(
         .values()
         .map(|row| row.plan.case.clone())
         .collect::<BTreeSet<_>>();
-    let placements = factor
-        .placements
-        .iter()
-        .map(|placement| {
-            let assignments = placement
-                .assignments
-                .iter()
-                .map(|assignment| {
-                    let payload = payloads
-                        .get(&assignment.key)
-                        .ok_or(CompileError::MissingOwnerIdentity)?;
-                    Ok(crate::placement::PlacementAssignment {
-                        relation: payload.plan.relation.clone(),
-                        case: payload.plan.case.clone(),
-                        carriers: assignment
-                            .carriers
-                            .iter()
-                            .map(|row| lookup(&payload.carriers, row))
-                            .collect::<Result<_, _>>()?,
-                    })
-                })
-                .collect::<Result<Vec<_>, CompileError>>()?;
-            Ok(crate::placement::PlacementCandidate {
-                assignments,
-                layout_requirements: placement
-                    .layout
-                    .iter()
-                    .map(|row| layout_lookup(layouts, row))
-                    .collect::<Result<_, _>>()?,
-            }
-            .project())
-        })
-        .collect::<Result<_, CompileError>>()?;
+    let placements = factor.placements.restore(&payloads, layouts)?;
     Ok(AnalyzedOperation {
         operation,
         execution_cases: cases.clone(),
@@ -300,6 +271,106 @@ pub fn restore_selected(
         },
         coverage_dependencies,
     })
+}
+
+type SelectedPayloads<'a> = BTreeMap<Key, &'a Payload>;
+
+pub trait RestorePlacements {
+    fn restore(
+        &self,
+        payloads: &SelectedPayloads<'_>,
+        layouts: &LayoutRegistry,
+    ) -> Result<AnalyzedPlacements, CompileError>;
+}
+
+impl RestorePlacements for Vec<crate::engine_placement::Candidate> {
+    fn restore(
+        &self,
+        payloads: &SelectedPayloads<'_>,
+        layouts: &LayoutRegistry,
+    ) -> Result<AnalyzedPlacements, CompileError> {
+        let members = self
+            .iter()
+            .map(|placement| {
+                let assignments = placement
+                    .assignments
+                    .iter()
+                    .map(|assignment| {
+                        let payload = payloads
+                            .get(&assignment.key)
+                            .ok_or(CompileError::MissingOwnerIdentity)?;
+                        Ok(crate::placement::PlacementAssignment {
+                            relation: payload.plan.relation.clone(),
+                            case: payload.plan.case.clone(),
+                            carriers: assignment
+                                .carriers
+                                .iter()
+                                .map(|row| lookup(&payload.carriers, row))
+                                .collect::<Result<_, _>>()?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, CompileError>>()?;
+                Ok(crate::placement::PlacementCandidate {
+                    assignments,
+                    layout_requirements: placement
+                        .layout
+                        .iter()
+                        .map(|row| layout_lookup(layouts, row))
+                        .collect::<Result<_, _>>()?,
+                }
+                .project())
+            })
+            .collect::<Result<_, CompileError>>()?;
+        Ok(AnalyzedPlacements::Enumerated(members))
+    }
+}
+
+impl RestorePlacements for crate::engine_operation::StoredPlacements {
+    fn restore(
+        &self,
+        payloads: &SelectedPayloads<'_>,
+        layouts: &LayoutRegistry,
+    ) -> Result<AnalyzedPlacements, CompileError> {
+        match self {
+            Self::Enumerated(members) => members.restore(payloads, layouts),
+            Self::Product(product) => {
+                let mut factors = BTreeMap::new();
+                for (key, options) in product.factors() {
+                    let payload = payloads
+                        .get(key)
+                        .ok_or(CompileError::MissingOwnerIdentity)?;
+                    let mut typed = BTreeSet::new();
+                    for option in options {
+                        let carriers = option
+                            .carriers()
+                            .iter()
+                            .map(|carrier| lookup(&payload.carriers, carrier))
+                            .collect::<Result<BTreeSet<_>, _>>()?;
+                        if carriers.len() != option.carriers().len() {
+                            return Err(CompileError::MissingOwnerIdentity);
+                        }
+                        let layout_requirements = option
+                            .layout()
+                            .iter()
+                            .map(|key| layout_lookup(layouts, key))
+                            .collect::<Result<BTreeSet<_>, _>>()?;
+                        if layout_requirements.len() != option.layout().len()
+                            || !typed.insert(PlacementFactorOption {
+                                carriers,
+                                layout_requirements,
+                            })
+                        {
+                            return Err(CompileError::MissingOwnerIdentity);
+                        }
+                    }
+                    if factors.insert(payload.key(), typed).is_some() {
+                        return Err(CompileError::MissingOwnerIdentity);
+                    }
+                }
+                Ok(AnalyzedPlacements::Product(PlacementProduct { factors }))
+            }
+        }
+    }
 }
 
 fn lookup<K: Ord, V: Clone>(values: &BTreeMap<K, V>, key: &K) -> Result<V, CompileError> {
@@ -360,10 +431,10 @@ fn symbols<'a>(
     Ok(ids)
 }
 
-fn restore_coverage(
+fn restore_coverage<P>(
     payload: &Payload,
     bundle: &crate::engine_case_facts::Bundle,
-    factor: &crate::engine_operation::Operation,
+    factor: &crate::engine_operation::Operation<P>,
     payloads: &BTreeMap<Key, &Payload>,
     layouts: &LayoutRegistry,
 ) -> Result<coverage::RelationCoverageProjection, CompileError> {
@@ -495,9 +566,9 @@ fn positives(
     }
     positive
 }
-fn restore_graph(
+fn restore_graph<P>(
     payloads: &BTreeMap<Key, &Payload>,
-    factor: &crate::engine_operation::Operation,
+    factor: &crate::engine_operation::Operation<P>,
     layouts: &LayoutRegistry,
 ) -> Result<CoverageGraphProjection, CompileError> {
     let ids = symbols(payloads, &factor.layout, layouts)?;

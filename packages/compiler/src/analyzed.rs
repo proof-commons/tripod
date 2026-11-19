@@ -288,6 +288,31 @@ pub fn analyze_bound_prepared<O: crate::engine_records::RelationOwner>(
     )
 }
 
+/// The attestation owner selects which operation keeps checked local factors.
+/// The shared orchestration receives only explicit storage keys.
+pub fn analyze_bound_prepared_scoped(
+    input: &BoundCompilerInput,
+    placement_limits: PlacementSearchLimits,
+    prepared: (
+        crate::engine_program::Records,
+        crate::engine_program::PreparedStages,
+    ),
+    product_operations: &BTreeSet<crate::engine_records::OperationKey>,
+) -> Result<
+    crate::engine_program::Program<crate::engine_operation::StoredPlacements>,
+    crate::engine_program::Error,
+> {
+    let span = tracing::debug_span!(target: "compiler::analysis", "analyze_bound_records");
+    let _entered = span.enter();
+    crate::engine_program::analyze_prepared_scoped(
+        &prepared.0,
+        input.policy().proof_search_limits,
+        placement_limits,
+        Some(prepared.1),
+        product_operations,
+    )
+}
+
 /// Re-check the bound input's own invariants (§17 step 1).
 ///
 /// The realization was validated by its owner when the input was bound

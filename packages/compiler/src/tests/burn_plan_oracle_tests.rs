@@ -417,6 +417,8 @@ fn burn_plan_matches_small_oracle() {
     let factor = &analyzed.proof_plans[&control.candidate].operations[&OperationId::Burn];
     let actual_tiny = factor
         .feasible_placements
+        .enumerated()
+        .expect("enumerated placement")
         .iter()
         .map(|placement| {
             placement
