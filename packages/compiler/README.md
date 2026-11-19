@@ -149,11 +149,11 @@ The public modules are `burn_operation_plan`, `error`, `input`, `live_transfer_p
 Symbolic announcement requirements are also re-exported at the crate root; the
 internal analysis containers remain crate-private.
 
-`burn_operation_plan` names the dormant validated Burn requirement type. Its
-constructor and validator are crate-private until the independent Burn oracle
-and public activation land. Public `bind_input` still refuses Burn at the
-binding seam. The type carries report obligations for Burn event anchors; it
-does not assert that a report was produced or authenticated.
+`burn_operation_plan::plan_burn_target_operation` publicly constructs the
+validated explicit Burn requirement type from a bound input. Its plan fields,
+derivation and validator remain crate-private. The type carries report
+obligations for Burn event anchors; it does not assert that a report was
+produced or authenticated. Private-change Burn remains a later alternative.
 
 ### `keyed_plan` — stable owner-typed plans
 
@@ -401,7 +401,7 @@ The input-boundary entry points report the following failures.
 
 ### From `bind_input`
 
-`InvalidRealization` (the realization failed its owner's re-run validation), `ArchitectureBindingMismatch` (the realization binds a different architecture identity than the one supplied), `IncompleteRealizationScope { operation }` (a scope member the realization does not declare), `UnsupportedOperationPlan { operation }` (a declared Burn or Clear requested in compiler scope has no compiler plan), and `UnsupportedRealizationSchema { schema }`. A Clear plus `TransferLive` realization reaches this refusal when Clear enters compiler scope; a `TransferLive`-only compiler scope remains accepted. Pilot-only realization still refuses an absent operation as `IncompleteRealizationScope` first.
+`InvalidRealization` (the realization failed its owner's re-run validation), `ArchitectureBindingMismatch` (the realization binds a different architecture identity than the one supplied), `IncompleteRealizationScope { operation }` (a scope member the realization does not declare), `UnsupportedOperationPlan { operation }` (a declared Clear requested in compiler scope has no compiler plan), and `UnsupportedRealizationSchema { schema }`. A Clear plus `TransferLive` realization reaches this refusal when Clear enters compiler scope; a `TransferLive`-only compiler scope remains accepted. Pilot-only realization still refuses an absent operation as `IncompleteRealizationScope` first.
 
 ### From `analyze_target_requirements`
 
@@ -521,8 +521,9 @@ and the corresponding `RelationMutation`. These are closed semantic field
 identities for future Burn/Clear source and coverage rows. The source key uses
 an appended operand role and a fact subject outside the existing fact domain;
 the mutation uses an appended purpose code. They carry no transaction position
-or observed value. Burn and Clear remain refused by the public input and
-direct relation-plan guards until their lowering packets land.
+or observed value. Explicit Burn now binds publicly and returns requirements;
+Clear remains refused by the public input guard. Neither facade asserts a
+target observation or completed report evidence.
 
 Two notes for a consumer reading this as a manual rather than as prose:
 

@@ -209,17 +209,21 @@ fn scope_construction_rejects_empty_and_duplicate() {
 }
 
 #[test]
-fn declared_burn_reaches_unsupported_plan_at_input_binding() {
+fn declared_burn_binds_with_distinct_live_exits_and_missing_member_refuses() {
+    use compiler::live_transfer_plan::LiveTransferRepresentationPlan;
+    use compiler::operation_plan::LifecycleExitStatus;
+    use std::collections::BTreeSet;
+
     let realized = realization::derive(
         &architecture::ARCHITECTURE,
         realization::RealizationScope::from_operations([
-            OperationId::AnnounceMaturity,
+            OperationId::TransferLive,
             OperationId::Burn,
         ])
         .unwrap(),
     )
     .unwrap();
-    let control_scope = CompilationScope::from_operations([OperationId::AnnounceMaturity]).unwrap();
+    let control_scope = CompilationScope::from_operations([OperationId::TransferLive]).unwrap();
     assert!(
         bind_input(
             &architecture::ARCHITECTURE,
@@ -230,23 +234,68 @@ fn declared_burn_reaches_unsupported_plan_at_input_binding() {
         .is_ok()
     );
     let scope =
-        CompilationScope::from_operations([OperationId::AnnounceMaturity, OperationId::Burn])
-            .unwrap();
+        CompilationScope::from_operations([OperationId::TransferLive, OperationId::Burn]).unwrap();
+    let bound = bind_input(
+        &architecture::ARCHITECTURE,
+        realized,
+        scope.clone(),
+        test_policy(),
+    )
+    .expect("declared Burn binds publicly");
+    let limits = compiler::operation_plan::PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(10_000_000).expect("nonzero"),
+        std::num::NonZeroU64::new(1_000_000).expect("nonzero"),
+    );
+    let plan = compiler::burn_operation_plan::plan_burn_target_operation(&bound, limits)
+        .expect("validated public Burn plan");
+    assert_eq!(plan.operation(), OperationId::Burn);
+    let live = compiler::live_transfer_plan::plan_live_transfer_target_operation(&bound, limits)
+        .expect("public mixed live plan");
+    let explicit = live
+        .projection(LiveTransferRepresentationPlan::Explicit)
+        .expect("explicit live projection");
+    let private = live
+        .projection(LiveTransferRepresentationPlan::PrivateCommitted)
+        .expect("private live projection");
     assert_eq!(
-        bind_input(&architecture::ARCHITECTURE, realized, scope, test_policy()).unwrap_err(),
-        CompileError::UnsupportedOperationPlan {
-            operation: OperationId::Burn
+        explicit.lifecycle().implemented().collect::<BTreeSet<_>>(),
+        BTreeSet::from([OperationId::TransferLive, OperationId::Burn]),
+    );
+    assert_eq!(
+        private.lifecycle().implemented().collect::<BTreeSet<_>>(),
+        BTreeSet::from([OperationId::TransferLive]),
+    );
+    assert!(private.lifecycle().outstanding().any(|row| {
+        row.exit == OperationId::Burn
+            && row.status == LifecycleExitStatus::UnavailableInCompilerScope
+    }));
+
+    let incomplete = realization::derive(
+        &architecture::ARCHITECTURE,
+        realization::RealizationScope::from_operations([OperationId::TransferLive]).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        bind_input(
+            &architecture::ARCHITECTURE,
+            incomplete,
+            scope,
+            test_policy()
+        )
+        .unwrap_err(),
+        CompileError::IncompleteRealizationScope {
+            operation: OperationId::Burn,
         },
     );
 }
 
 #[test]
-fn burn_plan_public_surface_stays_private_until_oracle_activation() {
+fn burn_plan_public_surface_keeps_private_fields_with_validated_constructor() {
     let code = include_str!("../src/burn_operation_plan.rs");
     assert!(code.contains("pub struct ValidatedBurnOperationPlan {"));
     assert!(code.contains("pub(crate) fn derive_burn_plan("));
     assert!(code.contains("pub(crate) fn validate_burn_plan("));
-    assert!(!code.contains("pub fn plan_burn_target_operation("));
+    assert!(code.contains("pub fn plan_burn_target_operation("));
     let fields = code
         .split("pub struct ValidatedBurnOperationPlan {")
         .nth(1)

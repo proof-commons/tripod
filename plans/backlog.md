@@ -926,6 +926,8 @@ Packet 3.4's compact revalidation is recorded at (`rec:w3:3-4`): unchanged compa
 
 Packet 3.3a's dormant explicit Burn facade, independent plan validator and selected corruptions are recorded at (`rec:w3:3-3a`). Public Burn binding remains refused; the unfiltered node code gate passed after one correction round. The final records-tree gate and full import gate remain pending. The mixed private-change alternative and public activation belong to later packets.
 
+Packet 3.3b — CODE GREEN, IMPORT PENDING (`rec:w3:3-3b`). A source-based finite Burn oracle preceded the public guard change. Explicit Burn now binds and plans publicly; Clear retains its input guard. The TransferLive+Burn control publishes Explicit Burn as implemented, PrivateCommitted Burn as unavailable, and Redeem as outstanding; a changed common closure is refused. The scope-derived live contract was already implemented by 3.3a's correction and needed no further production edit here. Compiler node code gate passed after one lint correction; its records-tree round and independent review/full import gate remain pending. The mixed Burn alternative stays with 3.5d–f.
+
 ## 4. Compact historical record · `sec:backlog:history`
 
 ### 4.1 Completed phases · `tab:backlog:completed-phases`

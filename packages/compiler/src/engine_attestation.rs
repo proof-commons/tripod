@@ -28,7 +28,7 @@ use crate::input::AttestationOwner;
 
 /// Refuse operations whose compiler plans have not been implemented.
 pub const fn require_supported_plan(operation: OperationId) -> Result<(), CompileError> {
-    if matches!(operation, OperationId::Burn | OperationId::Clear) {
+    if matches!(operation, OperationId::Clear) {
         return Err(CompileError::UnsupportedOperationPlan { operation });
     }
     Ok(())

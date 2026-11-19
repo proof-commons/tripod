@@ -1,10 +1,8 @@
-//! The dormant, validated Burn target-operation plan.
+//! The validated public explicit Burn target-operation plan.
 //!
-//! This facade reads the complete attestation analysis. Its constructor is
-//! private to this crate until the independent Burn oracle activates the
-//! public route. All published censuses are requirements, not observations of
-//! an emitted transaction or an authenticated event report.
-#![allow(dead_code)] // The validated constructor becomes reachable in the activation packet.
+//! This facade reads the complete attestation analysis. Public planning runs
+//! its private assembly and validator. All published censuses are requirements,
+//! not observations of an emitted transaction or an authenticated event report.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -27,7 +25,7 @@ pub use crate::{
 
 use crate::{
     CompileError,
-    analyzed::{AnalyzedProofPlan, ScopedAnalyzedProgram},
+    analyzed::{AnalyzedProofPlan, ScopedAnalyzedProgram, analyze_scoped_program},
     analyzed_operation::AnalyzedOperation,
     operation_plan::{
         operation_relations, project_carriers, project_cases, project_coverage, project_lifecycle,
@@ -63,8 +61,7 @@ impl BurnRepresentationPolicy {
 /// Burn's complete explicit requirement projection.
 ///
 /// Fields are private. There is no public constructor or unchecked builder.
-/// In this packet, even the validated constructor is crate-private; the
-/// public input binder still refuses Burn.
+/// The public constructor validates both the analysis and this facade.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatedBurnOperationPlan {
     operation: OperationId,
@@ -256,7 +253,47 @@ fn project_factor(
     })
 }
 
-/// Assemble the dormant Burn facade from a complete validated analysis.
+/// Plan one explicit Burn from an owner-bound compiler input.
+///
+/// The complete analyzed program and the Burn facade are both validated
+/// before this constructor returns. Its report anchors remain obligations,
+/// not evidence that a report was produced or authenticated.
+///
+/// # Errors
+///
+/// Returns any analysis, scope, selection, ambiguity or plan-validation
+/// refusal raised by the complete compiler pipeline.
+pub fn plan_burn_target_operation(
+    input: &crate::BoundCompilerInput,
+    placement_limits: PlacementSearchLimits,
+) -> Result<ValidatedBurnOperationPlan, CompileError> {
+    let operation_code = PLANNED.code();
+    let scope_operation_count = crate::instrumentation::count(input.scope().operations().len());
+    let span = tracing::info_span!(
+        target: "compiler::plan",
+        "plan_target_operation",
+        operation_code,
+        family = "burn",
+        scope_operation_count
+    );
+    let _entered = span.enter();
+    let result = (|| {
+        let analyzed = analyze_scoped_program(input, placement_limits)?;
+        let proof_plan_count = if tracing::enabled!(target: "compiler::plan", tracing::Level::INFO)
+        {
+            crate::instrumentation::count(analyzed.proof_plans.len())
+        } else {
+            0
+        };
+        let plan = derive_burn_plan(&analyzed)?;
+        validate_burn_plan(&analyzed, &plan)?;
+        Ok((plan, proof_plan_count))
+    })();
+    crate::instrumentation::plan_completion(&result, operation_code, "burn");
+    result.map(|(plan, _)| plan)
+}
+
+/// Assemble the Burn facade from a complete validated analysis.
 ///
 /// # Errors
 ///
@@ -402,6 +439,7 @@ fn validate_sponsor_erasure(plan: &ValidatedBurnOperationPlan) -> Result<(), Com
 ///
 /// Returns [`CompileError::TargetPlanRepresentationMismatch`] for private
 /// change, or another typed analysis/plan error for an invalid control.
+#[cfg(test)]
 pub(crate) fn validate_burn_output_selection(
     analyzed: &ScopedAnalyzedProgram,
     plan: &ValidatedBurnOperationPlan,

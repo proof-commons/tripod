@@ -711,6 +711,136 @@ fn burn_scope_lifecycle_closure_accepts_admission_and_refuses_one_moved_exit() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)] // The mixed per-mode rows, shared reason union and one changed summary form one control.
+fn transfer_burn_scope_preserves_representation_specific_exits() {
+    use crate::lifecycle::LifecycleExitStatus::{
+        DeclaredOutsideCompilerScope, UnavailableInCompilerScope,
+    };
+
+    let operations = [OperationId::TransferLive, OperationId::Burn];
+    let realization = realization::derive(
+        &architecture::ARCHITECTURE,
+        realization::RealizationScope::from_operations(operations).expect("realization scope"),
+    )
+    .expect("combined declarations");
+    let input = crate::bind_input(
+        &architecture::ARCHITECTURE,
+        realization,
+        crate::CompilationScope::from_operations(operations).expect("compiler scope"),
+        super::test_policy(),
+    )
+    .expect("public Burn binding");
+    let analyzed = analyze_scoped_program(&input, limits()).expect("mixed analysis");
+    let plan =
+        crate::live_transfer_plan::derive_live_transfer_plan(&analyzed).expect("mixed live facade");
+    assert_eq!(validate_live_transfer_plan(&analyzed, &plan), Ok(()));
+
+    let explicit = plan
+        .projection(LiveTransferRepresentationPlan::Explicit)
+        .expect("explicit live projection");
+    assert_eq!(
+        explicit.lifecycle().implemented().collect::<BTreeSet<_>>(),
+        BTreeSet::from([OperationId::TransferLive, OperationId::Burn]),
+    );
+    assert_eq!(
+        explicit
+            .lifecycle()
+            .outstanding()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([crate::lifecycle::LifecycleRequirement {
+            object: ObjectId::ReceiptLive,
+            representation: RepresentationMode::Explicit,
+            exit: OperationId::Redeem,
+            status: DeclaredOutsideCompilerScope,
+        }]),
+    );
+
+    let private = plan
+        .projection(LiveTransferRepresentationPlan::PrivateCommitted)
+        .expect("private live projection");
+    assert_eq!(
+        private.lifecycle().implemented().collect::<BTreeSet<_>>(),
+        BTreeSet::from([OperationId::TransferLive]),
+    );
+    assert_eq!(
+        private
+            .lifecycle()
+            .outstanding()
+            .cloned()
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            crate::lifecycle::LifecycleRequirement {
+                object: ObjectId::ReceiptLive,
+                representation: RepresentationMode::PrivateCommitted,
+                exit: OperationId::Redeem,
+                status: DeclaredOutsideCompilerScope,
+            },
+            crate::lifecycle::LifecycleRequirement {
+                object: ObjectId::ReceiptLive,
+                representation: RepresentationMode::PrivateCommitted,
+                exit: OperationId::Burn,
+                status: UnavailableInCompilerScope,
+            },
+        ]),
+    );
+    assert_eq!(
+        plan.lifecycle().implemented().collect::<BTreeSet<_>>(),
+        BTreeSet::from([OperationId::TransferLive]),
+    );
+    assert_eq!(
+        plan.lifecycle().outstanding().collect::<BTreeSet<_>>(),
+        BTreeSet::from([OperationId::Redeem, OperationId::Burn]),
+    );
+
+    // TransferLive declares no bound disclosure fact, so this pair shares
+    // no bound. The mixed map equals the union of the two singleton maps;
+    // FeeSponsorInputMax belongs to Burn alone.
+    let mixed = input.realization().project();
+    let mut reasons = BTreeMap::new();
+    for operation in operations {
+        let single = realization::derive(
+            &architecture::ARCHITECTURE,
+            realization::RealizationScope::from_operations([operation]).expect("single scope"),
+        )
+        .expect("single declaration");
+        for (fact, named) in single.project().declassification.required_public {
+            reasons
+                .entry(fact)
+                .or_insert_with(BTreeSet::new)
+                .extend(named);
+        }
+    }
+    assert_eq!(mixed.declassification.required_public, reasons);
+    let shared = realization::DisclosureNodeId::Fact(realization::FactId::BoundValue {
+        bound: architecture::BoundId::FeeSponsorInputMax,
+    });
+    assert_eq!(
+        mixed
+            .disclosure
+            .nodes
+            .iter()
+            .filter(|node| *node == &shared)
+            .count(),
+        1,
+    );
+
+    // A published summary that treats private Burn as implemented is one
+    // coordinate away from the accepted mixed plan and reaches the
+    // scope-derived lifecycle contract defect.
+    let mut changed = plan;
+    changed
+        .lifecycle_mut()
+        .move_exit_to_implemented(OperationId::Burn);
+    assert_eq!(
+        validate_live_transfer_plan(&analyzed, &changed),
+        Err(CompileError::LiveTransferContractDefect {
+            clause: LiveTransferClause::LifecycleExits,
+        }),
+    );
+}
+
+#[test]
 fn an_altered_carrier_is_rejected() {
     let subject = corruption_subject();
     let mut damaged = subject.plan.clone();
