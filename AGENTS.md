@@ -1,5 +1,7 @@
 # Agent instructions
 
+Start with [CONTRIBUTING.md](CONTRIBUTING.md) for the work arrangement, label and citation forms, and invariant routes.
+
 - New code records counters, timings and progress with tracing spans and structured events; every package inherits tracing (`[ADR026-dec:tracing:core]`).
 - The canonical meson build directory is `build/` at the repository
   root. Please run `meson compile -C build` to compile. Do not create
