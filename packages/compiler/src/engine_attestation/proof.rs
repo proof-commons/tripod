@@ -24,9 +24,9 @@ pub fn classify_obligations(
             // compiler may select; the mode itself remains a decision
             // variable derived from the relation's allowed set, and no
             // arithmetic proof variable is created for the constraint.
-            Relation::LifecycleExit { .. } | Relation::Representation { .. } => {
-                RelationObligationClass::StaticallyValidated
-            }
+            Relation::LifecycleExit { .. }
+            | Relation::Representation { .. }
+            | Relation::SideRepresentation { .. } => RelationObligationClass::StaticallyValidated,
 
             Relation::OperatorAuthorization
             | Relation::Constructibility {

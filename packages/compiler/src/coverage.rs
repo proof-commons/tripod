@@ -71,9 +71,9 @@ use crate::{carrier::relation_case_eligibility, coverage_graph::resolve_coverage
 /// Where one coverage requirement is answered.
 ///
 /// The Guide-5 discharge boundary is reused rather than restated: a
-/// second enum with the same four members would be a second source of
+/// second enum with the same boundary members would be a second source of
 /// truth that can drift from the classification coverage consumes. The
-/// fifth row of the Guide-6 boundary table — the inactive case — is a
+/// inactive row of the Guide-6 boundary table is a
 /// disposition rather than a boundary, and is carried by
 /// [`RelationActivity`] instead.
 pub use crate::placement::DischargeBoundary as CoverageBoundary;
@@ -167,6 +167,13 @@ pub enum CoveragePurpose {
         requirement: ExternalEvidenceRequirement,
         mutation: RelationMutation,
     },
+    /// One event coordinate must be authenticated by a later report.
+    ReportAnchorRequired { operand: OperandId },
+    /// A changed report coordinate must be refused by that report.
+    ReportAnchorChanged {
+        operand: OperandId,
+        mutation: RelationMutation,
+    },
 }
 
 /// Stable identity of one coverage requirement.
@@ -220,6 +227,8 @@ pub enum EvidenceRole {
     /// Acceptance of a valid case in which the relation never
     /// activates.
     InactiveCaseAcceptance,
+    /// The later report must answer this exact operand and case.
+    ReportAnchor { operand: OperandId },
 }
 
 /// What a later report must claim about dependent relations.
@@ -323,6 +332,8 @@ pub enum ProjectionSubject {
     ExternalReportSubjects {
         requirements: BTreeSet<ExternalEvidenceRequirement>,
     },
+    /// Complete event-coordinate census owed to later reports.
+    ReportAnchors { operands: BTreeSet<OperandId> },
 }
 
 /// The accepted semantic projection one boundary must compare.
@@ -602,15 +613,18 @@ fn runtime_mutations(relation: &Relation) -> Result<Vec<RelationMutation>, Compi
     use RelationMutation as Mutation;
 
     Ok(match relation {
-        Relation::SideRepresentation { .. }
-        | Relation::DataOutputs { .. }
-        | Relation::BurnBinding
-        | Relation::ClearClamp
+        Relation::ClearClamp
         | Relation::ClearAssignment { .. }
         | Relation::ClearFloor
         | Relation::ClearFlow
         | Relation::ClearBinding
         | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
+        Relation::BurnBinding => vec![
+            Mutation::BurnClearCoordinateChanged(
+                crate::source::BurnClearCoordinate::RecordFreshAsh,
+            ),
+            Mutation::AmountMismatch,
+        ],
         Relation::Cardinality {
             minimum, maximum, ..
         } => {
@@ -668,7 +682,9 @@ fn runtime_mutations(relation: &Relation) -> Result<Vec<RelationMutation>, Compi
 
         Relation::ExpressionPredicate { .. } => vec![Mutation::ExpressionPredicateFalse],
 
-        Relation::PermissionlessAuthorization
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::PermissionlessAuthorization
         | Relation::Constructibility { .. }
         | Relation::Representation { .. }
         | Relation::LifecycleExit { .. }
@@ -678,6 +694,7 @@ fn runtime_mutations(relation: &Relation) -> Result<Vec<RelationMutation>, Compi
 }
 
 /// The negatives one relation requires away from the runtime boundary.
+#[allow(clippy::too_many_lines)] // Exhaustive static and report dispositions remain together.
 fn static_mutations(
     relation: &Relation,
     amounts: ConservedAmountVisibility,
@@ -708,15 +725,48 @@ fn static_mutations(
     }
 
     Ok(match relation {
-        Relation::SideRepresentation { .. }
-        | Relation::DataOutputs { .. }
-        | Relation::BurnBinding
-        | Relation::ClearClamp
+        Relation::ClearClamp
         | Relation::ClearAssignment { .. }
         | Relation::ClearFloor
         | Relation::ClearFlow
         | Relation::ClearBinding
         | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
+        Relation::DataOutputs { expected } => expected
+            .iter()
+            .flat_map(|output| {
+                use crate::source::BurnClearCoordinate as C;
+                [
+                    C::DataOutputSchema(output.kind),
+                    C::DataOutputFamilyCount(output.kind),
+                    C::DataOutputTag(output.kind),
+                    C::DataOutputAsset(output.kind),
+                    C::DataOutputCondition(output.kind),
+                    C::DataOutputScalar(output.kind),
+                ]
+                .into_iter()
+                .map(|coordinate| {
+                    (
+                        Boundary::BackendStructural,
+                        Mutation::BurnClearCoordinateChanged(coordinate),
+                    )
+                })
+                .collect::<Vec<_>>()
+            })
+            .collect(),
+        Relation::BurnBinding => vec![
+            (
+                Boundary::ReportObligation,
+                Mutation::BurnClearCoordinateChanged(
+                    crate::source::BurnClearCoordinate::BurnEventType,
+                ),
+            ),
+            (
+                Boundary::ReportObligation,
+                Mutation::BurnClearCoordinateChanged(
+                    crate::source::BurnClearCoordinate::BurnFreshAmountEvent,
+                ),
+            ),
+        ],
         // A hidden owner or operator gate is a property of the emitted
         // path, not a predicate any carrier evaluates.
         Relation::PermissionlessAuthorization => vec![(
@@ -759,7 +809,7 @@ fn static_mutations(
         // The selection is validated from typed input; the encoding is
         // an obligation on the emitted bundle. Two boundaries, two
         // independent negatives.
-        Relation::Representation { .. } => vec![
+        Relation::Representation { .. } | Relation::SideRepresentation { .. } => vec![
             (
                 Boundary::CompilerStatic,
                 Mutation::UnsupportedRepresentation,
@@ -815,20 +865,55 @@ pub fn boundary_mutations(
 /// What one boundary answers about, and who answers it.
 ///
 /// Every boundary but the external one answers exactly once. The
-/// external boundary answers once per typed evidence requirement, so
+/// external boundary answers once per typed evidence requirement, and
+/// the report boundary answers once per owned event coordinate, so
 /// two requirements on one relation state two independent obligations
 /// rather than collapsing into one; a relation whose external boundary
 /// names no requirement states none, and the census validator reports
 /// the gap instead of the derivation inventing a subject.
+#[derive(Clone, Debug)]
+pub enum BoundarySubject {
+    None,
+    ExternalEvidence(ExternalEvidenceRequirement),
+    ReportAnchor(OperandId),
+}
+
+/// The exact report anchors owned by one relation.
+pub fn report_anchors(relation: &RelationId) -> BTreeSet<OperandId> {
+    use crate::source::{BurnClearCoordinate as C, OperandRole};
+    let coordinates: &[C] = match (relation.operation(), relation.kind()) {
+        (OperationId::Burn, realization::RelationKind::BurnBinding) => {
+            &[C::BurnEventType, C::BurnFreshAmountEvent]
+        }
+        (OperationId::Clear, realization::RelationKind::ClearBinding) => &[
+            C::ClearEventType,
+            C::ClearDestroyedAmountEvent,
+            C::ClearOmegaEvent,
+            C::ClearResidualEvent,
+        ],
+        _ => &[],
+    };
+    coordinates
+        .iter()
+        .map(|coordinate| OperandId::new(relation.clone(), OperandRole::BurnClear(*coordinate)))
+        .collect()
+}
+
 pub fn boundary_subjects(
     boundary: CoverageBoundary,
     plan: &RelationCasePlan,
-) -> Vec<(EvidenceRole, Option<ExternalEvidenceRequirement>)> {
+) -> Vec<(EvidenceRole, BoundarySubject)> {
     match boundary {
-        CoverageBoundary::ModelScope => vec![(EvidenceRole::ModelScope, None)],
-        CoverageBoundary::CompilerStatic => vec![(EvidenceRole::CompilerAnalysisResult, None)],
-        CoverageBoundary::BackendStructural => vec![(EvidenceRole::EmittedStructure, None)],
-        CoverageBoundary::RuntimeCarrier => vec![(EvidenceRole::TargetExecution, None)],
+        CoverageBoundary::ModelScope => vec![(EvidenceRole::ModelScope, BoundarySubject::None)],
+        CoverageBoundary::CompilerStatic => {
+            vec![(EvidenceRole::CompilerAnalysisResult, BoundarySubject::None)]
+        }
+        CoverageBoundary::BackendStructural => {
+            vec![(EvidenceRole::EmittedStructure, BoundarySubject::None)]
+        }
+        CoverageBoundary::RuntimeCarrier => {
+            vec![(EvidenceRole::TargetExecution, BoundarySubject::None)]
+        }
         CoverageBoundary::ExternalEvidence => plan
             .external_evidence
             .iter()
@@ -846,7 +931,18 @@ pub fn boundary_subjects(
                             } => RequiredCapability::WholeTransactionValueConservation,
                         },
                     },
-                    Some(requirement.clone()),
+                    BoundarySubject::ExternalEvidence(requirement.clone()),
+                )
+            })
+            .collect(),
+        CoverageBoundary::ReportObligation => report_anchors(&plan.relation)
+            .into_iter()
+            .map(|operand| {
+                (
+                    EvidenceRole::ReportAnchor {
+                        operand: operand.clone(),
+                    },
+                    BoundarySubject::ReportAnchor(operand),
                 )
             })
             .collect(),
@@ -854,14 +950,16 @@ pub fn boundary_subjects(
 }
 
 /// The positive purpose of one boundary and subject.
-pub fn positive_purpose(
-    boundary: CoverageBoundary,
-    subject: Option<&ExternalEvidenceRequirement>,
-) -> CoveragePurpose {
+pub fn positive_purpose(boundary: CoverageBoundary, subject: &BoundarySubject) -> CoveragePurpose {
     match (boundary, subject) {
-        (CoverageBoundary::ExternalEvidence, Some(requirement)) => {
+        (CoverageBoundary::ExternalEvidence, BoundarySubject::ExternalEvidence(requirement)) => {
             CoveragePurpose::ExternalEvidenceVerified {
                 requirement: requirement.clone(),
+            }
+        }
+        (CoverageBoundary::ReportObligation, BoundarySubject::ReportAnchor(operand)) => {
+            CoveragePurpose::ReportAnchorRequired {
+                operand: operand.clone(),
             }
         }
         (CoverageBoundary::BackendStructural, _) => CoveragePurpose::StructuralPresence,
@@ -872,13 +970,19 @@ pub fn positive_purpose(
 /// The negative purpose of one boundary, subject, and mutation.
 pub fn negative_purpose(
     boundary: CoverageBoundary,
-    subject: Option<&ExternalEvidenceRequirement>,
+    subject: &BoundarySubject,
     mutation: RelationMutation,
 ) -> CoveragePurpose {
     match (boundary, subject) {
-        (CoverageBoundary::ExternalEvidence, Some(requirement)) => {
+        (CoverageBoundary::ExternalEvidence, BoundarySubject::ExternalEvidence(requirement)) => {
             CoveragePurpose::ExternalEvidenceRejected {
                 requirement: requirement.clone(),
+                mutation,
+            }
+        }
+        (CoverageBoundary::ReportObligation, BoundarySubject::ReportAnchor(operand)) => {
+            CoveragePurpose::ReportAnchorChanged {
+                operand: operand.clone(),
                 mutation,
             }
         }
@@ -900,7 +1004,8 @@ const fn collateral_policy(boundary: CoverageBoundary) -> CollateralPolicy {
         CoverageBoundary::ModelScope
         | CoverageBoundary::CompilerStatic
         | CoverageBoundary::BackendStructural
-        | CoverageBoundary::ExternalEvidence => CollateralPolicy::ReportAdditional,
+        | CoverageBoundary::ExternalEvidence
+        | CoverageBoundary::ReportObligation => CollateralPolicy::ReportAdditional,
     }
 }
 
@@ -1103,6 +1208,9 @@ fn projection_subject(
                 })
             }
         }
+        CoverageBoundary::ReportObligation => Some(ProjectionSubject::ReportAnchors {
+            operands: report_anchors(&plan.relation),
+        }),
     }
 }
 
@@ -1118,6 +1226,9 @@ fn boundary_answer(
 
 /// The operand census one boundary's positive coverage already states.
 fn boundary_operands(plan: &RelationCoveragePlan, boundary: CoverageBoundary) -> Vec<OperandId> {
+    if boundary == CoverageBoundary::ReportObligation {
+        return report_anchors(&plan.relation).into_iter().collect();
+    }
     boundary_answer(plan, boundary)
         .map(|requirement| requirement.operands.clone())
         .unwrap_or_default()

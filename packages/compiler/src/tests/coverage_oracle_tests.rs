@@ -443,6 +443,7 @@ fn oracle_subjects(
                 )
             })
             .collect(),
+        CoverageBoundary::ReportObligation => Vec::new(),
     }
 }
 
@@ -491,7 +492,8 @@ const fn oracle_collateral_policy(boundary: CoverageBoundary) -> CollateralPolic
         CoverageBoundary::ModelScope
         | CoverageBoundary::CompilerStatic
         | CoverageBoundary::BackendStructural
-        | CoverageBoundary::ExternalEvidence => CollateralPolicy::ReportAdditional,
+        | CoverageBoundary::ExternalEvidence
+        | CoverageBoundary::ReportObligation => CollateralPolicy::ReportAdditional,
     }
 }
 
@@ -502,7 +504,7 @@ fn oracle_projection_subject(
 ) -> Option<ProjectionSubject> {
     match boundary {
         CoverageBoundary::RuntimeCarrier => Some(ProjectionSubject::RuntimeRelationVerdict),
-        CoverageBoundary::ModelScope => None,
+        CoverageBoundary::ModelScope | CoverageBoundary::ReportObligation => None,
         CoverageBoundary::CompilerStatic => Some(ProjectionSubject::CompilerSelectionResult),
         CoverageBoundary::BackendStructural => Some(ProjectionSubject::EmittedStructuralFact),
         CoverageBoundary::ExternalEvidence => {

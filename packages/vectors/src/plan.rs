@@ -107,7 +107,9 @@ const fn negative_observability(role: &EvidenceRole) -> Option<NegativeObservabi
         EvidenceRole::ModelScope
         | EvidenceRole::CompilerAnalysisResult
         | EvidenceRole::EmittedStructure => Some(NegativeObservability::FirstPartyRefusal),
-        EvidenceRole::ExternalReport { .. } => Some(NegativeObservability::UnreachableInCandidate),
+        EvidenceRole::ExternalReport { .. } | EvidenceRole::ReportAnchor { .. } => {
+            Some(NegativeObservability::UnreachableInCandidate)
+        }
         // A vacuous relation-case states an acceptance obligation and
         // never a mutation, so this role reaching a negative row would
         // be a compiler change rather than a classification gap.
@@ -1058,7 +1060,9 @@ const fn outstanding_reason(requirement: &TargetCoverageRequirement) -> Outstand
         EvidenceRole::TargetExecution | EvidenceRole::InactiveCaseAcceptance => {
             OutstandingReason::NoTargetHasExecuted
         }
-        EvidenceRole::ExternalReport { .. } => OutstandingReason::ExternalReportAbsent,
+        EvidenceRole::ExternalReport { .. } | EvidenceRole::ReportAnchor { .. } => {
+            OutstandingReason::ExternalReportAbsent
+        }
         EvidenceRole::ModelScope
         | EvidenceRole::CompilerAnalysisResult
         | EvidenceRole::EmittedStructure => OutstandingReason::StructuralEvidenceNotAssembled,
@@ -1587,7 +1591,7 @@ mod tests {
                 EvidenceRole::ModelScope
                 | EvidenceRole::CompilerAnalysisResult
                 | EvidenceRole::EmittedStructure => super::NegativeObservability::FirstPartyRefusal,
-                EvidenceRole::ExternalReport { .. } => {
+                EvidenceRole::ExternalReport { .. } | EvidenceRole::ReportAnchor { .. } => {
                     super::NegativeObservability::UnreachableInCandidate
                 }
                 EvidenceRole::InactiveCaseAcceptance => {

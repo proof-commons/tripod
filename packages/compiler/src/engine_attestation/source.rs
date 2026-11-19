@@ -20,19 +20,79 @@ pub fn relation_operands(
     declaration: &RelationDeclaration,
 ) -> Result<Vec<OperandId>, CompileError> {
     let id = &declaration.id;
-    super::require_supported_plan(id.operation())?;
     let operand = |role: OperandRole| OperandId::new(id.clone(), role);
 
     let mut operands = match &declaration.relation {
-        Relation::SideRepresentation { .. }
-        | Relation::DataOutputs { .. }
-        | Relation::BurnBinding
-        | Relation::ClearClamp
+        Relation::ClearClamp
         | Relation::ClearAssignment { .. }
         | Relation::ClearFloor
         | Relation::ClearFlow
         | Relation::ClearBinding
         | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
+        Relation::DataOutputs { expected } => {
+            use crate::source::BurnClearCoordinate as C;
+
+            if id.operation() != architecture::OperationId::Burn {
+                return Err(CompileError::UnsupportedRelationPlan);
+            }
+            let mut values = Vec::new();
+            for output in expected {
+                values.extend(
+                    [
+                        C::DataOutputSchema(output.kind),
+                        C::DataOutputFamilyCount(output.kind),
+                        C::DataOutputTag(output.kind),
+                        C::DataOutputAsset(output.kind),
+                        C::DataOutputCondition(output.kind),
+                        C::DataOutputScalar(output.kind),
+                    ]
+                    .into_iter()
+                    .map(|coordinate| operand(OperandRole::BurnClear(coordinate))),
+                );
+                if let architecture::MaxCount::Bound(bound) = output.maximum {
+                    values.push(operand(OperandRole::RuntimeBound { bound }));
+                }
+            }
+            values.extend(
+                [
+                    C::RecordOrdinal,
+                    C::RecordAddress,
+                    C::RecordFreshAsh,
+                    C::TransactionContext,
+                    C::CertificateContext,
+                ]
+                .into_iter()
+                .map(|coordinate| operand(OperandRole::BurnClear(coordinate))),
+            );
+            values
+        }
+        Relation::BurnBinding => {
+            use crate::source::BurnClearCoordinate as C;
+            vec![
+                operand(OperandRole::ObjectFamilyMembers {
+                    side: realization::TransactionSide::Input,
+                    object: architecture::ObjectId::ReceiptLive,
+                }),
+                operand(OperandRole::ObjectFamilyMembers {
+                    side: realization::TransactionSide::Output,
+                    object: architecture::ObjectId::Ash,
+                }),
+                operand(OperandRole::ObjectFamilyAmount {
+                    side: realization::TransactionSide::Output,
+                    object: architecture::ObjectId::Ash,
+                }),
+                operand(OperandRole::ObjectFamilyOwners {
+                    object: architecture::ObjectId::ReceiptLive,
+                }),
+                operand(OperandRole::CanonicalPartition),
+                operand(OperandRole::ProjectionSet),
+                operand(OperandRole::RootEffects),
+                operand(OperandRole::BurnClear(C::RecordFreshAsh)),
+                operand(OperandRole::BurnClear(C::BurnEventType)),
+                operand(OperandRole::BurnClear(C::BurnFreshAmountEvent)),
+            ]
+        }
+
         Relation::Cardinality {
             side,
             object,
@@ -118,7 +178,7 @@ pub fn relation_operands(
 
         Relation::Constructibility { .. } => vec![operand(OperandRole::ConstructibilityCase)],
 
-        Relation::Representation { object, .. } => {
+        Relation::Representation { object, .. } | Relation::SideRepresentation { object, .. } => {
             vec![operand(OperandRole::Representation { object: *object })]
         }
 
@@ -198,6 +258,11 @@ pub fn proof_capabilities(
                 }
                 Relation::CanonicalDeltaPolicy { .. } => {
                     capabilities.insert(Cap::AuthenticatedCanonicalPartition);
+                }
+                Relation::BurnBinding => {
+                    capabilities.insert(Cap::AuthenticatedCanonicalPartition);
+                    capabilities.insert(Cap::AuthenticatedProjectionSet);
+                    capabilities.insert(Cap::AuthenticatedRootEffects);
                 }
                 Relation::OpenFlowPolicy { .. }
                 | Relation::SponsorEnvelopeMultiplicity { .. }
@@ -452,7 +517,15 @@ const fn burn_clear_source_kind(
         C::TransactionContext | C::CertificateContext => {
             RequiredSourceKind::AuthenticatedTransitionCertificate
         }
-        _ => RequiredSourceKind::AuthenticatedOutputObject,
+        C::DataOutputSchema(_)
+        | C::DataOutputFamilyCount(_)
+        | C::DataOutputTag(_)
+        | C::DataOutputAsset(_)
+        | C::DataOutputCondition(_)
+        | C::RecordOrdinal
+        | C::RecordAddress
+        | C::RecordFreshAsh
+        | C::DestructionFlow => RequiredSourceKind::AuthenticatedOutputObject,
     }
 }
 
@@ -496,8 +569,6 @@ pub fn lower(owner: &super::AttestationOwner) -> Result<core::SourceRecords, Com
         .collect::<Vec<_>>();
     let mut tables = Vec::new();
     for declaration in &declarations {
-        super::require_supported_plan(declaration.id.operation())?;
-        super::require_supported_relation(&declaration.relation)?;
         for alternative in &declaration.proof_alternatives {
             let rows = derive_rows(declaration, alternative.proof())?;
             tables.push(table(declaration, alternative.proof(), &rows));

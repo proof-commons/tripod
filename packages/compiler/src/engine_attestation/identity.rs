@@ -301,7 +301,23 @@ fn attestation_purpose_parts(value: &crate::coverage::CoveragePurpose) -> Vec<Pa
             requirement,
             mutation: value,
         } => vec![word(8u16), evidence(requirement), mutation(*value)],
+        P::ReportAnchorRequired { operand } => vec![word(9u16), report_anchor(operand)],
+        P::ReportAnchorChanged {
+            operand,
+            mutation: value,
+        } => {
+            vec![word(10u16), report_anchor(operand), mutation(*value)]
+        }
     }
+}
+
+fn report_anchor(operand: &crate::source::OperandId) -> Part {
+    source(&crate::source::SourceRequirement {
+        operand: operand.clone(),
+        source: crate::source::RequiredSourceKind::ExternalEvidence,
+        availability: realization::AvailabilityClass::Public,
+        activation: crate::source::RequirementActivation::Always,
+    })
 }
 #[cfg(test)]
 pub fn attestation_symbol(value: &crate::coverage_graph::CoverageNodeId) -> SymbolKey {

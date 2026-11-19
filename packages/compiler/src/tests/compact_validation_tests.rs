@@ -517,6 +517,7 @@ fn multiplicity_remains_unconditional_model_scope_for_both_sponsor_identities() 
 
 // Retained pre-extraction traversal: an independent reference for the shared
 // production body, with its original projection acquisition and iteration order.
+#[allow(clippy::too_many_lines)] // The independent lifecycle oracle keeps admission beside reachability.
 fn pre_extraction_lifecycle(
     input: &BoundCompilerInput,
     relations: &CompilerRelationAnalysis,
@@ -589,8 +590,7 @@ fn pre_extraction_lifecycle(
         graph.add_edge(source, target, edge.edge);
     }
 
-    // Every supported representation must reach every required exit of
-    // its object; the exit's scope membership decides the status.
+    // Reachability and the exit operation's input admission jointly decide status.
     let mut requirements = Vec::new();
 
     for (id, node) in &node_by_id {
@@ -619,10 +619,30 @@ fn pre_extraction_lifecycle(
                 });
             }
 
-            let status = if input.scope().operations().contains(operation) {
+            let status = if !input.scope().operations().contains(operation) {
+                LifecycleExitStatus::DeclaredOutsideCompilerScope
+            } else if input.realization().relations().any(|declaration| {
+                if declaration.id.operation() != *operation {
+                    return false;
+                }
+                match &declaration.relation {
+                    realization::Relation::SideRepresentation {
+                        side,
+                        object: admitted,
+                        allowed,
+                    } if *side == realization::TransactionSide::Input && admitted == object => {
+                        allowed.contains(mode)
+                    }
+                    realization::Relation::Representation {
+                        object: admitted,
+                        allowed,
+                    } if admitted == object => allowed.contains(mode),
+                    _ => false,
+                }
+            }) {
                 LifecycleExitStatus::AvailableInCompilerScope
             } else {
-                LifecycleExitStatus::DeclaredOutsideCompilerScope
+                LifecycleExitStatus::UnavailableInCompilerScope
             };
 
             requirements.push(LifecycleRequirement {

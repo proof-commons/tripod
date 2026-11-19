@@ -144,6 +144,9 @@ pub const fn structural(value: &BackendStructuralRequirement) -> core::Structura
             object: object(*family),
             exit: super::operation_key(*exit),
         },
+        BackendStructuralRequirement::DataOutputSchema { kind } => {
+            core::StructuralRequirement::DataOutputSchema { kind: kind.code() }
+        }
     }
 }
 const fn scope(value: SemanticScope) -> core::Scope {

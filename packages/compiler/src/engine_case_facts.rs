@@ -50,6 +50,9 @@ pub enum StructuralRequirement {
         object: ObjectKey,
         exit: OperationKey,
     },
+    DataOutputSchema {
+        kind: u16,
+    },
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Scope {

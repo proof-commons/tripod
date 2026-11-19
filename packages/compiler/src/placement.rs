@@ -102,6 +102,8 @@ pub enum DischargeBoundary {
     BackendStructural,
     RuntimeCarrier,
     ExternalEvidence,
+    /// A typed event coordinate owed to a later report producer.
+    ReportObligation,
 }
 
 /// The semantic extent one relation constrains.
@@ -222,6 +224,8 @@ pub enum BackendStructuralRequirement {
     SecretFreeOperationPath { operation: OperationId },
     /// A required lifecycle exit must remain represented downstream.
     RetainRequiredLifecycleExit { object: ObjectId, exit: OperationId },
+    /// The emitted bundle retains the declared data-output family schema.
+    DataOutputSchema { kind: architecture::DataOutputKind },
 }
 
 /// What an eventual carrier must discharge for one active relation.
@@ -315,7 +319,6 @@ pub fn classify_relation_case(
     ordinary_lbtc: OrdinaryLbtcRole,
 ) -> Result<RelationCasePlan, CompileError> {
     let operation = declaration.id.operation();
-    crate::engine_attestation::require_supported_plan(operation)?;
     let amounts = conserved_amount_visibility(declaration, &case.id)?;
     let discharge = classify_declared_discharge(declaration, ordinary_lbtc, amounts)?;
     let activity = resolve_activity(discharge.activation, &case.id);
@@ -325,15 +328,48 @@ pub fn classify_relation_case(
     let mut external_evidence = BTreeSet::new();
 
     match &declaration.relation {
-        Relation::SideRepresentation { .. }
-        | Relation::DataOutputs { .. }
-        | Relation::BurnBinding
-        | Relation::ClearClamp
+        Relation::ClearClamp
         | Relation::ClearAssignment { .. }
         | Relation::ClearFloor
         | Relation::ClearFlow
         | Relation::ClearBinding
         | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
+        Relation::SideRepresentation {
+            side,
+            object,
+            allowed,
+        } => {
+            let selected = case
+                .id
+                .side_representations
+                .get(&(*side, *object))
+                .copied()
+                .ok_or(CompileError::MissingRepresentationChoice {
+                    operation,
+                    object: *object,
+                })?;
+            compiler_requirements.push(CompilerStaticRequirement::SideRepresentationSelection {
+                side: *side,
+                object: *object,
+                allowed: allowed.clone(),
+                selected,
+            });
+            structural_requirements.push(
+                BackendStructuralRequirement::EncodeAndAuthenticateSideRepresentation {
+                    side: *side,
+                    object: *object,
+                    representation: selected,
+                },
+            );
+        }
+        Relation::DataOutputs { expected } => {
+            if operation != OperationId::Burn {
+                return Err(CompileError::UnsupportedRelationPlan);
+            }
+            structural_requirements.extend(expected.iter().map(|output| {
+                BackendStructuralRequirement::DataOutputSchema { kind: output.kind }
+            }));
+        }
         Relation::OperatorAuthorization
         | Relation::Constructibility {
             class: realization::ConstructibilityClass::Operator,
@@ -402,7 +438,8 @@ pub fn classify_relation_case(
             });
         }
 
-        Relation::Cardinality { .. }
+        Relation::BurnBinding
+        | Relation::Cardinality { .. }
         | Relation::AllowedObjectFamilies { .. }
         | Relation::Recognition { .. }
         | Relation::AmountConservation { .. }
@@ -589,15 +626,17 @@ fn classify_discharge(
     }
 
     Ok(match relation {
-        Relation::SideRepresentation { .. }
-        | Relation::DataOutputs { .. }
-        | Relation::BurnBinding
-        | Relation::ClearClamp
+        Relation::ClearClamp
         | Relation::ClearAssignment { .. }
         | Relation::ClearFloor
         | Relation::ClearFlow
         | Relation::ClearBinding
         | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
+        Relation::BurnBinding => RelationDischarge {
+            boundaries: BTreeSet::from([Boundary::RuntimeCarrier, Boundary::ReportObligation]),
+            activation: ActivationCondition::Always,
+            runtime: Some((SemanticScope::TransactionGlobal, Multiplicity::ExactlyOne)),
+        },
         Relation::Cardinality { side, object, .. } => runtime(
             SemanticScope::FamilyGlobal {
                 side: observed_to_transaction(*side),
@@ -673,7 +712,7 @@ fn classify_discharge(
             ActivationCondition::Always,
         ),
 
-        Relation::PermissionlessAuthorization => RelationDischarge {
+        Relation::PermissionlessAuthorization | Relation::DataOutputs { .. } => RelationDischarge {
             boundaries: BTreeSet::from([Boundary::BackendStructural]),
             activation: ActivationCondition::Always,
             runtime: None,
@@ -695,7 +734,9 @@ fn classify_discharge(
             runtime: None,
         },
 
-        Relation::Representation { .. } | Relation::LifecycleExit { .. } => RelationDischarge {
+        Relation::Representation { .. }
+        | Relation::SideRepresentation { .. }
+        | Relation::LifecycleExit { .. } => RelationDischarge {
             boundaries: BTreeSet::from([Boundary::CompilerStatic, Boundary::BackendStructural]),
             activation: ActivationCondition::Always,
             runtime: None,
@@ -750,9 +791,11 @@ pub fn resolve_activity(
 
 /// The case's active source rows belonging to one relation.
 fn relation_sources(relation: &RelationId, case: &ExecutionCase) -> Vec<SourceRequirement> {
+    let report = crate::coverage::report_anchors(relation);
     case.active_sources
         .iter()
         .filter(|row| row.operand.relation() == relation)
+        .filter(|row| !report.contains(&row.operand))
         .cloned()
         .collect()
 }

@@ -479,9 +479,8 @@ fn oracle_evidence(
 ///
 /// Every required exit the realization declares for an object the scope
 /// represents, paired with the mode the plan selected for that object.
-/// An exit inside the compiler scope is available; anything else is an
-/// outstanding future obligation, which is what makes a partial pilot
-/// scope honest rather than apparently complete.
+/// An in-scope exit is available only when its input admission accepts
+/// the selected mode; unavailable and out-of-scope rows remain obligations.
 fn oracle_lifecycle_rows(
     analyzed: &Analyzed,
     declarations: &BTreeMap<RelationId, RelationDeclaration>,
@@ -519,14 +518,41 @@ fn oracle_lifecycle_rows(
             continue;
         };
 
+        let input_family = declarations.values().any(|declaration| {
+            declaration.id.operation() == *operation
+                && matches!(&declaration.relation, Relation::Cardinality {
+                    side: realization::ObservedSide::Input,
+                    object: admitted,
+                    ..
+                } if *admitted == *object)
+        });
+        let admitted = declarations.values().any(|declaration| {
+            if declaration.id.operation() != *operation {
+                return false;
+            }
+            match &declaration.relation {
+                Relation::SideRepresentation {
+                    side: realization::TransactionSide::Input,
+                    object: admitted,
+                    allowed,
+                } => *admitted == *object && allowed.contains(&mode),
+                Relation::Representation {
+                    object: admitted,
+                    allowed,
+                } => input_family && *admitted == *object && allowed.contains(&mode),
+                _ => false,
+            }
+        });
         rows.insert(LifecycleRequirement {
             object: *object,
             representation: mode,
             exit: *operation,
-            status: if scope.contains(operation) {
+            status: if !scope.contains(operation) {
+                LifecycleExitStatus::DeclaredOutsideCompilerScope
+            } else if admitted {
                 LifecycleExitStatus::AvailableInCompilerScope
             } else {
-                LifecycleExitStatus::DeclaredOutsideCompilerScope
+                LifecycleExitStatus::UnavailableInCompilerScope
             },
         });
     }
@@ -542,7 +568,7 @@ fn oracle_lifecycle_obligations(
 ) -> BTreeSet<LifecycleRequirement> {
     oracle_lifecycle_rows(analyzed, declarations, plan)
         .into_iter()
-        .filter(|row| row.status == LifecycleExitStatus::DeclaredOutsideCompilerScope)
+        .filter(|row| row.status != LifecycleExitStatus::AvailableInCompilerScope)
         .collect()
 }
 

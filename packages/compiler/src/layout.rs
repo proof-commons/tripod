@@ -151,7 +151,6 @@ pub fn derive_layout_requirements(
     eligibility: &[CarrierEligibility],
 ) -> Result<Vec<LayoutRequirement>, CompileError> {
     for node in relations.graph.node_weights() {
-        crate::engine_attestation::require_supported_plan(node.source.id.operation())?;
         crate::engine_attestation::require_supported_relation(&node.source.relation)?;
     }
     let mut requirements = BTreeSet::new();
@@ -405,10 +404,7 @@ fn global_relation_requirements(
     };
 
     match declaration {
-        Relation::SideRepresentation { .. }
-        | Relation::DataOutputs { .. }
-        | Relation::BurnBinding
-        | Relation::ClearClamp
+        Relation::ClearClamp
         | Relation::ClearAssignment { .. }
         | Relation::ClearFloor
         | Relation::ClearFlow
@@ -416,6 +412,22 @@ fn global_relation_requirements(
         | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
         // Conservation is a claim about complete family totals on both
         // sides, so a per-member fact can never establish it.
+        Relation::BurnBinding => {
+            for (side, object) in [
+                (TransactionSide::Input, architecture::ObjectId::ReceiptLive),
+                (TransactionSide::Output, architecture::ObjectId::Ash),
+            ] {
+                requirements.insert(LayoutRequirement::AuthenticateFamilyCensus {
+                    relation: relation.clone(),
+                    side,
+                    object,
+                });
+                requirements.insert(LayoutRequirement::CompleteAndDisjointFamilies {
+                    relation: relation.clone(),
+                    side,
+                });
+            }
+        }
         Relation::AmountConservation {
             input_objects,
             output_objects,
@@ -463,7 +475,9 @@ fn global_relation_requirements(
             }
         }
 
-        Relation::Cardinality { .. }
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::Cardinality { .. }
         | Relation::AllowedObjectFamilies { .. }
         | Relation::Recognition { .. }
         | Relation::OwnerAuthorization { .. }
@@ -528,7 +542,8 @@ fn structural_requirements(
             // The lifecycle exit is retained in the emitted bundle's
             // own census rather than in transaction structure, so it
             // states no layout obligation here.
-            BackendStructuralRequirement::RetainRequiredLifecycleExit { .. } => {}
+            BackendStructuralRequirement::RetainRequiredLifecycleExit { .. }
+            | BackendStructuralRequirement::DataOutputSchema { .. } => {}
         }
     }
 }

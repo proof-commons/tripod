@@ -31,18 +31,33 @@ pub fn single_representation(
     }
 }
 pub fn owned_lifecycle(
+    operation: crate::engine_records::OperationKey,
     association: Option<(
         crate::engine_lifecycle::ObjectKey,
         crate::engine_records::OperationKey,
     )>,
+    selected: &BTreeMap<crate::engine_proof::ChoiceKey, crate::engine_lifecycle::ModeKey>,
     candidate: &[crate::engine_lifecycle::LifecycleRequirementRecord],
 ) -> BTreeSet<crate::engine_lifecycle::LifecycleRequirementRecord> {
     let Some((object, exit)) = association else {
         return BTreeSet::new();
     };
+    let output = crate::engine_proof::ChoiceKey {
+        side: Some(crate::engine_identity::side_code(
+            realization::TransactionSide::Output,
+        )),
+        operation,
+        object,
+    };
+    let unqualified = crate::engine_proof::ChoiceKey {
+        side: None,
+        operation,
+        object,
+    };
+    let mode = selected.get(&output).or_else(|| selected.get(&unqualified));
     candidate
         .iter()
-        .filter(|row| row.object == object && row.exit == exit)
+        .filter(|row| row.object == object && row.exit == exit && mode == Some(&row.representation))
         .cloned()
         .collect()
 }

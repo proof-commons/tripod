@@ -96,7 +96,7 @@ fn new_coverage_coordinates_keep_their_boundary() {
     };
     assert_eq!(
         relation_mutations(&subject, ConservedAmountVisibility::Readable),
-        Err(CompileError::UnsupportedRelationPlan),
+        Ok(Vec::new()),
     );
 
     let record = RelationMutation::BurnClearCoordinateChanged(C::RecordOrdinal);
@@ -117,6 +117,72 @@ fn new_coverage_coordinates_keep_their_boundary() {
         crate::engine_attestation::identity::attestation_purpose(
             &CoveragePurpose::StructuralRejection(RelationMutation::AmountMismatch),
         ),
+    );
+}
+
+#[test]
+fn report_anchor_cannot_be_promoted_to_runtime() {
+    let control = super::source_tests::burn_control();
+    let cases = crate::case::execution_cases(&control.relations, &control.candidate)
+        .expect("complete internal Burn cases");
+    let plans = classify_relation_cases(&control.relations, &cases)
+        .expect("complete internal Burn classification");
+    let binding = control
+        .relations
+        .graph
+        .node_weights()
+        .map(|node| &node.source)
+        .find(|row| {
+            row.id.operation() == OperationId::Burn && matches!(row.relation, Relation::BurnBinding)
+        })
+        .expect("Burn binding");
+    let plan = plans
+        .iter()
+        .find(|plan| plan.relation == binding.id)
+        .expect("Burn binding case");
+    let mut covered = crate::engine_attestation::coverage::derive_relation_coverage(binding, plan)
+        .expect("canonical report rows");
+    let key = covered.key();
+    let projection = crate::coverage::projection_requirement(
+        &key,
+        &covered,
+        plan,
+        CoverageBoundary::ReportObligation,
+    )
+    .expect("complete report projection");
+    covered
+        .projections
+        .insert(CoverageBoundary::ReportObligation, projection);
+    let required = covered.project();
+    assert_eq!(
+        crate::analyzed_validate::validate_relation_coverage(
+            OperationId::Burn,
+            &key,
+            &required,
+            &required
+        ),
+        Ok(())
+    );
+    let mut offered = covered;
+    let anchor = offered
+        .positive
+        .iter_mut()
+        .find(|row| matches!(row.id.purpose, CoveragePurpose::ReportAnchorRequired { .. }))
+        .expect("report anchor requirement");
+    anchor.id.boundary = CoverageBoundary::RuntimeCarrier;
+    assert_eq!(
+        crate::analyzed_validate::validate_relation_coverage(
+            OperationId::Burn,
+            &key,
+            &offered.project(),
+            &required
+        ),
+        Err(CompileError::AnalyzedCoverageCensusMismatch {
+            operation: OperationId::Burn,
+            relation: Some(key.relation.clone()),
+            case: Some(key.case.clone()),
+            defect: crate::analyzed_validate::AnalyzedCoverageDefect::MissingPositive,
+        })
     );
 }
 
@@ -438,6 +504,12 @@ fn each_boundary_is_answered_by_its_own_evidence_role() {
                         assert!(matches!(
                             requirement.role,
                             EvidenceRole::ExternalReport { .. }
+                        ));
+                    }
+                    CoverageBoundary::ReportObligation => {
+                        assert!(matches!(
+                            requirement.role,
+                            EvidenceRole::ReportAnchor { .. }
                         ));
                     }
                 }
@@ -927,7 +999,8 @@ fn a_runtime_negative_requires_its_dependency_closure_and_never_claims_isolation
                     CoverageBoundary::ModelScope
                     | CoverageBoundary::CompilerStatic
                     | CoverageBoundary::BackendStructural
-                    | CoverageBoundary::ExternalEvidence => CollateralPolicy::ReportAdditional,
+                    | CoverageBoundary::ExternalEvidence
+                    | CoverageBoundary::ReportObligation => CollateralPolicy::ReportAdditional,
                 };
 
                 assert_eq!(requirement.collateral.policy, expected);
@@ -1665,6 +1738,15 @@ fn each_boundary_projects_its_own_subject() {
                         );
                         assert!(!requirement.compare_relation_verdict);
                     }
+                    CoverageBoundary::ReportObligation => {
+                        assert_eq!(
+                            requirement.subject,
+                            ProjectionSubject::ReportAnchors {
+                                operands: crate::coverage::report_anchors(&plan.relation),
+                            }
+                        );
+                        assert!(!requirement.compare_relation_verdict);
+                    }
                 }
             }
         }
@@ -1720,6 +1802,12 @@ fn an_accepted_projection_is_answered_by_the_evidence_role_of_its_boundary() {
                             &requirement.role,
                             EvidenceRole::ExternalReport { requirement: subject, .. }
                                 if plan.external_evidence.contains(subject)
+                        ));
+                    }
+                    CoverageBoundary::ReportObligation => {
+                        assert!(matches!(
+                            &requirement.role,
+                            EvidenceRole::ReportAnchor { .. }
                         ));
                     }
                 }

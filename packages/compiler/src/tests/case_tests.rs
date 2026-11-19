@@ -79,40 +79,34 @@ fn unqualified_case_keys_preserve_pilot_identity() {
 }
 
 #[test]
-fn direct_case_entry_refuses_operations_without_plans() {
-    let (_, candidates) = analysis(&[OperationId::CompactAsh]);
-    let candidate = &candidates[0];
-    let relations_for = |operation| {
-        crate::relation::build_relation_graph(
-            &[operation],
-            &[realization::RelationDeclaration {
-                id: realization::RelationId::new(
-                    operation,
-                    realization::RelationKind::Authorization,
-                    realization::RelationSubject::Operation,
-                ),
-                relation: realization::Relation::PermissionlessAuthorization,
-                proof_alternatives: std::collections::BTreeSet::new(),
-            }],
-            &[],
-        )
-        .expect("synthetic relation graph")
-    };
-    // Only the operation owner changes. No declaration dispatch is needed
-    // to exercise the private case entry's independent admission boundary.
-    let control = relations_for(OperationId::AnnounceMaturity);
-    let cases = execution_cases(&control, candidate).expect("supported owner");
-    assert_eq!(cases.len(), 1);
-    assert_eq!(validate_case_census(&control, candidate, &cases), Ok(()));
-    for operation in [OperationId::Burn, OperationId::Clear] {
-        let subject = relations_for(operation);
-        let expected = Err(CompileError::UnsupportedOperationPlan { operation });
-        assert_eq!(execution_cases(&subject, candidate), expected);
-        assert_eq!(
-            validate_case_census(&subject, candidate, &[]),
-            Err(CompileError::UnsupportedOperationPlan { operation }),
+fn direct_case_entry_accepts_complete_burn_and_refuses_changed_case() {
+    let control = super::source_tests::burn_control();
+    let cases =
+        execution_cases(&control.relations, &control.candidate).expect("complete Burn case census");
+    assert!(
+        cases
+            .iter()
+            .any(|case| case.id.operation == OperationId::Burn)
+    );
+    assert_eq!(
+        validate_case_census(&control.relations, &control.candidate, &cases),
+        Ok(())
+    );
+    let mut changed = cases;
+    changed
+        .iter_mut()
+        .find(|case| case.id.operation == OperationId::Burn)
+        .expect("Burn case")
+        .id
+        .side_representations
+        .insert(
+            (realization::TransactionSide::Input, ObjectId::ReceiptLive),
+            RepresentationMode::PrivateCommitted,
         );
-    }
+    assert!(matches!(
+        validate_case_census(&control.relations, &control.candidate, &changed),
+        Err(CompileError::ExecutionCaseCensusMismatch { .. })
+    ));
 }
 
 // --- pilot case census (§16.1, §4.4) ---

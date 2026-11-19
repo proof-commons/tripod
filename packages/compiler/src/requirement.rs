@@ -283,10 +283,63 @@ pub fn validate_lifecycle_closure(
         .flat_map(|bundle| bundle.lifecycle.iter().cloned())
         .collect::<BTreeSet<_>>();
 
-    if owned != carried {
+    let mut expected_owned = BTreeSet::new();
+    for (relation, bundle) in requirements {
+        let mut expected_relation = BTreeSet::new();
+        let realization::RelationSubject::LifecycleExit { object, exit } = relation.subject()
+        else {
+            if !bundle.lifecycle.is_empty() {
+                return Err(CompileError::AnalyzedLifecycleClosureMismatch {
+                    missing: Vec::new(),
+                    unexpected: bundle.lifecycle.iter().cloned().collect(),
+                });
+            }
+            continue;
+        };
+        let output = crate::lifecycle::RepresentationChoiceId {
+            side: Some(realization::TransactionSide::Output),
+            operation: relation.operation(),
+            object: *object,
+        };
+        let unqualified = crate::lifecycle::RepresentationChoiceId {
+            side: None,
+            operation: relation.operation(),
+            object: *object,
+        };
+        let mode = candidate
+            .representations
+            .get(&output)
+            .or_else(|| candidate.representations.get(&unqualified));
+        if let Some(mode) = mode {
+            expected_relation.extend(
+                carried
+                    .iter()
+                    .filter(|row| {
+                        row.object == *object && row.exit == *exit && row.representation == *mode
+                    })
+                    .cloned(),
+            );
+        }
+        if bundle.lifecycle != expected_relation {
+            return Err(CompileError::AnalyzedLifecycleClosureMismatch {
+                missing: expected_relation
+                    .difference(&bundle.lifecycle)
+                    .cloned()
+                    .collect(),
+                unexpected: bundle
+                    .lifecycle
+                    .difference(&expected_relation)
+                    .cloned()
+                    .collect(),
+            });
+        }
+        expected_owned.extend(expected_relation);
+    }
+
+    if owned != expected_owned {
         return Err(CompileError::AnalyzedLifecycleClosureMismatch {
-            missing: owned.difference(&carried).cloned().collect(),
-            unexpected: carried.difference(&owned).cloned().collect(),
+            missing: expected_owned.difference(&owned).cloned().collect(),
+            unexpected: owned.difference(&expected_owned).cloned().collect(),
         });
     }
 

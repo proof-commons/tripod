@@ -24,6 +24,493 @@ use crate::{
     },
 };
 
+pub(super) struct BurnControl {
+    pub input: crate::BoundCompilerInput,
+    pub relations: crate::relation::CompilerRelationAnalysis,
+    pub candidate: crate::proof::ProofPlanCandidate,
+}
+
+pub(super) fn burn_control() -> BurnControl {
+    burn_control_with_transfer(realization::RepresentationMode::Explicit)
+}
+
+pub(super) fn burn_control_with_transfer(
+    transfer_mode: realization::RepresentationMode,
+) -> BurnControl {
+    let operations = [OperationId::TransferLive, OperationId::Burn];
+    let realization = realization::derive(
+        &architecture::ARCHITECTURE,
+        realization::RealizationScope::from_operations(operations).expect("scope"),
+    )
+    .expect("complete realization");
+    let input = crate::input::bind_attestation_input(
+        &architecture::ARCHITECTURE,
+        realization,
+        crate::CompilationScope::from_operations(operations).expect("compiler scope"),
+        super::test_policy(),
+    )
+    .expect("validated internal input");
+    let projection = input.realization().project();
+    let relations = crate::engine_attestation::lower_relations(
+        input.scope().operations(),
+        &projection.relations.nodes,
+        &projection.relations.edges,
+        &projection.lifecycle,
+    )
+    .analyze()
+    .expect("complete declaration records");
+    crate::sponsor_region::validate_decidable_sponsor_regions(
+        &relations,
+        input.scope().operations(),
+    )
+    .expect("decidable sponsor role");
+    let constructibility =
+        crate::constructibility::build_constructibility_analysis(&input).expect("constructibility");
+    let lifecycle =
+        crate::lifecycle::build_lifecycle_analysis(&input, &relations).expect("lifecycle");
+    let lowered = crate::engine_attestation::proof::lower_prepared(
+        &input,
+        &relations,
+        &constructibility,
+        &lifecycle,
+    )
+    .expect("proof tables");
+    let candidate = lowered
+        .enumerate(
+            &CapabilityView::Unconstrained,
+            input.policy().proof_search_limits,
+            &mut crate::proof::ProofSearchReport::default(),
+        )
+        .expect("feasible internal Burn proof")
+        .into_iter()
+        .find(|candidate| {
+            candidate.representations.iter().any(|(choice, mode)| {
+                choice.operation == OperationId::Burn
+                    && choice.side == Some(realization::TransactionSide::Output)
+                    && *mode == realization::RepresentationMode::Explicit
+            }) && candidate.representations.iter().any(|(choice, mode)| {
+                choice.operation == OperationId::TransferLive
+                    && choice.side.is_none()
+                    && choice.object == ObjectId::ReceiptLive
+                    && *mode == transfer_mode
+            })
+        })
+        .expect("selected Burn output choice");
+    BurnControl {
+        input,
+        relations,
+        candidate,
+    }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // The three literal Burn body tables form one focused contract.
+fn burn_bodies_have_exact_owned_tables() {
+    use crate::coverage::{
+        CoverageBoundary as B, CoveragePurpose, EvidenceRole, ProjectionSubject,
+    };
+    use crate::source::BurnClearCoordinate as C;
+
+    let control = burn_control();
+    let cases = crate::case::execution_cases(&control.relations, &control.candidate)
+        .expect("complete Burn cases");
+    let plans = crate::placement::classify_relation_cases(&control.relations, &cases)
+        .expect("complete body classification");
+    let burn = control
+        .relations
+        .graph
+        .node_weights()
+        .filter(|node| node.source.id.operation() == OperationId::Burn)
+        .map(|node| &node.source)
+        .collect::<Vec<_>>();
+    let binding = burn
+        .iter()
+        .find(|row| matches!(row.relation, Relation::BurnBinding))
+        .expect("Burn binding declaration");
+    let data = burn
+        .iter()
+        .find(|row| matches!(row.relation, Relation::DataOutputs { .. }))
+        .expect("Burn data output declaration");
+    let sides = burn
+        .iter()
+        .filter(|row| matches!(row.relation, Relation::SideRepresentation { .. }))
+        .collect::<Vec<_>>();
+    assert_eq!(sides.len(), 2);
+    assert_eq!(
+        crate::requirement::relation_objects(OperationId::Burn, &data.relation),
+        BTreeSet::new()
+    );
+    assert_eq!(binding.proof_alternatives.len(), 1);
+    assert_eq!(data.proof_alternatives.len(), 1);
+    assert!(sides.iter().all(|row| row.proof_alternatives.is_empty()));
+
+    let sources = derive_source_requirements(binding, ProofKind::ManifestShape)
+        .expect("Burn binding sources");
+    let anchors = crate::coverage::report_anchors(&binding.id);
+    assert_eq!(anchors.len(), 2);
+    assert_eq!(
+        anchors
+            .iter()
+            .map(|operand| operand.role().clone())
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            OperandRole::BurnClear(C::BurnEventType),
+            OperandRole::BurnClear(C::BurnFreshAmountEvent),
+        ])
+    );
+    assert!(
+        sources
+            .iter()
+            .filter(|row| anchors.contains(&row.operand))
+            .all(|row| {
+                row.source == RequiredSourceKind::ExternalEvidence
+                    && row.availability == AvailabilityClass::Public
+                    && row.activation == RequirementActivation::Always
+            })
+    );
+    let data_sources =
+        derive_source_requirements(data, ProofKind::ManifestShape).expect("Burn data sources");
+    let data_coordinates = data_sources
+        .iter()
+        .filter_map(|row| match row.operand.role() {
+            OperandRole::BurnClear(coordinate) => Some((*coordinate, row.source)),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let record = architecture::DataOutputKind::BurnRecord;
+    assert_eq!(
+        data_coordinates,
+        std::collections::BTreeMap::from([
+            (
+                C::DataOutputSchema(record),
+                RequiredSourceKind::AuthenticatedOutputObject
+            ),
+            (
+                C::DataOutputFamilyCount(record),
+                RequiredSourceKind::AuthenticatedOutputObject
+            ),
+            (
+                C::DataOutputTag(record),
+                RequiredSourceKind::AuthenticatedOutputObject
+            ),
+            (
+                C::DataOutputAsset(record),
+                RequiredSourceKind::AuthenticatedOutputObject
+            ),
+            (
+                C::DataOutputCondition(record),
+                RequiredSourceKind::AuthenticatedOutputObject
+            ),
+            (
+                C::DataOutputScalar(record),
+                RequiredSourceKind::AuthenticatedConsensusValue
+            ),
+            (
+                C::RecordOrdinal,
+                RequiredSourceKind::AuthenticatedOutputObject
+            ),
+            (
+                C::RecordAddress,
+                RequiredSourceKind::AuthenticatedOutputObject
+            ),
+            (
+                C::RecordFreshAsh,
+                RequiredSourceKind::AuthenticatedOutputObject
+            ),
+            (
+                C::TransactionContext,
+                RequiredSourceKind::AuthenticatedTransitionCertificate
+            ),
+            (
+                C::CertificateContext,
+                RequiredSourceKind::AuthenticatedTransitionCertificate
+            ),
+        ])
+    );
+    assert!(data_sources.iter().any(|row| row.operand.role()
+        == &OperandRole::RuntimeBound {
+            bound: architecture::BoundId::BurnRecordMax
+        }));
+
+    for case in cases
+        .iter()
+        .filter(|case| case.id.operation == OperationId::Burn)
+    {
+        for row in &sides {
+            let plan = plans
+                .iter()
+                .find(|plan| plan.relation == row.id && plan.case == case.id)
+                .expect("side plan");
+            assert_eq!(
+                plan.boundaries,
+                BTreeSet::from([B::CompilerStatic, B::BackendStructural])
+            );
+        }
+        let data_plan = plans
+            .iter()
+            .find(|plan| plan.relation == data.id && plan.case == case.id)
+            .expect("data plan");
+        assert_eq!(data_plan.boundaries, BTreeSet::from([B::BackendStructural]));
+        let data_coverage =
+            crate::engine_attestation::coverage::derive_relation_coverage(data, data_plan)
+                .expect("data coverage");
+        assert!(
+            data_coverage
+                .positive
+                .iter()
+                .any(|row| row.id.boundary == B::BackendStructural
+                    && data_coordinates.keys().all(|coordinate| row
+                        .operands
+                        .iter()
+                        .any(|operand| operand.role() == &OperandRole::BurnClear(*coordinate))))
+        );
+        let binding_plan = plans
+            .iter()
+            .find(|plan| plan.relation == binding.id && plan.case == case.id)
+            .expect("binding plan");
+        assert_eq!(
+            binding_plan.boundaries,
+            BTreeSet::from([B::RuntimeCarrier, B::ReportObligation])
+        );
+        assert!(
+            binding_plan
+                .runtime_requirements
+                .iter()
+                .flat_map(|row| &row.sources)
+                .all(|row| !anchors.contains(&row.operand))
+        );
+        let covered =
+            crate::engine_attestation::coverage::derive_relation_coverage(binding, binding_plan)
+                .expect("binding coverage");
+        assert!(
+            covered
+                .positive
+                .iter()
+                .filter(|row| row.id.boundary == B::RuntimeCarrier)
+                .all(|row| row
+                    .operands
+                    .iter()
+                    .all(|operand| !anchors.contains(operand)))
+        );
+        assert_eq!(
+            covered
+                .positive
+                .iter()
+                .filter(|row| matches!(row.role, EvidenceRole::ReportAnchor { .. }))
+                .count(),
+            2
+        );
+        assert_eq!(
+            covered
+                .negative
+                .iter()
+                .filter(|row| matches!(row.role, EvidenceRole::ReportAnchor { .. }))
+                .count(),
+            2
+        );
+        assert!(
+            covered
+                .positive
+                .iter()
+                .filter(|row| row.id.boundary == B::ReportObligation)
+                .all(|row| matches!(row.id.purpose, CoveragePurpose::ReportAnchorRequired { .. }))
+        );
+        let projection = crate::coverage::projection_requirement(
+            &covered.key(),
+            &covered,
+            binding_plan,
+            B::ReportObligation,
+        )
+        .expect("complete report projection");
+        assert_eq!(
+            projection.subject,
+            ProjectionSubject::ReportAnchors {
+                operands: anchors.clone()
+            }
+        );
+        assert_eq!(
+            projection.operands,
+            anchors.iter().cloned().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            projection.sources,
+            [] as [crate::source::SourceRequirement; 0]
+        );
+        assert!(!projection.compare_relation_verdict);
+    }
+
+    let operands = relation_operands(binding).expect("Burn operands");
+    let table = crate::engine_source::SourceTable {
+        relation: crate::engine_attestation::relation_key(&binding.id),
+        proof_namespace: crate::engine_identity::ATTESTATION,
+        proof_kind: ProofKind::ManifestShape as u16,
+        expected: operands
+            .iter()
+            .map(crate::engine_attestation::source::operand_key)
+            .collect(),
+        rows: sources
+            .iter()
+            .map(crate::engine_attestation::source::row_key)
+            .collect(),
+    };
+    let mut changed = crate::engine_source::SourceRecords {
+        tables: vec![table],
+        regions: Vec::new(),
+    };
+    assert!(crate::engine_source::analyze_sources(&changed).is_ok());
+    let foreign = crate::source::OperandId::new(
+        binding.id.clone(),
+        OperandRole::BurnClear(C::ClearEventType),
+    );
+    changed.tables[0].rows[0].operand = crate::engine_attestation::source::operand_key(&foreign);
+    assert_eq!(
+        crate::engine_source::analyze_sources(&changed),
+        Err(crate::engine_source::SourceError::ForeignOperand(
+            crate::engine_attestation::source::operand_key(&foreign)
+        ))
+    );
+}
+
+#[test]
+fn side_admission_and_sponsor_opacity() {
+    let control = burn_control();
+    let lifecycle = crate::lifecycle::build_lifecycle_analysis(&control.input, &control.relations)
+        .expect("validated side choices");
+    let input = lifecycle
+        .choices
+        .iter()
+        .find(|choice| {
+            choice.id.operation == OperationId::Burn
+                && choice.id.side == Some(realization::TransactionSide::Input)
+                && choice.id.object == ObjectId::ReceiptLive
+        })
+        .expect("Burn input choice");
+    assert_eq!(
+        input.candidates,
+        vec![realization::RepresentationMode::Explicit]
+    );
+    let output = lifecycle
+        .choices
+        .iter()
+        .find(|choice| {
+            choice.id.operation == OperationId::Burn
+                && choice.id.side == Some(realization::TransactionSide::Output)
+                && choice.id.object == ObjectId::ReceiptLive
+        })
+        .expect("Burn output choice");
+    assert!(
+        output
+            .candidates
+            .contains(&realization::RepresentationMode::PrivateCommitted)
+    );
+
+    let construction = crate::constructibility::build_constructibility_analysis(&control.input)
+        .expect("constructibility");
+    let requirements = crate::engine_attestation::requirement::derive(
+        &control.relations,
+        &construction,
+        &control.candidate,
+    )
+    .expect("complete requirement control");
+    let binding = requirements
+        .values()
+        .find(|row| {
+            row.relation.operation() == OperationId::Burn
+                && row.relation.kind() == RelationKind::BurnBinding
+        })
+        .expect("binding requirements");
+    assert_eq!(
+        crate::requirement::validate_sponsor_erasure(binding),
+        Ok(())
+    );
+    let mut changed = (*binding).clone();
+    let mut row = (*changed
+        .source_requirements
+        .iter()
+        .next()
+        .expect("source row"))
+    .clone();
+    row.operand = crate::source::OperandId::new(
+        binding.relation.clone(),
+        OperandRole::ObjectFamilyAmount {
+            side: realization::TransactionSide::Input,
+            object: ObjectId::PlainLbtc,
+        },
+    );
+    changed.source_requirements.insert(row);
+    assert_eq!(
+        crate::requirement::validate_sponsor_erasure(&changed),
+        Err(CompileError::SponsorValueRead)
+    );
+}
+
+#[test]
+fn active_carriers_and_layout_join() {
+    let control = burn_control();
+    let limits = crate::placement::PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(1_000_000).expect("nonzero"),
+        std::num::NonZeroU64::new(100_000).expect("nonzero"),
+    );
+    let placement = crate::analyzed_operation::analyze_operation_placements(
+        &control.relations,
+        &control.candidate,
+        OperationId::Burn,
+        limits,
+    )
+    .expect("Burn reaches carrier and layout analysis");
+    let binding = placement
+        .relation_case_plans
+        .iter()
+        .find(|plan| {
+            plan.relation.operation() == OperationId::Burn
+                && plan.relation.kind() == RelationKind::BurnBinding
+        })
+        .expect("binding plan");
+    let anchors = crate::coverage::report_anchors(&binding.relation);
+    let eligible = placement
+        .eligibility
+        .iter()
+        .find(|row| row.relation == binding.relation)
+        .expect("active binding carrier");
+    assert!(
+        eligible
+            .eligible
+            .iter()
+            .flat_map(|entry| &entry.routings)
+            .all(|routing| !anchors.contains(&routing.source.operand))
+    );
+    assert!(placement.layout_requirements.iter().all(|row| {
+        !matches!(row, crate::layout::LayoutRequirement::MakeSourceAvailable { source, .. }
+            if anchors.contains(&source.operand))
+    }));
+    let original = placement.placements.first().expect("feasible placement");
+    assert_eq!(
+        crate::placement::validate_placement(
+            &placement.relation_case_plans,
+            &placement.eligibility,
+            original
+        ),
+        Ok(())
+    );
+    let mut changed = (*original).clone();
+    let assigned = changed
+        .assignments
+        .iter_mut()
+        .find(|row| row.relation == binding.relation)
+        .expect("binding assignment");
+    assigned.carriers[0].carrier = crate::carrier::CarrierRole::BackendStructural {
+        operation: OperationId::Burn,
+    };
+    assert!(matches!(
+        crate::placement::validate_placement(
+            &placement.relation_case_plans,
+            &placement.eligibility,
+            &changed
+        ),
+        Err(CompileError::UnpermittedCarrierPlacement { .. })
+    ));
+}
+
 fn declaration(
     operation: OperationId,
     kind: RelationKind,
@@ -118,7 +605,7 @@ fn operand_codes_are_injective_and_preserve_pilots() {
 }
 
 #[test]
-fn source_lowering_refuses_operations_without_plans() {
+fn source_lowering_uses_body_rules_after_the_binding_seam() {
     let control = declaration(
         OperationId::AnnounceMaturity,
         RelationKind::Authorization,
@@ -137,12 +624,14 @@ fn source_lowering_refuses_operations_without_plans() {
         subject.id = RelationId::new(operation, control.id.kind(), control.id.subject().clone());
         assert_eq!(
             relation_operands(&subject),
-            Err(CompileError::UnsupportedOperationPlan { operation }),
+            relation_operands(&control).map(|roles| roles
+                .into_iter()
+                .map(|role| {
+                    crate::source::OperandId::new(subject.id.clone(), role.role().clone())
+                })
+                .collect()),
         );
-        assert_eq!(
-            derive_source_requirements(&subject, ProofKind::PublicConstructibility),
-            Err(CompileError::UnsupportedOperationPlan { operation }),
-        );
+        assert!(derive_source_requirements(&subject, ProofKind::PublicConstructibility).is_ok());
     }
 }
 
@@ -173,128 +662,164 @@ fn state_field_keys_retain_the_literal_field_codes() {
 }
 
 #[test]
-#[allow(clippy::too_many_lines)] // Keep each body's accepted control beside every refusal boundary.
-fn every_activated_body_refuses_synthetic_compiler_entries() {
-    use realization::burn_clear_laws::{BurnClearLawKey, burn_clear_laws};
+#[allow(clippy::too_many_lines)] // Keep each Clear body's control beside every in-crate refusal.
+fn clear_bodies_refuse_each_synthetic_compiler_entry() {
+    use realization::burn_clear_laws::burn_clear_laws;
+
     let input = bound_input(&[OperationId::CompactAsh]);
-    let expressions = crate::expression::build_expression_analysis(&input).unwrap();
-    let construction = crate::constructibility::build_constructibility_analysis(&input).unwrap();
-    let candidates =
-        crate::proof::enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).unwrap();
-    let mut candidate = candidates.candidates.into_iter().next().unwrap();
-    // The singleton case fixture declares no representation policy or source rows.
+    let expressions = crate::expression::build_expression_analysis(&input).expect("expressions");
+    let construction =
+        crate::constructibility::build_constructibility_analysis(&input).expect("construction");
+    let candidates = crate::proof::enumerate_feasible_plans(&input, &CapabilityView::Unconstrained)
+        .expect("proof candidates");
+    let mut candidate = candidates.candidates.into_iter().next().expect("candidate");
     candidate.representations.clear();
     candidate.source_requirements.clear();
-    for operation in [OperationId::Burn, OperationId::Clear] {
-        for law in burn_clear_laws(operation) {
-            if operation == OperationId::Burn && law.id.key == BurnClearLawKey::CanonicalDeltaPolicy
-            {
-                continue;
-            }
-            let mut row = law.relation_declaration();
-            assert_eq!(
-                crate::coverage::relation_mutations(
-                    &row.relation,
-                    crate::case::ConservedAmountVisibility::Readable
-                ),
-                Err(CompileError::UnsupportedRelationPlan)
-            );
-            assert_eq!(
-                relation_operands(&row),
-                Err(CompileError::UnsupportedOperationPlan { operation })
-            );
-            // Retagging only the owner bypasses the operation check, but does
-            // not turn an unsupported body into supported compiler semantics.
-            row.id = RelationId::new(
-                OperationId::CompactAsh,
-                row.id.kind(),
-                row.id.subject().clone(),
-            );
-            assert_eq!(
-                relation_operands(&row),
-                Err(CompileError::UnsupportedRelationPlan)
-            );
-            // These body-boundary fixtures share one owned shape alternative.
-            // Their controls change only the body, retaining the synthetic ID.
-            row.proof_alternatives = BTreeSet::from([realization::ProofAlternativeId::new(
-                row.id.clone(),
-                ProofKind::ManifestShape,
-            )]);
-            let mut control = row.clone();
-            control.relation = Relation::PermissionlessAuthorization;
+
+    let bodies = burn_clear_laws(OperationId::Clear)
+        .into_iter()
+        .map(|law| law.relation_declaration())
+        .filter(|row| {
+            matches!(
+                row.relation,
+                Relation::ClearClamp
+                    | Relation::ClearAssignment { .. }
+                    | Relation::ClearFloor
+                    | Relation::ClearFlow
+                    | Relation::ClearBinding
+                    | Relation::ClearCanonicalDeltaPolicy
+            )
+        })
+        .collect::<Vec<_>>();
+    let covered = bodies
+        .iter()
+        .map(|row| match row.relation {
+            Relation::ClearClamp => 0,
+            Relation::ClearAssignment { .. } => 1,
+            Relation::ClearFloor => 2,
+            Relation::ClearFlow => 3,
+            Relation::ClearBinding => 4,
+            Relation::ClearCanonicalDeltaPolicy => 5,
+            _ => unreachable!("filtered to Clear bodies"),
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(covered, BTreeSet::from([0, 1, 2, 3, 4, 5]));
+
+    for mut row in bodies {
+        row.id = RelationId::new(
+            OperationId::CompactAsh,
+            row.id.kind(),
+            row.id.subject().clone(),
+        );
+        row.proof_alternatives = BTreeSet::from([realization::ProofAlternativeId::new(
+            row.id.clone(),
+            ProofKind::ManifestShape,
+        )]);
+        let mut control = row.clone();
+        control.relation = Relation::PermissionlessAuthorization;
+        assert!(
+            crate::coverage::relation_mutations(
+                &control.relation,
+                crate::case::ConservedAmountVisibility::Readable
+            )
+            .is_ok()
+        );
+        assert_eq!(
+            crate::coverage::relation_mutations(
+                &row.relation,
+                crate::case::ConservedAmountVisibility::Readable
+            ),
+            Err(CompileError::UnsupportedRelationPlan)
+        );
+        assert!(relation_operands(&control).is_ok());
+        assert_eq!(
+            relation_operands(&row),
+            Err(CompileError::UnsupportedRelationPlan)
+        );
+
+        let control_graph = crate::relation::build_relation_graph(
+            &[OperationId::CompactAsh],
+            std::slice::from_ref(&control),
+            &[],
+        )
+        .expect("control graph");
+        let cases =
+            crate::case::execution_cases(&control_graph, &candidate).expect("control cases");
+        assert_eq!(cases.len(), 1);
+        assert_eq!(
+            crate::case::validate_case_census(&control_graph, &candidate, &cases),
+            Ok(())
+        );
+        let graph = crate::relation::build_relation_graph(
+            &[OperationId::CompactAsh],
+            std::slice::from_ref(&row),
+            &[],
+        )
+        .expect("Clear body graph");
+        assert_eq!(
+            crate::case::validate_case_census(&graph, &candidate, &cases),
+            Err(CompileError::UnsupportedRelationPlan)
+        );
+        for case in &cases {
             assert!(
-                crate::coverage::relation_mutations(
-                    &control.relation,
-                    crate::case::ConservedAmountVisibility::Readable
+                crate::placement::classify_relation_case(
+                    &control,
+                    case,
+                    crate::sponsor_region::OrdinaryLbtcRole::Absent,
                 )
                 .is_ok()
             );
-            assert!(relation_operands(&control).is_ok());
-            let control_graph = crate::relation::build_relation_graph(
-                &[OperationId::CompactAsh],
-                std::slice::from_ref(&control),
-                &[],
-            )
-            .unwrap();
-            let cases = crate::case::execution_cases(&control_graph, &candidate).unwrap();
-            assert_eq!(cases.len(), 1);
             assert_eq!(
-                crate::case::validate_case_census(&control_graph, &candidate, &cases),
-                Ok(())
-            );
-            for case in &cases {
-                assert!(
-                    crate::placement::classify_relation_case(
-                        &control,
-                        case,
-                        crate::sponsor_region::OrdinaryLbtcRole::Absent,
-                    )
-                    .is_ok()
-                );
-                assert_eq!(
-                    crate::placement::classify_relation_case(
-                        &row,
-                        case,
-                        crate::sponsor_region::OrdinaryLbtcRole::Absent,
-                    ),
-                    Err(CompileError::UnsupportedRelationPlan)
-                );
-            }
-            assert!(crate::layout::derive_layout_requirements(&control_graph, &[], &[]).is_ok());
-            assert!(
-                crate::engine_attestation::foundation::lower(&control_graph, &expressions)
-                    .validate()
-                    .is_ok()
-            );
-            crate::engine_attestation::requirement::prepare_from_analyses(
-                &control_graph,
-                &construction,
-            )
-            .expect("supported permissionless requirement control");
-            let graph =
-                crate::relation::build_relation_graph(&[OperationId::CompactAsh], &[row], &[])
-                    .unwrap();
-            assert_eq!(
-                crate::case::validate_case_census(&graph, &candidate, &cases),
-                Err(CompileError::UnsupportedRelationPlan)
-            );
-            assert_eq!(
-                crate::layout::derive_layout_requirements(&graph, &[], &[]),
-                Err(CompileError::UnsupportedRelationPlan)
-            );
-            assert_eq!(
-                crate::engine_attestation::foundation::lower(&graph, &expressions).validate(),
-                Err(CompileError::UnsupportedRelationPlan)
-            );
-            assert!(matches!(
-                crate::engine_attestation::requirement::prepare_from_analyses(
-                    &graph,
-                    &construction
+                crate::placement::classify_relation_case(
+                    &row,
+                    case,
+                    crate::sponsor_region::OrdinaryLbtcRole::Absent,
                 ),
                 Err(CompileError::UnsupportedRelationPlan)
-            ));
+            );
         }
+        assert!(crate::layout::derive_layout_requirements(&control_graph, &[], &[]).is_ok());
+        assert_eq!(
+            crate::layout::derive_layout_requirements(&graph, &[], &[]),
+            Err(CompileError::UnsupportedRelationPlan)
+        );
+        assert!(
+            crate::engine_attestation::foundation::lower(&control_graph, &expressions)
+                .validate()
+                .is_ok()
+        );
+        assert_eq!(
+            crate::engine_attestation::foundation::lower(&graph, &expressions).validate(),
+            Err(CompileError::UnsupportedRelationPlan)
+        );
+        crate::engine_attestation::requirement::prepare_from_analyses(
+            &control_graph,
+            &construction,
+        )
+        .expect("supported control requirements");
+        assert!(matches!(
+            crate::engine_attestation::requirement::prepare_from_analyses(&graph, &construction),
+            Err(CompileError::UnsupportedRelationPlan)
+        ));
     }
+
+    let clear_realization = realization::derive(
+        &architecture::ARCHITECTURE,
+        realization::RealizationScope::from_operations([OperationId::Clear]).expect("Clear scope"),
+    )
+    .expect("complete Clear realization");
+    let clear_input = crate::input::bind_attestation_input(
+        &architecture::ARCHITECTURE,
+        clear_realization,
+        crate::CompilationScope::from_operations([OperationId::Clear])
+            .expect("compiler Clear scope"),
+        super::test_policy(),
+    )
+    .expect("validated internal Clear input");
+    assert!(matches!(
+        crate::engine_attestation::source::lower(clear_input.owner()),
+        Err(CompileError::UnsupportedRelationPlan)
+    ));
 }
 
 #[test]

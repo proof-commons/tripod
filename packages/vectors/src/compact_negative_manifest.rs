@@ -264,7 +264,9 @@ pub fn compact_negative_manifest(
                 CompactNegativeBoundary::ExternalReport,
                 NegativeOwner::Supplied(OwnerEntryMissing::SubstrateReport.supplied()),
             ),
-            EvidenceRole::InactiveCaseAcceptance => return Err(ManifestRefusal::UnknownRole),
+            EvidenceRole::InactiveCaseAcceptance | EvidenceRole::ReportAnchor { .. } => {
+                return Err(ManifestRefusal::UnknownRole);
+            }
         };
         let row = CompactNegativeRow {
             requirement: requirement.id.clone(),

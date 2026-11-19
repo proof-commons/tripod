@@ -40,10 +40,6 @@ pub fn prepare_from_analyses(
 ) -> Result<Prepared, CompileError> {
     let span = tracing::debug_span!(target: "compiler::engine_attestation", "prepare_requirement_payloads");
     let _entered = span.enter();
-    for node in relations.graph.node_weights() {
-        super::require_supported_plan(node.source.id.operation())?;
-        super::require_supported_relation(&node.source.relation)?;
-    }
     let declarations = relations
         .graph
         .node_weights()
@@ -58,7 +54,7 @@ pub fn prepare_from_analyses(
             .map(|row| {
                 (
                     super::relation_key(&row.id),
-                    relation_objects(&row.relation)
+                    relation_objects(row.id.operation(), &row.relation)
                         .into_iter()
                         .map(object_key)
                         .collect(),
@@ -113,10 +109,15 @@ impl Prepared {
                     }];
                     crate::requirement::RepresentationSelection { object, mode }
                 });
-                value.lifecycle = core::owned_lifecycle(self.exits[key], &candidate.lifecycle)
-                    .iter()
-                    .map(|row| lifecycle[row].clone())
-                    .collect();
+                value.lifecycle = core::owned_lifecycle(
+                    key.operation,
+                    self.exits[key],
+                    &candidate.representations,
+                    &candidate.lifecycle,
+                )
+                .iter()
+                .map(|row| lifecycle[row].clone())
+                .collect();
                 Ok((value.relation.clone(), value))
             })
             .collect()
@@ -389,17 +390,20 @@ fn bundle<'a>(
     }
 }
 
-pub fn relation_objects(relation: &Relation) -> BTreeSet<ObjectId> {
+pub fn relation_objects(
+    operation: architecture::OperationId,
+    relation: &Relation,
+) -> BTreeSet<ObjectId> {
     match relation {
-        // These object sets are provisional: the first Wave-3 consumer must
-        // review and pin their semantics before enabling these bodies.
-        // Requirement lowering currently refuses them before any plan or source table.
-        Relation::DataOutputs { .. } => BTreeSet::from([ObjectId::Ash]),
+        Relation::DataOutputs { .. } if operation == architecture::OperationId::Burn => {
+            BTreeSet::new()
+        }
         Relation::BurnBinding => BTreeSet::from([ObjectId::Ash, ObjectId::ReceiptLive]),
         Relation::ClearAssignment { .. } | Relation::ClearFloor => {
             BTreeSet::from([ObjectId::State])
         }
-        Relation::ClearClamp
+        Relation::DataOutputs { .. }
+        | Relation::ClearClamp
         | Relation::ClearFlow
         | Relation::ClearBinding
         | Relation::ClearCanonicalDeltaPolicy => BTreeSet::from([ObjectId::State, ObjectId::Ash]),
@@ -443,10 +447,11 @@ pub fn owned_representation(
     declaration: &realization::RelationDeclaration,
     candidate: &ProofPlanCandidate,
 ) -> Option<crate::requirement::RepresentationSelection> {
-    let objects = crate::requirement::relation_objects(&declaration.relation)
-        .into_iter()
-        .map(|object| (object_key(object), object))
-        .collect::<BTreeMap<_, _>>();
+    let objects =
+        crate::requirement::relation_objects(declaration.id.operation(), &declaration.relation)
+            .into_iter()
+            .map(|object| (object_key(object), object))
+            .collect::<BTreeMap<_, _>>();
     let selected = candidate
         .representations
         .iter()
@@ -481,10 +486,25 @@ pub fn owned_lifecycle(
         .iter()
         .map(|row| (super::proof::lifecycle_key(row), row))
         .collect::<BTreeMap<_, _>>();
-    core::owned_lifecycle(association, &rows.keys().cloned().collect::<Vec<_>>())
+    let selected = candidate
+        .representations
         .iter()
-        .map(|key| rows[key].clone())
-        .collect()
+        .map(|(choice, mode)| {
+            (
+                super::proof::choice_key(choice),
+                super::proof::mode_key(*mode),
+            )
+        })
+        .collect();
+    core::owned_lifecycle(
+        super::operation_key(declaration.id.operation()),
+        association,
+        &selected,
+        &rows.keys().cloned().collect::<Vec<_>>(),
+    )
+    .iter()
+    .map(|key| rows[key].clone())
+    .collect()
 }
 const fn lifecycle_association(
     relation: &Relation,

@@ -469,25 +469,40 @@ fn a_relation_naming_one_object_never_reads_another_objects_mode() {
 #[test]
 fn the_object_census_of_a_relation_is_its_named_families() {
     assert_eq!(
-        relation_objects(&Relation::LifecycleExit {
-            object: ObjectId::ReceiptLive,
-            exit: OperationId::Burn,
-        }),
+        relation_objects(
+            OperationId::CompactAsh,
+            &Relation::LifecycleExit {
+                object: ObjectId::ReceiptLive,
+                exit: OperationId::Burn,
+            }
+        ),
         BTreeSet::from([ObjectId::ReceiptLive]),
     );
     assert_eq!(
-        relation_objects(&Relation::AmountConservation {
-            asset: AssetId::Lbtc,
-            input_objects: BTreeSet::from([ObjectId::ReceiptLive]),
-            output_objects: BTreeSet::from([ObjectId::Ash]),
-        }),
+        relation_objects(
+            OperationId::CompactAsh,
+            &Relation::AmountConservation {
+                asset: AssetId::Lbtc,
+                input_objects: BTreeSet::from([ObjectId::ReceiptLive]),
+                output_objects: BTreeSet::from([ObjectId::Ash]),
+            }
+        ),
         BTreeSet::from([ObjectId::Ash, ObjectId::ReceiptLive]),
     );
-    assert!(relation_objects(&Relation::PermissionlessAuthorization).is_empty());
     assert!(
-        relation_objects(&Relation::SubstrateConservation {
-            asset: AssetId::Lbtc,
-        })
+        relation_objects(
+            OperationId::CompactAsh,
+            &Relation::PermissionlessAuthorization
+        )
+        .is_empty()
+    );
+    assert!(
+        relation_objects(
+            OperationId::CompactAsh,
+            &Relation::SubstrateConservation {
+                asset: AssetId::Lbtc,
+            }
+        )
         .is_empty(),
     );
 }
@@ -805,6 +820,144 @@ fn no_pilot_disclosure_class_carries_a_sponsor_amount() {
 // --- lifecycle closure (§7.8) ---
 
 #[test]
+fn owned_lifecycle_filters_foreign_input_mode() {
+    use crate::engine_attestation::{
+        operation_key,
+        proof::{choice_key, lifecycle_key, mode_key},
+    };
+    use crate::engine_proof::ChoiceKey;
+    use crate::lifecycle::{LifecycleRequirement, RepresentationChoiceId};
+
+    let operation = operation_key(OperationId::TransferLive);
+    let object = crate::engine_lifecycle::ObjectKey {
+        namespace: crate::engine_identity::ATTESTATION,
+        code: ObjectId::ReceiptLive.code(),
+    };
+    let exit = operation_key(OperationId::Burn);
+    let explicit = LifecycleRequirement {
+        object: ObjectId::ReceiptLive,
+        representation: RepresentationMode::Explicit,
+        exit: OperationId::Burn,
+        status: LifecycleExitStatus::AvailableInCompilerScope,
+    };
+    let private = LifecycleRequirement {
+        representation: RepresentationMode::PrivateCommitted,
+        status: LifecycleExitStatus::UnavailableInCompilerScope,
+        ..explicit
+    };
+    let rows = [explicit.clone(), private.clone()]
+        .iter()
+        .map(lifecycle_key)
+        .collect::<Vec<_>>();
+    let own_choice = choice_key(&RepresentationChoiceId {
+        operation: OperationId::TransferLive,
+        object: ObjectId::ReceiptLive,
+        side: None,
+    });
+    let burn_input = ChoiceKey {
+        operation: operation_key(OperationId::Burn),
+        object,
+        side: Some(crate::engine_identity::side_code(TransactionSide::Input)),
+    };
+    let mut selected = BTreeMap::from([
+        (own_choice, mode_key(RepresentationMode::PrivateCommitted)),
+        (burn_input, mode_key(RepresentationMode::Explicit)),
+    ]);
+    assert_eq!(
+        crate::engine_requirement::owned_lifecycle(
+            operation,
+            Some((object, exit)),
+            &selected,
+            &rows
+        ),
+        BTreeSet::from([lifecycle_key(&private)]),
+    );
+    selected.insert(own_choice, mode_key(RepresentationMode::Explicit));
+    assert_eq!(
+        crate::engine_requirement::owned_lifecycle(
+            operation,
+            Some((object, exit)),
+            &selected,
+            &rows
+        ),
+        BTreeSet::from([lifecycle_key(&explicit)]),
+    );
+}
+
+#[test]
+fn live_exit_owns_only_its_selected_mode() {
+    let control =
+        super::source_tests::burn_control_with_transfer(RepresentationMode::PrivateCommitted);
+    let lifecycle = crate::lifecycle::build_lifecycle_analysis(&control.input, &control.relations)
+        .expect("complete lifecycle");
+    let construction = crate::constructibility::build_constructibility_analysis(&control.input)
+        .expect("constructibility");
+    let mut requirements = crate::engine_attestation::requirement::derive(
+        &control.relations,
+        &construction,
+        &control.candidate,
+    )
+    .expect("relation requirements");
+    assert_eq!(
+        crate::requirement::validate_lifecycle_closure(
+            &lifecycle,
+            &control.candidate,
+            &requirements
+        ),
+        Ok(())
+    );
+    let relation = (*requirements
+        .keys()
+        .find(|id| {
+            id.operation() == OperationId::TransferLive
+                && matches!(
+                    id.subject(),
+                    realization::RelationSubject::LifecycleExit {
+                        object: ObjectId::ReceiptLive,
+                        exit: OperationId::Burn,
+                    }
+                )
+        })
+        .expect("live Burn exit relation"))
+    .clone();
+    let owned = &requirements[&relation].lifecycle;
+    assert!(
+        owned
+            .iter()
+            .any(|row| row.representation == RepresentationMode::PrivateCommitted)
+    );
+    assert!(
+        owned
+            .iter()
+            .all(|row| row.representation != RepresentationMode::Explicit)
+    );
+    let foreign = control
+        .candidate
+        .lifecycle
+        .iter()
+        .find(|row| {
+            row.object == ObjectId::ReceiptLive
+                && row.exit == OperationId::Burn
+                && row.representation == RepresentationMode::Explicit
+        })
+        .expect("Burn input's Explicit exit row");
+    let foreign = (*foreign).clone();
+    requirements
+        .get_mut(&relation)
+        .expect("relation bundle")
+        .lifecycle
+        .insert(foreign);
+    assert!(matches!(
+        crate::requirement::validate_lifecycle_closure(
+            &lifecycle,
+            &control.candidate,
+            &requirements
+        ),
+        Err(CompileError::AnalyzedLifecycleClosureMismatch { .. })
+    ));
+}
+
+#[test]
 fn pilot_lifecycle_rows_are_owned_and_keep_their_exit_status() {
     let fixture = pilots();
 
@@ -821,8 +974,8 @@ fn pilot_lifecycle_rows_are_owned_and_keep_their_exit_status() {
         );
         assert!(!owned.is_empty());
 
-        // Both scope classes survive: compact ASH is in scope, the
-        // receipt's burn and redeem exits are declared outside it.
+        // The compact ASH exit is admitted in scope. The receipt's
+        // Burn, Clear and Redeem exits are declared outside this scope.
         let statuses = owned
             .iter()
             .map(|requirement| requirement.status)
@@ -1045,28 +1198,40 @@ fn a_permuted_relation_source_yields_equal_requirements() {
 #[test]
 fn operator_authorization_names_no_objects() {
     assert_eq!(
-        relation_objects(&Relation::OperatorAuthorization),
-        relation_objects(&Relation::SubstrateConservation {
-            asset: AssetId::Lbtc
-        })
+        relation_objects(OperationId::CompactAsh, &Relation::OperatorAuthorization),
+        relation_objects(
+            OperationId::CompactAsh,
+            &Relation::SubstrateConservation {
+                asset: AssetId::Lbtc
+            }
+        )
     );
-    assert!(relation_objects(&Relation::OperatorAuthorization).is_empty());
+    assert!(relation_objects(OperationId::CompactAsh, &Relation::OperatorAuthorization).is_empty());
 }
 
 #[test]
 fn operator_constructibility_names_no_objects() {
     assert_eq!(
-        relation_objects(&Relation::Constructibility {
-            class: realization::ConstructibilityClass::Operator
-        }),
-        relation_objects(&Relation::SubstrateConservation {
-            asset: AssetId::Lbtc
-        })
+        relation_objects(
+            OperationId::CompactAsh,
+            &Relation::Constructibility {
+                class: realization::ConstructibilityClass::Operator
+            }
+        ),
+        relation_objects(
+            OperationId::CompactAsh,
+            &Relation::SubstrateConservation {
+                asset: AssetId::Lbtc
+            }
+        )
     );
     assert!(
-        relation_objects(&Relation::Constructibility {
-            class: realization::ConstructibilityClass::Operator
-        })
+        relation_objects(
+            OperationId::CompactAsh,
+            &Relation::Constructibility {
+                class: realization::ConstructibilityClass::Operator
+            }
+        )
         .is_empty()
     );
 }

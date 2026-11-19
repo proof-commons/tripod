@@ -8,7 +8,7 @@ use crate::{
         CoverageBoundary, CoveragePurpose, CoverageRequirementId, EvidenceRole,
         NegativeCoverageRequirement, PositiveCoverageRequirement, RelationCoveragePlan,
         boundary_mutations, boundary_subjects, collateral, negative_purpose, positive_purpose,
-        relation_mutations, relation_representation,
+        relation_mutations, relation_representation, report_anchors,
     },
     engine_coverage as core,
     placement::{RelationActivity, RelationCaseKey, RelationCasePlan},
@@ -18,11 +18,61 @@ use realization::RelationDeclaration;
 use std::collections::BTreeMap;
 #[cfg(test)]
 use std::collections::BTreeSet;
+#[allow(clippy::too_many_lines)] // Keep the anchor census beside the existing boundary lowering.
 pub fn derive_relation_coverage(
     declaration: &RelationDeclaration,
     plan: &RelationCasePlan,
 ) -> Result<RelationCoveragePlan, CompileError> {
     let operands = relation_operands(declaration)?;
+    let anchors = report_anchors(&declaration.id);
+    if !anchors.is_empty() {
+        let sources = super::source::derive_source_requirements(
+            declaration,
+            realization::ProofKind::ManifestShape,
+        )?;
+        let anchor_rows = sources
+            .iter()
+            .filter(|row| {
+                matches!(
+                    row.operand.role(),
+                    crate::source::OperandRole::BurnClear(
+                        crate::source::BurnClearCoordinate::BurnEventType
+                            | crate::source::BurnClearCoordinate::BurnFreshAmountEvent
+                            | crate::source::BurnClearCoordinate::ClearEventType
+                            | crate::source::BurnClearCoordinate::ClearDestroyedAmountEvent
+                            | crate::source::BurnClearCoordinate::ClearOmegaEvent
+                            | crate::source::BurnClearCoordinate::ClearResidualEvent
+                    )
+                )
+            })
+            .collect::<Vec<_>>();
+        let exact = anchor_rows
+            .iter()
+            .map(|row| row.operand.clone())
+            .collect::<std::collections::BTreeSet<_>>()
+            == anchors
+            && anchor_rows.iter().all(|row| {
+                row.source == crate::source::RequiredSourceKind::ExternalEvidence
+                    && row.availability == realization::AvailabilityClass::Public
+                    && row.activation == crate::source::RequirementActivation::Always
+            })
+            && plan
+                .boundaries
+                .contains(&CoverageBoundary::ReportObligation)
+            && plan
+                .runtime_requirements
+                .iter()
+                .flat_map(|row| &row.sources)
+                .all(|row| !anchors.contains(&row.operand));
+        if !exact {
+            return Err(CompileError::AnalyzedCoverageCensusMismatch {
+                operation: declaration.id.operation(),
+                relation: Some(declaration.id.clone()),
+                case: Some(plan.case.clone()),
+                defect: crate::analyzed_validate::AnalyzedCoverageDefect::PositiveDetail,
+            });
+        }
+    }
     let representation = relation_representation(&declaration.relation, &plan.case);
     let mut mutations = relation_mutations(
         &declaration.relation,
@@ -60,20 +110,37 @@ pub fn derive_relation_coverage(
         positives.insert(identity, row);
         for (role, subject) in boundary_subjects(*boundary, plan) {
             let row = PositiveCoverageRequirement {
-                id: id(*boundary, positive_purpose(*boundary, subject.as_ref())),
+                id: id(*boundary, positive_purpose(*boundary, &subject)),
                 role: role.clone(),
                 representation,
-                operands: operands.clone(),
+                operands: match &subject {
+                    crate::coverage::BoundarySubject::ReportAnchor(operand) => {
+                        vec![operand.clone()]
+                    }
+                    _ if *boundary == CoverageBoundary::RuntimeCarrier => operands
+                        .iter()
+                        .filter(|operand| !anchors.contains(*operand))
+                        .cloned()
+                        .collect(),
+                    _ => operands.clone(),
+                },
             };
             let positive = requirement(&row.id);
             positives.insert(positive.clone(), row);
             let mut negative = Vec::new();
             for mutation in boundary_mutations(&mutations, *boundary) {
+                if let crate::coverage::BoundarySubject::ReportAnchor(operand) = &subject
+                    && !matches!(
+                        (operand.role(), mutation),
+                        (crate::source::OperandRole::BurnClear(coordinate),
+                         crate::coverage::RelationMutation::BurnClearCoordinateChanged(changed))
+                         if *coordinate == changed
+                    )
+                {
+                    continue;
+                }
                 let row = NegativeCoverageRequirement {
-                    id: id(
-                        *boundary,
-                        negative_purpose(*boundary, subject.as_ref(), mutation),
-                    ),
+                    id: id(*boundary, negative_purpose(*boundary, &subject, mutation)),
                     role: role.clone(),
                     mutation,
                     collateral: collateral(*boundary),

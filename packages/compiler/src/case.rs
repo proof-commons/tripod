@@ -267,9 +267,6 @@ pub fn validate_case_census(
 ) -> Result<(), CompileError> {
     let mut derived = BTreeSet::new();
 
-    for operation in case_operations(relations) {
-        crate::engine_attestation::require_supported_plan(operation)?;
-    }
     for node in relations.graph.node_weights() {
         crate::engine_attestation::require_supported_relation(&node.source.relation)?;
     }

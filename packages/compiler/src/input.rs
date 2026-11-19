@@ -186,7 +186,7 @@ impl BoundCompilerInput {
 /// when the compiler scope names an operation the realization does not
 /// declare.
 /// [`CompileError::UnsupportedOperationPlan`] when the operation has no compiler plan.
-fn bind_attestation_input(
+pub(crate) fn bind_attestation_input(
     architecture: &Architecture,
     realization: ScopedRealizationSpec,
     scope: CompilationScope,
@@ -214,7 +214,6 @@ fn bind_attestation_input(
                     operation: *operation,
                 });
             }
-            crate::engine_attestation::require_supported_plan(*operation)?;
         }
 
         Ok(BoundCompilerInput {
@@ -292,7 +291,11 @@ impl InputBinding for Architecture {
         scope: Self::Scope,
         policy: AnalysisPolicy,
     ) -> Result<BoundCompilerInput<Self::Owner>, Self::Error> {
-        bind_attestation_input(self, realization, scope, policy)
+        let bound = bind_attestation_input(self, realization, scope, policy)?;
+        for operation in bound.scope().operations() {
+            crate::engine_attestation::require_supported_plan(*operation)?;
+        }
+        Ok(bound)
     }
 }
 

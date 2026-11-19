@@ -34,22 +34,22 @@ pub const fn require_supported_plan(operation: OperationId) -> Result<(), Compil
     Ok(())
 }
 
-/// Refuse new law bodies even at synthetic entries that bypass input binding.
+/// Refuse law bodies whose relation interpreter is still pending.
 pub const fn require_supported_relation(
     relation: &realization::Relation,
 ) -> Result<(), CompileError> {
     use realization::Relation;
     match relation {
-        Relation::SideRepresentation { .. }
-        | Relation::DataOutputs { .. }
-        | Relation::BurnBinding
-        | Relation::ClearClamp
+        Relation::ClearClamp
         | Relation::ClearAssignment { .. }
         | Relation::ClearFloor
         | Relation::ClearFlow
         | Relation::ClearBinding
         | Relation::ClearCanonicalDeltaPolicy => Err(CompileError::UnsupportedRelationPlan),
-        Relation::Cardinality { .. }
+        Relation::SideRepresentation { .. }
+        | Relation::DataOutputs { .. }
+        | Relation::BurnBinding
+        | Relation::Cardinality { .. }
         | Relation::AllowedObjectFamilies { .. }
         | Relation::Recognition { .. }
         | Relation::AmountConservation { .. }

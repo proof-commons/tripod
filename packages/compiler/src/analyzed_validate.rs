@@ -987,7 +987,7 @@ fn validate_coverage_roles(
 
 /// Compare one relation-case's coverage projection component by
 /// component.
-fn validate_relation_coverage(
+pub fn validate_relation_coverage(
     operation: OperationId,
     key: &RelationCaseKey,
     stored: &RelationCoverageProjection,
