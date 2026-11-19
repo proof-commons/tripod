@@ -360,3 +360,5 @@ Under (`rule:phase7:fixed-form-rulings`), the joined gate remains (`rec:backlog:
 ## Wave-3 operation-plan contract · `sec:compiler:wave3-plans`
 
 The compiler is bound by rulings 221–234 (`rule:phase7:wave3-rulings`) and the live operation-plan contract detail at (`sec:guide15-exec:wave3-contracts`), including operation-local lifecycle ownership, scope-derived exits, one bound Phase-7 input, no mixed-scope emission, private constructors and preserved capture identities. This link incorporates those obligations without duplicating them. Packet permissions, tests and operand allocation are (`rule:guide15-exec:wave3-settings`); adoption is not implementation evidence.
+
+Rulings 238–243 (`rule:phase7:clear-placement`) adopt checked Clear placement factors, with the consumer/factor readings at (`sec:clear-placement:study`) and live prerequisites at (`sec:guide15-exec:wave3-placement`). Declarations and public indexed keyed plans stay unchanged; 3.5a resumes after complete factored analysis and preservation evidence. Adoption does not establish completed validation.
