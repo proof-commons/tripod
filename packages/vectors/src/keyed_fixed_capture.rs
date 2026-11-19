@@ -20,6 +20,7 @@ pub enum CaptureFamily {
     Policy,
     Scaling,
     Histories,
+    Sponsor,
     LegacyCopy,
 }
 
@@ -52,8 +53,32 @@ pub enum CaptureSubject {
     HistoryLinear(u8),
     HistoryBranch(u8),
     HistoryMissingBranch,
-    LegacyConfidentialValue,
+    SponsorFunding(u8),
+    SponsorPayment,
+    LegacyConfidentialSource,
+    LegacyOpeningContinuation,
     LegacyPublicCopy,
+}
+
+/// Whether a submitted row is itself a primary observation or supporting evidence.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CaptureRole {
+    Primary,
+    SupportingMember,
+    SupportingPayment,
+}
+
+impl CaptureSubject {
+    /// Reviewed role for the two S8c families.
+    #[must_use]
+    pub const fn role(self) -> CaptureRole {
+        match self {
+            Self::SponsorFunding(_) => CaptureRole::SupportingMember,
+            Self::SponsorPayment => CaptureRole::SupportingPayment,
+            _ => CaptureRole::Primary,
+        }
+    }
 }
 
 /// Expected observation site; a node diagnostic alone cannot select an opcode.
@@ -84,6 +109,7 @@ impl CaptureSubject {
             CaptureFamily::Policy,
             CaptureFamily::Scaling,
             CaptureFamily::Histories,
+            CaptureFamily::Sponsor,
             CaptureFamily::LegacyCopy,
         ]
         .into_iter()
@@ -105,7 +131,9 @@ impl CaptureSubject {
             Self::MalformedControl => CaptureBoundary::Commitment,
             Self::KeyPathAttempt => CaptureBoundary::KeyPath,
             Self::WeightMerge(1300) => CaptureBoundary::TypedConstruction,
-            Self::Floor(14) | Self::StructuralWeight1300 => CaptureBoundary::RelayPolicy,
+            Self::Floor(14) | Self::PresentNonceFloor(17) | Self::StructuralWeight1300 => {
+                CaptureBoundary::RelayPolicy
+            }
             Self::ZeroFeeFloor => CaptureBoundary::FeePolicy,
             Self::DirectBlock1300 => CaptureBoundary::Consensus,
             Self::HistoryMissingBranch => CaptureBoundary::IncompleteHistory,
@@ -119,7 +147,10 @@ impl CaptureSubject {
             | Self::WeightMerge(_)
             | Self::HistoryLinear(_)
             | Self::HistoryBranch(_)
-            | Self::LegacyConfidentialValue
+            | Self::SponsorFunding(_)
+            | Self::SponsorPayment
+            | Self::LegacyConfidentialSource
+            | Self::LegacyOpeningContinuation
             | Self::LegacyPublicCopy => CaptureBoundary::Acceptance,
         })
     }
@@ -182,8 +213,51 @@ pub fn subjects(family: CaptureFamily) -> Vec<CaptureSubject> {
             S::HistoryBranch(64),
             S::HistoryMissingBranch,
         ],
-        CaptureFamily::LegacyCopy => Vec::new(),
+        CaptureFamily::Sponsor => vec![
+            S::SponsorFunding(1),
+            S::OneMemberMerge(42),
+            S::SponsorFunding(2),
+            S::ConfidentialValue,
+            S::SponsorPayment,
+            S::MalformedPaymentValueForm,
+            S::PresentNonceFloor(18),
+            S::PresentNonceFloor(17),
+        ],
+        CaptureFamily::LegacyCopy => vec![
+            S::LegacyConfidentialSource,
+            S::LegacyOpeningContinuation,
+            S::LegacyPublicCopy,
+        ],
     }
+}
+
+/// Check the complete S8c role, ordinal and exchange census before credit.
+/// # Errors
+/// Refuses an omitted, duplicated, reordered or relabelled submitted row.
+pub fn validate_s8c_census(
+    family: CaptureFamily,
+    rows: &[(CaptureSubject, CaptureRole, usize)],
+    exchanges: usize,
+) -> Result<(), JournalRefusal> {
+    if !matches!(family, CaptureFamily::Sponsor | CaptureFamily::LegacyCopy) {
+        return Err(JournalRefusal::Census);
+    }
+    let expected = subjects(family);
+    if rows.len() != expected.len()
+        || exchanges != 3 * expected.len()
+        || rows
+            .iter()
+            .zip(&expected)
+            .enumerate()
+            .any(|(index, (row, subject))| {
+                row.0 != *subject || row.1 != subject.role() || row.2 != 3 * (index + 1)
+            })
+    {
+        return Err(JournalRefusal::Census);
+    }
+    tracing::debug!(target: "vectors::keyed_fixed_capture", ?family,
+        records = rows.len(), exchanges, "s8c census admitted");
+    Ok(())
 }
 
 /// Capture-owned event graph; parent indices name earlier event positions.
@@ -383,19 +457,23 @@ pub const fn expected_control(subject: CaptureSubject) -> Option<CaptureSubject>
         | S::MalformedControl
         | S::KeyPathAttempt => Some(S::OneMemberMerge(42)),
         S::Floor(14) | S::ZeroFeeFloor => Some(S::Floor(15)),
+        S::PresentNonceFloor(17) => Some(S::PresentNonceFloor(18)),
         S::StructuralWeight1300 => Some(S::WeightMerge(1299)),
         S::PublicSource(_)
         | S::OneMemberMerge(_)
         | S::TwoMemberMerge(_)
         | S::Floor(_)
         | S::PresentNonceFloor(_)
+        | S::SponsorFunding(_)
+        | S::SponsorPayment
         | S::WeightSource
         | S::WeightMerge(_)
         | S::DirectBlock1300
         | S::HistoryLinear(_)
         | S::HistoryBranch(_)
         | S::HistoryMissingBranch
-        | S::LegacyConfidentialValue
+        | S::LegacyConfidentialSource
+        | S::LegacyOpeningContinuation
         | S::LegacyPublicCopy => None,
     }
 }
@@ -425,7 +503,7 @@ pub fn expected_layer(subject: CaptureSubject) -> Option<ObservedOutcomeLayer> {
 
 fn matches_relay_prediction(subject: CaptureSubject, response: &NativeOperationResponse) -> bool {
     let expected_reason = match subject {
-        CaptureSubject::Floor(14) => "dust",
+        CaptureSubject::Floor(14) | CaptureSubject::PresentNonceFloor(17) => "dust",
         CaptureSubject::ZeroFeeFloor => "fee",
         CaptureSubject::StructuralWeight1300 => "tx-size",
         CaptureSubject::MalformedControl => "witness program hash mismatch",
@@ -480,7 +558,7 @@ fn bound_bytes(
     freeze: &ValidatedFreeze,
     row: &JournalRow,
     sponsor_index: usize,
-    _subject: CaptureSubject,
+    subject: CaptureSubject,
 ) -> Result<TargetTransaction, JournalRefusal> {
     let transaction =
         TargetTransaction::decode(&row.submitted).map_err(|_| JournalRefusal::Triple)?;
@@ -514,9 +592,45 @@ fn bound_bytes(
         let exact_pair = output.asset()
             == AssetField::Explicit(transaction::AssetId::from_internal(expected.asset))
             && output.value() == ValueField::Explicit(expected.value.get());
-        if !exact_pair && !parent_matches {
+        if !exact_pair && !parent_matches && subject != CaptureSubject::ConfidentialValue {
             return Err(JournalRefusal::Triple);
         }
+    }
+    match subject {
+        CaptureSubject::ConfidentialValue
+            if !matches!(transaction.outputs()[0].value(), ValueField::Commitment(_))
+                || transaction.output_witnesses()[0].range_proof().is_empty() =>
+        {
+            return Err(JournalRefusal::Triple);
+        }
+        CaptureSubject::MalformedPaymentValueForm
+            if !transaction
+                .inputs()
+                .iter()
+                .zip(&parents)
+                .any(|(input, (parent, _))| {
+                    parent
+                        .outputs()
+                        .get(input.outpoint().index() as usize)
+                        .is_some_and(|output| {
+                            output.program() == program
+                                && matches!(output.value(), ValueField::Commitment(_))
+                        })
+                }) =>
+        {
+            return Err(JournalRefusal::Triple);
+        }
+        CaptureSubject::PresentNonceFloor(_)
+            if !output_matches
+                || !matches!(
+                    transaction.outputs()[0].nonce(),
+                    transaction::NonceField::Commitment(_)
+                )
+                || !matches!(transaction.outputs()[0].value(), ValueField::Explicit(_)) =>
+        {
+            return Err(JournalRefusal::Triple);
+        }
+        _ => {}
     }
     bind_structural_subject(
         freeze,
@@ -548,7 +662,7 @@ pub fn bind_journal(
         return Err(JournalRefusal::Census);
     }
     let value = freeze.manifest().descriptor.parameters.value.get();
-    if matches!(binding.subject, CaptureSubject::Floor(n) if value != u64::from(n))
+    if matches!(binding.subject, CaptureSubject::Floor(n) | CaptureSubject::PresentNonceFloor(n) if value != u64::from(n))
         || (binding.subject == CaptureSubject::ZeroFeeFloor && value != 14)
     {
         return Err(JournalRefusal::Triple);
@@ -569,7 +683,9 @@ pub fn bind_journal(
             let control_q = control.freeze.manifest().descriptor.parameters;
             let floor_pair = matches!(
                 binding.subject,
-                CaptureSubject::Floor(14) | CaptureSubject::ZeroFeeFloor
+                CaptureSubject::Floor(14)
+                    | CaptureSubject::PresentNonceFloor(17)
+                    | CaptureSubject::ZeroFeeFloor
             ) && subject_q.key == control_q.key
                 && subject_q.asset == control_q.asset
                 && subject_q.value.get().checked_add(1) == Some(control_q.value.get());
@@ -613,6 +729,7 @@ pub fn bind_journal(
 /// Bind the complete journal row without interpreting generic node error text.
 /// # Errors
 /// Refuses missing or substituted request, response, parent or accepted readback bytes.
+#[allow(clippy::too_many_lines)] // A complete transport row is checked before any journal credit.
 pub fn validate_journal_transport(
     freeze: &ValidatedFreeze,
     row: &JournalRow,
@@ -655,6 +772,9 @@ pub fn validate_journal_transport(
     }
     let transaction: elements::Transaction =
         elements::encode::deserialize(&row.submitted).map_err(|_| JournalRefusal::Submission)?;
+    if row.response.resources.transaction_weight != u64::try_from(transaction.weight()).ok() {
+        return Err(JournalRefusal::Response);
+    }
     if elements::encode::serialize(&transaction) != row.submitted
         || transaction.input.len() != row.parent_bytes.len()
     {
@@ -679,6 +799,7 @@ pub fn validate_journal_transport(
         };
         if txid != &mined.transaction_id
             || txid != &transaction.txid().to_string()
+            || mined.witness_transaction_id != transaction.wtxid().to_string()
             || mined.raw_transaction != row.submitted
             || row
                 .readback
@@ -687,8 +808,20 @@ pub fn validate_journal_transport(
         {
             return Err(JournalRefusal::Readback);
         }
-    } else if row.readback.is_some() {
-        return Err(JournalRefusal::Readback);
+    } else {
+        if row.readback.is_some() || row.response.mined_readback.is_some() {
+            return Err(JournalRefusal::Readback);
+        }
+        let detail: serde_json::Value = serde_json::from_str(
+            row.response
+                .observed_detail
+                .as_deref()
+                .ok_or(JournalRefusal::Response)?,
+        )
+        .map_err(|_| JournalRefusal::Response)?;
+        if detail["detail"]["txid"].as_str() != Some(transaction.txid().to_string().as_str()) {
+            return Err(JournalRefusal::Response);
+        }
     }
     Ok(())
 }

@@ -2,8 +2,9 @@
 //!
 //! Field order follows `SegwitV0SignatureMsg` in the pinned Elements source's
 //! `test/functional/test_framework/script.py` and the version-zero branch of
-//! `src/script/interpreter.cpp`. Only explicit, non-issuance, non-peg-in forms
-//! are admitted. The shared decoder enforces the latter two conditions.
+//! `src/script/interpreter.cpp`. The sponsor parent remains explicit; outputs
+//! may have committed values and present nonces with explicit assets. The
+//! shared decoder enforces non-issuance and non-peg-in conditions.
 //! Signature production and every other signing profile remain delegated.
 
 use crate::bytes::{compact_size, encode_value_field};
@@ -24,7 +25,7 @@ pub enum KeyedFixedSponsorRefusal {
     Decode(TransactionRefusal),
     /// Bytes include a witness section or fail stripped canonical round-trip.
     NonCanonicalFrozenBytes,
-    /// Explicit/null-nonce output or empty scriptSig requirements failed.
+    /// Explicit sponsor parent, explicit output assets or empty scriptSig failed.
     UnsupportedForm,
     /// Selected input is outside the frozen census.
     InputIndex,
@@ -76,10 +77,14 @@ impl crate::trace_support::TraceRefusal for KeyedFixedSponsorRefusal {
 fn hash256(bytes: &[u8]) -> [u8; 32] {
     Sha256::digest(Sha256::digest(bytes)).into()
 }
-fn explicit(output: &TargetOutput) -> bool {
+fn explicit_spent(output: &TargetOutput) -> bool {
     matches!(output.asset(), AssetField::Explicit(_))
         && matches!(output.value(), ValueField::Explicit(_))
         && output.nonce() == NonceField::Null
+}
+
+const fn supported_output(output: &TargetOutput) -> bool {
+    matches!(output.asset(), AssetField::Explicit(_))
 }
 
 /// Recompute the one supported digest from canonical frozen non-witness bytes.
@@ -114,8 +119,8 @@ pub(crate) fn digest_core(
     if tx.encode_without_witness() != frozen {
         return Err(KeyedFixedSponsorRefusal::NonCanonicalFrozenBytes);
     }
-    if !explicit(spent)
-        || tx.outputs().iter().any(|o| !explicit(o))
+    if !explicit_spent(spent)
+        || tx.outputs().iter().any(|o| !supported_output(o))
         || tx.inputs().iter().any(|i| !i.script_sig().is_empty())
     {
         return Err(KeyedFixedSponsorRefusal::UnsupportedForm);

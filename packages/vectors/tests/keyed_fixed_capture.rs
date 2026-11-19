@@ -204,7 +204,10 @@ fn fixed_capture_policy_envelope() {
         Some(CaptureBoundary::RelayPolicy)
     );
     assert_eq!(S::DirectBlock1300.boundary(), None);
-    assert_eq!(S::PresentNonceFloor(17).boundary(), None);
+    assert_eq!(
+        S::PresentNonceFloor(17).boundary(),
+        Some(CaptureBoundary::RelayPolicy)
+    );
     assert_eq!(S::Floor(14).boundary(), Some(CaptureBoundary::RelayPolicy));
     assert_eq!(S::ZeroFeeFloor.boundary(), Some(CaptureBoundary::FeePolicy));
     assert_eq!(S::Floor(13).boundary(), None);
@@ -325,7 +328,10 @@ fn fixed_capture_journal_binding() {
         signed_profile: None,
         signing_genesis: None,
         signature_bound_to: None,
-        resources: NativeResourceObservation::default(),
+        resources: NativeResourceObservation {
+            transaction_weight: Some(u64::try_from(reference.weight()).unwrap()),
+            ..NativeResourceObservation::default()
+        },
     };
     let freeze = FreezeManifest::offer(parameters(42, 60))
         .unwrap()
@@ -759,7 +765,16 @@ fn signed_mock_journal(
         2,
         inputs,
         vec![
-            output_with_program(POLICY_ASSET, amount, program),
+            if matches!(amount, 17 | 18) {
+                TargetOutput::new(
+                    AssetField::Explicit(AssetId::from_internal(POLICY_ASSET)),
+                    ValueField::Explicit(amount),
+                    NonceField::Commitment(public),
+                    program,
+                )
+            } else {
+                output_with_program(POLICY_ASSET, amount, program)
+            },
             output_with_program(
                 POLICY_ASSET,
                 1_000_000 + u64::from(sponsor_index == 1) * bound_value - amount - 1_000,
@@ -821,7 +836,7 @@ fn signed_mock_journal(
             observed_detail: Some(if accepted {
                 serde_json::json!({"route":"relay-and-template","relay_allowed":true}).to_string()
             } else {
-                "mock response; no native verdict".into()
+                serde_json::json!({"detail":{"txid":txid},"route":"relay-and-template","relay_allowed":true}).to_string()
             }),
             issued_asset: None,
             funded_outputs: vec![],
@@ -834,7 +849,10 @@ fn signed_mock_journal(
             signed_profile: None,
             signing_genesis: None,
             signature_bound_to: None,
-            resources: NativeResourceObservation::default(),
+            resources: NativeResourceObservation {
+                transaction_weight: Some(u64::try_from(reference.weight()).unwrap()),
+                ..NativeResourceObservation::default()
+            },
         },
         submitted: submitted.clone(),
         submitted_digest: hash(&submitted),
@@ -852,6 +870,154 @@ fn signed_mock_journal(
         expected_provenance: provenance.clone(),
         observed_provenance: provenance,
     }
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // The packet census and adjacent refusal controls share one mocked preparation.
+fn fixed_capture_sponsor_packet() {
+    use target_elements_conformance::protocol::ObservedOutcomeLayer;
+    use vectors::keyed_fixed_capture::{CaptureRole, validate_s8c_census};
+
+    let sponsor = subjects(CaptureFamily::Sponsor);
+    let legacy = subjects(CaptureFamily::LegacyCopy);
+    assert_eq!(sponsor.len(), 8);
+    assert_eq!(legacy.len(), 3);
+    let rows = sponsor
+        .iter()
+        .enumerate()
+        .map(|(index, subject)| (*subject, subject.role(), 3 * (index + 1)))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        validate_s8c_census(CaptureFamily::Sponsor, &rows, 24),
+        Ok(())
+    );
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row.1 == CaptureRole::Primary)
+            .count(),
+        5
+    );
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row.1 == CaptureRole::SupportingMember)
+            .count(),
+        2
+    );
+    assert_eq!(
+        rows.iter()
+            .filter(|row| row.1 == CaptureRole::SupportingPayment)
+            .count(),
+        1
+    );
+    let legacy_rows = legacy
+        .iter()
+        .enumerate()
+        .map(|(index, subject)| (*subject, subject.role(), 3 * (index + 1)))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        validate_s8c_census(CaptureFamily::LegacyCopy, &legacy_rows, 9),
+        Ok(())
+    );
+    let mut wrong_role = rows.clone();
+    wrong_role[4].1 = CaptureRole::Primary;
+    assert_eq!(
+        validate_s8c_census(CaptureFamily::Sponsor, &wrong_role, 24),
+        Err(JournalRefusal::Census)
+    );
+    assert_eq!(
+        validate_s8c_census(CaptureFamily::Sponsor, &rows, 23),
+        Err(JournalRefusal::Census)
+    );
+
+    let freeze = FreezeManifest::offer(parameters(42, 60))
+        .unwrap()
+        .validate(parameters(42, 60))
+        .unwrap();
+    let provenance = CaptureProvenance {
+        freeze_identity: freeze.identity(),
+        executable_digest: [2; 32],
+        executor_digest: [3; 32],
+        dependency_lock_digest: [4; 32],
+        daemon_digest: [5; 32],
+        framework_revision: "mock".into(),
+        zk_library_digest: [6; 32],
+        image_identity: "mock-image".into(),
+    };
+    let refusal = signed_mock_journal(
+        59,
+        60,
+        101,
+        true,
+        ObservedOutcomeLayer::ScriptPathRejection,
+        provenance.clone(),
+    );
+    assert_eq!(validate_journal_transport(&freeze, &refusal), Ok(()));
+    let mut foreign_txid = refusal;
+    let mut detail: serde_json::Value =
+        serde_json::from_str(foreign_txid.response.observed_detail.as_deref().unwrap()).unwrap();
+    detail["detail"]["txid"] = serde_json::json!("00");
+    foreign_txid.response.observed_detail = Some(detail.to_string());
+    assert_eq!(
+        validate_journal_transport(&freeze, &foreign_txid),
+        Err(JournalRefusal::Response)
+    );
+
+    let q17 = parameters(42, 17);
+    let q18 = parameters(42, 18);
+    let freeze17 = FreezeManifest::offer(q17).unwrap().validate(q17).unwrap();
+    let freeze18 = FreezeManifest::offer(q18).unwrap().validate(q18).unwrap();
+    let mut provenance17 = provenance.clone();
+    provenance17.freeze_identity = freeze17.identity();
+    let mut provenance18 = provenance;
+    provenance18.freeze_identity = freeze18.identity();
+    let mut floor17 = signed_mock_journal(
+        17,
+        17,
+        102,
+        false,
+        ObservedOutcomeLayer::Accepted,
+        provenance17.clone(),
+    );
+    floor17.response.observed_detail = Some(
+        serde_json::json!({
+            "route":"direct-block","relay_allowed":false,"relay_detail":"dust"
+        })
+        .to_string(),
+    );
+    let floor18 = signed_mock_journal(
+        18,
+        18,
+        103,
+        false,
+        ObservedOutcomeLayer::Accepted,
+        provenance18,
+    );
+    let binding = JournalBinding {
+        family: CaptureFamily::Sponsor,
+        subject: CaptureSubject::PresentNonceFloor(17),
+        sponsor_index: 0,
+        prepared_provenance: &provenance17,
+        control: Some(PairControl {
+            subject: CaptureSubject::PresentNonceFloor(18),
+            freeze: &freeze18,
+            row: &floor18,
+            sponsor_index: 0,
+        }),
+    };
+    assert_eq!(bind_journal(&freeze17, &floor17, &binding), Ok(()));
+    let changed_control = JournalBinding {
+        control: Some(PairControl {
+            subject: CaptureSubject::Floor(15),
+            freeze: &freeze18,
+            row: &floor18,
+            sponsor_index: 0,
+        }),
+        ..binding
+    };
+    assert_eq!(
+        bind_journal(&freeze17, &floor17, &changed_control),
+        Err(JournalRefusal::Control)
+    );
 }
 
 const fn output_with_program(asset: [u8; 32], value: u64, program: Vec<u8>) -> TargetOutput {
@@ -1155,6 +1321,7 @@ fn fixed_capture_structural_pairs() {
 #[test]
 #[allow(clippy::too_many_lines)] // Proof, tally and signature controls bind one serialized structural shape.
 fn fixed_capture_proofs_and_sponsor() {
+    use elements::bitcoin::hashes::Hash as _;
     use elements::secp256k1_zkp::{
         Generator, Message, PedersenCommitment, PublicKey, Secp256k1, SecretKey, Tag, ZERO_TWEAK,
         verify_commitments_sum_to_equal,
@@ -1287,13 +1454,123 @@ fn fixed_capture_proofs_and_sponsor() {
     .unwrap();
     let parent = TargetTransaction::decode(&sponsor_parent).unwrap();
     let spent = &parent.outputs()[0];
+    let hybrid_digest = transaction::keyed_fixed_sponsor::keyed_fixed_sponsor_digest(
+        &unsigned.encode_without_witness(),
+        0,
+        spent,
+    )
+    .unwrap();
+    let reference: elements::Transaction =
+        elements::encode::deserialize(&unsigned.encode()).unwrap();
+    let script = elements::Script::new_p2pkh(
+        &elements::PubkeyHash::from_slice(&spent.program()[2..]).unwrap(),
+    );
     assert_eq!(
-        transaction::keyed_fixed_sponsor::keyed_fixed_sponsor_digest(
+        hybrid_digest,
+        elements::sighash::SighashCache::new(&reference)
+            .segwitv0_sighash(
+                0,
+                &script,
+                elements::confidential::Value::Explicit(1_000),
+                elements::EcdsaSighashType::All
+            )
+            .to_byte_array()
+    );
+    let mut hybrid_signature = secp
+        .sign_ecdsa(&Message::from_digest(hybrid_digest), &key)
+        .serialize_der()
+        .to_vec();
+    hybrid_signature.push(1);
+    let hybrid_stack = vec![hybrid_signature, public.to_vec()];
+    assert_eq!(
+        transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
             &unsigned.encode_without_witness(),
             0,
             spent,
+            &hybrid_stack
         ),
-        Err(transaction::keyed_fixed_sponsor::KeyedFixedSponsorRefusal::UnsupportedForm)
+        Ok(())
+    );
+    let mut proof_changed = unsigned.output_witnesses().to_vec();
+    let mut proof_bytes = broken_proof;
+    proof_bytes[0] ^= 2;
+    proof_changed[0] = OutputWitness::range_proof_only(proof_bytes);
+    let proof_subject = TargetTransaction::with_output_witnesses(
+        unsigned.version(),
+        unsigned.inputs().to_vec(),
+        unsigned.outputs().to_vec(),
+        unsigned.lock_time(),
+        unsigned.witnesses().to_vec(),
+        proof_changed,
+    )
+    .unwrap();
+    assert_eq!(
+        transaction::keyed_fixed_sponsor::keyed_fixed_sponsor_digest(
+            &proof_subject.encode_without_witness(),
+            0,
+            spent
+        )
+        .unwrap(),
+        hybrid_digest
+    );
+    assert_eq!(
+        transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+            &proof_subject.encode_without_witness(),
+            0,
+            spent,
+            &hybrid_stack
+        ),
+        Ok(())
+    );
+    let mut changed_outputs = unsigned.outputs().to_vec();
+    changed_outputs[1] = TargetOutput::new(
+        changed_outputs[1].asset(),
+        ValueField::Commitment(commitment(929, &negative_one)),
+        changed_outputs[1].nonce(),
+        changed_outputs[1].program().to_vec(),
+    );
+    let wrong_balance = TargetTransaction::with_output_witnesses(
+        unsigned.version(),
+        unsigned.inputs().to_vec(),
+        changed_outputs,
+        unsigned.lock_time(),
+        unsigned.witnesses().to_vec(),
+        unsigned.output_witnesses().to_vec(),
+    )
+    .unwrap();
+    assert_eq!(
+        transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+            &wrong_balance.encode_without_witness(),
+            0,
+            spent,
+            &hybrid_stack
+        ),
+        Err(transaction::keyed_fixed_sponsor::KeyedFixedSponsorRefusal::InvalidSignature)
+    );
+    let mut changed_outputs = unsigned.outputs().to_vec();
+    changed_outputs[0] = TargetOutput::new(
+        changed_outputs[0].asset(),
+        changed_outputs[0].value(),
+        NonceField::Commitment(second_nonce),
+        changed_outputs[0].program().to_vec(),
+    );
+    let wrong_nonce = TargetTransaction::with_output_witnesses(
+        unsigned.version(),
+        unsigned.inputs().to_vec(),
+        changed_outputs,
+        unsigned.lock_time(),
+        unsigned.witnesses().to_vec(),
+        unsigned.output_witnesses().to_vec(),
+    )
+    .unwrap();
+    assert_eq!(
+        transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+            &wrong_nonce.encode_without_witness(),
+            0,
+            spent,
+            &hybrid_stack
+        ),
+        Err(transaction::keyed_fixed_sponsor::KeyedFixedSponsorRefusal::InvalidSignature)
     );
     let explicit_signable = TargetTransaction::new(
         unsigned.version(),
@@ -1329,15 +1606,21 @@ fn fixed_capture_proofs_and_sponsor() {
         Ok(()),
     );
     let mut wrong_stack = stack;
-    wrong_stack[0][5] ^= 1;
-    assert!(
+    let mut unequal_digest = digest;
+    unequal_digest[0] ^= 1;
+    wrong_stack[0] = secp
+        .sign_ecdsa(&Message::from_digest(unequal_digest), &key)
+        .serialize_der()
+        .to_vec();
+    wrong_stack[0].push(1);
+    assert_eq!(
         transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
             &explicit_signable.encode_without_witness(),
             0,
             spent,
             &wrong_stack,
-        )
-        .is_err()
+        ),
+        Err(transaction::keyed_fixed_sponsor::KeyedFixedSponsorRefusal::InvalidSignature)
     );
     assert_eq!(outputs.len(), 3);
 }
@@ -1373,6 +1656,12 @@ fn native_scaling() {
 #[ignore = "operator-only fixed-form native capture"]
 fn native_histories() {
     native::run(CaptureFamily::Histories);
+}
+
+#[test]
+#[ignore = "operator-only fixed-form sponsor capture"]
+fn native_sponsor() {
+    native::run(CaptureFamily::Sponsor);
 }
 
 #[test]

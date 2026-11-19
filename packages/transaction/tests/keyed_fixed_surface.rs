@@ -212,6 +212,74 @@ fn policy(minimum: u64) -> KeyedFixedPolicy {
 }
 
 #[test]
+fn fixed_sponsor_output_forms() {
+    use transaction::keyed_fixed_sponsor::{KeyedFixedSponsorRefusal, keyed_fixed_sponsor_digest};
+
+    let spent = output(100, program());
+    let mut value_commitment = [7; 33];
+    value_commitment[0] = 8;
+    let mut nonce = [9; 33];
+    nonce[0] = 2;
+    let hybrid = TargetOutput::new(
+        AssetField::Explicit(AssetId::from_internal([3; 32])),
+        ValueField::Commitment(value_commitment),
+        NonceField::Commitment(nonce),
+        program(),
+    );
+    let frozen = |output| {
+        TargetTransaction::new(
+            2,
+            vec![TargetInput::new(
+                Outpoint::new(Txid::from_internal([4; 32]), 0).unwrap(),
+                123,
+            )],
+            vec![output],
+            0,
+            vec![InputWitness::new(vec![])],
+        )
+        .unwrap()
+        .encode_without_witness()
+    };
+    let control = keyed_fixed_sponsor_digest(&frozen(hybrid.clone()), 0, &spent).unwrap();
+    let explicit = keyed_fixed_sponsor_digest(&frozen(output(60, program())), 0, &spent).unwrap();
+    assert_ne!(control, explicit);
+    nonce[1] ^= 1;
+    let changed_nonce = TargetOutput::new(
+        hybrid.asset(),
+        hybrid.value(),
+        NonceField::Commitment(nonce),
+        program(),
+    );
+    assert_ne!(
+        control,
+        keyed_fixed_sponsor_digest(&frozen(changed_nonce), 0, &spent).unwrap()
+    );
+
+    let committed_spent = TargetOutput::new(
+        spent.asset(),
+        ValueField::Commitment(value_commitment),
+        NonceField::Null,
+        program(),
+    );
+    assert_eq!(
+        keyed_fixed_sponsor_digest(&frozen(hybrid.clone()), 0, &committed_spent),
+        Err(KeyedFixedSponsorRefusal::UnsupportedForm)
+    );
+    let mut asset_commitment = [3; 33];
+    asset_commitment[0] = 10;
+    let changed_asset = TargetOutput::new(
+        AssetField::Commitment(asset_commitment),
+        hybrid.value(),
+        hybrid.nonce(),
+        program(),
+    );
+    assert_eq!(
+        keyed_fixed_sponsor_digest(&frozen(changed_asset), 0, &spent),
+        Err(KeyedFixedSponsorRefusal::UnsupportedForm)
+    );
+}
+
+#[test]
 fn fixed_commitment_binds_each_coordinate() {
     let target = reviewed_elements_tapscript().unwrap();
     let q = parameters(1_000);

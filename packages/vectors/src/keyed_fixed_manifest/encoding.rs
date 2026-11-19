@@ -198,16 +198,18 @@ impl<'a> Decoder<'a> {
 
 /// Decode the exact campaign grammar without trusting its source inventory.
 /// Historical authentication is performed by the manifest owner after this parse.
-pub(super) fn decode(bytes: &[u8]) -> Result<FreezeManifest, FreezeRefusal> {
+pub(super) fn decode(bytes: &[u8], source_count: usize) -> Result<FreezeManifest, FreezeRefusal> {
     let mut reader = Decoder { bytes, offset: 0 };
     if reader.take(RECIPE.len())? != RECIPE.as_bytes() || reader.u8()? != 0 {
         return Err(FreezeRefusal::Recipe);
     }
-    if reader.u32()? != 98 {
+    if source_count > 256
+        || reader.u32()? != u32::try_from(source_count).map_err(|_| FreezeRefusal::Inventory)?
+    {
         return Err(FreezeRefusal::Inventory);
     }
-    let mut sources = Vec::with_capacity(98);
-    for _ in 0..98 {
+    let mut sources = Vec::with_capacity(source_count);
+    for _ in 0..source_count {
         let path = reader.frame()?;
         if path.is_empty()
             || !path.iter().all(|byte| {

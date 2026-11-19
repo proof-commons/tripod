@@ -168,3 +168,5 @@ The envelope children additionally print separately scoped SOURCE preparation an
 The S3 semantic-profile re-freeze uses the existing capture encoding and current/retained digest boundaries above; it adds no tracing target or printed-timer exception.
 
 The S6 fresh-process reproduction test calls the existing vectors, linker and transaction boundaries. It adds no vectors production event or native timing claim; each called owner retains its own span and terminal event.
+
+S8c's packet census, epoch source resolution, proof/tally and public-copy joins remain under `vectors::keyed_fixed_corpus`'s existing `load_packet` and `admit_all` spans. The producer's per-exchange timing and count events remain under the existing fixed-form capture owner and its process-wide filtered subscriber. Family and phase progress report structured counts and outcomes; the completion marker is driver evidence, not a second telemetry channel. No test-only trace claims that a mocked response is a native observation.

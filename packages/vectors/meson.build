@@ -8,6 +8,7 @@ vectors_source_files = files(
   'src/keyed_fixed_corpus.rs',
   'src/keyed_fixed_corpus/history.rs',
   'src/keyed_fixed_corpus/fixture.rs',
+  'src/keyed_fixed_corpus/sponsor.rs',
   'src/keyed_fixed_evidence.rs',
   'src/keyed_fixed_history_model.rs',
   'src/keyed_fixed_history_reader.rs',

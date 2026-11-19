@@ -20,6 +20,23 @@ pub struct SourceIdentity {
     pub digest: [u8; 32],
 }
 
+/// Reviewed capture inventory selected independently of offered packet bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaptureEpoch {
+    /// The four sealed campaign-three encodings.
+    CampaignThree,
+    /// The sponsor campaign's three fixed-form encodings.
+    Sponsor,
+}
+
+/// One retained historical version, addressed by logical path and digest.
+#[derive(Clone, Copy, Debug)]
+pub struct SourceVersion<'a> {
+    pub path: &'a str,
+    pub digest: [u8; 32],
+    pub bytes: &'a [u8],
+}
+
 /// Runtime values available through S5, with explicit stable encoding codes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ComputedItem {
@@ -150,36 +167,81 @@ impl ValidatedFreeze {
 
 impl FreezeManifest {
     /// Decode and authenticate one of the four reviewed campaign freezes.
-    /// The two changed source snapshots must come from the retained corpus.
+    /// Historical source versions must come from the checked source catalog.
     /// # Errors
     /// Refuses grammar, source, descriptor, envelope or reviewed-identity drift.
     pub fn reconstruct_campaign_freeze(
         encoded: &[u8],
-        historical_sources: &[(&str, &[u8])],
+        historical_sources: &[SourceVersion<'_>],
+    ) -> Result<ValidatedFreeze, FreezeRefusal> {
+        Self::reconstruct_epoch_freeze(CaptureEpoch::CampaignThree, encoded, historical_sources)
+    }
+
+    /// Authenticate a freeze against a trusted epoch map and exact source pairs.
+    /// # Errors
+    /// Refuses grammar, source, descriptor, envelope or reviewed identity drift.
+    #[allow(clippy::too_many_lines)] // Epoch selection, source authentication and descriptor checks are one admission.
+    pub fn reconstruct_epoch_freeze(
+        epoch: CaptureEpoch,
+        encoded: &[u8],
+        historical_sources: &[SourceVersion<'_>],
     ) -> Result<ValidatedFreeze, FreezeRefusal> {
         let _span = tracing::info_span!(target: "vectors::keyed_fixed_manifest", "reconstruct_campaign_freeze").entered();
-        let manifest = encoding::decode(encoded)?;
+        let expected_sources: Vec<SourceIdentity> = match epoch {
+            CaptureEpoch::CampaignThree => pins::CAMPAIGN_SOURCES
+                .iter()
+                .map(|(path, digest)| SourceIdentity {
+                    path: (*path).into(),
+                    digest: *digest,
+                })
+                .collect(),
+            CaptureEpoch::Sponsor => pins::SPONSOR_SOURCES
+                .iter()
+                .map(|(path, digest)| SourceIdentity {
+                    path: (*path).into(),
+                    digest: *digest,
+                })
+                .collect(),
+        };
+        let manifest = encoding::decode(encoded, expected_sources.len())?;
         let parameters = manifest.descriptor.parameters;
-        if historical_sources.len() != 2
-            || historical_sources[0].0 != "packages/vectors/src/keyed_fixed_manifest.rs"
-            || historical_sources[1].0 != "packages/vectors/src/keyed_fixed_manifest/encoding.rs"
+        if historical_sources
+            .iter()
+            .any(|version| sha256(version.bytes) != version.digest)
+            || historical_sources
+                .iter()
+                .enumerate()
+                .any(|(index, version)| {
+                    historical_sources[..index]
+                        .iter()
+                        .any(|prior| prior.path == version.path && prior.digest == version.digest)
+                })
+            || historical_sources.iter().any(|version| {
+                let known_campaign = pins::CAMPAIGN_SOURCES
+                    .iter()
+                    .any(|(path, digest)| *path == version.path && *digest == version.digest);
+                let known_sponsor = pins::SPONSOR_SOURCES
+                    .iter()
+                    .any(|(path, digest)| *path == version.path && *digest == version.digest);
+                let known_older = pins::OLDER_SOURCE_VERSIONS
+                    .iter()
+                    .any(|(path, digest)| *path == version.path && *digest == version.digest);
+                !known_campaign && !known_sponsor && !known_older
+            })
         {
             return Err(FreezeRefusal::Inventory);
         }
-        if manifest.sources.len() != pins::SOURCES.len()
-            || manifest
-                .sources
-                .iter()
-                .zip(pins::SOURCES)
-                .any(|(identity, (path, current, _))| {
-                    let bytes = historical_sources
-                        .iter()
-                        .find_map(|(historical_path, bytes)| {
-                            (*historical_path == *path).then_some(*bytes)
-                        })
-                        .unwrap_or(*current);
-                    identity.path != *path || sha256(bytes) != identity.digest
-                })
+        if manifest.sources != expected_sources
+            || expected_sources.iter().any(|identity| {
+                let retained = historical_sources.iter().find(|version| {
+                    version.path == identity.path && version.digest == identity.digest
+                });
+                let current = pins::SOURCES
+                    .iter()
+                    .find(|(path, _, digest)| *path == identity.path && *digest == identity.digest);
+                retained.is_none()
+                    && current.is_none_or(|(_, bytes, _)| sha256(bytes) != identity.digest)
+            })
         {
             return Err(FreezeRefusal::Inventory);
         }
@@ -201,7 +263,11 @@ impl FreezeManifest {
             return Err(FreezeRefusal::Framing);
         }
         let identity = crate::maturity_observer::encode_hex(&sha256(encoded));
-        if !pins::CAMPAIGN_IDENTITIES.contains(&identity.as_str()) {
+        let identities = match epoch {
+            CaptureEpoch::CampaignThree => pins::CAMPAIGN_IDENTITIES.as_slice(),
+            CaptureEpoch::Sponsor => pins::S8C_IDENTITIES.as_slice(),
+        };
+        if !identities.contains(&identity.as_str()) {
             return Err(FreezeRefusal::Inventory);
         }
         tracing::info!(target: "vectors::keyed_fixed_manifest", sources = manifest.sources.len(), encoded_bytes = encoded.len(), outcome = "completed", "campaign freeze authenticated");

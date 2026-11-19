@@ -14,6 +14,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use target_elements::*;
 use target_elements_conformance::constructor::tagged::sha256 as tagged_sha256;
+use target_elements_conformance::constructor::{FixtureTapTree, construct};
 use target_elements_conformance::executor::{
     ExecutorConfiguration, ExecutorDiagnostics, ExecutorTrust, NativeOperationCapture,
     OperationStep, PlanRefused, TargetOperationPlanner, execute_operations_captured,
@@ -24,6 +25,7 @@ use target_elements_conformance::protocol::{
     TargetSubmissionSubject, WireOutpoint, WireSighashProfile, WireSpentOutput,
 };
 use target_elements_conformance::provenance::ExpectedExecutorProvenance;
+use target_elements_conformance::sponsor_parent::bind_sponsor_parent;
 use transaction::bytes::OutputWitness;
 use transaction::keyed_fixed_construct::{
     KeyedFixedConstructionError, KeyedFixedConstructionRequest, KeyedFixedOutputOffer,
@@ -118,6 +120,43 @@ impl Wire {
             .send(Some(step))
             .expect("native executor is live");
         let response = self.answers.recv().expect("native response or refusal");
+        assert_eq!(response.case, request.case, "native response case drift");
+        response.validate_shape().expect("native response shape");
+        if let OperationSubject::Submission(subject) = &request.subject {
+            let transaction: elements::Transaction =
+                elements::encode::deserialize(&subject.transaction_bytes).unwrap();
+            assert_eq!(
+                elements::encode::serialize(&transaction),
+                subject.transaction_bytes
+            );
+            assert_eq!(
+                response.resources.transaction_weight,
+                Some(u64::try_from(transaction.weight()).unwrap()),
+                "submitted weight drift"
+            );
+            if let Some(readback) = &response.mined_readback {
+                assert_eq!(readback.raw_transaction, subject.transaction_bytes);
+                assert_eq!(readback.transaction_id, transaction.txid().to_string());
+                assert_eq!(
+                    readback.witness_transaction_id,
+                    transaction.wtxid().to_string()
+                );
+                assert_eq!(
+                    response.accepted_txid.as_deref(),
+                    Some(readback.transaction_id.as_str())
+                );
+            } else {
+                let detail: serde_json::Value = serde_json::from_str(
+                    response.observed_detail.as_deref().expect("refusal detail"),
+                )
+                .unwrap();
+                assert_eq!(
+                    detail["detail"]["txid"].as_str(),
+                    Some(transaction.txid().to_string().as_str()),
+                    "refusal detail txid differs from submitted bytes"
+                );
+            }
+        }
         store(
             &self.directory.join(format!("{prefix}-response.json")),
             &response,
@@ -278,6 +317,154 @@ impl Drop for Planner {
             worker.join().expect("fixed-form campaign worker");
         }
     }
+}
+
+/// Exercise the selected producer with local protocol replies for the packet join control.
+/// # Panics
+/// Panics if the producer and mock replies disagree; the fixed control cannot arrange that.
+#[allow(clippy::too_many_lines)] // Three exact protocol response kinds feed one ordered producer campaign.
+#[allow(dead_code)] // The corpus integration target imports this producer for its packet control.
+pub fn mocked_campaign(family: CaptureFamily, directory: &Path) {
+    use elements::secp256k1_zkp::{Message, PublicKey, Secp256k1, SecretKey};
+    use target_elements_conformance::protocol::{
+        FundedOutput, MinedFundingReadback, NativeResourceObservation,
+    };
+
+    let secp = Secp256k1::new();
+    let secret = SecretKey::from_slice(&[1; 32]).unwrap();
+    let public = PublicKey::from_secret_key(&secp, &secret).serialize();
+    let mut program = vec![0, 20];
+    program.extend(elements::hashes::hash160::Hash::hash(&public).to_byte_array());
+    let mut parents = BTreeMap::<String, Vec<u8>>::new();
+    let mut planner = Planner::new(family, directory);
+    let mut prior: Option<(OperationCaseId, NativeOperationResponse)> = None;
+    let mut ordinal = 0_usize;
+    while let Some(step) = planner
+        .next_step(prior.as_ref().map(|(case, response)| (case, response)))
+        .unwrap()
+    {
+        ordinal += 1;
+        let mut response = NativeOperationResponse {
+            schema: NATIVE_PROTOCOL_SCHEMA,
+            case: step.case().clone(),
+            observed_layer: ObservedOutcomeLayer::Accepted,
+            observed_detail: None,
+            issued_asset: None,
+            funded_outputs: vec![],
+            confidential_funded_outputs: vec![],
+            mined_readback: None,
+            accepted_txid: None,
+            sponsor_witness: vec![],
+            script_path_witness: vec![],
+            signer_public_key: None,
+            signed_profile: None,
+            signing_genesis: None,
+            signature_bound_to: None,
+            resources: NativeResourceObservation::default(),
+        };
+        match step.subject() {
+            OperationSubject::SponsorFunding(_) => {
+                let parent = TargetTransaction::new(
+                    2,
+                    vec![TargetInput::new(
+                        Outpoint::new(Txid::from_internal([u8::try_from(ordinal).unwrap(); 32]), 0)
+                            .unwrap(),
+                        0x8000_0001,
+                    )],
+                    vec![
+                        TargetOutput::new(
+                            AssetField::Explicit(AssetId::from_internal(POLICY_ASSET)),
+                            ValueField::Explicit(1_000_000),
+                            NonceField::Null,
+                            program.clone(),
+                        ),
+                        TargetOutput::new(
+                            AssetField::Explicit(AssetId::from_internal(POLICY_ASSET)),
+                            ValueField::Explicit(10),
+                            NonceField::Null,
+                            vec![],
+                        ),
+                    ],
+                    0,
+                    vec![InputWitness::new(vec![])],
+                )
+                .unwrap();
+                let bytes = parent.encode();
+                let reference: elements::Transaction =
+                    elements::encode::deserialize(&bytes).unwrap();
+                let txid = reference.txid().to_string();
+                response.funded_outputs.push(FundedOutput {
+                    outpoint: WireOutpoint {
+                        txid: txid.clone(),
+                        vout: 0,
+                    },
+                    asset: reference.output[0].asset.explicit().unwrap().to_string(),
+                    amount_satoshis: 1_000_000,
+                    script: vectors::maturity_observer::encode_hex(&program),
+                });
+                response.mined_readback = Some(MinedFundingReadback {
+                    transaction_id: txid.clone(),
+                    witness_transaction_id: reference.wtxid().to_string(),
+                    block_hash: "mock-block".into(),
+                    block_height: 1,
+                    raw_transaction: bytes.clone(),
+                });
+                parents.insert(txid, bytes);
+            }
+            OperationSubject::SponsorSigning(signing) => {
+                let parent =
+                    TargetTransaction::decode(&parents[&signing.sponsor_outpoint.txid]).unwrap();
+                let spent = &parent.outputs()[signing.sponsor_outpoint.vout as usize];
+                let digest = transaction::keyed_fixed_sponsor::keyed_fixed_sponsor_digest(
+                    &signing.finalized_transaction,
+                    usize::from(signing.sponsor_input_index),
+                    spent,
+                )
+                .unwrap();
+                let mut signature = secp
+                    .sign_ecdsa(&Message::from_digest(digest), &secret)
+                    .serialize_der()
+                    .to_vec();
+                signature.push(1);
+                response.sponsor_witness = vec![signature, public.to_vec()];
+                response.signature_bound_to = Some(signing.finalized_transaction.clone());
+            }
+            OperationSubject::Submission(submission) => {
+                let selected = subjects(family)[ordinal / 3 - 1];
+                response.observed_layer = expected_layer(selected).unwrap();
+                let reference: elements::Transaction =
+                    elements::encode::deserialize(&submission.transaction_bytes).unwrap();
+                let txid = reference.txid().to_string();
+                response.resources.transaction_weight =
+                    Some(u64::try_from(reference.weight()).unwrap());
+                let direct = selected == CaptureSubject::PresentNonceFloor(17);
+                response.observed_detail = Some(
+                    if response.observed_layer == ObservedOutcomeLayer::Accepted {
+                        serde_json::json!({"route":if direct {"direct-block"} else {"relay-and-template"},
+                        "relay_allowed":!direct,"relay_detail":if direct {"mock dust"} else {""}}).to_string()
+                    } else {
+                        serde_json::json!({"route":"relay-and-template","relay_allowed":true,
+                        "detail":{"txid":txid}})
+                        .to_string()
+                    },
+                );
+                if response.observed_layer == ObservedOutcomeLayer::Accepted {
+                    response.accepted_txid = Some(txid.clone());
+                    response.mined_readback = Some(MinedFundingReadback {
+                        transaction_id: txid,
+                        witness_transaction_id: reference.wtxid().to_string(),
+                        block_hash: "mock-block".into(),
+                        block_height: 1,
+                        raw_transaction: submission.transaction_bytes.clone(),
+                    });
+                }
+            }
+            _ => panic!("mock campaign has only sponsor funding, signing and submission"),
+        }
+        response.validate_shape().unwrap();
+        prior = Some((step.case().clone(), response));
+    }
+    drop(planner);
 }
 
 struct Sponsor {
@@ -661,7 +848,10 @@ fn event_with_replacement(
         | CaptureSubject::HistoryLinear(_)
         | CaptureSubject::HistoryBranch(_)
         | CaptureSubject::HistoryMissingBranch
-        | CaptureSubject::LegacyConfidentialValue
+        | CaptureSubject::SponsorFunding(_)
+        | CaptureSubject::SponsorPayment
+        | CaptureSubject::LegacyConfidentialSource
+        | CaptureSubject::LegacyOpeningContinuation
         | CaptureSubject::LegacyPublicCopy => {}
     }
     let changed = changed_outputs != base_transaction.outputs()
@@ -760,6 +950,7 @@ fn event_with_replacement(
     );
     sponsor.witness.replace(answer.sponsor_witness);
     let mut transaction = if subject == CaptureSubject::Floor(14)
+        || subject == CaptureSubject::PresentNonceFloor(17)
         || matches!(
             subject,
             CaptureSubject::StructuralWeight1300 | CaptureSubject::DirectBlock1300
@@ -881,6 +1072,7 @@ fn event_with_replacement(
     .unwrap();
     match subject {
         CaptureSubject::Floor(14)
+        | CaptureSubject::PresentNonceFloor(17)
         | CaptureSubject::StructuralWeight1300
         | CaptureSubject::DirectBlock1300 => {
             assert_eq!(detail["relay_allowed"], false);
@@ -923,7 +1115,10 @@ fn event_with_replacement(
         | CaptureSubject::HistoryLinear(_)
         | CaptureSubject::HistoryBranch(_)
         | CaptureSubject::HistoryMissingBranch
-        | CaptureSubject::LegacyConfidentialValue
+        | CaptureSubject::SponsorFunding(_)
+        | CaptureSubject::SponsorPayment
+        | CaptureSubject::LegacyConfidentialSource
+        | CaptureSubject::LegacyOpeningContinuation
         | CaptureSubject::LegacyPublicCopy => {
             assert_eq!(detail["relay_allowed"], true);
             assert_eq!(answer.observed_layer, ObservedOutcomeLayer::Accepted);
@@ -971,6 +1166,7 @@ fn payment(
     amount: u64,
     later: bool,
     confidential: bool,
+    supporting: bool,
 ) -> (Vec<u8>, u32) {
     let (parent_bytes, vout, asset, sponsor_program) = fund_sponsor(wire);
     let parent = TargetTransaction::decode(&parent_bytes).unwrap();
@@ -1096,12 +1292,22 @@ fn payment(
         &parent_bytes,
     )
     .unwrap();
-    let answer = wire.ask(OperationStep::new(
-        &format!("fixed-payment-submit-{}", wire.ordinal + 1),
-        OperationSubject::Submission(Box::new(TargetSubmissionSubject {
-            transaction_bytes: bytes.clone(),
-        })),
-    ));
+    let answer = if supporting {
+        wire.submission(
+            CaptureSubject::SponsorPayment,
+            q,
+            bytes.clone(),
+            vec![parent_bytes],
+            0,
+        )
+    } else {
+        wire.ask(OperationStep::new(
+            &format!("fixed-payment-submit-{}", wire.ordinal + 1),
+            OperationSubject::Submission(Box::new(TargetSubmissionSubject {
+                transaction_bytes: bytes.clone(),
+            })),
+        ))
+    };
     assert_eq!(answer.observed_layer, ObservedOutcomeLayer::Accepted);
     assert_eq!(
         answer.mined_readback.as_ref().unwrap().raw_transaction,
@@ -1273,6 +1479,170 @@ struct LegacyRecord {
     submitted: Vec<u8>,
     parents: Vec<Vec<u8>>,
     response: NativeOperationResponse,
+}
+
+#[allow(clippy::too_many_lines)] // Re-read one retained fund/sign/submit chain before the family marker.
+fn validate_legacy_live_record(directory: &Path, ordinal: usize, row: &LegacyRecord) {
+    let read = |index, role: &str| -> serde_json::Value {
+        serde_json::from_slice(
+            &std::fs::read(directory.join(format!("exchange-{index:05}-{role}.json"))).unwrap(),
+        )
+        .unwrap()
+    };
+    let fund_request = read(ordinal - 2, "request");
+    let fund_response: NativeOperationResponse =
+        serde_json::from_value(read(ordinal - 2, "response")).unwrap();
+    let sign_request = read(ordinal - 1, "request");
+    let sign_response: NativeOperationResponse =
+        serde_json::from_value(read(ordinal - 1, "response")).unwrap();
+    let submit_request = read(ordinal, "request");
+    let submit_response: NativeOperationResponse =
+        serde_json::from_value(read(ordinal, "response")).unwrap();
+    assert_eq!(submit_response, row.response);
+    assert_eq!(fund_request["case"], serde_json::json!(fund_response.case));
+    assert_eq!(sign_request["case"], serde_json::json!(sign_response.case));
+    assert_eq!(
+        submit_request["case"],
+        serde_json::json!(submit_response.case)
+    );
+    assert_eq!(fund_request["case"]["operation"], "fund_sponsor");
+    assert_eq!(sign_request["case"]["operation"], "sign_sponsor");
+    assert_eq!(submit_request["case"]["operation"], "submit");
+    assert_eq!(
+        submit_request["subject"]["transaction_bytes"],
+        serde_json::json!(row.submitted)
+    );
+    let target = TargetTransaction::decode(&row.submitted).unwrap();
+    let submitted: elements::Transaction = elements::encode::deserialize(&row.submitted).unwrap();
+    assert_eq!(target.inputs().len(), row.parents.len());
+    assert_eq!(
+        row.response.resources.transaction_weight,
+        Some(u64::try_from(submitted.weight()).unwrap())
+    );
+    let readback = row.response.mined_readback.as_ref().unwrap();
+    assert_eq!(readback.raw_transaction, row.submitted);
+    assert_eq!(readback.transaction_id, submitted.txid().to_string());
+    assert_eq!(
+        readback.witness_transaction_id,
+        submitted.wtxid().to_string()
+    );
+    assert_eq!(
+        row.response.accepted_txid.as_deref(),
+        Some(readback.transaction_id.as_str())
+    );
+    for (index, parent) in row.parents.iter().enumerate() {
+        assert_eq!(target.inputs()[index].outpoint().txid(), txid(parent));
+        assert!(
+            TargetTransaction::decode(parent)
+                .unwrap()
+                .outputs()
+                .get(target.inputs()[index].outpoint().index() as usize)
+                .is_some()
+        );
+        assert_eq!(
+            std::fs::read(
+                directory.join(format!("legacy-{ordinal:05}-parent-{index}.transaction"))
+            )
+            .unwrap(),
+            *parent
+        );
+    }
+    let sponsor_index = row.parents.len() - 1;
+    let sponsor_input = &target.inputs()[sponsor_index];
+    let funded = fund_response
+        .funded_outputs
+        .iter()
+        .find(|coin| {
+            coin.outpoint.txid == sponsor_input.outpoint().txid().to_target_display()
+                && coin.outpoint.vout == sponsor_input.outpoint().index()
+        })
+        .unwrap();
+    assert_eq!(
+        bind_sponsor_parent(fund_response.mined_readback.as_ref().unwrap(), funded).unwrap(),
+        row.parents[sponsor_index]
+    );
+    let parent = TargetTransaction::decode(&row.parents[sponsor_index]).unwrap();
+    let spent = &parent.outputs()[sponsor_input.outpoint().index() as usize];
+    let frozen = target.encode_without_witness();
+    assert_eq!(
+        sign_request["subject"]["finalized_transaction"],
+        serde_json::json!(frozen)
+    );
+    assert_eq!(
+        sign_request["subject"]["sponsor_input_index"],
+        sponsor_index
+    );
+    assert_eq!(
+        sign_request["subject"]["sponsor_outpoint"],
+        serde_json::json!(funded.outpoint)
+    );
+    assert_eq!(
+        sign_response.signature_bound_to.as_deref(),
+        Some(frozen.as_slice())
+    );
+    assert_eq!(
+        sign_response.sponsor_witness,
+        target.witnesses()[sponsor_index].stack()
+    );
+    transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+        &frozen,
+        sponsor_index,
+        spent,
+        target.witnesses()[sponsor_index].stack(),
+    )
+    .unwrap();
+}
+
+fn validate_legacy_copy_live(directory: &Path, records: &[LegacyRecord]) {
+    let source = TargetTransaction::decode(&records[0].submitted).unwrap();
+    let continuation = TargetTransaction::decode(&records[1].submitted).unwrap();
+    let copy = TargetTransaction::decode(&records[2].submitted).unwrap();
+    assert_eq!(records[1].parents[0], records[0].submitted);
+    assert_eq!(
+        continuation.inputs()[0].outpoint().txid(),
+        txid(&records[0].submitted)
+    );
+    assert_eq!(continuation.inputs()[0].outpoint().index(), 0);
+    let witness = continuation.witnesses()[0].stack();
+    let control = witness.last().unwrap();
+    let script = &witness[witness.len() - 2];
+    let internal: [u8; 32] = control[1..33].try_into().unwrap();
+    let leaf = FixtureTapTree::leaf_of_version(control[0] & 0xfe, script.clone());
+    let reconstructed = construct(&internal, &leaf, &leaf).unwrap();
+    assert_eq!(
+        reconstructed.output_program(),
+        source.outputs()[0].program()
+    );
+    assert_eq!(reconstructed.control_block(), control);
+    let public_input = std::fs::read(directory.join("legacy-public-input.transaction")).unwrap();
+    let public_output = std::fs::read(directory.join("legacy-public-copy.transaction")).unwrap();
+    assert_eq!(public_input, records[0].submitted);
+    assert_eq!(public_output, public_input);
+    let process: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(directory.join("legacy-copy-process.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        process["command"],
+        serde_json::json!([
+            "/usr/bin/timeout",
+            "--kill-after=5",
+            "60",
+            "/usr/bin/cp",
+            "/capture/legacy-public-input.transaction",
+            "/capture/legacy-public-copy.transaction"
+        ])
+    );
+    assert_eq!(process["exit"], 0);
+    assert_eq!(
+        std::fs::read(directory.join("legacy-copy.stdout")).unwrap(),
+        Vec::<u8>::new()
+    );
+    assert_eq!(
+        std::fs::read(directory.join("legacy-copy.stderr")).unwrap(),
+        Vec::<u8>::new()
+    );
+    assert_eq!(copy.outputs(), source.outputs());
+    assert_eq!(copy.output_witnesses(), source.output_witnesses());
 }
 
 fn legacy_submit(wire: &mut Wire, subject: CaptureSubject, bytes: Vec<u8>, parents: Vec<Vec<u8>>) {
@@ -1535,8 +1905,8 @@ fn legacy_event(
         unsigned.output_witnesses().to_vec(),
     )
     .unwrap();
-    transaction::keyed_sponsor::verify_keyed_sponsor(
-        &unsigned.encode(),
+    transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+        &unsigned.encode_without_witness(),
         sponsor_index,
         &sponsor_parent.outputs()[sponsor_vout as usize],
         signed.witnesses()[sponsor_index].stack(),
@@ -1545,7 +1915,11 @@ fn legacy_event(
     let bytes = signed.encode();
     legacy_submit(
         wire,
-        CaptureSubject::LegacyConfidentialValue,
+        if source {
+            CaptureSubject::LegacyConfidentialSource
+        } else {
+            CaptureSubject::LegacyOpeningContinuation
+        },
         bytes.clone(),
         retained_parents,
     );
@@ -1555,10 +1929,29 @@ fn legacy_event(
 #[allow(clippy::too_many_lines)] // The public copy and new sponsor signing are one retained control.
 fn legacy_copy_campaign(wire: &mut Wire) {
     let confidential_source = legacy_event(wire, None, None, true);
-    let explicit_control = legacy_event(wire, None, None, false);
+    let original = TargetTransaction::decode(&confidential_source).unwrap();
+    let AssetField::Explicit(asset) = original.outputs()[0].asset() else {
+        panic!("legacy source has explicit asset")
+    };
+    let explicit_skeleton = TargetTransaction::new(
+        2,
+        vec![TargetInput::new(
+            Outpoint::new(Txid::from_internal([8; 32]), 0).unwrap(),
+            0x8000_03e8,
+        )],
+        vec![output(
+            asset,
+            1_000,
+            original.outputs()[0].program().to_vec(),
+        )],
+        0,
+        vec![InputWitness::new(vec![])],
+    )
+    .unwrap()
+    .encode();
     legacy_event(
         wire,
-        Some((explicit_control, 0)),
+        Some((explicit_skeleton, 0)),
         Some((confidential_source.clone(), 0)),
         true,
     );
@@ -1567,6 +1960,7 @@ fn legacy_copy_campaign(wire: &mut Wire) {
     std::fs::write(&public_input, &confidential_source).unwrap();
     let started = Instant::now();
     let copied = std::process::Command::new("/usr/bin/timeout")
+        .env_clear()
         .args(["--kill-after=5", "60", "/usr/bin/cp"])
         .arg(&public_input)
         .arg(&public_output)
@@ -1584,9 +1978,8 @@ fn legacy_copy_campaign(wire: &mut Wire) {
     let copied_bytes = std::fs::read(&public_output).unwrap();
     assert_eq!(copied_bytes, confidential_source);
     let original = TargetTransaction::decode(&copied_bytes).unwrap();
-    let (sponsor_bytes, sponsor_vout, _, sponsor_program) = fund_sponsor(wire);
+    let (sponsor_bytes, sponsor_vout, _, _sponsor_program) = fund_sponsor(wire);
     let sponsor_parent = TargetTransaction::decode(&sponsor_bytes).unwrap();
-    assert_eq!(original.outputs()[1].program(), sponsor_program);
     let point = Outpoint::new(txid(&sponsor_bytes), sponsor_vout).unwrap();
     let unsigned = TargetTransaction::with_output_witnesses(
         original.version(),
@@ -1621,8 +2014,8 @@ fn legacy_copy_campaign(wire: &mut Wire) {
         unsigned.output_witnesses().to_vec(),
     )
     .unwrap();
-    transaction::keyed_sponsor::verify_keyed_sponsor(
-        &unsigned.encode(),
+    transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+        &unsigned.encode_without_witness(),
         0,
         &sponsor_parent.outputs()[sponsor_vout as usize],
         signed.witnesses()[0].stack(),
@@ -1636,7 +2029,7 @@ fn legacy_copy_campaign(wire: &mut Wire) {
     );
 }
 
-#[allow(clippy::too_many_lines)] // The six exact census families share one exhaustive dispatch without a wildcard case.
+#[allow(clippy::too_many_lines)] // Each exact census family shares one exhaustive dispatch.
 fn campaign(wire: &mut Wire, family: CaptureFamily) {
     let selected = subjects(family);
     match family {
@@ -1751,7 +2144,7 @@ fn campaign(wire: &mut Wire, family: CaptureFamily) {
                 (CaptureSubject::MalformedPaymentValue, 59, false, false),
                 (CaptureSubject::LaterPosition, 60, true, false),
             ] {
-                let (payment, payment_vout) = payment(wire, q, amount, later, confidential);
+                let (payment, payment_vout) = payment(wire, q, amount, later, confidential, false);
                 let control_parent = funded_source(wire, q, CaptureSubject::PublicSource(42));
                 let (funding, vout, _, _) = fund_sponsor(wire);
                 event_with_replacement(
@@ -1783,6 +2176,37 @@ fn campaign(wire: &mut Wire, family: CaptureFamily) {
                 history_graph(wire, events, false);
                 history_graph(wire, events, true);
             }
+        }
+        CaptureFamily::Sponsor => {
+            let q = parameters(42, 60);
+            let first = funded_source(wire, q, CaptureSubject::SponsorFunding(1));
+            funded_merge(
+                wire,
+                q,
+                vec![first.clone()],
+                CaptureSubject::OneMemberMerge(42),
+            );
+            let second = funded_source(wire, q, CaptureSubject::SponsorFunding(2));
+            funded_merge(wire, q, vec![second], CaptureSubject::ConfidentialValue);
+            let (confidential_payment, payment_vout) = payment(wire, q, 60, false, true, true);
+            let (funding, vout, _, _) = fund_sponsor(wire);
+            event_with_replacement(
+                wire,
+                CaptureSubject::MalformedPaymentValueForm,
+                q,
+                &[(first, 0, true), (funding, vout, false)],
+                Some((confidential_payment, payment_vout, 60, true)),
+            );
+            let floor = KeyedFixedParameters {
+                value: KeyedFixedValue::new(18).unwrap(),
+                ..q
+            };
+            funded_source(wire, floor, CaptureSubject::PresentNonceFloor(18));
+            let floor = KeyedFixedParameters {
+                value: KeyedFixedValue::new(17).unwrap(),
+                ..floor
+            };
+            funded_source(wire, floor, CaptureSubject::PresentNonceFloor(17));
         }
         CaptureFamily::LegacyCopy => legacy_copy_campaign(wire),
     }
@@ -1905,6 +2329,67 @@ fn executor(directory: &Path, prepared: &serde_json::Value) -> PathBuf {
     path
 }
 
+fn check_s8c_census(directory: &Path, family: CaptureFamily) {
+    let selected = subjects(family);
+    let expected_records = if family == CaptureFamily::Sponsor {
+        8
+    } else {
+        3
+    };
+    assert_eq!(selected.len(), expected_records);
+    let census: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(directory.join("CENSUS.json")).unwrap()).unwrap();
+    assert_eq!(census["records"], expected_records);
+    assert_eq!(census["exchanges"], 3 * expected_records);
+    let rows = census["subjects"].as_array().unwrap();
+    assert_eq!(rows.len(), expected_records);
+    let mut actual_rows = Vec::new();
+    for (index, subject) in selected.iter().enumerate() {
+        let ordinal = 3 * (index + 1);
+        assert_eq!(rows[index]["ordinal"], ordinal);
+        assert_eq!(rows[index]["role"], serde_json::json!(subject.role()));
+        assert_eq!(rows[index]["subject"], serde_json::json!(subject));
+        let prefix = if family == CaptureFamily::Sponsor {
+            "subject"
+        } else {
+            "legacy"
+        };
+        let record = directory.join(format!("{prefix}-{ordinal:05}.json"));
+        let actual = if family == CaptureFamily::Sponsor {
+            serde_json::from_slice::<Submission>(&std::fs::read(record).unwrap())
+                .unwrap()
+                .subject
+        } else {
+            serde_json::from_slice::<LegacyRecord>(&std::fs::read(record).unwrap())
+                .unwrap()
+                .subject
+        };
+        assert_eq!(*subject, actual);
+        let role = serde_json::from_value(rows[index]["role"].clone()).unwrap();
+        actual_rows.push((actual, role, ordinal));
+    }
+    vectors::keyed_fixed_capture::validate_s8c_census(family, &actual_rows, 3 * expected_records)
+        .unwrap();
+    for (suffix, count) in [
+        ("-request.json", 3 * expected_records),
+        ("-response.json", 3 * expected_records),
+    ] {
+        let actual = std::fs::read_dir(directory)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                let name = entry.file_name();
+                let name = name.to_string_lossy();
+                name.starts_with("exchange-") && name.ends_with(suffix)
+            })
+            .count();
+        assert_eq!(actual, count);
+    }
+    tracing::info!(target: "vectors::native_test", ?family,
+        records = expected_records, exchanges = 3 * expected_records,
+        "s8c census matched submitted ordinals and exchanges");
+}
+
 /// Execute one operator-selected family against an isolated node.
 /// # Panics
 /// Panics if preparation, provenance, any response, or journal admission refuses.
@@ -1939,13 +2424,31 @@ pub fn run(family: CaptureFamily) {
     assert_eq!(field(&prepared, "trust"), "reviewed_non_mock");
     let runtime = runtime_observed(&prepared);
     store(&directory.join("observed-provenance.json"), &runtime);
+    let s8c = matches!(family, CaptureFamily::Sponsor | CaptureFamily::LegacyCopy);
     let census = subjects(family)
         .into_iter()
-        .map(|subject| serde_json::json!({"subject":subject,"boundary":subject.boundary()}))
+        .enumerate()
+        .map(|(index, subject)| {
+            if s8c {
+                serde_json::json!({"subject":subject,"boundary":subject.boundary(),
+                    "role":subject.role(),"ordinal":3 * (index + 1)})
+            } else {
+                serde_json::json!({"subject":subject,"boundary":subject.boundary()})
+            }
+        })
         .collect::<Vec<_>>();
     store(
         &directory.join("CENSUS.json"),
-        &serde_json::json!({"family":family,"subjects":census}),
+        &if s8c {
+            serde_json::json!({"family":family,"subjects":census,
+                "records":if family == CaptureFamily::Sponsor {8} else {3},
+                "exchanges":if family == CaptureFamily::Sponsor {24} else {9},
+                "primary":if family == CaptureFamily::Sponsor {5} else {3},
+                "supporting_member":if family == CaptureFamily::Sponsor {2} else {0},
+                "supporting_payment":u8::from(family == CaptureFamily::Sponsor)})
+        } else {
+            serde_json::json!({"family":family,"subjects":census})
+        },
     );
     let adapter = executor(directory, &prepared);
     let config = ExecutorConfiguration::new(
@@ -2000,29 +2503,20 @@ pub fn run(family: CaptureFamily) {
     if family == CaptureFamily::LegacyCopy {
         let expected = vectors::keyed_final_native::capture_freeze_digest([42; 32]).unwrap();
         let mut rows = Vec::new();
-        for entry in std::fs::read_dir(directory).unwrap() {
-            let path = entry.unwrap().path();
-            let name = path.file_name().unwrap().to_string_lossy();
-            if name.starts_with("legacy-")
-                && name.as_bytes().get(7).is_some_and(u8::is_ascii_digit)
-                && path
-                    .extension()
-                    .is_some_and(|extension| extension == "json")
-            {
-                let row: LegacyRecord =
-                    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-                assert_eq!(row.freeze, expected);
-                assert_eq!(row.response.observed_layer, ObservedOutcomeLayer::Accepted);
-                assert_eq!(
-                    row.response.mined_readback.unwrap().raw_transaction,
-                    row.submitted
-                );
-                rows.push(row.subject);
-            }
+        for (index, subject) in subjects(CaptureFamily::LegacyCopy).iter().enumerate() {
+            let ordinal = 3 * (index + 1);
+            let row: LegacyRecord = serde_json::from_slice(
+                &std::fs::read(directory.join(format!("legacy-{ordinal:05}.json"))).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(row.subject, *subject);
+            assert_eq!(row.freeze, expected);
+            assert_eq!(row.response.observed_layer, ObservedOutcomeLayer::Accepted);
+            validate_legacy_live_record(directory, ordinal, &row);
+            rows.push(row);
         }
-        assert_eq!(rows.len(), 4);
-        assert!(rows.contains(&CaptureSubject::LegacyConfidentialValue));
-        assert!(rows.contains(&CaptureSubject::LegacyPublicCopy));
+        assert_eq!(rows.len(), 3);
+        validate_legacy_copy_live(directory, &rows);
         store(
             &directory.join("legacy-provenance.json"),
             &serde_json::json!({
@@ -2042,6 +2536,10 @@ pub fn run(family: CaptureFamily) {
             b"old-leaf copy journal admitted separately\n",
         )
         .unwrap();
+        check_s8c_census(directory, family);
+        tracing::info!(target: "vectors::native_test", phase = "admission",
+            wall_us = u64::try_from(admission_started.elapsed().as_micros()).unwrap_or(u64::MAX),
+            "legacy copy admission completed");
         return;
     }
     let mut seen = Vec::new();
@@ -2097,6 +2595,21 @@ pub fn run(family: CaptureFamily) {
                     sponsor_index: row.control.as_ref().unwrap().sponsor_index,
                 }),
         };
+        if family == CaptureFamily::Sponsor && row.subject == CaptureSubject::SponsorPayment {
+            vectors::keyed_fixed_capture::validate_journal_transport(&freeze, &observed_row)
+                .unwrap();
+            let transaction = TargetTransaction::decode(&row.submitted).unwrap();
+            let parent = TargetTransaction::decode(&row.parents[0]).unwrap();
+            let spent_index = transaction.inputs()[row.sponsor_index].outpoint().index() as usize;
+            transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+                &transaction.encode_without_witness(),
+                row.sponsor_index,
+                &parent.outputs()[spent_index],
+                transaction.witnesses()[row.sponsor_index].stack(),
+            )
+            .unwrap();
+            continue;
+        }
         bind_journal(&freeze, &observed_row, &binding).unwrap_or_else(|refusal| {
             panic!(
                 "journal admission refused row {} subject {:?}: {refusal:?}",
@@ -2116,6 +2629,9 @@ pub fn run(family: CaptureFamily) {
                 "unsubmitted selected subject: {selected:?}"
             );
         }
+    }
+    if s8c {
+        check_s8c_census(directory, family);
     }
     std::fs::write(
         directory.join("admitted"),

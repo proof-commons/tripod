@@ -1,7 +1,10 @@
-//! Five focused offline checks of the sealed fixed-form campaign projection.
+//! Six focused offline checks of the sealed fixed-form campaign projection and epochs.
 
 #[path = "../src/keyed_fixed_corpus/fixture.rs"]
 mod keyed_fixed_corpus;
+#[path = "keyed_fixed_capture/native.rs"]
+#[allow(dead_code)] // The packet control reuses the actual producer's local campaign route.
+mod native;
 
 use architecture::keyed_fixed::{KeyedFixedManifest, KeyedFixedOperationId};
 use compiler::{
@@ -34,7 +37,20 @@ use transaction::{
     SponsorSignature, SponsorSigningRequest, TargetOutput, TargetTransaction, Txid, ValueField,
 };
 use vectors::keyed_fixed_capture::{CaptureFamily, CaptureSubject};
-use vectors::keyed_fixed_manifest::{FreezeManifest, FreezeRefusal};
+use vectors::keyed_fixed_manifest::{CaptureEpoch, FreezeManifest, FreezeRefusal, SourceVersion};
+
+const POLICY_ASSET: [u8; 32] = [
+    0x23, 0x0f, 0x4f, 0x5d, 0x4b, 0x7c, 0x6f, 0xa8, 0x45, 0x80, 0x6e, 0xe4, 0xf6, 0x77, 0x13, 0x45,
+    0x9e, 0x1b, 0x69, 0xe8, 0xe6, 0x0f, 0xce, 0xe2, 0xe4, 0x94, 0x0c, 0x7a, 0x0d, 0x5d, 0xe1, 0xb2,
+];
+
+fn parameters(key: u8, value: u64) -> KeyedFixedParameters {
+    KeyedFixedParameters {
+        key: [key; 32],
+        asset: POLICY_ASSET,
+        value: KeyedFixedValue::new(value).unwrap(),
+    }
+}
 
 fn report(name: &str, started: Instant, records: usize) {
     tracing::info!(target: "vectors::keyed_fixed_corpus", name, records, wall_ms = started.elapsed().as_millis(), outcome = "completed", "focused offline test completed");
@@ -48,6 +64,215 @@ fn trace() {
             .with_ansi(false)
             .try_init(),
     );
+}
+
+fn mock_hex(bytes: &[u8]) -> String {
+    vectors::maturity_observer::encode_hex(bytes)
+}
+
+fn mock_digest(bytes: &[u8]) -> String {
+    mock_hex(&target_elements_conformance::constructor::tagged::sha256(
+        bytes,
+    ))
+}
+
+fn mock_listing(files: &std::collections::BTreeMap<String, Vec<u8>>, prefix: &str) -> Vec<u8> {
+    use std::fmt::Write as _;
+    let mut listing = String::new();
+    for (path, bytes) in files {
+        if let Some(relative) = path.strip_prefix(prefix) {
+            let _ = writeln!(listing, "{}  {relative}", mock_digest(bytes));
+        }
+    }
+    listing.into_bytes()
+}
+
+fn mock_compressed(
+    files: &std::collections::BTreeMap<String, Vec<u8>>,
+) -> (Vec<u8>, serde_json::Value) {
+    use std::io::Write as _;
+    use std::process::{Command, Stdio};
+    let pairs = files
+        .iter()
+        .map(|(path, bytes)| (path, vectors::maturity_observer::encode_hex(bytes)))
+        .collect::<Vec<_>>();
+    let decoded = serde_json::to_vec(&pairs).unwrap();
+    let decoded_bytes = decoded.len();
+    let decoded_digest = mock_digest(&decoded);
+    let mut process = Command::new("python3")
+        .args(["-c", "import lzma,sys; sys.stdout.buffer.write(lzma.compress(sys.stdin.buffer.read(),format=lzma.FORMAT_ALONE,preset=6))"])
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
+    let mut input = process.stdin.take().unwrap();
+    let writer = std::thread::spawn(move || input.write_all(&decoded));
+    let output = process.wait_with_output().unwrap();
+    writer.join().unwrap().unwrap();
+    assert!(output.status.success());
+    let encoded = output.stdout;
+    let digest = mock_digest(&encoded);
+    let entry = serde_json::json!({"bytes":encoded.len(),"sha256":digest,"paths":pairs.len(),
+        "members":[{"offset":0,"bytes":encoded.len(),"sha256":digest,"paths":pairs.len(),
+            "decoded_bytes":decoded_bytes,"decoded_sha256":decoded_digest}]});
+    (encoded, entry)
+}
+
+#[allow(clippy::too_many_lines)] // One mock packet is projected through the same three indexed fixture members.
+fn mocked_s8c_packet() -> (Packet, Packet) {
+    use std::collections::BTreeMap;
+    let temp = tempfile::tempdir().unwrap();
+    let run = "mock-s8c";
+    let mut family_files = BTreeMap::new();
+    for (name, family) in [
+        ("sponsor", CaptureFamily::Sponsor),
+        ("legacy-copy", CaptureFamily::LegacyCopy),
+    ] {
+        let directory = temp.path().join(name);
+        std::fs::create_dir(&directory).unwrap();
+        native::mocked_campaign(family, &directory);
+        let mut files = BTreeMap::new();
+        for entry in std::fs::read_dir(&directory).unwrap() {
+            let entry = entry.unwrap();
+            files.insert(
+                entry.file_name().to_string_lossy().into_owned(),
+                std::fs::read(entry.path()).unwrap(),
+            );
+        }
+        if family == CaptureFamily::LegacyCopy {
+            let value: serde_json::Value =
+                serde_json::from_slice(&files["legacy-copy-process.json"]).unwrap();
+            let mut process = value;
+            process["command"] = serde_json::json!([
+                "/usr/bin/timeout",
+                "--kill-after=5",
+                "60",
+                "/usr/bin/cp",
+                "/capture/legacy-public-input.transaction",
+                "/capture/legacy-public-copy.transaction"
+            ]);
+            files.insert(
+                "legacy-copy-process.json".into(),
+                serde_json::to_vec(&process).unwrap(),
+            );
+        }
+        let selected = vectors::keyed_fixed_capture::subjects(family);
+        let rows = selected.iter().enumerate().map(|(index, subject)| {
+            serde_json::json!({"subject":subject,"role":subject.role(),"boundary":subject.boundary(),
+                "ordinal":3 * (index + 1)})
+        }).collect::<Vec<_>>();
+        let primary = selected
+            .iter()
+            .filter(|subject| subject.role() == vectors::keyed_fixed_capture::CaptureRole::Primary)
+            .count();
+        let supporting_member = selected
+            .iter()
+            .filter(|subject| {
+                subject.role() == vectors::keyed_fixed_capture::CaptureRole::SupportingMember
+            })
+            .count();
+        let supporting_payment = selected
+            .iter()
+            .filter(|subject| {
+                subject.role() == vectors::keyed_fixed_capture::CaptureRole::SupportingPayment
+            })
+            .count();
+        files.insert("CENSUS.json".into(), serde_json::to_vec(&serde_json::json!({
+            "family":family,"subjects":rows,"records":selected.len(),"exchanges":3 * selected.len(),
+            "primary":primary,"supporting_member":supporting_member,"supporting_payment":supporting_payment
+        })).unwrap());
+        files.insert("observed-provenance.json".into(), serde_json::to_vec(&serde_json::json!({
+            "executable_digest":vec![2_u8;32],"executor_digest":vec![3_u8;32],"dependency_lock_digest":vec![4_u8;32],
+            "daemon_digest":vec![5_u8;32],"zk_library_digest":vec![6_u8;32],"zk_library_loading":"present-not-loaded"
+        })).unwrap());
+        files.insert("executor-handshake.json".into(), serde_json::to_vec(&serde_json::json!({
+            "protocol_schema":9,"adapter_name":"elements-native-executor","framework_revision":"mock",
+            "intended_executed_tip":"mock"
+        })).unwrap());
+        files.insert(
+            "container-final-state.json".into(),
+            serde_json::to_vec(&serde_json::json!([
+                {"Image":"mock-image"}
+            ]))
+            .unwrap(),
+        );
+        let prefixed = files
+            .into_iter()
+            .map(|(path, bytes)| (format!("{run}/{name}/{path}"), bytes))
+            .collect::<BTreeMap<_, _>>();
+        family_files.insert(name, prefixed);
+    }
+    let mut preparation = BTreeMap::new();
+    preparation.insert(
+        format!("{run}/build/prepared.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "capture_binary":mock_hex(&[2;32]),"executor":mock_hex(&[3;32]),
+            "dependency_lock":mock_hex(&[4;32]),"daemon_digest":mock_hex(&[5;32]),
+            "framework":"mock","zk_library_digest":mock_hex(&[6;32]),"image":"mock-image"
+        }))
+        .unwrap(),
+    );
+    preparation.insert(
+        format!("{run}/prepare.log"),
+        format!("KFF_PREPARE_DONE run={run} exit=0\n").into_bytes(),
+    );
+    preparation.insert(
+        format!("{run}/campaign.log"),
+        format!("KFF_CAMPAIGN_DONE run={run} exit=0\n").into_bytes(),
+    );
+    let build_listing = mock_listing(&preparation, &format!("{run}/build/"));
+    preparation.insert(format!("{run}/build/retention.sha256"), build_listing);
+    let root_listing = mock_listing(
+        &preparation
+            .iter()
+            .filter(|(path, _)| {
+                path.as_str() == format!("{run}/prepare.log")
+                    || path.as_str() == format!("{run}/campaign.log")
+            })
+            .map(|(path, bytes)| (path.clone(), bytes.clone()))
+            .collect(),
+        &format!("{run}/"),
+    );
+    preparation.insert(format!("{run}/retention.sha256"), root_listing);
+    for (name, files) in &mut family_files {
+        let listing = mock_listing(files, &format!("{run}/{name}/"));
+        files.insert(format!("{run}/{name}/retention.sha256"), listing);
+    }
+    let seal = [
+        "retention.sha256",
+        "build/retention.sha256",
+        "sponsor/retention.sha256",
+        "legacy-copy/retention.sha256",
+    ]
+    .map(|path| {
+        let bytes = preparation
+            .get(&format!("{run}/{path}"))
+            .or_else(|| {
+                family_files
+                    .values()
+                    .find_map(|files| files.get(&format!("{run}/{path}")))
+            })
+            .unwrap();
+        format!("{}  {path}\n", mock_digest(bytes))
+    })
+    .concat();
+    preparation.insert(
+        format!("{run}/campaign-retention.sha256"),
+        seal.into_bytes(),
+    );
+    let mut fixtures = serde_json::Map::new();
+    let mut blobs = Vec::new();
+    for (name, files) in [
+        ("preparation", &preparation),
+        ("sponsor", &family_files["sponsor"]),
+        ("legacy-copy", &family_files["legacy-copy"]),
+    ] {
+        let (blob, entry) = mock_compressed(files);
+        fixtures.insert(name.to_string(), entry);
+        blobs.push(blob);
+    }
+    let index = serde_json::to_vec(&serde_json::json!({"schema":1,"preset":6,"run":run,
+        "fixtures":fixtures,"archive_addressed":[]}))
+    .unwrap();
+    let pin = mock_digest(&index);
+    Packet::load_s8c(&index, &pin, [&blobs[0], &blobs[1], &blobs[2]]).unwrap()
 }
 
 struct ReplaySponsor {
@@ -76,7 +301,10 @@ impl SponsorCapability for ReplaySponsor {
     }
 }
 
-fn linked_merge(q: KeyedFixedParameters) -> linker::keyed_fixed_bundle::LinkedKeyedFixedBundle {
+fn linked(
+    q: KeyedFixedParameters,
+    operation: KeyedFixedOperationId,
+) -> linker::keyed_fixed_bundle::LinkedKeyedFixedBundle {
     let target = target_elements::reviewed_elements_tapscript().unwrap();
     let manifest = KeyedFixedManifest::contract().unwrap();
     let declaration = realization::keyed_fixed::KeyedFixedRealizationDraft::derive(&manifest)
@@ -87,7 +315,7 @@ fn linked_merge(q: KeyedFixedParameters) -> linker::keyed_fixed_bundle::LinkedKe
     let input = bind_input(
         &manifest,
         declaration,
-        vec![KeyedFixedOperationId::Merge],
+        vec![operation],
         AnalysisPolicy::strict(ProofSearchLimits::new(limit, limit)),
     )
     .unwrap();
@@ -110,6 +338,10 @@ fn linked_merge(q: KeyedFixedParameters) -> linker::keyed_fixed_bundle::LinkedKe
         &keyed_fixed_parameter_offers(&target, recipe),
     )
     .unwrap()
+}
+
+fn linked_merge(q: KeyedFixedParameters) -> linker::keyed_fixed_bundle::LinkedKeyedFixedBundle {
+    linked(q, KeyedFixedOperationId::Merge)
 }
 
 #[allow(clippy::too_many_lines)] // Both replay sizes use the same authenticated parent and policy route.
@@ -245,20 +477,7 @@ fn fixed_corpus_seal_and_identity() {
     let started = Instant::now();
     let clauses = Packet::load(CaptureFamily::Clauses).unwrap();
     let policy = Packet::load(CaptureFamily::Policy).unwrap();
-    let sources = [
-        (
-            "packages/vectors/src/keyed_fixed_manifest.rs",
-            clauses
-                .source("packages/vectors/src/keyed_fixed_manifest.rs")
-                .unwrap(),
-        ),
-        (
-            "packages/vectors/src/keyed_fixed_manifest/encoding.rs",
-            clauses
-                .source("packages/vectors/src/keyed_fixed_manifest/encoding.rs")
-                .unwrap(),
-        ),
-    ];
+    let sources = clauses.epoch_sources().unwrap();
     for (packet, path) in [
         (&clauses, "clauses/freeze-42-60.bin"),
         (&clauses, "clauses/freeze-43-1000.bin"),
@@ -347,6 +566,150 @@ fn fixed_corpus_seal_and_identity() {
         Err(CorpusRefusal::Digest)
     );
     report("fixed_corpus_seal_and_identity", started, 4);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // The four earlier encodings and three new identities share one authenticated source catalog.
+fn fixed_corpus_epoch_sources() {
+    trace();
+    let started = Instant::now();
+    let clauses = Packet::load(CaptureFamily::Clauses).unwrap();
+    let policy = Packet::load(CaptureFamily::Policy).unwrap();
+    let sources = clauses.epoch_sources().unwrap();
+    let encodings = [
+        clauses.file("clauses/freeze-42-60.bin").unwrap(),
+        clauses.file("clauses/freeze-43-1000.bin").unwrap(),
+        policy.file("policy/freeze-42-14.bin").unwrap(),
+        policy.file("policy/freeze-42-15.bin").unwrap(),
+    ];
+    for encoding in encodings {
+        let historical = FreezeManifest::reconstruct_epoch_freeze(
+            CaptureEpoch::CampaignThree,
+            encoding,
+            &sources,
+        )
+        .unwrap();
+        let q = historical.manifest().descriptor.parameters;
+        assert_eq!(
+            historical.manifest().clone().validate(q),
+            Err(FreezeRefusal::Inventory)
+        );
+        assert_eq!(
+            FreezeManifest::reconstruct_epoch_freeze(CaptureEpoch::Sponsor, encoding, &sources),
+            Err(FreezeRefusal::Inventory)
+        );
+    }
+    let original = encodings[0];
+    let sponsor_index = sources
+        .iter()
+        .position(|version| version.path == "packages/transaction/src/keyed_fixed_sponsor.rs")
+        .unwrap();
+    assert_eq!(
+        clauses
+            .source(sources[sponsor_index].path, sources[sponsor_index].digest)
+            .unwrap(),
+        sources[sponsor_index].bytes,
+    );
+    let mut missing = sources.clone();
+    missing.remove(sponsor_index);
+    assert_eq!(
+        FreezeManifest::reconstruct_epoch_freeze(CaptureEpoch::CampaignThree, original, &missing),
+        Err(FreezeRefusal::Inventory)
+    );
+    let mut changed_bytes = sources[sponsor_index].bytes.to_vec();
+    changed_bytes[0] ^= 1;
+    let mut changed = sources.clone();
+    changed[sponsor_index].bytes = &changed_bytes;
+    assert_eq!(
+        FreezeManifest::reconstruct_epoch_freeze(CaptureEpoch::CampaignThree, original, &changed),
+        Err(FreezeRefusal::Inventory)
+    );
+    let unknown_bytes = b"unknown snapshot";
+    let mut unknown = sources.clone();
+    unknown.push(SourceVersion {
+        path: "packages/unknown.rs",
+        digest: target_elements_conformance::constructor::tagged::sha256(unknown_bytes),
+        bytes: unknown_bytes,
+    });
+    assert_eq!(
+        FreezeManifest::reconstruct_epoch_freeze(CaptureEpoch::CampaignThree, original, &unknown),
+        Err(FreezeRefusal::Inventory)
+    );
+    let mut unreviewed_count = original.to_vec();
+    unreviewed_count[vectors::keyed_fixed_manifest::RECIPE.len() + 4] += 1;
+    assert_eq!(
+        FreezeManifest::reconstruct_epoch_freeze(
+            CaptureEpoch::CampaignThree,
+            &unreviewed_count,
+            &sources
+        ),
+        Err(FreezeRefusal::Inventory)
+    );
+    let campaign =
+        FreezeManifest::reconstruct_epoch_freeze(CaptureEpoch::CampaignThree, original, &sources)
+            .unwrap();
+    let q60 = campaign.manifest().descriptor.parameters;
+    let anchors = [60, 17, 18].map(|value| {
+        let q = KeyedFixedParameters {
+            value: KeyedFixedValue::new(value).unwrap(),
+            ..q60
+        };
+        vectors::maturity_observer::encode_hex(
+            &FreezeManifest::offer(q)
+                .unwrap()
+                .validate(q)
+                .unwrap()
+                .identity(),
+        )
+    });
+    assert_eq!(
+        anchors.each_ref().map(String::as_str),
+        [
+            "17a7b1da3385f79d2ec5a3587e8f35c25bba87cc760aae2c35d35e8e40c94480",
+            "3353d21e195b40379ec6d4923f1393e8cee785ad25587c01987da07d7775f331",
+            "5980c072960539d7b0c28dbab308987548fd51fc9e9514b1265aed603990a9e1",
+        ],
+        "reviewed S8c identity anchors"
+    );
+    for value in [60, 17, 18] {
+        let q = KeyedFixedParameters {
+            value: KeyedFixedValue::new(value).unwrap(),
+            ..q60
+        };
+        let current = FreezeManifest::offer(q).unwrap().validate(q).unwrap();
+        assert_eq!(
+            FreezeManifest::reconstruct_epoch_freeze(
+                CaptureEpoch::Sponsor,
+                current.encoding(),
+                &sources
+            ),
+            Ok(current)
+        );
+    }
+    assert!(matches!(
+        Packet::load_s8c(b"{}", "unreviewed-index", [&[], &[], &[]]),
+        Err(CorpusRefusal::Index)
+    ));
+    assert_eq!(clauses.admit_s8c(), Err(CorpusRefusal::Census));
+    let (sponsor, legacy) = mocked_s8c_packet();
+    assert_eq!(sponsor.admit_s8c(), Ok(8));
+    assert_eq!(legacy.admit_s8c(), Ok(3));
+    let mut wrong_step = sponsor;
+    let mut request: serde_json::Value = serde_json::from_slice(
+        wrong_step
+            .file("sponsor/exchange-00014-request.json")
+            .unwrap(),
+    )
+    .unwrap();
+    request["case"]["step"] = serde_json::json!("fixed-sign-14");
+    wrong_step
+        .replace_after_acquisition(
+            "sponsor/exchange-00014-request.json",
+            serde_json::to_vec(&request).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(wrong_step.admit_s8c(), Err(CorpusRefusal::Record));
+    report("fixed_corpus_epoch_sources", started, 15);
 }
 
 #[test]

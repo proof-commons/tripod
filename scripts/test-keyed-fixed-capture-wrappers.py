@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Node-free wrapper controls. Every spawned process has a wall guard."""
 import json
+import hashlib
+import datetime
 import os
 from pathlib import Path
 import signal
@@ -350,6 +352,98 @@ else:
         assert f'KFF_PREPARE_DONE run={name} exit={original} seal=failed\n' in (root/name/'prepare.log').read_text()
 
 
+def s8c_campaign_controls(root, env):
+    tools = root / 'tools'
+    tools.mkdir()
+    selected = dict(env, PATH=str(tools)+os.pathsep+env['PATH'],
+                    TRIPOD_CAPTURE_STANDIN='1')
+    run_name = 's8c-control'
+    directory = root / run_name
+    (directory/'build').mkdir(parents=True)
+    for family in ('sponsor', 'legacy-copy'):
+        (directory/family).mkdir()
+    start = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+    (root/(run_name+'.campaign-start.utc')).write_text(start.isoformat().replace('+00:00','Z')+'\n')
+    (root/(run_name+'.campaign-deadline.utc')).write_text(
+        (start+datetime.timedelta(seconds=6060)).isoformat().replace('+00:00','Z')+'\n')
+    (directory/'prepare.log').write_text('')
+    (directory/'campaign.log').write_text(f'KFF_CAMPAIGN_DONE run={run_name} exit=0\n')
+    for item in ('retention.sha256','build/retention.sha256',
+                 'sponsor/retention.sha256','legacy-copy/retention.sha256'):
+        (directory/item).write_text(item+'\n')
+    with (directory/'campaign-retention.sha256').open('w') as output:
+        for item in ('retention.sha256','build/retention.sha256',
+                     'sponsor/retention.sha256','legacy-copy/retention.sha256'):
+            output.write(hashlib.sha256((directory/item).read_bytes()).hexdigest()+'  '+item+'\n')
+    executable(tools/'systemctl',
+               'case "$*" in *ActiveState*) printf "KFF_PREPARE_DONE run=s8c-control exit=0\\n" >>"$CAPTURE_RUN_DIR/prepare.log"; echo inactive;; *) echo 0;; esac\n')
+    waiter = [str(WRAPPERS/'capture-unit.sh'), '--wait-campaign', str(directory)]
+    run('s8c-marker-race', waiter, dict(selected,CAPTURE_RUN_DIR=str(directory)), lambda c:c==0)
+    assert (directory/'prepare.log').read_text().count('KFF_PREPARE_DONE') == 1
+    executable(tools/'systemctl', 'case "$*" in *ActiveState*) echo inactive;; *) echo 0;; esac\n')
+    (directory/'prepare.log').write_text('')
+    run('s8c-missing-marker', waiter, selected, lambda c:c==74)
+    (directory/'prepare.log').write_text(f'KFF_PREPARE_DONE run={run_name} exit=0\n')
+    (directory/'sponsor/unit.log').write_text('KFF_CAPTURE_DONE target=sponsor exit=0\n')
+    executable(tools/'podman', 'if [ "$1" = container ]; then exit 0; fi\nexit 0\n')
+    seal = [str(WRAPPERS/'capture-unit.sh'), '--seal', str(directory/'sponsor'),
+            'sponsor', '1800', IMAGE]
+    run('s8c-live-writer', seal, selected, lambda c:c==74)
+    executable(tools/'systemctl', 'case "$*" in *ActiveState*) echo active;; *) echo 0;; esac\n')
+    (root/(run_name+'.campaign-deadline.utc')).write_text('2000-01-01T00:00:00Z\n')
+    run('s8c-old-deadline', [str(WRAPPERS/'capture-unit.sh'), '--check-campaign', str(directory)],
+        selected, lambda c:c not in (0,75))
+
+    # Exercise the parent in its own process with stand-in preparation and
+    # family children. The earlier cases isolate the waiter's refusal edges.
+    unit_root = root/'unit-root'
+    unit_root.mkdir()
+    checkout = root/'checkout'
+    wrapper_dir = checkout/'scripts/keyed-fixed-capture'
+    wrapper_dir.mkdir(parents=True)
+    executable(wrapper_dir/'capture-prepare.sh',
+               'root="$TRIPOD_CAPTURE_TEST_ROOT/$2"\n'
+               'mkdir -p "$root/build" "$root/sponsor" "$root/legacy-copy"\n'
+               'printf "KFF_PREPARE_DONE run=%s exit=0\\n" "$2" >"$root/prepare.log"\n'
+               'printf "root\\n" >"$root/retention.sha256"\n'
+               'printf "build\\n" >"$root/build/retention.sha256"\n')
+    executable(wrapper_dir/'capture-unit.sh',
+               'if [ "$1" = --seal ]; then\n'
+               '  printf "%s\\n" "$3" >"$2/retention.sha256"\n'
+               'else\n'
+               '  printf "admitted\\n" >"$1/admitted"\n'
+               '  printf "KFF_CAPTURE_DONE target=%s exit=0\\n" "$2"\n'
+               'fi\n')
+    executable(tools/'systemctl',
+               'case "$*" in *ActiveState*) '
+               'if grep -q "^KFF_CAMPAIGN_DONE " '
+               '"$TRIPOD_CAPTURE_TEST_ROOT/s8c-unit/campaign.log" 2>/dev/null; '
+               'then echo inactive; else echo active; fi;; *) echo 0;; esac\n')
+    unit_env = dict(selected, TRIPOD_CAPTURE_TEST_ROOT=str(unit_root))
+    run('s8c-detached-parent',
+        [str(WRAPPERS/'capture-unit.sh'), '--campaign', str(checkout),
+         'a'*40, 's8c-unit', IMAGE], unit_env, lambda c:c==0)
+    run('s8c-detached-waiter',
+        [str(WRAPPERS/'capture-unit.sh'), '--wait-campaign', str(unit_root/'s8c-unit')],
+        unit_env, lambda c:c==0)
+    assert (unit_root/'s8c-unit/campaign-retention.sha256').is_file()
+    assert (unit_root/'s8c-unit/campaign.log').read_text().count('KFF_CAMPAIGN_DONE') == 1
+
+    legacy_env = dict(selected, TRIPOD_CAPTURE_TEST_ROOT=str(root))
+    passing = ('printf "running 1 test\\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 filtered out; finished in 0s\\n"\n'
+               'printf "{}\\n" >"$TRIPOD_CAPTURE_TEST_ROOT/exchange-00001-request.json"\n'
+               'printf "{}\\n" >"$TRIPOD_CAPTURE_TEST_ROOT/exchange-00001-response.json"\n'
+               'printf "%s\\n" \'{"fields":{"message":"fixed-form native exchange retained","prefix":"exchange-00001","wall_us":7}}\' >"$TRIPOD_CAPTURE_TEST_ROOT/phase-timing.jsonl"\n')
+    missing_timing = ''.join(passing.splitlines(keepends=True)[:-1])
+    for name, body, expected in (('s8c-legacy-timing-control', passing, lambda c:c==0),
+                                 ('s8c-legacy-missing-timing', missing_timing, lambda c:c!=0)):
+        executable(root/'keyed_fixed_capture', body)
+        for item in ('test.exit', 'selection.exit', 'exchange-00001-request.json',
+                     'exchange-00001-response.json', 'phase-timing.jsonl'):
+            (root/item).unlink(missing_ok=True)
+        run(name, [str(WRAPPERS/'run-one.sh'), 'legacy-copy'], legacy_env, expected)
+
+
 def main():
     started = time.monotonic()
     # tempfile chooses an exclusively created root, never a clock-derived name.
@@ -357,7 +451,8 @@ def main():
         root = Path(directory)
         env = os.environ.copy()
         for name, test in (("artifacts", artifact_controls), ("selection", selection_controls),
-                           ("units", unit_controls), ("preparation", preparation_controls)):
+                           ("units", unit_controls), ("preparation", preparation_controls),
+                           ("s8c", s8c_campaign_controls)):
             child = root / name
             child.mkdir()
             test(child, env)

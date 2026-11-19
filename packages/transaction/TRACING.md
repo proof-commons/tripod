@@ -116,3 +116,5 @@ The keyed sponsor verifier exposes DEBUG spans `keyed_sponsor_digest` and `verif
 The fixed-form `commit_keyed_fixed_bundle` entry emits one completion or typed refusal event with `family = "keyed"`. `keyed_fixed_policy_member_maximum`, `keyed_fixed_policy_floor` and `KeyedFixedPolicy::new` are untraced policy-value helpers; the public request, construction and admission boundaries emit their own terminal events.
 
 Fixed-form sibling boundaries use `transaction::keyed_fixed_*` targets with one completion or typed-refusal event per public request, commitment, authentication, construction or sponsor verification call. Parent decoding, hashing and curve arithmetic stay beneath those spans. Static refusal kinds and counts may be emitted; keys, values, signatures and parent bytes are not event fields.
+
+The S8c output-form extension stays inside the existing `transaction::keyed_fixed_sponsor` digest and verifier spans. Their structured `outcome` and `refusal_kind` events distinguish accepted hybrid output forms from `unsupported_form` at the spent-output or output-asset boundary. Proof and tally checks remain vectors-owned; the sponsor span makes no proof claim.

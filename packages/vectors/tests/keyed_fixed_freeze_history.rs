@@ -963,6 +963,133 @@ const POST_S8B: &[Row] = &[
     },
 ];
 
+const POST_S8C: &[Row] = &[
+    Row {
+        path: "packages/transaction/src/keyed_fixed_sponsor.rs",
+        previous: Some([
+            158, 29, 128, 153, 231, 156, 238, 189, 56, 172, 199, 97, 197, 105, 117, 1, 121, 188, 4,
+            165, 200, 123, 234, 237, 238, 91, 255, 253, 166, 95, 167, 156,
+        ]),
+        current: [
+            127, 255, 105, 246, 149, 246, 205, 228, 130, 118, 241, 89, 197, 125, 208, 200, 193, 65,
+            249, 132, 180, 101, 223, 104, 0, 228, 65, 156, 94, 27, 135, 54,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_capture.rs",
+        previous: Some([
+            5, 169, 137, 226, 10, 253, 46, 46, 247, 27, 195, 96, 205, 161, 98, 224, 178, 64, 210,
+            96, 68, 11, 237, 148, 228, 59, 27, 8, 66, 121, 137, 35,
+        ]),
+        current: [
+            242, 244, 27, 163, 54, 121, 80, 234, 22, 231, 71, 122, 130, 154, 39, 254, 214, 192,
+            236, 255, 129, 171, 171, 12, 148, 123, 113, 49, 142, 2, 5, 124,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_manifest.rs",
+        previous: Some([
+            223, 158, 3, 167, 159, 251, 248, 232, 171, 218, 98, 137, 98, 126, 42, 144, 161, 11,
+            224, 218, 205, 162, 111, 128, 194, 31, 109, 224, 39, 11, 128, 26,
+        ]),
+        current: [
+            40, 54, 156, 64, 215, 49, 10, 3, 168, 170, 196, 152, 107, 151, 216, 7, 13, 230, 148,
+            99, 119, 71, 115, 13, 222, 142, 139, 44, 117, 215, 165, 8,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_manifest/encoding.rs",
+        previous: Some([
+            172, 42, 136, 231, 35, 31, 124, 160, 166, 5, 195, 109, 240, 94, 148, 151, 32, 163, 118,
+            235, 18, 233, 199, 26, 78, 132, 149, 153, 27, 235, 44, 2,
+        ]),
+        current: [
+            74, 244, 242, 72, 166, 144, 52, 104, 4, 86, 70, 57, 147, 21, 137, 208, 195, 28, 9, 0,
+            105, 207, 106, 169, 21, 212, 109, 124, 85, 157, 46, 136,
+        ],
+    },
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture.rs",
+        previous: Some([
+            223, 168, 107, 56, 82, 68, 60, 122, 217, 227, 134, 94, 189, 16, 154, 28, 15, 248, 73,
+            147, 101, 184, 15, 26, 94, 189, 97, 219, 236, 27, 99, 116,
+        ]),
+        current: [
+            146, 171, 180, 244, 24, 128, 184, 47, 113, 163, 204, 167, 127, 116, 212, 243, 189, 147,
+            28, 178, 156, 178, 248, 195, 96, 223, 28, 62, 250, 252, 121, 169,
+        ],
+    },
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture/native.rs",
+        previous: Some([
+            2, 250, 241, 222, 240, 221, 99, 130, 223, 252, 214, 88, 25, 113, 71, 49, 20, 77, 184,
+            122, 23, 13, 236, 0, 102, 217, 14, 124, 10, 138, 69, 144,
+        ]),
+        current: [
+            12, 15, 35, 118, 199, 173, 208, 85, 103, 15, 4, 29, 30, 31, 31, 174, 108, 191, 215,
+            126, 63, 127, 205, 242, 82, 210, 121, 58, 147, 241, 240, 179,
+        ],
+    },
+    Row {
+        path: "scripts/keyed-fixed-capture/capture-prepare.sh",
+        previous: Some([
+            224, 192, 248, 109, 31, 206, 41, 174, 127, 55, 176, 211, 128, 33, 71, 18, 44, 52, 131,
+            90, 67, 209, 100, 198, 32, 211, 211, 125, 14, 189, 102, 222,
+        ]),
+        current: [
+            188, 158, 131, 24, 37, 215, 113, 34, 24, 36, 116, 62, 216, 107, 148, 151, 228, 66, 112,
+            194, 215, 148, 189, 128, 240, 182, 127, 40, 57, 175, 215, 130,
+        ],
+    },
+    Row {
+        path: "scripts/keyed-fixed-capture/capture-unit.sh",
+        previous: Some([
+            253, 121, 5, 60, 84, 206, 31, 48, 85, 238, 69, 165, 91, 224, 35, 150, 227, 26, 244,
+            163, 158, 110, 175, 130, 101, 123, 85, 63, 252, 200, 243, 20,
+        ]),
+        current: [
+            23, 253, 47, 56, 43, 64, 240, 133, 166, 125, 72, 218, 122, 159, 32, 49, 77, 183, 45,
+            236, 53, 170, 112, 246, 111, 224, 190, 120, 162, 117, 12, 23,
+        ],
+    },
+    Row {
+        path: "scripts/keyed-fixed-capture/run-one.sh",
+        previous: Some([
+            57, 38, 50, 45, 190, 203, 214, 109, 79, 9, 9, 39, 189, 232, 30, 117, 130, 116, 75, 174,
+            111, 40, 20, 188, 81, 150, 166, 216, 90, 209, 242, 133,
+        ]),
+        current: [
+            46, 239, 251, 160, 224, 190, 179, 78, 158, 42, 26, 36, 70, 98, 54, 25, 147, 211, 210,
+            31, 178, 3, 99, 81, 46, 1, 243, 77, 105, 110, 246, 158,
+        ],
+    },
+];
+
+const POST_S8C_REVIEW: &[Row] = &[
+    Row {
+        path: "packages/vectors/src/keyed_fixed_manifest.rs",
+        previous: Some([
+            40, 54, 156, 64, 215, 49, 10, 3, 168, 170, 196, 152, 107, 151, 216, 7, 13, 230, 148,
+            99, 119, 71, 115, 13, 222, 142, 139, 44, 117, 215, 165, 8,
+        ]),
+        current: [
+            249, 104, 110, 180, 57, 42, 148, 26, 192, 108, 201, 61, 22, 103, 71, 56, 53, 94, 75,
+            90, 234, 192, 138, 38, 188, 70, 89, 0, 66, 30, 131, 155,
+        ],
+    },
+    Row {
+        path: "packages/vectors/tests/keyed_fixed_capture/native.rs",
+        previous: Some([
+            12, 15, 35, 118, 199, 173, 208, 85, 103, 15, 4, 29, 30, 31, 31, 174, 108, 191, 215,
+            126, 63, 127, 205, 242, 82, 210, 121, 58, 147, 241, 240, 179,
+        ]),
+        current: [
+            187, 58, 218, 28, 91, 44, 52, 192, 54, 96, 68, 127, 244, 111, 198, 127, 59, 173, 13,
+            207, 83, 180, 242, 28, 218, 5, 62, 16, 54, 140, 123, 131,
+        ],
+    },
+];
+
 const CAMPAIGN_IDENTITY: [u8; 32] = [
     101, 145, 251, 179, 124, 252, 31, 188, 241, 255, 225, 74, 82, 18, 161, 75, 201, 25, 65, 111,
     147, 125, 197, 29, 49, 72, 24, 7, 0, 40, 192, 99,
@@ -981,6 +1108,16 @@ const S8_IDENTITY: [u8; 32] = [
 const S8B_IDENTITY: [u8; 32] = [
     223, 27, 162, 166, 105, 123, 119, 36, 113, 163, 77, 203, 126, 229, 22, 55, 173, 178, 227, 6,
     237, 178, 228, 58, 111, 101, 110, 148, 213, 88, 118, 249,
+];
+
+const PRE_REVIEW_IDENTITY: [u8; 32] = [
+    43, 97, 114, 168, 14, 118, 116, 112, 245, 168, 241, 116, 200, 73, 123, 34, 123, 174, 166, 213,
+    8, 229, 139, 3, 132, 151, 113, 215, 68, 95, 128, 156,
+];
+
+const S8C_IDENTITY: [u8; 32] = [
+    216, 202, 69, 159, 1, 238, 80, 159, 127, 218, 189, 213, 201, 44, 136, 11, 215, 187, 166, 24,
+    254, 75, 16, 185, 15, 184, 83, 234, 9, 180, 83, 128,
 ];
 
 const S8A2_IDENTITY: [u8; 32] = [
@@ -1133,10 +1270,33 @@ fn fixed_capture_refreeze_history() {
     let independent = independent_encoding(&current, 15);
     assert_eq!(independent.len(), 8853);
     assert_eq!(validated.encoding(), independent);
-    assert_eq!(validated.identity(), S8B_IDENTITY);
+    assert_eq!(validated.identity(), S8C_IDENTITY);
+    let sponsor_q = KeyedFixedParameters {
+        key: [42; 32],
+        asset: vectors::maturity_observer::decode_hex(
+            "230f4f5d4b7c6fa845806ee4f67713459e1b69e8e60fcee2e4940c7a0d5de1b2",
+        )
+        .unwrap()
+        .try_into()
+        .unwrap(),
+        value: KeyedFixedValue::new(60).unwrap(),
+    };
+    let sponsor = FreezeManifest::offer(sponsor_q)
+        .unwrap()
+        .validate(sponsor_q)
+        .unwrap();
+    assert_eq!(
+        FreezeManifest::reconstruct_epoch_freeze(
+            vectors::keyed_fixed_manifest::CaptureEpoch::Sponsor,
+            sponsor.encoding(),
+            &[],
+        ),
+        Ok(sponsor),
+        "the immutable sponsor map equals current pin digests"
+    );
     assert_eq!(
         sha256::Hash::hash(&independent).to_byte_array(),
-        S8B_IDENTITY
+        S8C_IDENTITY
     );
     assert_eq!(current.envelope.maximum_members, Some(1299));
     assert_eq!(current.computed.len(), 15);
@@ -1157,7 +1317,50 @@ fn fixed_capture_refreeze_history() {
     );
     assert_eq!(POST_S8B.len(), 2);
     assert!(POST_S8B.windows(2).all(|rows| rows[0].path < rows[1].path));
-    let mut s8 = current.clone();
+    assert_eq!(POST_S8C.len(), 9);
+    assert!(POST_S8C.windows(2).all(|rows| rows[0].path < rows[1].path));
+    assert_eq!(POST_S8C_REVIEW.len(), 2);
+    assert!(
+        POST_S8C_REVIEW
+            .windows(2)
+            .all(|rows| rows[0].path < rows[1].path)
+    );
+    let mut pre_review = current.clone();
+    for row in POST_S8C_REVIEW {
+        let source = pre_review
+            .sources
+            .iter_mut()
+            .find(|source| source.path == row.path)
+            .unwrap();
+        assert_eq!(source.digest, row.current);
+        source.digest = row.previous.unwrap();
+    }
+    assert_eq!(
+        sha256::Hash::hash(&independent_encoding(&pre_review, 15)).to_byte_array(),
+        PRE_REVIEW_IDENTITY
+    );
+    assert_eq!(
+        pre_review.clone().validate(q),
+        Err(FreezeRefusal::Inventory)
+    );
+    let mut s8b = pre_review;
+    for row in POST_S8C {
+        let source = s8b
+            .sources
+            .iter_mut()
+            .find(|source| source.path == row.path)
+            .unwrap();
+        assert_eq!(source.digest, row.current);
+        source.digest = row.previous.unwrap();
+    }
+    let post_sponsor_encoding = independent_encoding(&s8b, 15);
+    assert_eq!(post_sponsor_encoding.len(), 8853);
+    assert_eq!(
+        sha256::Hash::hash(&post_sponsor_encoding).to_byte_array(),
+        S8B_IDENTITY
+    );
+    assert_eq!(s8b.clone().validate(q), Err(FreezeRefusal::Inventory));
+    let mut s8 = s8b;
     for row in POST_S8B {
         let source = s8
             .sources

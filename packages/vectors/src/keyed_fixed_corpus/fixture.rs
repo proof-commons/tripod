@@ -11,17 +11,20 @@ use target_elements_conformance::protocol::{
 use target_elements_conformance::sponsor_parent::bind_sponsor_parent;
 use transaction::{AssetField, TargetOutput, TargetTransaction, ValueField};
 use vectors::keyed_fixed_capture::{
-    CaptureFamily, CaptureProvenance, CaptureSubject, JournalBinding, JournalRefusal, JournalRow,
-    PairControl, bind_journal, expected_control, subjects,
+    CaptureFamily, CaptureProvenance, CaptureRole, CaptureSubject, JournalBinding, JournalRefusal,
+    JournalRow, PairControl, bind_journal, expected_control, subjects, validate_journal_transport,
+    validate_s8c_census,
 };
-use vectors::keyed_fixed_manifest::{FreezeManifest, ValidatedFreeze};
+use vectors::keyed_fixed_manifest::{CaptureEpoch, FreezeManifest, SourceVersion, ValidatedFreeze};
 use vectors::keyed_fixed_stack_model as stack_model;
 
 #[path = "history.rs"]
 mod history;
+#[path = "sponsor.rs"]
+mod sponsor;
 
 const CENSUS: &str = include_str!("../../fixtures/keyed-fixed-native/CENSUS.json");
-const CENSUS_PIN: &str = "e3e8aa91e466c5566334f8eb4e1d2b06e86349509e187e8fd933022afea50a34";
+const CENSUS_PIN: &str = "fe2345f624b912e4b50230d043f365752e7a33db45b2c4073e2fe37ddb5c51d6";
 const SCALING_FULL: [usize; 17] = [
     3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 774, 1533, 2295, 4248, 8148, 12052,
 ];
@@ -78,9 +81,11 @@ pub enum CorpusRefusal {
 #[derive(Clone)]
 pub struct Packet {
     family: CaptureFamily,
+    epoch: CaptureEpoch,
     name: &'static str,
     run: String,
     files: BTreeMap<String, Vec<u8>>,
+    archive_addressed: BTreeMap<String, (String, u64)>,
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -100,10 +105,14 @@ fn raw_bytes(value: &Value) -> Result<Vec<u8>, CorpusRefusal> {
 }
 
 fn index() -> Result<Value, CorpusRefusal> {
-    if hex(&sha256(CENSUS.as_bytes())) != CENSUS_PIN {
+    indexed(CENSUS.as_bytes(), CENSUS_PIN)
+}
+
+fn indexed(bytes: &[u8], pin: &str) -> Result<Value, CorpusRefusal> {
+    if hex(&sha256(bytes)) != pin {
         return Err(CorpusRefusal::Index);
     }
-    let index: Value = serde_json::from_str(CENSUS).map_err(|_| CorpusRefusal::Index)?;
+    let index: Value = serde_json::from_slice(bytes).map_err(|_| CorpusRefusal::Index)?;
     if index["schema"] != 1 || index["preset"] != 6 {
         return Err(CorpusRefusal::Index);
     }
@@ -164,8 +173,14 @@ fn decode_fixture(
                 return Err(CorpusRefusal::Path);
             }
             let allowed = if name == "sources" {
-                path == "packages/vectors/src/keyed_fixed_manifest.rs"
-                    || path == "packages/vectors/src/keyed_fixed_manifest/encoding.rs"
+                index["source_history"].as_array().is_some_and(|catalog| {
+                    catalog.iter().any(|row| {
+                        row["member"] == path
+                            && row["sha256"].as_str().is_some_and(|digest| {
+                                hex(&sha256(&decode_hex(&bytes).unwrap_or_default())) == digest
+                            })
+                    })
+                })
             } else {
                 path.starts_with(&format!("{run}/"))
                     && (name == "root"
@@ -184,6 +199,13 @@ fn decode_fixture(
         }
     }
     if next_offset != compressed.len() || row["paths"] != count {
+        return Err(CorpusRefusal::Index);
+    }
+    if name == "sources"
+        && index["source_history"]
+            .as_array()
+            .is_none_or(|catalog| catalog.len() != count)
+    {
         return Err(CorpusRefusal::Index);
     }
     tracing::info!(target: "vectors::keyed_fixed_corpus", name, members = members.len(), paths = count, encoded_bytes = compressed.len(), outcome = "completed", "indexed fixture decoded");
@@ -236,13 +258,89 @@ impl Packet {
         }
         let packet = Self {
             family,
+            epoch: CaptureEpoch::CampaignThree,
             name,
             run,
             files,
+            archive_addressed: BTreeMap::new(),
         };
         packet.check_seals()?;
         packet.check_census(expected_records, expected_exchanges)?;
         Ok(packet)
+    }
+
+    /// Acquire both S8c families from one checked index and three bounded
+    /// fixture members. The caller supplies literal fixture bytes and index
+    /// pin when the second capture has been independently reviewed.
+    /// # Errors
+    /// Refuses changed index, member, seal, role, ordinal or campaign marker.
+    pub fn load_s8c(
+        index_bytes: &[u8],
+        index_pin: &str,
+        blobs: [&[u8]; 3],
+    ) -> Result<(Self, Self), CorpusRefusal> {
+        let index = indexed(index_bytes, index_pin)?;
+        let run = index["run"]
+            .as_str()
+            .ok_or(CorpusRefusal::Index)?
+            .to_owned();
+        let mut files = BTreeMap::new();
+        let source_index = indexed(CENSUS.as_bytes(), CENSUS_PIN)?;
+        let source_run = source_index["run"].as_str().ok_or(CorpusRefusal::Index)?;
+        decode_fixture(
+            "sources",
+            fixture("sources").ok_or(CorpusRefusal::Index)?,
+            &source_index,
+            source_run,
+            &mut files,
+        )?;
+        for (name, bytes) in ["preparation", "sponsor", "legacy-copy"]
+            .into_iter()
+            .zip(blobs)
+        {
+            decode_fixture(name, bytes, &index, &run, &mut files)?;
+        }
+        let mut archive_addressed = BTreeMap::new();
+        let omissions = index["archive_addressed"]
+            .as_array()
+            .ok_or(CorpusRefusal::Index)?;
+        for item in omissions {
+            let path = item["path"].as_str().ok_or(CorpusRefusal::Index)?;
+            let digest = item["sha256"].as_str().ok_or(CorpusRefusal::Index)?;
+            let length = item["bytes"].as_u64().ok_or(CorpusRefusal::Index)?;
+            if path.starts_with('/')
+                || path.contains("..")
+                || digest.len() != 64
+                || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+                || archive_addressed
+                    .insert(path.to_owned(), (digest.to_owned(), length))
+                    .is_some()
+            {
+                return Err(CorpusRefusal::Index);
+            }
+        }
+        let sponsor = Self {
+            family: CaptureFamily::Sponsor,
+            epoch: CaptureEpoch::Sponsor,
+            name: "sponsor",
+            run: run.clone(),
+            files: files.clone(),
+            archive_addressed: archive_addressed.clone(),
+        };
+        let legacy = Self {
+            family: CaptureFamily::LegacyCopy,
+            epoch: CaptureEpoch::Sponsor,
+            name: "legacy-copy",
+            run,
+            files,
+            archive_addressed,
+        };
+        sponsor.check_seals()?;
+        legacy.check_seals()?;
+        sponsor.check_campaign_seal()?;
+        sponsor.check_census(8, 24)?;
+        legacy.check_census(3, 9)?;
+        Ok((sponsor, legacy))
     }
 
     /// Read exact retained bytes by run-relative path.
@@ -255,14 +353,40 @@ impl Packet {
             .ok_or(CorpusRefusal::Path)
     }
 
-    /// Historical source bytes retained outside the run namespace.
+    /// Historical source bytes retained outside the run namespace, addressed
+    /// by both logical path and reviewed digest.
     /// # Errors
     /// Refuses any source absent from the authenticated source fixture.
-    pub fn source(&self, path: &str) -> Result<&[u8], CorpusRefusal> {
+    pub fn source(&self, path: &str, digest: [u8; 32]) -> Result<&[u8], CorpusRefusal> {
+        let member = format!("source-history/{}/{path}", hex(&digest));
         self.files
-            .get(path)
+            .get(&member)
             .map(Vec::as_slice)
             .ok_or(CorpusRefusal::Path)
+    }
+
+    /// All authenticated historical source pairs for epoch reconstruction.
+    /// # Errors
+    /// Refuses a malformed source-history member name or digest.
+    pub fn epoch_sources(&self) -> Result<Vec<SourceVersion<'_>>, CorpusRefusal> {
+        self.files
+            .iter()
+            .filter(|(member, _)| member.starts_with("source-history/"))
+            .map(|(member, bytes)| {
+                let rest = member
+                    .strip_prefix("source-history/")
+                    .ok_or(CorpusRefusal::Path)?;
+                let (digest, path) = rest.split_once('/').ok_or(CorpusRefusal::Path)?;
+                let digest: [u8; 32] = decode_hex(digest)?
+                    .try_into()
+                    .map_err(|_| CorpusRefusal::Path)?;
+                Ok(SourceVersion {
+                    path,
+                    digest,
+                    bytes,
+                })
+            })
+            .collect()
     }
 
     /// Replace one already acquired byte subject for a focused inner-boundary test.
@@ -285,10 +409,11 @@ impl Packet {
     pub fn recheck_census(&self) -> Result<(), CorpusRefusal> {
         let (records, exchanges) = match self.family {
             CaptureFamily::Clauses => (32, 102),
-            CaptureFamily::Policy => (3, 9),
+            CaptureFamily::Policy | CaptureFamily::LegacyCopy => (3, 9),
             CaptureFamily::Scaling => (17, 52),
             CaptureFamily::Histories => (168, 504),
-            _ => return Err(CorpusRefusal::Census),
+            CaptureFamily::Sponsor => (8, 24),
+            CaptureFamily::Pilot => return Err(CorpusRefusal::Census),
         };
         self.check_census(records, exchanges)
     }
@@ -315,6 +440,45 @@ impl Packet {
         Ok(())
     }
 
+    fn check_campaign_seal(&self) -> Result<(), CorpusRefusal> {
+        let listing = std::str::from_utf8(self.file("campaign-retention.sha256")?)
+            .map_err(|_| CorpusRefusal::Seal)?;
+        let paths = [
+            "retention.sha256",
+            "build/retention.sha256",
+            "sponsor/retention.sha256",
+            "legacy-copy/retention.sha256",
+        ];
+        if listing.lines().count() != paths.len() {
+            return Err(CorpusRefusal::Seal);
+        }
+        for (line, path) in listing.lines().zip(paths) {
+            let (digest, listed) = line.split_once("  ").ok_or(CorpusRefusal::Seal)?;
+            if listed != path || digest != hex(&sha256(self.file(path)?)) {
+                return Err(CorpusRefusal::Seal);
+            }
+        }
+        let prepared =
+            std::str::from_utf8(self.file("prepare.log")?).map_err(|_| CorpusRefusal::Seal)?;
+        let marker = format!("KFF_PREPARE_DONE run={} exit=0", self.run);
+        if prepared.lines().last() != Some(marker.as_str())
+            || prepared
+                .lines()
+                .filter(|line| line.starts_with("KFF_PREPARE_DONE "))
+                .count()
+                != 1
+        {
+            return Err(CorpusRefusal::Seal);
+        }
+        let campaign =
+            std::str::from_utf8(self.file("campaign.log")?).map_err(|_| CorpusRefusal::Seal)?;
+        let marker = format!("KFF_CAMPAIGN_DONE run={} exit=0", self.run);
+        if campaign.lines().filter(|line| *line == marker).count() != 1 {
+            return Err(CorpusRefusal::Seal);
+        }
+        Ok(())
+    }
+
     fn check_listing(&self, listing: &str, prefix: &str) -> Result<(), CorpusRefusal> {
         let text = std::str::from_utf8(self.file(listing)?).map_err(|_| CorpusRefusal::Seal)?;
         for line in text.lines() {
@@ -331,8 +495,17 @@ impl Packet {
             {
                 continue;
             }
-            if let Ok(bytes) = self.file(&format!("{prefix}{relative}")) {
+            let named = format!("{prefix}{relative}");
+            if let Ok(bytes) = self.file(&named) {
                 if hex(&sha256(bytes)) != digest {
+                    return Err(CorpusRefusal::Seal);
+                }
+            } else if self.epoch == CaptureEpoch::Sponsor {
+                if self
+                    .archive_addressed
+                    .get(&named)
+                    .is_none_or(|(expected, _)| expected != digest)
+                {
                     return Err(CorpusRefusal::Seal);
                 }
             } else if !self.archive_addressed(relative)
@@ -417,12 +590,27 @@ impl Packet {
                 return Err(CorpusRefusal::Census);
             }
         }
+        if matches!(
+            self.family,
+            CaptureFamily::Sponsor | CaptureFamily::LegacyCopy
+        ) {
+            self.check_s8c_census(&census, declared, records, exchanges)?;
+        }
+        let record_prefix = if self.family == CaptureFamily::LegacyCopy {
+            "legacy-"
+        } else {
+            "subject-"
+        };
+        let prefix = format!("{}/{}/{record_prefix}", self.run, self.name);
         let record_count = self
             .files
             .keys()
             .filter(|path| {
-                path.starts_with(&format!("{}/{}/subject-", self.run, self.name))
-                    && std::path::Path::new(path).extension() == Some(std::ffi::OsStr::new("json"))
+                path.strip_prefix(&prefix)
+                    .and_then(|name| name.strip_suffix(".json"))
+                    .is_some_and(|digits| {
+                        digits.len() == 5 && digits.bytes().all(|byte| byte.is_ascii_digit())
+                    })
             })
             .count();
         let exchange_count = self
@@ -468,31 +656,76 @@ impl Packet {
         Ok(())
     }
 
+    fn check_s8c_census(
+        &self,
+        census: &Value,
+        declared: &[Value],
+        records: usize,
+        exchanges: usize,
+    ) -> Result<(), CorpusRefusal> {
+        let rows = declared
+            .iter()
+            .map(|row| {
+                let subject: CaptureSubject = serde_json::from_value(row["subject"].clone())
+                    .map_err(|_| CorpusRefusal::Census)?;
+                let role: CaptureRole = serde_json::from_value(row["role"].clone())
+                    .map_err(|_| CorpusRefusal::Census)?;
+                let ordinal = row["ordinal"].as_u64().ok_or(CorpusRefusal::Census)?;
+                let ordinal = usize::try_from(ordinal).map_err(|_| CorpusRefusal::Census)?;
+                Ok((subject, role, ordinal))
+            })
+            .collect::<Result<Vec<_>, CorpusRefusal>>()?;
+        validate_s8c_census(self.family, &rows, exchanges).map_err(|_| CorpusRefusal::Census)?;
+        let record_prefix = if self.family == CaptureFamily::LegacyCopy {
+            "legacy"
+        } else {
+            "subject"
+        };
+        for (subject, _, ordinal) in &rows {
+            let record = self.family_json(&format!("{record_prefix}-{ordinal:05}.json"))?;
+            let recorded: CaptureSubject = serde_json::from_value(record["subject"].clone())
+                .map_err(|_| CorpusRefusal::Census)?;
+            if recorded != *subject {
+                return Err(CorpusRefusal::Census);
+            }
+        }
+        let primary = rows
+            .iter()
+            .filter(|row| row.1 == CaptureRole::Primary)
+            .count();
+        let member = rows
+            .iter()
+            .filter(|row| row.1 == CaptureRole::SupportingMember)
+            .count();
+        let payment = rows
+            .iter()
+            .filter(|row| row.1 == CaptureRole::SupportingPayment)
+            .count();
+        if census["family"] != serde_json::json!(self.family)
+            || census["records"] != records
+            || census["exchanges"] != exchanges
+            || census["primary"] != primary
+            || census["supporting_member"] != member
+            || census["supporting_payment"] != payment
+        {
+            return Err(CorpusRefusal::Census);
+        }
+        Ok(())
+    }
+
     fn freezes(&self) -> Result<BTreeMap<[u8; 32], ValidatedFreeze>, CorpusRefusal> {
-        let historical_sources = [
-            (
-                "packages/vectors/src/keyed_fixed_manifest.rs",
-                self.files
-                    .get("packages/vectors/src/keyed_fixed_manifest.rs")
-                    .ok_or(CorpusRefusal::Path)?
-                    .as_slice(),
-            ),
-            (
-                "packages/vectors/src/keyed_fixed_manifest/encoding.rs",
-                self.files
-                    .get("packages/vectors/src/keyed_fixed_manifest/encoding.rs")
-                    .ok_or(CorpusRefusal::Path)?
-                    .as_slice(),
-            ),
-        ];
+        let historical_sources = self.epoch_sources()?;
         let mut freezes = BTreeMap::new();
         for (path, encoded) in &self.files {
             if path.starts_with(&format!("{}/{}/freeze-", self.run, self.name))
                 && std::path::Path::new(path).extension() == Some(std::ffi::OsStr::new("bin"))
             {
-                let freeze =
-                    FreezeManifest::reconstruct_campaign_freeze(encoded, &historical_sources)
-                        .map_err(|_| CorpusRefusal::Record)?;
+                let freeze = FreezeManifest::reconstruct_epoch_freeze(
+                    self.epoch,
+                    encoded,
+                    &historical_sources,
+                )
+                .map_err(|_| CorpusRefusal::Record)?;
                 freezes.insert(freeze.identity(), freeze);
             }
         }
@@ -680,10 +913,15 @@ impl Packet {
         let fund_response = self.family_json(&format!("exchange-{fund:05}-response.json"))?;
         let sign_request = self.family_json(&format!("exchange-{sign:05}-request.json"))?;
         let sign_response = self.family_json(&format!("exchange-{sign:05}-response.json"))?;
+        let expected_sign_step = if record.subject == CaptureSubject::SponsorPayment {
+            format!("fixed-payment-sign-{sign}")
+        } else {
+            format!("fixed-sign-{sign}")
+        };
         if fund_request["case"]["operation"] != "fund_sponsor"
             || sign_request["case"]["operation"] != "sign_sponsor"
             || fund_request["case"]["step"] != format!("fixed-fund-{fund}")
-            || sign_request["case"]["step"] != format!("fixed-sign-{sign}")
+            || sign_request["case"]["step"] != expected_sign_step
             || fund_request["case"] != fund_response["case"]
             || sign_request["case"] != sign_response["case"]
             || sign_request["subject"]["sponsor_input_index"] != record.sponsor_index
@@ -857,6 +1095,22 @@ impl Packet {
         {
             return Err(CorpusRefusal::Record);
         }
+        let spent_parent = TargetTransaction::decode(parent).map_err(|_| CorpusRefusal::Record)?;
+        let spent = spent_parent
+            .outputs()
+            .get(sponsor_input.outpoint().index() as usize)
+            .ok_or(CorpusRefusal::Record)?;
+        let witness = transaction
+            .witnesses()
+            .get(sponsor_index)
+            .ok_or(CorpusRefusal::Record)?;
+        transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+            &stripped,
+            sponsor_index,
+            spent,
+            witness.stack(),
+        )
+        .map_err(|_| CorpusRefusal::Witness)?;
         Self::check_response_outcome(payment, &submit_response)
     }
 
@@ -1178,7 +1432,16 @@ impl Packet {
                 prepared_provenance: &record.row.expected_provenance,
                 control: control_binding,
             };
-            bind_journal(freeze, &record.row, &binding).map_err(CorpusRefusal::Journal)?;
+            if self.family == CaptureFamily::Sponsor
+                && record.subject == CaptureSubject::SponsorPayment
+            {
+                validate_journal_transport(freeze, &record.row).map_err(CorpusRefusal::Journal)?;
+            } else {
+                bind_journal(freeze, &record.row, &binding).map_err(CorpusRefusal::Journal)?;
+            }
+            if self.family == CaptureFamily::Sponsor {
+                sponsor::check_sponsor_record(&record, freeze)?;
+            }
             count += 1;
         }
         self.check_payments()?;

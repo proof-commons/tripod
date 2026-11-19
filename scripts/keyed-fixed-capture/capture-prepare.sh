@@ -78,9 +78,14 @@ if [[ ${1:-} == --select-artifact ]]; then
     select_artifact "$2" "$3" "$4"
     exit 0
 fi
-[[ $# == 2 ]] || exit 64
+[[ $# == 2 || $# == 3 ]] || exit 64
 commit=$1
 run=$2
+families_csv=pilot,clauses,policy,scaling,histories
+if [[ $# == 3 ]]; then
+    [[ $3 == sponsor,legacy-copy ]] || exit 64
+    families_csv=$3
+fi
 [[ $commit =~ ^[0-9a-f]{40}$ && $run =~ ^[a-z0-9][a-z0-9_-]{0,63}$ ]] || exit 64
 root=/var/home/tripod/loops/evidence/fixed-form
 warm=/var/home/tripod/loops/cargo-target-fixed-w20c1
@@ -162,7 +167,7 @@ timeout --kill-after=5 60 podman run --init --name "$container" --network=none -
       cat /elements/PROVENANCE.txt
     ' >"$destination/build/toolchain.txt" 2>"$destination/build/toolchain.stderr"
 hostname >"$destination/build/node.txt"
-python3 - "$destination" "$commit" "$image" "$trust" <<'PY'
+python3 - "$destination" "$commit" "$image" "$trust" "$families_csv" <<'PY'
 import hashlib, json, lzma, pathlib, re, sys
 root = pathlib.Path(sys.argv[1]); build = root/'build'; source = root/'source'
 digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
@@ -195,7 +200,7 @@ if sys.argv[4] != 'mock':
     previous_zk = re.search(r'zk library:.*sha256 ([0-9a-f]{64})', retained['toolchain'])
     assert previous_zk and data['zk_library_digest'] == previous_zk.group(1), 'first-edition zk library baseline drift'
 (build/'prepared.json').write_text(json.dumps(data, sort_keys=True, indent=2)+'\n')
-for target in ('pilot','clauses','policy','scaling','histories'):
+for target in sys.argv[5].split(','):
     directory = root/target; directory.mkdir(); (directory/'capture.env').write_text('TRIPOD_FIXED_CAPTURE_DIR=/capture\n')
 PY
 printf 'KFF_PREPARED directory=%s image=%s\n' "$destination" "$image"

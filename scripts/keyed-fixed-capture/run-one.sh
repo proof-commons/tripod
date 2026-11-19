@@ -7,7 +7,7 @@ if [[ ${TRIPOD_CAPTURE_STANDIN:-0} != 1 ]]; then
 fi
 trap 'status=$?; printf "run-one wall=%ss exit=%s\n" "$((SECONDS-started))" "$status"; exit "$status"' EXIT
 target=${1:?target required}
-case "$target" in pilot|clauses|policy|scaling|histories) ;; *) exit 64;; esac
+case "$target" in pilot|clauses|policy|scaling|histories|sponsor|legacy-copy) ;; *) exit 64;; esac
 test_name="native_${target//-/_}"
 capture=/capture
 binary=/capture-build/keyed_fixed_capture

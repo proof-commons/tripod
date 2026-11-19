@@ -5,13 +5,144 @@ started=$SECONDS
 if [[ ${TRIPOD_CAPTURE_STANDIN:-0} != 1 ]]; then
     export PATH=/usr/local/bin:/usr/bin:/bin
 fi
+if [[ ${1:-} == --campaign ]]; then
+    [[ $# == 5 ]] || exit 64
+    checkout=$(realpath -e "$2")
+    reviewed_commit=$3
+    campaign_run=$4
+    campaign_image=$5
+    [[ $reviewed_commit =~ ^[0-9a-f]{40}$ && $campaign_run =~ ^[a-z0-9][a-z0-9_-]{0,63}$ ]] || exit 64
+    campaign_root=/var/home/tripod/loops/evidence/fixed-form
+    if [[ ${TRIPOD_CAPTURE_STANDIN:-0} == 1 ]]; then
+        campaign_root=${TRIPOD_CAPTURE_TEST_ROOT:?stand-in root required}
+    fi
+    mkdir -p "$campaign_root"
+    campaign_start="$campaign_root/$campaign_run.campaign-start.utc"
+    [[ ! -e $campaign_start && ! -e $campaign_root/$campaign_run ]] || exit 73
+    date -u +%Y-%m-%dT%H:%M:%SZ >"$campaign_start"
+    campaign_deadline="$campaign_root/$campaign_run.campaign-deadline.utc"
+    python3 - "$campaign_start" "$campaign_deadline" <<'CAMPAIGN_DEADLINE'
+import datetime, pathlib, sys
+start = datetime.datetime.fromisoformat(pathlib.Path(sys.argv[1]).read_text().strip().replace('Z','+00:00'))
+pathlib.Path(sys.argv[2]).write_text((start + datetime.timedelta(seconds=6060)).isoformat().replace('+00:00','Z') + '\n')
+CAMPAIGN_DEADLINE
+    preparation_output="$campaign_root/$campaign_run.campaign-preparation.log"
+    set +e
+    (cd "$checkout" && timeout --kill-after=10 2100 bash "$checkout/scripts/keyed-fixed-capture/capture-prepare.sh" "$reviewed_commit" "$campaign_run" sponsor,legacy-copy) >"$preparation_output" 2>&1
+    phase_status=$?
+    set -e
+    campaign_dir="$campaign_root/$campaign_run"
+    [[ -d $campaign_dir ]] || exit 74
+    cp "$preparation_output" "$campaign_dir/preparation-driver.log"
+    cp "$campaign_start" "$campaign_dir/campaign-start.utc"
+    cp "$campaign_deadline" "$campaign_dir/campaign-deadline.utc"
+    printf '%s\n' "$$" >"$campaign_dir/campaign.pid"
+    printf 'phase=prepare exit=%s\n' "$phase_status" >>"$campaign_dir/campaign.log"
+    [[ $phase_status == 0 ]] || exit "$phase_status"
+    for campaign_family in sponsor legacy-copy; do
+        family_started=$SECONDS
+        printf 'phase=%s command=capture-unit.sh guard=1800 image=%s\n' "$campaign_family" "$campaign_image" >>"$campaign_dir/campaign.log"
+        set +e
+        timeout --kill-after=10 1920 bash "$checkout/scripts/keyed-fixed-capture/capture-unit.sh" "$campaign_dir/$campaign_family" "$campaign_family" 1800 "$campaign_image" >"$campaign_dir/$campaign_family/unit.log" 2>&1
+        phase_status=$?
+        set -e
+        printf 'phase=%s exit=%s\n' "$campaign_family" "$phase_status" >>"$campaign_dir/campaign.log"
+        remaining=$((1920 - (SECONDS - family_started)))
+        [[ $remaining -gt 0 ]] || exit 74
+        if [[ $remaining -gt 120 ]]; then remaining=120; fi
+        set +e
+        timeout --kill-after=5 "$remaining" bash "$checkout/scripts/keyed-fixed-capture/capture-unit.sh" --seal "$campaign_dir/$campaign_family" "$campaign_family" 1800 "$campaign_image" >>"$campaign_dir/campaign.log" 2>&1
+        seal_status=$?
+        set -e
+        printf 'phase=%s seal_exit=%s\n' "$campaign_family" "$seal_status" >>"$campaign_dir/campaign.log"
+        [[ $phase_status == 0 && $seal_status == 0 ]] || exit 74
+    done
+    timeout --kill-after=5 120 python3 - "$campaign_dir" "$campaign_run" <<'CAMPAIGN_SEAL'
+import hashlib, os, pathlib, sys
+root = pathlib.Path(sys.argv[1]); run = sys.argv[2]
+lines = (root/'prepare.log').read_text().splitlines()
+assert lines and lines[-1] == f'KFF_PREPARE_DONE run={run} exit=0'
+assert sum(line.startswith('KFF_PREPARE_DONE ') for line in lines) == 1
+items = ('retention.sha256', 'build/retention.sha256',
+         'sponsor/retention.sha256', 'legacy-copy/retention.sha256')
+for family in ('sponsor', 'legacy-copy'):
+    assert (root/family/'admitted').is_file()
+    marker = f'KFF_CAPTURE_DONE target={family} exit=0'
+    assert (root/family/'unit.log').read_text().splitlines().count(marker) == 1
+partial = root/'campaign-retention.sha256.partial'
+with partial.open('w') as output:
+    for item in items:
+        path = root/item
+        output.write(hashlib.sha256(path.read_bytes()).hexdigest() + '  ' + item + '\n')
+    output.flush(); os.fsync(output.fileno())
+partial.replace(root/'campaign-retention.sha256')
+directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+try: os.fsync(directory)
+finally: os.close(directory)
+CAMPAIGN_SEAL
+    printf 'KFF_CAMPAIGN_DONE run=%s exit=0\n' "$campaign_run" >>"$campaign_dir/campaign.log"
+    exit 0
+fi
+if [[ ${1:-} == --wait-campaign || ${1:-} == --check-campaign ]]; then
+    campaign_mode=$1
+    [[ $# == 2 ]] || exit 64
+    campaign_dir=$2
+    campaign_run=$(basename "$campaign_dir")
+    campaign_root=$(dirname "$campaign_dir")
+    [[ $campaign_run =~ ^[a-z0-9][a-z0-9_-]{0,63}$ ]] || exit 64
+    campaign_start="$campaign_root/$campaign_run.campaign-start.utc"
+    campaign_deadline="$campaign_root/$campaign_run.campaign-deadline.utc"
+    campaign_unit="tripod-$campaign_run-campaign"
+    while :; do
+        # This first read is deliberately followed by a terminal-state reread.
+        if [[ -f $campaign_dir/prepare.log ]]; then
+            preparation_seen=$(tail -n 1 "$campaign_dir/prepare.log")
+        else
+            preparation_seen=
+        fi
+        state=$(timeout 10 systemctl --user show "$campaign_unit" --property=ActiveState --value)
+        if [[ ! -e $campaign_start && $state == inactive ]]; then
+            printf 'campaign-state=not-started\n'
+            exit 76
+        fi
+        if [[ -f $campaign_start && -f $campaign_deadline ]]; then
+            timeout --kill-after=5 10 python3 - "$campaign_start" "$campaign_deadline" <<'CAMPAIGN_BOUND'
+import datetime, pathlib, sys, time
+start = datetime.datetime.fromisoformat(pathlib.Path(sys.argv[1]).read_text().strip().replace('Z','+00:00')).timestamp()
+deadline = datetime.datetime.fromisoformat(pathlib.Path(sys.argv[2]).read_text().strip().replace('Z','+00:00')).timestamp()
+assert deadline == start + 6060 and time.time() <= deadline, 'retained campaign deadline exceeded'
+CAMPAIGN_BOUND
+        fi
+        case "$state" in
+            active|activating|deactivating)
+                if [[ $campaign_mode == --check-campaign ]]; then
+                    printf 'campaign-state=still-running\n'
+                    exit 75
+                fi
+                sleep 1;;
+            inactive|failed) break;;
+            *) printf 'campaign-state=failed unknown-unit-state=%s\n' "$state"; exit 74;;
+        esac
+    done
+    # The marker may have arrived between the first read and state query.
+    [[ -f $campaign_dir/prepare.log ]] || exit 74
+    preparation_seen=$(tail -n 1 "$campaign_dir/prepare.log")
+    [[ $preparation_seen == "KFF_PREPARE_DONE run=$campaign_run exit=0" ]] || exit 74
+    [[ $(grep -c '^KFF_PREPARE_DONE ' "$campaign_dir/prepare.log") == 1 ]] || exit 74
+    [[ $(timeout 10 systemctl --user show "$campaign_unit" --property=ExecMainStatus --value) == 0 ]] || exit 74
+    [[ -f $campaign_dir/campaign-retention.sha256 ]] || exit 74
+    [[ $(grep -c "^KFF_CAMPAIGN_DONE run=$campaign_run exit=0$" "$campaign_dir/campaign.log") == 1 ]] || exit 74
+    (cd "$campaign_dir" && timeout --kill-after=5 10 sha256sum --check campaign-retention.sha256 --status) || exit 74
+    printf 'campaign-state=ended-and-sealed\n'
+    exit 0
+fi
 mode=run
-if [[ ${1:-} == --wait || ${1:-} == --check ]]; then mode=${1#--}; shift; fi
+if [[ ${1:-} == --wait || ${1:-} == --check || ${1:-} == --seal ]]; then mode=${1#--}; shift; fi
 run_dir=${1:?run directory required}
 target=${2:?target required}
 guard=${3:?guard required}
 image=${4:?immutable image required}
-case "$target" in pilot|clauses|policy|scaling|histories) ;; *) exit 64;; esac
+case "$target" in pilot|clauses|policy|scaling|histories|sponsor|legacy-copy) ;; *) exit 64;; esac
 [[ $guard =~ ^[1-9][0-9]*$ ]] || exit 64
 [[ -d "$run_dir" ]] || exit 66
 run_dir=$(realpath -e "$run_dir")
@@ -37,6 +168,7 @@ cmp "$0" "$root/source/scripts/keyed-fixed-capture/capture-unit.sh"
 fi
 if [[ $mode != run ]]; then
     trap 'status=$?; printf "capture-watch wall=%ss exit=%s\n" "$((SECONDS-started))" "$status"; exit "$status"' EXIT
+    if [[ $mode != seal ]]; then
     while :; do
         state=$(timeout 10 systemctl --user show "$unit" --property=ActiveState --value)
         if [[ ! -e "$run_dir/start.utc" && $state == inactive ]]; then
@@ -65,6 +197,7 @@ BOUND
             *) printf 'capture-state=failed unknown-unit-state=%s\n' "$state"; exit 74;;
         esac
     done
+    fi
     # Hash failed runs too, but only after the writer is demonstrably absent.
     set +e
     timeout --kill-after=5 10 podman container exists "$unit"
@@ -97,7 +230,9 @@ markers = re.findall(r'^KFF_CAPTURE_DONE target=([^ ]+) exit=([0-9]+)$', text, r
 assert markers == [(sys.argv[2], '0')], 'one successful end marker required'
 MARKER
     then printf 'capture-state=failed sealed=yes\n'; exit 74; fi
-    [[ $(timeout 10 systemctl --user show "$unit" --property=ExecMainStatus --value) == 0 ]] || { printf 'capture-state=failed sealed=yes\n'; exit 74; }
+    if [[ $mode != seal ]]; then
+        [[ $(timeout 10 systemctl --user show "$unit" --property=ExecMainStatus --value) == 0 ]] || { printf 'capture-state=failed sealed=yes\n'; exit 74; }
+    fi
     printf 'capture-state=ended-and-sealed\n'
     exit 0
 fi
