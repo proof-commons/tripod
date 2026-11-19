@@ -38,7 +38,7 @@ use crate::{
         ValidatedTargetOperationPlan, plan_compact_ash_target_operation,
     },
     placement::{PlacementSearchLimits, RelationActivity},
-    source::is_sponsor_amount_operand,
+    source::{BurnClearCoordinate, OperandId, OperandRole, is_sponsor_amount_operand},
     target::ExternalEvidenceRole,
 };
 
@@ -558,6 +558,58 @@ fn no_published_field_names_an_erased_sponsor_amount() {
                 "{source:?}",
             );
         }
+    }
+}
+
+#[test]
+fn compact_event_silence_is_retained() {
+    for scope in scopes() {
+        let subject = subject(&scope);
+        assert_eq!(
+            crate::operation_plan::validate_target_operation_plan(&subject.analyzed, &subject.plan),
+            Ok(()),
+        );
+        for relation in subject.plan.relations() {
+            for source in relation.source_requirements.iter().chain(
+                relation
+                    .cases
+                    .values()
+                    .flat_map(|case| case.active_sources.iter()),
+            ) {
+                assert!(
+                    !matches!(source.operand.role(), OperandRole::BurnClear(_)),
+                    "compact gained a Burn/Clear coordinate: {source:?}",
+                );
+            }
+        }
+
+        let mut changed = subject.plan.clone();
+        let relation = changed
+            .relations_mut()
+            .iter()
+            .find(|(_, row)| !row.source_requirements.is_empty())
+            .map(|(id, _)| id.clone())
+            .expect("compact has a source-bearing relation");
+        let row = changed
+            .relations_mut()
+            .get_mut(&relation)
+            .expect("selected relation");
+        let mut event = row
+            .source_requirements
+            .iter()
+            .next()
+            .cloned()
+            .expect("compact relation has a source");
+        event.operand = OperandId::new(
+            relation,
+            OperandRole::BurnClear(BurnClearCoordinate::BurnEventType),
+        );
+        row.source_requirements.insert(event);
+
+        assert_eq!(
+            crate::operation_plan::validate_target_operation_plan(&subject.analyzed, &changed),
+            Err(CompileError::TargetPlanRelationRequirementMismatch),
+        );
     }
 }
 
