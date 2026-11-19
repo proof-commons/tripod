@@ -10,9 +10,11 @@
 //! 0/1. Paths admit only [A-Za-z0-9/._-], without normalization or escaping.
 //! Stored source/computed order is content and validation requires the inventory.
 
-use super::{ComputedItem, Envelope, FreezeManifest, FreezeRefusal, RECIPE, SourceIdentity};
+use super::{
+    COMPUTED, ComputedItem, Envelope, FreezeManifest, FreezeRefusal, RECIPE, SourceIdentity,
+};
 use crate::keyed_fixed_constructor::KeyedFixedDescriptor;
-use realization::keyed_fixed::KeyedFixedParameters;
+use realization::keyed_fixed::{KeyedFixedParameters, KeyedFixedValue};
 
 #[allow(clippy::too_many_lines)] // Keep exhaustive field coverage and its canonical order together.
 pub(super) fn encode(manifest: &FreezeManifest) -> Result<Vec<u8>, FreezeRefusal> {
@@ -136,6 +138,152 @@ const fn code(item: ComputedItem) -> u16 {
         ComputedItem::ReaderRecurrence => 14,
         ComputedItem::MemberMaximum => 15,
     }
+}
+
+struct Decoder<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> Decoder<'a> {
+    fn take(&mut self, length: usize) -> Result<&'a [u8], FreezeRefusal> {
+        let end = self
+            .offset
+            .checked_add(length)
+            .ok_or(FreezeRefusal::Framing)?;
+        let part = self
+            .bytes
+            .get(self.offset..end)
+            .ok_or(FreezeRefusal::Framing)?;
+        self.offset = end;
+        Ok(part)
+    }
+
+    fn array<const N: usize>(&mut self) -> Result<[u8; N], FreezeRefusal> {
+        self.take(N)?.try_into().map_err(|_| FreezeRefusal::Framing)
+    }
+
+    fn u8(&mut self) -> Result<u8, FreezeRefusal> {
+        Ok(self.array::<1>()?[0])
+    }
+
+    fn u16(&mut self) -> Result<u16, FreezeRefusal> {
+        Ok(u16::from_be_bytes(self.array()?))
+    }
+
+    fn u32(&mut self) -> Result<u32, FreezeRefusal> {
+        Ok(u32::from_be_bytes(self.array()?))
+    }
+
+    fn u64(&mut self) -> Result<u64, FreezeRefusal> {
+        Ok(u64::from_be_bytes(self.array()?))
+    }
+
+    fn frame(&mut self) -> Result<Vec<u8>, FreezeRefusal> {
+        let length = usize::try_from(self.u32()?).map_err(|_| FreezeRefusal::Framing)?;
+        if length > 32_000_000 {
+            return Err(FreezeRefusal::Framing);
+        }
+        Ok(self.take(length)?.to_vec())
+    }
+
+    fn boolean(&mut self) -> Result<bool, FreezeRefusal> {
+        match self.u8()? {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(FreezeRefusal::Framing),
+        }
+    }
+}
+
+/// Decode the exact campaign grammar without trusting its source inventory.
+/// Historical authentication is performed by the manifest owner after this parse.
+pub(super) fn decode(bytes: &[u8]) -> Result<FreezeManifest, FreezeRefusal> {
+    let mut reader = Decoder { bytes, offset: 0 };
+    if reader.take(RECIPE.len())? != RECIPE.as_bytes() || reader.u8()? != 0 {
+        return Err(FreezeRefusal::Recipe);
+    }
+    if reader.u32()? != 98 {
+        return Err(FreezeRefusal::Inventory);
+    }
+    let mut sources = Vec::with_capacity(98);
+    for _ in 0..98 {
+        let path = reader.frame()?;
+        if path.is_empty()
+            || !path.iter().all(|byte| {
+                matches!(byte, b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'.' | b'_' | b'-')
+            })
+        {
+            return Err(FreezeRefusal::Alphabet);
+        }
+        let path = String::from_utf8(path).map_err(|_| FreezeRefusal::Alphabet)?;
+        if sources
+            .last()
+            .is_some_and(|last: &SourceIdentity| last.path.as_str() >= path.as_str())
+        {
+            return Err(FreezeRefusal::Inventory);
+        }
+        sources.push(SourceIdentity {
+            path,
+            digest: reader.array()?,
+        });
+    }
+    if reader.u32()? != u32::try_from(COMPUTED.len()).map_err(|_| FreezeRefusal::Inventory)? {
+        return Err(FreezeRefusal::Inventory);
+    }
+    for item in COMPUTED {
+        if reader.u16()? != code(item) {
+            return Err(FreezeRefusal::Inventory);
+        }
+    }
+    let key = reader.array()?;
+    let asset = reader.array()?;
+    let value = KeyedFixedValue::new(reader.u64()?).map_err(|_| FreezeRefusal::Triple)?;
+    let parameters = KeyedFixedParameters { key, asset, value };
+    let descriptor = KeyedFixedDescriptor {
+        parameters,
+        transcript: reader.array()?,
+        pair_digest: reader.array()?,
+        leaf: reader.frame()?,
+        leaf_version: reader.u8()?,
+        internal_key: reader.array()?,
+        root: reader.array()?,
+        tweak: reader.array()?,
+        output_key: reader.array()?,
+        parity: reader.boolean()?,
+        output_program: reader.frame()?,
+        control: reader.frame()?,
+    };
+    let recipe_schema = reader.u32()?;
+    let target_version = reader.u32()?;
+    let maximum_members = match reader.u8()? {
+        0 => None,
+        1 => Some(reader.u64()?),
+        _ => return Err(FreezeRefusal::Framing),
+    };
+    let envelope = Envelope {
+        maximum_members,
+        script_bytes: reader.u64()?,
+        script_witness_bytes: reader.u64()?,
+        input_witness_bytes: reader.u64()?,
+        control_depth: reader.u64()?,
+        argument_items: reader.u64()?,
+        annex: reader.boolean()?,
+        issuance: reader.boolean()?,
+        peg_in: reader.boolean()?,
+        empty_nonce: reader.boolean()?,
+    };
+    if reader.offset != bytes.len() {
+        return Err(FreezeRefusal::Framing);
+    }
+    Ok(FreezeManifest {
+        sources,
+        computed: COMPUTED.to_vec(),
+        descriptor,
+        recipe_schema,
+        target_version,
+        envelope,
+    })
 }
 
 #[cfg(test)]

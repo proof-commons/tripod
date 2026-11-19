@@ -846,7 +846,7 @@ vector_test_targets = [
   'test:keyed_final_admission',
   # Fixed capture offline wall is provisional until isolated and loaded gate
   # samples; comparisons are report-only, with no numeric tolerance selected.
-  'test:keyed_fixed_capture', 'test:keyed_fixed_template', 'test:keyed_fixed_freeze_history',
+  'test:keyed_fixed_capture', 'test:keyed_fixed_template', 'test:keyed_fixed_freeze_history', 'test:keyed_fixed_corpus',
   'test:keyed_fixed_reproduction', 'test:keyed_fixed_history',
   'test:guide13_sponsor_signing', 'test:maturity_abi', 'test:maturity_closure',
   'test:maturity_confidential', 'test:maturity_continuity',

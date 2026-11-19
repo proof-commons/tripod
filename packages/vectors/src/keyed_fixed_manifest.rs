@@ -149,6 +149,68 @@ impl ValidatedFreeze {
 }
 
 impl FreezeManifest {
+    /// Decode and authenticate one of the four reviewed campaign freezes.
+    /// The two changed source snapshots must come from the retained corpus.
+    /// # Errors
+    /// Refuses grammar, source, descriptor, envelope or reviewed-identity drift.
+    pub fn reconstruct_campaign_freeze(
+        encoded: &[u8],
+        historical_sources: &[(&str, &[u8])],
+    ) -> Result<ValidatedFreeze, FreezeRefusal> {
+        let _span = tracing::info_span!(target: "vectors::keyed_fixed_manifest", "reconstruct_campaign_freeze").entered();
+        let manifest = encoding::decode(encoded)?;
+        let parameters = manifest.descriptor.parameters;
+        if historical_sources.len() != 2
+            || historical_sources[0].0 != "packages/vectors/src/keyed_fixed_manifest.rs"
+            || historical_sources[1].0 != "packages/vectors/src/keyed_fixed_manifest/encoding.rs"
+        {
+            return Err(FreezeRefusal::Inventory);
+        }
+        if manifest.sources.len() != pins::SOURCES.len()
+            || manifest
+                .sources
+                .iter()
+                .zip(pins::SOURCES)
+                .any(|(identity, (path, current, _))| {
+                    let bytes = historical_sources
+                        .iter()
+                        .find_map(|(historical_path, bytes)| {
+                            (*historical_path == *path).then_some(*bytes)
+                        })
+                        .unwrap_or(*current);
+                    identity.path != *path || sha256(bytes) != identity.digest
+                })
+        {
+            return Err(FreezeRefusal::Inventory);
+        }
+        let expected = Self::offer(parameters)?;
+        if manifest.descriptor != expected.descriptor {
+            return Err(FreezeRefusal::Descriptor);
+        }
+        if manifest.recipe_schema != expected.recipe_schema {
+            return Err(FreezeRefusal::Recipe);
+        }
+        if manifest.target_version != expected.target_version {
+            return Err(FreezeRefusal::Target);
+        }
+        if manifest.envelope != expected.envelope {
+            return Err(FreezeRefusal::Envelope);
+        }
+        let reencoded = encoding::encode(&manifest)?;
+        if reencoded != encoded {
+            return Err(FreezeRefusal::Framing);
+        }
+        let identity = crate::maturity_observer::encode_hex(&sha256(encoded));
+        if !pins::CAMPAIGN_IDENTITIES.contains(&identity.as_str()) {
+            return Err(FreezeRefusal::Inventory);
+        }
+        tracing::info!(target: "vectors::keyed_fixed_manifest", sources = manifest.sources.len(), encoded_bytes = encoded.len(), outcome = "completed", "campaign freeze authenticated");
+        Ok(ValidatedFreeze {
+            manifest,
+            encoding: reencoded,
+        })
+    }
+
     /// Reconstruct a historical freeze from the retained source bytes and a
     /// separately reviewed identity, without substituting today's inventory.
     /// # Errors

@@ -938,6 +938,31 @@ const POST_CAMPAIGN: &[Row] = &[
     },
 ];
 
+const POST_S8B: &[Row] = &[
+    Row {
+        path: "packages/vectors/src/keyed_fixed_manifest.rs",
+        previous: Some([
+            96, 69, 83, 247, 139, 148, 28, 228, 141, 61, 109, 232, 181, 200, 214, 113, 81, 136,
+            176, 43, 8, 250, 8, 223, 137, 125, 64, 107, 153, 195, 122, 184,
+        ]),
+        current: [
+            223, 158, 3, 167, 159, 251, 248, 232, 171, 218, 98, 137, 98, 126, 42, 144, 161, 11,
+            224, 218, 205, 162, 111, 128, 194, 31, 109, 224, 39, 11, 128, 26,
+        ],
+    },
+    Row {
+        path: "packages/vectors/src/keyed_fixed_manifest/encoding.rs",
+        previous: Some([
+            178, 222, 14, 192, 223, 152, 213, 57, 174, 225, 5, 252, 99, 141, 187, 90, 101, 170,
+            224, 45, 107, 243, 0, 48, 13, 36, 110, 59, 38, 167, 248, 206,
+        ]),
+        current: [
+            172, 42, 136, 231, 35, 31, 124, 160, 166, 5, 195, 109, 240, 94, 148, 151, 32, 163, 118,
+            235, 18, 233, 199, 26, 78, 132, 149, 153, 27, 235, 44, 2,
+        ],
+    },
+];
+
 const CAMPAIGN_IDENTITY: [u8; 32] = [
     101, 145, 251, 179, 124, 252, 31, 188, 241, 255, 225, 74, 82, 18, 161, 75, 201, 25, 65, 111,
     147, 125, 197, 29, 49, 72, 24, 7, 0, 40, 192, 99,
@@ -951,6 +976,11 @@ const REPAIR_IDENTITY: [u8; 32] = [
 const S8_IDENTITY: [u8; 32] = [
     108, 73, 51, 47, 171, 113, 91, 114, 228, 216, 93, 148, 147, 93, 246, 244, 197, 32, 52, 208, 39,
     17, 14, 32, 60, 94, 234, 131, 247, 169, 112, 146,
+];
+
+const S8B_IDENTITY: [u8; 32] = [
+    223, 27, 162, 166, 105, 123, 119, 36, 113, 163, 77, 203, 126, 229, 22, 55, 173, 178, 227, 6,
+    237, 178, 228, 58, 111, 101, 110, 148, 213, 88, 118, 249,
 ];
 
 const S8A2_IDENTITY: [u8; 32] = [
@@ -1103,10 +1133,10 @@ fn fixed_capture_refreeze_history() {
     let independent = independent_encoding(&current, 15);
     assert_eq!(independent.len(), 8853);
     assert_eq!(validated.encoding(), independent);
-    assert_eq!(validated.identity(), S8_IDENTITY);
+    assert_eq!(validated.identity(), S8B_IDENTITY);
     assert_eq!(
         sha256::Hash::hash(&independent).to_byte_array(),
-        S8_IDENTITY
+        S8B_IDENTITY
     );
     assert_eq!(current.envelope.maximum_members, Some(1299));
     assert_eq!(current.computed.len(), 15);
@@ -1125,7 +1155,27 @@ fn fixed_capture_refreeze_history() {
             .windows(2)
             .all(|rows| rows[0].path < rows[1].path)
     );
-    let mut repair = current.clone();
+    assert_eq!(POST_S8B.len(), 2);
+    assert!(POST_S8B.windows(2).all(|rows| rows[0].path < rows[1].path));
+    let mut s8 = current.clone();
+    for row in POST_S8B {
+        let source = s8
+            .sources
+            .iter_mut()
+            .find(|source| source.path == row.path)
+            .unwrap();
+        assert_eq!(source.digest, row.current);
+        source.digest = row.previous.unwrap();
+    }
+    let s8_encoding = independent_encoding(&s8, 15);
+    assert_eq!(s8_encoding.len(), 8853);
+    assert_eq!(
+        sha256::Hash::hash(&s8_encoding).to_byte_array(),
+        S8_IDENTITY
+    );
+    assert_eq!(s8.clone().validate(q), Err(FreezeRefusal::Inventory));
+
+    let mut repair = s8.clone();
     for row in POST_TIMING {
         let source = repair
             .sources

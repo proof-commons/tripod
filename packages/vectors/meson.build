@@ -6,6 +6,8 @@ vectors_source_files = files(
   'src/keyed_fixed_capture.rs',
   'src/keyed_fixed_constructor.rs',
   'src/keyed_fixed_corpus.rs',
+  'src/keyed_fixed_corpus/history.rs',
+  'src/keyed_fixed_corpus/fixture.rs',
   'src/keyed_fixed_evidence.rs',
   'src/keyed_fixed_history_model.rs',
   'src/keyed_fixed_history_reader.rs',
@@ -176,6 +178,14 @@ vectors_doc_files = files('README.md', 'TRACING.md')
 # `include_bytes!`; timing sidecars and the predecessor setup transcript
 # remain audit-only bytes.
 vectors_fixture_files = files(
+  'fixtures/keyed-fixed-native/CENSUS.json',
+  'fixtures/keyed-fixed-native/clauses.json.lzma',
+  'fixtures/keyed-fixed-native/policy.json.lzma',
+  'fixtures/keyed-fixed-native/scaling.json.lzma',
+  'fixtures/keyed-fixed-native/histories.json.lzma',
+  'fixtures/keyed-fixed-native/root.json.lzma',
+  'fixtures/keyed-fixed-native/preparation.json.lzma',
+  'fixtures/keyed-fixed-native/sources.json.lzma',
   'fixtures/keyed-final-native/CENSUS.json',
   'fixtures/keyed-final-native/birth.json.lzma',
   'fixtures/keyed-final-native/continuation.json.lzma',
@@ -441,7 +451,7 @@ vectors_fixture_files = files(
 # (ADR-014): integration-test sources are cargo test inputs, not label
 # subjects. The census audit accepts the exclusion only because it is
 # declared here.
-vectors_excluded_files = files('tests/keyed_fixed_capture.rs', 'tests/keyed_fixed_capture/native.rs', 'tests/keyed_fixed_template.rs', 'tests/keyed_fixed_freeze_history.rs', 'tests/keyed_fixed_reproduction.rs', 'tests/keyed_fixed_history.rs') + vectors_fixture_files + files(
+vectors_excluded_files = files('tests/keyed_fixed_capture.rs', 'tests/keyed_fixed_capture/native.rs', 'tests/keyed_fixed_template.rs', 'tests/keyed_fixed_freeze_history.rs', 'tests/keyed_fixed_reproduction.rs', 'tests/keyed_fixed_history.rs', 'tests/keyed_fixed_corpus.rs') + vectors_fixture_files + files(
   'tools/extract-keyed-final.py',
   'tests/common/legacy.rs',
   'tests/common/mod.rs',

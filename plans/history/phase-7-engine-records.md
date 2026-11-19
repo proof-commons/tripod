@@ -180,4 +180,49 @@ The final packet is (`rec:w1b16:packet`), with clause-by-clause gate evidence at
 
 Exactly born-first and continue-first remain. SOURCE contributes its handle record, MERGE contributes none, and the reader reconstructs membership without a carried counter, designated head or terminal. Acceptance and finality remain evidence, including refusal of Required without an accepted matching deployment declaration. The one reviewed supplied-key template and conditional cryptographic premises are (`sec:w1b16:packet-domain`); no per-key campaign becomes an API precondition and no successful commitment for every key is promised. The seam/baseline argument and explicit regression disposition are (`tab:w1b16:packet-seams`) and (`rec:w1b16:baseline`). The packet's covering boundary is met by the green explicit-base round at (`rec:w1b16:packet-verification`), and the full `0.7.142-dev` run resolves its completed-packet-tree gap at (`rec:w1b16:completed-packet-gate`). The separate disposition closes bite 1.6 at (`rec:w1b16:closed`) and records the Wave-1 exit at (`rec:w1b16:wave1-exit`), satisfying Phase 7's second-contract dependency without changing phase order.
 
+**Record (Fixed-form S8b offline admission)** · `rec:phase7:fixed-form-s8b-admission`
+
+Ruling 237 keeps only bytes the offline joins need in the permanent checkout. The six campaign3 archives at (`rec:history:fixed-form-s8a-campaign`) matched their receipt digests and were opened as data, not executed. The deterministic preset-zero projection reproduced 21,219,940 compressed payload bytes plus at most 32 KiB of index. On the identical payload, LZMA-alone presets 1/3/6/7 measured 15,771,980 / 13,797,823 / 11,160,052 / 11,159,250 payload bytes. The bounded Rust reader refused preset 7 at its 16 MiB limit; preset 6 admits its members and preserves identical decoded bytes. Ruling 237's selected projection at preset 6 is 4,275,562 bytes including a 5,684-byte census; scaling is 3,771,786 bytes. The 17 complete scaling records are the weight SOURCE, MERGEs at 1/2/251/252/253/650/1299, structural 1300 and the first eight supporting SOURCE exemplars. Their 52 retained exchanges include the typed-1300 fund. The remaining 4,000 funding SOURCE transaction files are kept as parent bytes; their 4,000 records and 12,000 exchanges remain archive-addressed under the whole family seal and its checked archive digest. The census records each class and makes no rehash claim for missing archive files. Across families, 220 complete rows are selected for a single offline admission, alongside authentication of every parent-only byte against a retained MERGE input/outpoint. The original node campaign's 4,220-record admission remains its own receipt, not an offline re-admission claim. The omitted funding rows repeat one shape, were admitted on the node and independently checked from their bytes, authenticate themselves as MERGE parents, and would otherwise remain in every clone for good; a join that needs an omitted file reopens the form.
+
+The compression comparison below uses the same full projection and sums Python decode walls over its members; the root and source payloads use the exact retained-file exclusions. The Python decoder can decode preset 7, but its 16 MiB dictionary is rejected by the bounded Rust reader, so its smaller size is inadmissible. Preset 6's 8 MiB dictionary passes that reader. These walls measure decoding only, not offline admission.
+
+| LZMA-alone preset | Full payload bytes | Scaling payload bytes | Decode wall, s | Rust reader bound |
+|---:|---:|---:|---:|---|
+| 0 | 21,219,940 | 19,997,541 | 2.462 | 0.25 MiB dictionary |
+| 1 | 15,771,980 | 15,018,891 | 1.700 | 1 MiB dictionary |
+| 3 | 13,797,823 | 13,131,601 | 1.307 | 4 MiB dictionary |
+| 6 | 11,160,052 | 10,661,960 | 1.296 | 8 MiB dictionary; admitted and selected |
+| 7 | 11,159,250 | 10,661,158 | 1.254 | Bound refusal |
+
+| Fixture | Bytes | SHA-256 |
+|---|---:|---|
+| CENSUS.json | 5,684 | `e3e8aa91e466c5566334f8eb4e1d2b06e86349509e187e8fd933022afea50a34` |
+| clauses.json.lzma | 71,290 | `8fe67ff71103d08bf918870eb8cb848b2c33bc6b33d4f328649ec2a3366e6e6e` |
+| policy.json.lzma | 20,492 | `58b73a85ba23160f22b760ca6a0e516be2ff68d75446dfb1e55523c3bd6a5d74` |
+| scaling.json.lzma | 3,771,786 | `493f6449fe29cc9347414993e708afcd3a9c0aa281385af6f68ebe887c9135a2` |
+| histories.json.lzma | 364,331 | `0ce2c222fce8fa0065d384e7b4624d692d01e2ca05617b2a5d563df4029fb7ef` |
+| root.json.lzma | 5,839 | `841b7fcc9cf751fd0f6337b12a4ab4ae2f416f005410d29e783907ba906eed3f` |
+| preparation.json.lzma | 31,780 | `60e2846ec61eb9610615d9314cda3e486750affc54624c8d449dc49bb04e9435` |
+| sources.json.lzma | 4,360 | `c54f3b5c54cbead921c7db48d39000c39cda9a57579fca7bedd2f7f64e1f91e8` |
+
+The new test-only packages/vectors/src/keyed_fixed_corpus/fixture.rs owns bounded acquisition, seal/preparation, census, byte/wire/parent, sponsor, provenance, control, witness, outcome and measurement joins at (`tab:s8b:joins`); its history.rs child owns the history join. The library corpus module keeps only the existing capture-freeze binding, with no linked LZMA or fixture payload. The two pinned source edits, prior/current digests and unchanged producer classification are (`rec:vectors:keyed-fixed-s8b-refreeze`); the 98-source, 15-code, 8853-byte current identity and historical route are (`rec:identities:keyed-fixed-s8b-admission`). Current validation refuses the campaign's historical identity, while historical reconstruction authenticates all four campaign per-triple encodings. No capture, native, contract or first-edition source changed. The test now checks the seven bounded-model results against the literal table below, after admitting each paired control and independently checking its changed coordinate. These are model instruction indices, not node RPC instruction offsets.
+
+| Subject | Credited model instruction | Result |
+|---|---:|---|
+| ValueMinus | 12 | Unique first equality |
+| ValuePlus | 12 | Unique first equality |
+| WrongProgram | 34 | Unique first equality |
+| WrongKey | 34 | Unique first equality |
+| DisplacedSuccessor | 34 | Unique first equality |
+| MalformedPaymentValue | 21 | Unique first equality |
+| LaterPosition | 26 | Unique first equality |
+
+No subject remained OPEN in the bounded model replay; the captured native refusals retain only their RPC script-class attribution. The actual values came from the diagnostic comparison against an empty expectation; the final test pins them literally and does not change the attribution code.
+
+The independent S8b review at `review/w20b1/keyed-fixed-form-s8b-review.md` confirmed the 98-pin re-freeze, six reconstructable identities, exact fixture-to-archive bytes, deterministic projection and seven replay-derived model sites. Its correction binds each response's weight, a refused detail txid and an accepted readback wtxid to submitted bytes; compares every prepared image to its sealed family final state; and compares six byte-derived histories to the capture-owned `workload_shape` before deriving SOURCE sets from that shape. Clauses payments 87 and 96 now join their retained fund, sign and submit exchanges, exact submitted and parent bytes, and accepted readbacks. The retained funded-coin census checks each funded outpoint against submitted inputs; scaling exchange 12049 is its one unspent coin. No `payment-N.json` exists in the retained fixture or archive, and these joins use the retained exchange and transaction files without a fixture change. A cross-fixture repeated path is refused during acquisition before insertion. Changed refused-txid, final-image and payment-relay subjects exercise the new boundaries beside the accepted packet. The two selected-test rows at (`tab:backlog:fixed-form-s8b-tests`) are narrowed to the coordinates the tests exercise; a changed submitted sponsor signature, checked against independent signing evidence, remains a follow-up rather than a claim of this step.
+
+The study at `plans/drafts/keyed-fixed-s8b-admission-study.md` estimated 900–1400 Rust/test lines and at most 1620 authored changed lines overall. The corrected landing has 2724 added and 11 removed Rust lines against the S8b starting base, 2713 net; this overrun is reported under the raised allocation, with no change to the fixed-form design.
+
+The 2026-11-18T17:14:56Z node round passed formatting, Clippy, all 31 vectors lanes, documentation, lint and checks. Its selected `keyed_fixed_corpus` target passed in 16.11 s; the package battery took 193 s and the whole round 256 s. Its command ended SCOPE-RED because the path arguments omitted docs/lineage/README.md, docs/lineage/realization.md, lint/hash-citation-families.tsv and root meson.build. The loop then ran the same tip with corrected path scope: all batteries passed, scope and whitespace were clean, and `gate-w20c1-20261118T173205Z.log` reports green in 237 s. The four small selected tests passed in the earlier measured round at 1.018, 2.094, 3.181 and 1.895 s for history, measurements, resources and identity respectively. That round's full-admission child hit its 900 s guard because its parent did not drain piped tracing output while waiting; the corrected child passed in the later target. The carried S8b tip and literal attribution table passed the corrected-scope full round at `gate-w20c1-20261118T174918Z.log`, green in 631 s. The review-correction tip passed all 31 vectors lanes, documentation, lint and checks with clean scope and whitespace at `gate-w20c1-20261119T075837Z.log`, green in 431 s; its corpus target passed in 13.18 s.
+
 End of this archival group.

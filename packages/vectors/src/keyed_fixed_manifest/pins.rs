@@ -1,6 +1,14 @@
 //! S8 reviewed whole-file pins. The pin table represents itself through the
 //! encoded inventory and is never hashed into itself.
 
+/// Reviewed campaign identities for K42/v60, K43/v1000 and K42/v14/v15.
+pub(super) const CAMPAIGN_IDENTITIES: [&str; 4] = [
+    "d349b10009b42dd747383bda38745fa6b26d0b4f4b03b2511c6808c1318427b0",
+    "05d715f4baa81f165fa2b6029cf98596f0b5d209f08ee3cc1a85e2ef17cdb55e",
+    "4d9199911158f89e23eb9fd9f3e3de30ca4c9defc9fa877b56d488376b71e8d8",
+    "55422e6407f119c0a1b7f554b045312c2cd97dea1b842b65df388ea4f0553a53",
+];
+
 pub(super) const SOURCES: &[(&str, &[u8], [u8; 32])] = &[
     (
         "Cargo.toml",
@@ -736,16 +744,16 @@ pub(super) const SOURCES: &[(&str, &[u8], [u8; 32])] = &[
         "packages/vectors/src/keyed_fixed_manifest.rs",
         include_bytes!("../../../../packages/vectors/src/keyed_fixed_manifest.rs"),
         [
-            96, 69, 83, 247, 139, 148, 28, 228, 141, 61, 109, 232, 181, 200, 214, 113, 81, 136,
-            176, 43, 8, 250, 8, 223, 137, 125, 64, 107, 153, 195, 122, 184,
+            223, 158, 3, 167, 159, 251, 248, 232, 171, 218, 98, 137, 98, 126, 42, 144, 161, 11,
+            224, 218, 205, 162, 111, 128, 194, 31, 109, 224, 39, 11, 128, 26,
         ],
     ),
     (
         "packages/vectors/src/keyed_fixed_manifest/encoding.rs",
         include_bytes!("../../../../packages/vectors/src/keyed_fixed_manifest/encoding.rs"),
         [
-            178, 222, 14, 192, 223, 152, 213, 57, 174, 225, 5, 252, 99, 141, 187, 90, 101, 170,
-            224, 45, 107, 243, 0, 48, 13, 36, 110, 59, 38, 167, 248, 206,
+            172, 42, 136, 231, 35, 31, 124, 160, 166, 5, 195, 109, 240, 94, 148, 151, 32, 163, 118,
+            235, 18, 233, 199, 26, 78, 132, 149, 153, 27, 235, 44, 2,
         ],
     ),
     (

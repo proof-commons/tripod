@@ -5,3 +5,5 @@ S5's implementation receivers are packages/tapscript/src/keyed_fixed_constructor
 The [realization record](realization.md) specifies the public fixed-form recipe for the [version 2.1.0 paper](../../papers/lineage-fixed-form/main.tex), its conditional authentication, target envelope and derived floor. It distinguishes that contract from implemented and observed evidence, and preserves the legacy edition's scope.
 
 These documents use the DOC owner and keyed-fixed area. The attestation realization and its RZ register remain separate. The recipe selects no deployment triple, capture availability or finality policy.
+
+S8b's offline consumer reads the sealed campaign3 packet under (`[PLAN-rec:backlog:fixed-form-s8b-retention]`). The checkout keeps complete rows for the selected controls and MERGEs plus raw funding parents; the other supporting rows remain archive-addressed. Historical freeze reconstruction and bounded model attribution qualify these exact retained observations, without adding a finality or native instruction-trace claim.

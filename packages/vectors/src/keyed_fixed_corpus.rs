@@ -1,5 +1,4 @@
-//! Capture-time provenance admission for the future fixed-form corpus.
-//! Retained rows keep the independently reconstructed historical identity.
+//! Capture-time provenance binding for the fixed-form corpus.
 
 use crate::keyed_fixed_manifest::ValidatedCaptureHistory;
 
