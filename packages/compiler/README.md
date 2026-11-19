@@ -285,7 +285,12 @@ target-specific type is not merely discouraged here — it is unnameable.
   states its role.
 - `PlacementSearchLimits::new(maximum_states: NonZeroU64, maximum_candidates: NonZeroU64) -> Self`
   — same explicit-configuration rule as `ProofSearchLimits`, for the placement
-  search.
+  search. The candidate limit bounds candidates actually materialized; it does
+  not bound the symbolic cardinality of a checked placement product. Product
+  construction charges the root, every factor and every option to the state
+  limit. Explicit bounded expansion checks its full candidate count first and
+  returns no partial set on exhaustion. The existing enumerator still applies
+  both limits to its bounded search as before.
 - `TargetRequirementSet` — read-only and opaque: private fields, no public
   constructor, no `Default`, no builder. `capabilities() -> impl Iterator<Item = RequiredCapability>`
   and `external_evidence() -> impl Iterator<Item = ExternalEvidenceRole>`, both

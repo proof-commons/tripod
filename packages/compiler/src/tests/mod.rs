@@ -49,6 +49,7 @@ mod pilot_coverage_tests;
 mod pilot_placement_tests;
 mod pilot_program_tests;
 mod placement_oracle_tests;
+mod placement_product_tests;
 mod placement_tests;
 mod proof_tests;
 mod relation_tests;

@@ -215,10 +215,262 @@ fn validate_assignment(
     }
     Ok(depended)
 }
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct OptionRow {
     carriers: Vec<Placed>,
     layout: BTreeSet<LayoutKey>,
+}
+
+/// One checked local choice, with exactly its own layout dependencies.
+#[allow(dead_code)] // The product path is wired into production by packet 3.2e.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FactorOption {
+    carriers: Vec<Placed>,
+    layout: BTreeSet<LayoutKey>,
+}
+
+#[allow(dead_code)] // Product consumers arrive with the shared-storage packet.
+impl FactorOption {
+    /// The canonical carrier assignment fixed by this local choice.
+    pub fn carriers(&self) -> &[Placed] {
+        &self.carriers
+    }
+
+    /// The layout dependencies of this choice alone.
+    pub const fn layout(&self) -> &BTreeSet<LayoutKey> {
+        &self.layout
+    }
+}
+
+/// The exact placement language as independent, checked relation-case factors.
+/// A zero-factor product has one empty member.
+#[allow(dead_code)] // Packet 3.2d exercises this through its selected tests only.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Product {
+    factors: BTreeMap<Key, Vec<FactorOption>>,
+}
+
+#[allow(dead_code)] // Packet 3.2e selects product storage for Clear.
+impl Product {
+    /// Inspect factors without expanding their Cartesian product.
+    pub fn factors(&self) -> impl Iterator<Item = (&Key, &[FactorOption])> {
+        self.factors
+            .iter()
+            .map(|(key, options)| (key, options.as_slice()))
+    }
+
+    /// Multiply factor sizes when the exact cardinality fits in `u128`.
+    pub fn checked_cardinality(&self) -> Option<u128> {
+        self.factors.values().try_fold(1_u128, |count, options| {
+            count.checked_mul(u128::try_from(options.len()).ok()?)
+        })
+    }
+
+    /// Check one complete member and the exact union of its local layouts.
+    ///
+    /// # Errors
+    ///
+    /// The existing census, carrier, quantification or layout refusal for the
+    /// first changed coordinate.
+    pub fn validate_member(&self, member: &Candidate) -> Result<(), Error> {
+        let required = self.factors.keys().cloned().collect::<BTreeSet<_>>();
+        let offered = member
+            .assignments
+            .iter()
+            .map(|assignment| assignment.key.clone())
+            .collect::<BTreeSet<_>>();
+        if required != offered || offered.len() != member.assignments.len() {
+            return Err(Error::PlacementCensusMismatch {
+                missing: required.difference(&offered).cloned().collect(),
+                unexpected: offered.difference(&required).cloned().collect(),
+            });
+        }
+        let mut layout = BTreeSet::new();
+        for assignment in &member.assignments {
+            let mut carriers = BTreeSet::new();
+            for placed in &assignment.carriers {
+                if !carriers.insert(&placed.carrier) {
+                    return Err(Error::DuplicatePlacedCarrier {
+                        key: assignment.key.clone(),
+                        carrier: placed.carrier.clone(),
+                    });
+                }
+            }
+            let options = &self.factors[&assignment.key];
+            let option = options
+                .iter()
+                .find(|option| option.carriers == assignment.carriers)
+                .ok_or_else(|| {
+                    let carrier = assignment
+                        .carriers
+                        .first()
+                        .map(|placed| placed.carrier.clone());
+                    carrier.map_or_else(
+                        || Error::NoEligibleCarrier(assignment.key.clone()),
+                        |carrier| Error::UnpermittedCarrierPlacement {
+                            key: assignment.key.clone(),
+                            carrier,
+                        },
+                    )
+                })?;
+            layout.extend(option.layout.iter().cloned());
+        }
+        let mut stated = BTreeSet::new();
+        for requirement in &member.layout {
+            if !stated.insert(requirement.clone()) {
+                return Err(Error::UnexpectedLayoutRequirement(vec![
+                    requirement.clone(),
+                ]));
+            }
+        }
+        if let Some(missing) = layout.difference(&stated).next() {
+            let key = self.factors.iter().find_map(|(key, options)| {
+                member
+                    .assignments
+                    .iter()
+                    .any(|assignment| {
+                        assignment.key == *key
+                            && options.iter().any(|option| {
+                                option.carriers == assignment.carriers
+                                    && option.layout.contains(missing)
+                            })
+                    })
+                    .then_some((*key).clone())
+            });
+            return Err(key.map_or_else(
+                || Error::UnexpectedLayoutRequirement(vec![missing.clone()]),
+                Error::MissingLayoutRequirement,
+            ));
+        }
+        let unexpected = stated.difference(&layout).cloned().collect::<Vec<_>>();
+        if !unexpected.is_empty() {
+            return Err(Error::UnexpectedLayoutRequirement(unexpected));
+        }
+        Ok(())
+    }
+
+    /// Materialize only when the complete product fits the explicit budgets.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::CandidateLimit`] before expansion when cardinality exceeds
+    /// the candidate cap; [`Error::StateLimit`] if bounded traversal exhausts.
+    pub fn expand(
+        &self,
+        limits: PlacementSearchLimits,
+        report: &mut PlacementSearchReport,
+    ) -> Result<Vec<Candidate>, Error> {
+        let span = tracing::debug_span!(target: "compiler::engine_placement", "expand_product", factor_count = crate::instrumentation::count(self.factors.len()), state_limit = limits.maximum_states.get(), candidate_limit = limits.maximum_candidates.get());
+        let _entered = span.enter();
+        let count = self.factors.values().try_fold(1_u64, |count, options| {
+            count.checked_mul(u64::try_from(options.len()).ok()?)
+        });
+        if count.is_none_or(|count| count > limits.maximum_candidates.get()) {
+            return Err(Error::CandidateLimit(limits.maximum_candidates.get()));
+        }
+        let mut result = Vec::new();
+        let factors = self.factors().collect::<Vec<_>>();
+        expand_factors(&factors, 0, &mut Vec::new(), &mut result, limits, report)?;
+        report.feasible_placements = u64::try_from(result.len()).unwrap_or(u64::MAX);
+        tracing::debug!(target: "compiler::engine_placement", candidate_count = report.feasible_placements, visited_state_count = report.states_visited, message = "bounded product expansion completed");
+        Ok(result)
+    }
+}
+
+#[allow(dead_code)] // Only the dormant product accessor calls this traversal.
+fn expand_factors(
+    factors: &[(&Key, &[FactorOption])],
+    depth: usize,
+    chosen: &mut Vec<Assignment>,
+    result: &mut Vec<Candidate>,
+    limits: PlacementSearchLimits,
+    report: &mut PlacementSearchReport,
+) -> Result<(), Error> {
+    admit_search_state(&mut report.states_visited, limits.maximum_states)
+        .map_err(Error::StateLimit)?;
+    if depth == factors.len() {
+        record_search_event(&mut report.complete_assignments);
+        let layout = chosen
+            .iter()
+            .zip(factors)
+            .flat_map(|(assignment, (_, options))| {
+                options
+                    .iter()
+                    .find(|option| option.carriers == assignment.carriers)
+                    .into_iter()
+                    .flat_map(|option| option.layout.iter().cloned())
+            })
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        result.push(Candidate {
+            assignments: chosen.clone(),
+            layout,
+        });
+        return Ok(());
+    }
+    let (key, options) = factors[depth];
+    for option in options {
+        chosen.push(Assignment {
+            key: (*key).clone(),
+            carriers: option.carriers.clone(),
+        });
+        let step = expand_factors(factors, depth + 1, chosen, result, limits, report);
+        chosen.pop();
+        step?;
+    }
+    Ok(())
+}
+
+/// Check and retain every canonical local option without enumerating members.
+///
+/// # Errors
+///
+/// The existing census, local assignment or state-limit refusal. Malformed
+/// generation and validation entries are refused rather than pruned.
+#[allow(dead_code)] // The shared assembly selects this in packet 3.2e.
+pub fn product(
+    records: &Records,
+    limits: PlacementSearchLimits,
+    report: &mut PlacementSearchReport,
+) -> Result<Product, Error> {
+    let span = tracing::debug_span!(target: "compiler::engine_placement", "product", obligation_count = crate::instrumentation::count(records.eligibility.len()), state_limit = limits.maximum_states.get());
+    let _entered = span.enter();
+    validate_census(records)?;
+    admit_search_state(&mut report.states_visited, limits.maximum_states)
+        .map_err(Error::StateLimit)?;
+    let mut factors = BTreeMap::new();
+    for row in &records.eligibility {
+        admit_search_state(&mut report.states_visited, limits.maximum_states)
+            .map_err(Error::StateLimit)?;
+        let mut canonical = Vec::new();
+        for option in options(row)? {
+            admit_search_state(&mut report.states_visited, limits.maximum_states)
+                .map_err(Error::StateLimit)?;
+            let assignment = Assignment {
+                key: row.key.clone(),
+                carriers: option.carriers.clone(),
+            };
+            let depended = validate_assignment(records, &assignment, &option.layout)?;
+            if depended != option.layout {
+                return Err(Error::UnexpectedLayoutRequirement(
+                    option.layout.difference(&depended).cloned().collect(),
+                ));
+            }
+            canonical.push(FactorOption {
+                carriers: option.carriers,
+                layout: option.layout,
+            });
+        }
+        canonical.sort();
+        canonical.dedup();
+        report.retained_options = report
+            .retained_options
+            .saturating_add(u64::try_from(canonical.len()).unwrap_or(u64::MAX));
+        factors.insert(row.key.clone(), canonical);
+    }
+    tracing::debug!(target: "compiler::engine_placement", factor_count = crate::instrumentation::count(factors.len()), option_count = report.retained_options, visited_state_count = report.states_visited, complete_assignment_count = report.complete_assignments, materialized_candidate_count = report.feasible_placements, message = "placement product constructed");
+    Ok(Product { factors })
 }
 fn options(row: &Eligibility) -> Result<Vec<OptionRow>, Error> {
     if row.options.is_empty() {
