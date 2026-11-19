@@ -53,11 +53,26 @@ pub enum SponsorCase {
 /// Typed semantic dimensions only: no digest, no candidate index, no
 /// search order, and no target position. Two analyses of the same
 /// operation under the same plan produce equal identities.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ExecutionCaseId {
     pub operation: OperationId,
     pub sponsor: SponsorCase,
     pub representations: BTreeMap<ObjectId, RepresentationMode>,
+    pub side_representations:
+        Box<BTreeMap<(realization::TransactionSide, ObjectId), RepresentationMode>>,
+}
+
+impl std::fmt::Debug for ExecutionCaseId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug = f.debug_struct("ExecutionCaseId");
+        debug.field("operation", &self.operation);
+        debug.field("sponsor", &self.sponsor);
+        debug.field("representations", &self.representations);
+        if !self.side_representations.is_empty() {
+            debug.field("side_representations", &self.side_representations);
+        }
+        debug.finish()
+    }
 }
 
 /// One execution case with the source rows active inside it.
@@ -213,12 +228,14 @@ pub fn derive_execution_cases(
 
     for operation in case_operations(relations) {
         let representations = candidate_representations(candidate, operation);
+        let side_representations = candidate_side_representations(candidate, operation);
 
         for sponsor in sponsor_cases(relations, operation) {
             let id = ExecutionCaseId {
                 operation,
                 sponsor,
                 representations: representations.clone(),
+                side_representations: Box::new(side_representations.clone()),
             };
             let active_sources = active_sources(candidate, &id);
 
@@ -331,6 +348,9 @@ pub fn is_active(case: &ExecutionCaseId, requirement: &SourceRequirement) -> boo
         RequirementActivation::WhenRepresentation { object, mode } => {
             case.representations.get(&object) == Some(&mode)
         }
+        RequirementActivation::WhenSideRepresentation { side, object, mode } => {
+            case.side_representations.get(&(side, object)) == Some(&mode)
+        }
     }
 }
 
@@ -359,8 +379,20 @@ fn candidate_representations(
     candidate
         .representations
         .iter()
-        .filter(|(choice, _)| choice.operation == operation)
+        .filter(|(choice, _)| choice.operation == operation && choice.side.is_none())
         .map(|(choice, mode)| (choice.object, *mode))
+        .collect()
+}
+
+fn candidate_side_representations(
+    candidate: &ProofPlanCandidate,
+    operation: OperationId,
+) -> BTreeMap<(realization::TransactionSide, ObjectId), RepresentationMode> {
+    candidate
+        .representations
+        .iter()
+        .filter(|(choice, _)| choice.operation == operation)
+        .filter_map(|(choice, mode)| choice.side.map(|side| ((side, choice.object), *mode)))
         .collect()
 }
 
@@ -375,28 +407,33 @@ fn expected_case_ids(
 
     for operation in case_operations(relations) {
         let mut representations = BTreeMap::new();
+        let mut side_representations = BTreeMap::new();
 
         for node in relations.graph.node_weights() {
             if node.source.id.operation() != operation {
                 continue;
             }
 
-            let Relation::Representation { object, .. } = &node.source.relation else {
-                continue;
+            let (object, side) = match &node.source.relation {
+                Relation::Representation { object, .. } => (*object, None),
+                Relation::SideRepresentation { side, object, .. } => (*object, Some(*side)),
+                _ => continue,
             };
 
             let choice = RepresentationChoiceId {
                 operation,
-                object: *object,
+                object,
+                side,
             };
-            let mode = candidate.representations.get(&choice).ok_or(
-                CompileError::MissingRepresentationChoice {
-                    operation,
-                    object: *object,
-                },
-            )?;
-
-            representations.insert(*object, *mode);
+            let mode = candidate
+                .representations
+                .get(&choice)
+                .ok_or(CompileError::MissingRepresentationChoice { operation, object })?;
+            if let Some(side) = side {
+                side_representations.insert((side, object), *mode);
+            } else {
+                representations.insert(object, *mode);
+            }
         }
 
         for sponsor in sponsor_cases(relations, operation) {
@@ -404,6 +441,7 @@ fn expected_case_ids(
                 operation,
                 sponsor,
                 representations: representations.clone(),
+                side_representations: Box::new(side_representations.clone()),
             });
         }
     }

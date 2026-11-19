@@ -17,6 +17,7 @@ pub fn single_representation(
     let mut selections = objects.iter().filter_map(|object| {
         selected
             .get(&crate::engine_proof::ChoiceKey {
+                side: None,
                 operation,
                 object: *object,
             })

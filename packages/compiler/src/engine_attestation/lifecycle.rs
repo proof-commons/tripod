@@ -39,21 +39,36 @@ pub fn lower<'a>(
         LifecycleRecords::empty(scope.iter().copied().map(super::operation_key).collect());
     records.input_admissions = input_admissions(&declarations);
     for declaration in &declarations {
-        if let Relation::Representation { object, allowed } = &declaration.relation {
-            let mut candidates = allowed.iter().copied().map(mode_key).collect::<Vec<_>>();
-            candidates.sort();
-            records.choices.push(ChoiceRecord {
-                operation: super::operation_key(declaration.id.operation()),
-                object: object_key(*object),
-                candidates,
-            });
-        }
+        let (object, side, allowed) = match &declaration.relation {
+            Relation::Representation { object, allowed } => (object, None, allowed),
+            Relation::SideRepresentation {
+                side,
+                object,
+                allowed,
+            } => (
+                object,
+                Some(crate::engine_identity::side_code(*side)),
+                allowed,
+            ),
+            _ => continue,
+        };
+        let mut candidates = allowed.iter().copied().map(mode_key).collect::<Vec<_>>();
+        candidates.sort();
+        records.choices.push(ChoiceRecord {
+            operation: super::operation_key(declaration.id.operation()),
+            object: object_key(*object),
+            side,
+            candidates,
+        });
     }
     for declaration in &declarations {
         if let Relation::LifecycleExit { object, .. } = &declaration.relation {
             records.required_choices.push((
                 super::operation_key(declaration.id.operation()),
                 object_key(*object),
+                (declaration.id.operation() == OperationId::Burn
+                    && *object == ObjectId::ReceiptLive)
+                    .then_some(crate::engine_identity::side_code(TransactionSide::Input)),
             ));
         }
     }
@@ -125,6 +140,7 @@ fn input_admissions(declarations: &[&RelationDeclaration]) -> Vec<ChoiceRecord> 
             } => Some(ChoiceRecord {
                 operation: super::operation_key(declaration.id.operation()),
                 object: object_key(*object),
+                side: Some(crate::engine_identity::side_code(TransactionSide::Input)),
                 candidates: allowed.iter().copied().map(mode_key).collect(),
             }),
             _ => None,
@@ -142,6 +158,7 @@ fn input_admissions(declarations: &[&RelationDeclaration]) -> Vec<ChoiceRecord> 
                 admissions.push(ChoiceRecord {
                     operation,
                     object,
+                    side: None,
                     candidates: allowed.iter().copied().map(mode_key).collect(),
                 });
             }
@@ -198,6 +215,13 @@ impl LoweredLifecycle {
                     id: RepresentationChoiceId {
                         operation: self.operations[&choice.operation],
                         object: self.objects[&choice.object],
+                        side: choice.side.map(|side| {
+                            if side == 0 {
+                                TransactionSide::Input
+                            } else {
+                                TransactionSide::Output
+                            }
+                        }),
                     },
                     candidates: choice
                         .candidates

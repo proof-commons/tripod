@@ -158,6 +158,7 @@ fn every_layout_row_has_its_literal_category_disposition() {
                 L::CompleteAndDisjointFamilies { .. } => (2, D::BackendPatternRequired),
                 L::IsolateSponsorRegion { .. } => (3, D::BackendPatternRequired),
                 L::EnforceRepresentation { .. } => (4, D::BackendPatternRequired),
+                L::EnforceSideRepresentation { .. } => (7, D::BackendPatternRequired),
                 L::MakeSourceAvailable { .. } => (5, D::BackendPatternRequired),
                 L::SecretFreeOperationPath { .. } => (6, D::BackendPatternRequired),
             };
@@ -682,7 +683,9 @@ fn assess_parts(available: &BTreeSet<Component>) -> MaturityAssessmentSet {
 fn expected_layout(layout: &L) -> (D, Ground) {
     match layout {
         L::CanonicalCoordinator { .. } => (D::BackendStructural, Ground::CompilerOrAbiObligation),
-        L::EnforceRepresentation { .. } => (D::CompleteBackendPattern, Ground::ApprovedPattern),
+        L::EnforceRepresentation { .. } | L::EnforceSideRepresentation { .. } => {
+            (D::CompleteBackendPattern, Ground::ApprovedPattern)
+        }
         L::MakeSourceAvailable { source, .. } => match source.source {
             Source::AuthenticatedInputObject
             | Source::AuthenticatedOutputObject

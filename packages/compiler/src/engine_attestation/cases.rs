@@ -41,32 +41,37 @@ pub fn lower_prepared(
                 .flat_map(|selected| {
                     choice.candidates.iter().map(move |mode| {
                         let mut next = selected.clone();
-                        next.insert(choice.id.object, *mode);
+                        next.insert(choice.id.clone(), *mode);
                         next
                     })
                 })
                 .collect();
         }
-        for representations in modes {
+        for selected in modes {
+            let representations = selected
+                .iter()
+                .filter(|(choice, _)| choice.side.is_none())
+                .map(|(choice, mode)| (choice.object, *mode))
+                .collect::<BTreeMap<_, _>>();
+            let side_representations = selected
+                .iter()
+                .filter_map(|(choice, mode)| choice.side.map(|side| ((side, choice.object), *mode)))
+                .collect::<BTreeMap<_, _>>();
             for sponsor in crate::case::sponsor_cases(relations, *operation) {
                 let case = crate::case::ExecutionCaseId {
                     operation: *operation,
                     sponsor,
                     representations: representations.clone(),
+                    side_representations: Box::new(side_representations.clone()),
                 };
                 tables.cases.push(core::Case {
                     id: crate::engine_attestation::identity::attestation_case(&case),
                     operation: super::operation_key(*operation),
-                    representations: representations
+                    representations: selected
                         .iter()
-                        .map(|(object, mode)| {
+                        .map(|(choice, mode)| {
                             (
-                                super::proof::choice_key(
-                                    &crate::lifecycle::RepresentationChoiceId {
-                                        operation: *operation,
-                                        object: *object,
-                                    },
-                                ),
+                                super::proof::choice_key(choice),
                                 super::proof::mode_key(*mode),
                             )
                         })

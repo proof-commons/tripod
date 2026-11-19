@@ -615,10 +615,21 @@ pub fn validate_analyzed_operation(
 
         for (object, mode) in &case.representations {
             let choice = crate::lifecycle::RepresentationChoiceId {
+                side: None,
                 operation,
                 object: *object,
             };
 
+            if candidate.representations.get(&choice) != Some(mode) {
+                return Err(CompileError::AnalyzedOperationProofPlanMismatch { operation });
+            }
+        }
+        for ((side, object), mode) in case.side_representations.iter() {
+            let choice = crate::lifecycle::RepresentationChoiceId {
+                operation,
+                object: *object,
+                side: Some(*side),
+            };
             if candidate.representations.get(&choice) != Some(mode) {
                 return Err(CompileError::AnalyzedOperationProofPlanMismatch { operation });
             }
@@ -912,6 +923,7 @@ const fn layout_operation(requirement: &LayoutRequirement) -> OperationId {
         | LayoutRequirement::MakeSourceAvailable { relation, .. }
         | LayoutRequirement::IsolateSponsorRegion { relation, .. }
         | LayoutRequirement::EnforceRepresentation { relation, .. }
+        | LayoutRequirement::EnforceSideRepresentation { relation, .. }
         | LayoutRequirement::SecretFreeOperationPath { relation, .. } => relation.operation(),
     }
 }
@@ -925,7 +937,8 @@ pub const fn layout_case(requirement: &LayoutRequirement) -> Option<&ExecutionCa
         LayoutRequirement::AuthenticateFamilyCensus { .. }
         | LayoutRequirement::CompleteAndDisjointFamilies { .. }
         | LayoutRequirement::CanonicalCoordinator { .. }
-        | LayoutRequirement::EnforceRepresentation { .. } => None,
+        | LayoutRequirement::EnforceRepresentation { .. }
+        | LayoutRequirement::EnforceSideRepresentation { .. } => None,
     }
 }
 

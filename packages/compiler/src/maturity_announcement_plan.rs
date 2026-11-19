@@ -1236,6 +1236,7 @@ fn selects(
     plan.proof_plan
         .representations
         .get(&RepresentationChoiceId {
+            side: None,
             operation: PLANNED,
             object: STATE,
         })
@@ -2071,7 +2072,8 @@ fn semantic_layout(layout: &BTreeSet<LayoutRequirement>) -> BTreeSet<LayoutRequi
                 }
                 LayoutRequirement::AuthenticateFamilyCensus { .. }
                 | LayoutRequirement::CompleteAndDisjointFamilies { .. }
-                | LayoutRequirement::CanonicalCoordinator { .. } => {}
+                | LayoutRequirement::CanonicalCoordinator { .. }
+                | LayoutRequirement::EnforceSideRepresentation { .. } => {}
             }
             row
         })

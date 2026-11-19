@@ -639,6 +639,7 @@ fn selects_explicit_ash(plan: &AnalyzedProofPlan) -> bool {
     plan.proof_plan
         .representations
         .get(&RepresentationChoiceId {
+            side: None,
             operation: PLANNED,
             object: ASH,
         })

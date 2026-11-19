@@ -26,6 +26,7 @@ fn live_amount(side: TransactionSide) -> FactId {
 fn live_choice(mode: RepresentationMode) -> BTreeMap<RepresentationChoiceId, RepresentationMode> {
     BTreeMap::from([(
         RepresentationChoiceId {
+            side: None,
             operation: OperationId::TransferLive,
             object: ObjectId::ReceiptLive,
         },
@@ -105,6 +106,7 @@ fn compact_ash_adds_no_disclosure() {
             &inherited,
             &BTreeMap::from([(
                 RepresentationChoiceId {
+                    side: None,
                     operation: OperationId::CompactAsh,
                     object: ObjectId::Ash,
                 },

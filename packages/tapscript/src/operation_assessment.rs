@@ -650,7 +650,8 @@ fn layout_verdict(requirement: LayoutRequirement) -> OperationVerdict {
         // The selected representation is enforced by the prefix
         // comparison every recognition fragment opens its value check
         // with.
-        LayoutRequirement::EnforceRepresentation { .. } => (
+        LayoutRequirement::EnforceRepresentation { .. }
+        | LayoutRequirement::EnforceSideRepresentation { .. } => (
             D::CompleteBackendPattern,
             G::ApprovedPattern,
             BTreeSet::from([P::CompactAshObjectRecognitionV1]),

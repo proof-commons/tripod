@@ -23,10 +23,23 @@ use realization::{LifecycleEdge, LifecycleNode, LifecycleNodeId, ProofKind, Repr
 use crate::{CompileError, input::BoundCompilerInput, relation::CompilerRelationAnalysis};
 
 /// One representation decision variable.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RepresentationChoiceId {
     pub operation: architecture::OperationId,
     pub object: architecture::ObjectId,
+    pub side: Option<realization::TransactionSide>,
+}
+
+impl std::fmt::Debug for RepresentationChoiceId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut debug = f.debug_struct("RepresentationChoiceId");
+        debug.field("operation", &self.operation);
+        debug.field("object", &self.object);
+        if let Some(side) = self.side {
+            debug.field("side", &side);
+        }
+        debug.finish()
+    }
 }
 
 /// One representation variable with its realization-approved candidates.

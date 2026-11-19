@@ -326,6 +326,7 @@ fn cases() -> Vec<ExecutionCaseId> {
         .into_iter()
         .flat_map(|mode| {
             [SponsorCase::Absent, SponsorCase::Present].map(|sponsor| ExecutionCaseId {
+                side_representations: Box::default(),
                 operation: OP,
                 sponsor,
                 representations: BTreeMap::from([(ObjectId::State, mode)]),

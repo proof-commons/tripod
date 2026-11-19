@@ -42,6 +42,43 @@ fn representation(
 }
 
 #[test]
+fn unqualified_case_keys_preserve_pilot_identity() {
+    use crate::engine_identity::{CaseKey, sequence, word};
+    use architecture::semantic::SemanticProfileId;
+    use realization::TransactionSide;
+    let original = ExecutionCaseId {
+        operation: OperationId::TransferLive,
+        sponsor: SponsorCase::Absent,
+        representations: representation(ObjectId::ReceiptLive, RepresentationMode::Explicit),
+        side_representations: Box::default(),
+    };
+    let old_key = CaseKey::new(
+        SemanticProfileId::Attestation,
+        vec![
+            word(OperationId::TransferLive.code()),
+            word(SponsorCase::Absent as u16),
+            sequence([sequence([
+                word(ObjectId::ReceiptLive.code()),
+                word(RepresentationMode::Explicit as u16),
+            ])]),
+        ],
+    );
+    assert_eq!(
+        crate::engine_attestation::identity::attestation_case(&original),
+        old_key
+    );
+    let mut qualified = original;
+    qualified.side_representations.insert(
+        (TransactionSide::Output, ObjectId::ReceiptLive),
+        RepresentationMode::PrivateCommitted,
+    );
+    assert_ne!(
+        crate::engine_attestation::identity::attestation_case(&qualified),
+        old_key
+    );
+}
+
+#[test]
 fn direct_case_entry_refuses_operations_without_plans() {
     let (_, candidates) = analysis(&[OperationId::CompactAsh]);
     let candidate = &candidates[0];
@@ -93,6 +130,7 @@ fn compact_ash_census_is_explicit_and_public_committed_by_sponsor() {
     ]
     .into_iter()
     .map(|(mode, sponsor)| ExecutionCaseId {
+        side_representations: Box::default(),
         operation: OperationId::CompactAsh,
         sponsor,
         representations: representation(ObjectId::Ash, mode),
@@ -116,6 +154,7 @@ fn live_transfer_census_is_explicit_and_private_committed_by_sponsor() {
     ]
     .into_iter()
     .map(|(mode, sponsor)| ExecutionCaseId {
+        side_representations: Box::default(),
         operation: OperationId::TransferLive,
         sponsor,
         representations: representation(ObjectId::ReceiptLive, mode),
@@ -237,6 +276,7 @@ fn active_sources_belong_to_the_case_operation_only() {
 /// makes the distinction observable.
 fn two_object_case() -> ExecutionCaseId {
     ExecutionCaseId {
+        side_representations: Box::default(),
         operation: OperationId::TransferLive,
         sponsor: SponsorCase::Absent,
         representations: BTreeMap::from([
@@ -304,6 +344,7 @@ fn an_extra_representation_decision_breaks_the_case_census() {
     // the census does not require.
     candidate.representations.insert(
         RepresentationChoiceId {
+            side: None,
             operation: OperationId::CompactAsh,
             object: ObjectId::ReceiptLive,
         },
@@ -331,6 +372,7 @@ fn a_missing_representation_decision_is_reported() {
     let mut candidate = candidates.first().expect("a feasible candidate").clone();
 
     candidate.representations.remove(&RepresentationChoiceId {
+        side: None,
         operation: OperationId::CompactAsh,
         object: ObjectId::Ash,
     });
@@ -537,6 +579,7 @@ fn case_fixing(
     representations: BTreeMap<ObjectId, RepresentationMode>,
 ) -> crate::case::ExecutionCaseId {
     ExecutionCaseId {
+        side_representations: Box::default(),
         operation: OperationId::TransferLive,
         sponsor: SponsorCase::Absent,
         representations,
@@ -653,6 +696,7 @@ fn announcement_case_census_pins_activity_and_external_boundaries() {
     for mode in [Explicit, PublicCommitted] {
         for sponsor in [SponsorCase::Absent, SponsorCase::Present] {
             expected.insert(ExecutionCaseId {
+                side_representations: Box::default(),
                 operation: AnnounceMaturity,
                 sponsor,
                 representations: representation(State, mode),

@@ -866,6 +866,7 @@ fn oracle_case_ids(
 
         for sponsor in oracle_sponsor_cases(declarations, operation) {
             cases.insert(ExecutionCaseId {
+                side_representations: Box::default(),
                 operation,
                 sponsor,
                 representations: representations.clone(),
@@ -1191,6 +1192,7 @@ fn the_oracle_expects_sponsor_cardinality_in_both_pilots() {
             let mutations = oracle_mutations(
                 &declaration.relation,
                 &ExecutionCaseId {
+                    side_representations: Box::default(),
                     operation: pilot.operation,
                     sponsor: SponsorCase::Present,
                     representations: BTreeMap::new(),
@@ -1493,6 +1495,7 @@ fn oracle_components(
 
 fn synthetic_case(operation: OperationId) -> ExecutionCaseId {
     ExecutionCaseId {
+        side_representations: Box::default(),
         operation,
         sponsor: SponsorCase::Absent,
         representations: BTreeMap::new(),
@@ -2565,6 +2568,7 @@ fn synthetic_execution_case(
 ) -> crate::case::ExecutionCase {
     crate::case::ExecutionCase {
         id: ExecutionCaseId {
+            side_representations: Box::default(),
             operation: SYNTHETIC,
             sponsor,
             representations: BTreeMap::from([(ObjectId::ReceiptLive, representation)]),

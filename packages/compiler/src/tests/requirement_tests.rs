@@ -373,6 +373,7 @@ fn each_pilots_representation_relation_owns_its_own_objects_mode() {
             assert_eq!(
                 selection.mode,
                 candidate.representations[&crate::lifecycle::RepresentationChoiceId {
+                    side: None,
                     operation: relation.operation(),
                     object,
                 }],
@@ -392,10 +393,12 @@ fn a_relation_naming_one_object_never_reads_another_objects_mode() {
     let fixture = fixture(&[OperationId::TransferLive]);
     let mut candidate = fixture.candidates.first().expect("a candidate").clone();
     let live = crate::lifecycle::RepresentationChoiceId {
+        side: None,
         operation: OperationId::TransferLive,
         object: ObjectId::ReceiptLive,
     };
     let ash = crate::lifecycle::RepresentationChoiceId {
+        side: None,
         operation: OperationId::TransferLive,
         object: ObjectId::Ash,
     };
@@ -938,6 +941,7 @@ fn a_sponsor_local_row_is_active_only_where_the_sponsor_region_exists() {
         .expect("a sponsor-conditional relation");
 
     let case = |sponsor| ExecutionCaseId {
+        side_representations: Box::default(),
         operation: OperationId::CompactAsh,
         sponsor,
         representations: BTreeMap::from([(ObjectId::Ash, RepresentationMode::Explicit)]),

@@ -65,7 +65,15 @@ pub enum Recurrence {
 pub enum Activation {
     Always,
     SponsorPresent,
-    Representation { object: ObjectKey, mode: ModeKey },
+    Representation {
+        object: ObjectKey,
+        mode: ModeKey,
+    },
+    SideRepresentation {
+        side: u16,
+        object: ObjectKey,
+        mode: ModeKey,
+    },
 }
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SourceRow {

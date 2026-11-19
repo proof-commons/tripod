@@ -20,6 +20,7 @@ pub struct AlternativeKey {
 pub struct ChoiceKey {
     pub operation: OperationKey,
     pub object: ObjectKey,
+    pub side: Option<u16>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FactKey {

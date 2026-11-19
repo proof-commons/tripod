@@ -382,6 +382,7 @@ fn limits() -> PlacementSearchLimits {
 
 fn case(sponsor: SponsorCase) -> ExecutionCaseId {
     ExecutionCaseId {
+        side_representations: Box::default(),
         operation: OPERATION,
         sponsor,
         representations: BTreeMap::new(),

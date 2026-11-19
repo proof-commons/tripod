@@ -5,9 +5,64 @@ use architecture::{
     keyed::KeyedManifest,
     semantic::{KeyedOperationId, SemanticOperationId},
 };
+use std::collections::{BTreeMap, BTreeSet};
 
 fn keyed() -> crate::BoundCompilerInput<crate::input::KeyedOwner> {
     keyed_scope(&[KeyedOperationId::Source, KeyedOperationId::Merge])
+}
+
+#[test]
+fn side_choices_do_not_alias_object_choices() {
+    use crate::{
+        engine_lifecycle::{ModeKey, ObjectKey},
+        engine_proof::ChoiceKey,
+        engine_records::OperationKey,
+    };
+    let operation = OperationKey {
+        namespace: 1,
+        code: OperationId::Burn.code(),
+    };
+    let object = ObjectKey {
+        namespace: 1,
+        code: architecture::ObjectId::ReceiptLive.code(),
+    };
+    let mode = ModeKey {
+        namespace: 1,
+        code: 0,
+    };
+    let object_choice = ChoiceKey {
+        operation,
+        object,
+        side: None,
+    };
+    let input_choice = ChoiceKey {
+        operation,
+        object,
+        side: Some(0),
+    };
+    let output_choice = ChoiceKey {
+        operation,
+        object,
+        side: Some(1),
+    };
+    let tables = core::Tables {
+        choices: [object_choice, input_choice, output_choice]
+            .map(|choice| (choice, BTreeSet::from([mode])))
+            .into(),
+        ..Default::default()
+    };
+    let selected = BTreeMap::from([
+        (object_choice, mode),
+        (input_choice, mode),
+        (output_choice, mode),
+    ]);
+    assert!(core::select_keys(&tables, &BTreeMap::new(), &selected).is_ok());
+    let mut missing_input = selected;
+    missing_input.remove(&input_choice);
+    assert_eq!(
+        core::select_keys(&tables, &BTreeMap::new(), &missing_input).err(),
+        Some(core::Error::MissingRepresentationChoice(input_choice)),
+    );
 }
 
 #[test]

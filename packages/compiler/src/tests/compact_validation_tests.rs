@@ -535,6 +535,7 @@ fn pre_extraction_lifecycle(
             choice_objects.insert(*object);
             choices.push(RepresentationChoice {
                 id: RepresentationChoiceId {
+                    side: None,
                     operation: node.source.id.operation(),
                     object: *object,
                 },

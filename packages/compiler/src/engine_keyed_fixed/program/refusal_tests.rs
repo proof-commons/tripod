@@ -538,6 +538,7 @@ fn requirements(k: &Keys) -> Rows {
 fn cases(k: &Keys) -> Rows {
     use crate::engine_cases as c;
     let choice = proof::ChoiceKey {
+        side: None,
         operation: k.relation.operation,
         object: crate::engine_lifecycle::ObjectKey {
             namespace: 3,

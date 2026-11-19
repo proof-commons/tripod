@@ -17,7 +17,11 @@ fn production_keyed_representation_and_lifecycle_joins_refuse_disagreement() {
         code: 1,
     };
     subject.records.proofs.choices.push((
-        crate::engine_proof::ChoiceKey { operation, object },
+        crate::engine_proof::ChoiceKey {
+            side: None,
+            operation,
+            object,
+        },
         Vec::new(),
     ));
     assert!(matches!(

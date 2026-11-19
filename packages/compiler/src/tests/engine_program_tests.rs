@@ -153,7 +153,11 @@ fn assert_stage_join_negatives(control: &core::Records, policy: crate::AnalysisP
     };
     let mut subject = control.clone();
     subject.proofs.choices.push((
-        crate::engine_proof::ChoiceKey { operation, object },
+        crate::engine_proof::ChoiceKey {
+            side: None,
+            operation,
+            object,
+        },
         Vec::new(),
     ));
     assert_eq!(

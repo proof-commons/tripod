@@ -47,6 +47,7 @@ impl LifecycleNodeKey {
 pub struct ChoiceRecord {
     pub operation: OperationKey,
     pub object: ObjectKey,
+    pub side: Option<u16>,
     pub candidates: Vec<ModeKey>,
 }
 
@@ -61,7 +62,7 @@ pub struct LifecycleDependency {
 pub struct LifecycleRecords {
     pub scope: Vec<OperationKey>,
     pub choices: Vec<ChoiceRecord>,
-    pub required_choices: Vec<(OperationKey, ObjectKey)>,
+    pub required_choices: Vec<(OperationKey, ObjectKey, Option<u16>)>,
     /// Modes accepted as input by each operation for an object.
     pub input_admissions: Vec<ChoiceRecord>,
     pub nodes: Vec<LifecycleNodeKey>,
@@ -154,13 +155,13 @@ pub fn analyze_lifecycle(
 
 fn analyze_core(records: &LifecycleRecords) -> Result<LifecycleAnalysis, LifecycleRecordError> {
     let mut choices = records.choices.clone();
-    choices.sort_by_key(|choice| (choice.operation, choice.object));
+    choices.sort_by_key(|choice| (choice.operation, choice.object, choice.side));
     let choice_objects = choices
         .iter()
-        .map(|choice| (choice.operation, choice.object))
+        .map(|choice| (choice.operation, choice.object, choice.side))
         .collect::<BTreeSet<_>>();
-    for (operation, object) in &records.required_choices {
-        if !choice_objects.contains(&(*operation, *object)) {
+    for (operation, object, side) in &records.required_choices {
+        if !choice_objects.contains(&(*operation, *object, *side)) {
             return Err(LifecycleRecordError::MissingRepresentationChoice {
                 operation: *operation,
                 object: *object,
@@ -173,7 +174,7 @@ fn analyze_core(records: &LifecycleRecords) -> Result<LifecycleAnalysis, Lifecyc
         .filter(|node| {
             choice_objects
                 .iter()
-                .any(|(_, object)| *object == node.object())
+                .any(|(_, object, _)| *object == node.object())
         })
         .cloned()
         .collect::<Vec<_>>();

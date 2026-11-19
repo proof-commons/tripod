@@ -179,6 +179,7 @@ fn pilot_search_retains_both_live_transfer_strategies() {
     assert!(plans.candidates.is_sorted());
 
     let live_choice = RepresentationChoiceId {
+        side: None,
         operation: OperationId::TransferLive,
         object: ObjectId::ReceiptLive,
     };
@@ -530,6 +531,7 @@ fn live_transfer_conservation_agrees_with_every_selected_mode() {
     let input = bound_input(&[OperationId::TransferLive]);
     let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
     let live_choice = RepresentationChoiceId {
+        side: None,
         operation: OperationId::TransferLive,
         object: ObjectId::ReceiptLive,
     };
@@ -609,6 +611,7 @@ fn compact_ash_keeps_both_modes_under_public_arithmetic() {
     let input = bound_input(&[OperationId::CompactAsh]);
     let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
     let ash_choice = RepresentationChoiceId {
+        side: None,
         operation: OperationId::CompactAsh,
         object: ObjectId::Ash,
     };

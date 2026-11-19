@@ -158,7 +158,8 @@ const fn layout_operation(requirement: &LayoutRequirement) -> OperationId {
         | LayoutRequirement::SecretFreeOperationPath { case, .. } => case.operation,
         LayoutRequirement::AuthenticateFamilyCensus { relation, .. }
         | LayoutRequirement::CompleteAndDisjointFamilies { relation, .. }
-        | LayoutRequirement::EnforceRepresentation { relation, .. } => relation.operation(),
+        | LayoutRequirement::EnforceRepresentation { relation, .. }
+        | LayoutRequirement::EnforceSideRepresentation { relation, .. } => relation.operation(),
     }
 }
 

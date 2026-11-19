@@ -218,6 +218,7 @@ pub fn validate_disclosure_closure(
             };
 
             let choice = RepresentationChoiceId {
+                side: None,
                 operation: *operation,
                 object: *object,
             };

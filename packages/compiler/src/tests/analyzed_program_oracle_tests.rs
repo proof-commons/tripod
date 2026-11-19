@@ -235,6 +235,7 @@ fn oracle_representations(
         let mode = plan
             .representations
             .get(&RepresentationChoiceId {
+                side: None,
                 operation,
                 object: *object,
             })
@@ -258,6 +259,7 @@ fn oracle_cases(
     oracle_sponsor_cases(declarations, operation)
         .into_iter()
         .map(|sponsor| ExecutionCaseId {
+            side_representations: Box::default(),
             operation,
             sponsor,
             representations: representations.clone(),
@@ -496,6 +498,7 @@ fn oracle_lifecycle_rows(
         let mode = plan
             .representations
             .get(&RepresentationChoiceId {
+                side: None,
                 operation: declaration.id.operation(),
                 object: *object,
             })

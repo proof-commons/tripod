@@ -22,7 +22,7 @@ pub fn attestation_case(value: &crate::case::ExecutionCaseId) -> CaseKey {
     )
 }
 fn attestation_case_parts(value: &crate::case::ExecutionCaseId) -> Vec<Part> {
-    vec![
+    let mut parts = vec![
         word(value.operation.code()),
         word(value.sponsor as u16),
         sequence(
@@ -31,7 +31,19 @@ fn attestation_case_parts(value: &crate::case::ExecutionCaseId) -> Vec<Part> {
                 .iter()
                 .map(|(object, mode)| sequence([word(object.code()), word(*mode as u16)])),
         ),
-    ]
+    ];
+    if !value.side_representations.is_empty() {
+        parts.push(sequence(value.side_representations.iter().map(
+            |((side, object), mode)| {
+                sequence([
+                    word(side_code(*side)),
+                    word(object.code()),
+                    word(*mode as u16),
+                ])
+            },
+        )));
+    }
+    parts
 }
 pub fn attestation_carrier(value: &crate::carrier::CarrierRole) -> CarrierKey {
     CarrierKey::new(
@@ -117,6 +129,12 @@ fn source(value: &crate::source::SourceRequirement) -> Part {
         A::WhenRepresentation { object, mode } => {
             vec![word(2u16), word(object.code()), word(mode as u16)]
         }
+        A::WhenSideRepresentation { side, object, mode } => vec![
+            word(3u16),
+            word(side_code(side)),
+            word(object.code()),
+            word(mode as u16),
+        ],
     };
     sequence([
         relation(value.operand.relation()),
@@ -185,6 +203,18 @@ fn attestation_layout_parts(value: &crate::layout::LayoutRequirement) -> Vec<Par
         } => vec![
             word(5u16),
             relation(id),
+            word(object.code()),
+            word(*representation as u16),
+        ],
+        L::EnforceSideRepresentation {
+            relation: id,
+            side,
+            object,
+            representation,
+        } => vec![
+            word(7u16),
+            relation(id),
+            word(side_code(*side)),
             word(object.code()),
             word(*representation as u16),
         ],

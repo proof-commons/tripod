@@ -541,6 +541,11 @@ pub const fn choice_key(choice: &crate::lifecycle::RepresentationChoiceId) -> co
     core::ChoiceKey {
         operation: super::operation_key(choice.operation),
         object: object_key(choice.object),
+        side: match choice.side {
+            Some(realization::TransactionSide::Input) => Some(0),
+            Some(realization::TransactionSide::Output) => Some(1),
+            None => None,
+        },
     }
 }
 pub const fn lifecycle_key(

@@ -406,6 +406,7 @@ fn a_representation_conditional_relation_reads_its_own_objects_mode() {
     // independently represented object family would otherwise break —
     // one family's mode activating another family's relation.
     let case = crate::case::ExecutionCaseId {
+        side_representations: Box::default(),
         operation: OperationId::TransferLive,
         sponsor: SponsorCase::Absent,
         representations: std::collections::BTreeMap::from([

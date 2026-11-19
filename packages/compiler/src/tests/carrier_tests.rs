@@ -428,6 +428,7 @@ fn synthetic(
     let relations = build_relation_graph(&[operation], &nodes, &[]).expect("synthetic relations");
 
     let id = ExecutionCaseId {
+        side_representations: Box::default(),
         operation,
         sponsor: SponsorCase::Absent,
         representations: BTreeMap::new(),

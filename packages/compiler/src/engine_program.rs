@@ -388,6 +388,7 @@ fn proof_stage_join(
                 engine_proof::ChoiceKey {
                     operation: choice.operation,
                     object: choice.object,
+                    side: choice.side,
                 },
                 choice.candidates.clone(),
             )

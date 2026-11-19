@@ -310,9 +310,9 @@ fn generic_carriers_pin_all_minimal_alternatives() {
 }
 
 #[test]
-fn generic_layout_pins_the_seven_category_counts() {
+fn generic_layout_pins_existing_categories_with_no_side_layout() {
     for projection in PLAN.representations() {
-        let mut counts = [0; 7];
+        let mut counts = [0; 8];
         for row in projection.layout() {
             let category = match row {
                 LayoutRequirement::CanonicalCoordinator { .. } => 0,
@@ -320,13 +320,14 @@ fn generic_layout_pins_the_seven_category_counts() {
                 LayoutRequirement::CompleteAndDisjointFamilies { .. } => 2,
                 LayoutRequirement::IsolateSponsorRegion { .. } => 3,
                 LayoutRequirement::EnforceRepresentation { .. } => 4,
+                LayoutRequirement::EnforceSideRepresentation { .. } => 7,
                 LayoutRequirement::MakeSourceAvailable { .. } => 5,
                 LayoutRequirement::SecretFreeOperationPath { .. } => 6,
             };
             counts[category] += 1;
         }
         assert_eq!(projection.layout().count(), 59);
-        assert_eq!(counts, [3, 8, 8, 4, 1, 35, 0]);
+        assert_eq!(counts, [3, 8, 8, 4, 1, 35, 0, 0]);
     }
 }
 
@@ -374,6 +375,7 @@ fn coverage_prerequisites_preserve_each_declared_edge_in_each_case() {
         }
         let mode = Mode::of(
             candidate.proof_plan.representations[&crate::lifecycle::RepresentationChoiceId {
+                side: None,
                 operation: OperationId::AnnounceMaturity,
                 object: ObjectId::State,
             }],

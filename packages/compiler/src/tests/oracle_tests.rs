@@ -362,6 +362,7 @@ fn the_oracle_pairs_each_live_mode_with_exactly_one_conservation_proof() {
     let input = bound_input(&[OperationId::TransferLive]);
     let oracle = oracle_enumerate(&input, &CapabilityView::Unconstrained).expect("oracle");
     let live_choice = RepresentationChoiceId {
+        side: None,
         operation: OperationId::TransferLive,
         object: ObjectId::ReceiptLive,
     };
@@ -420,6 +421,7 @@ fn greedy_first_choice_selection_is_globally_invalid() {
 
     let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
     let live_choice = RepresentationChoiceId {
+        side: None,
         operation: OperationId::TransferLive,
         object: ObjectId::ReceiptLive,
     };

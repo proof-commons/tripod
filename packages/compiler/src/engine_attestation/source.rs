@@ -570,6 +570,16 @@ pub fn row_key(row: &SourceRequirement) -> core::SourceRow {
                     },
                 }
             }
+            RequirementActivation::WhenSideRepresentation { side, object, mode } => {
+                core::Activation::SideRepresentation {
+                    side: crate::engine_identity::side_code(side),
+                    object: object_key(object),
+                    mode: ModeKey {
+                        namespace: super::ATTESTATION,
+                        code: mode as u16,
+                    },
+                }
+            }
         },
     }
 }

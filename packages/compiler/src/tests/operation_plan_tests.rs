@@ -90,6 +90,7 @@ impl Subject {
                 plan.proof_plan
                     .representations
                     .get(&RepresentationChoiceId {
+                        side: None,
                         operation: OperationId::CompactAsh,
                         object: ObjectId::Ash,
                     })

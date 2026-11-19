@@ -659,6 +659,7 @@ mod identity_controls {
             code: 1,
         };
         let case = crate::case::ExecutionCaseId {
+            side_representations: Box::default(),
             operation,
             sponsor: crate::case::SponsorCase::Absent,
             representations: BTreeMap::new(),

@@ -121,6 +121,7 @@ fn plan_of<'a>(
 /// changes.
 fn synthetic_case(operation: OperationId) -> ExecutionCaseId {
     ExecutionCaseId {
+        side_representations: Box::default(),
         operation,
         sponsor: SponsorCase::Absent,
         representations: BTreeMap::new(),

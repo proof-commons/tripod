@@ -25,7 +25,14 @@ fn pilot_representation_choices_come_from_realization() {
         analysis
             .choices
             .iter()
-            .find(|choice| choice.id == RepresentationChoiceId { operation, object })
+            .find(|choice| {
+                choice.id
+                    == RepresentationChoiceId {
+                        side: None,
+                        operation,
+                        object,
+                    }
+            })
             .expect("choice exists")
             .candidates
             .clone()
@@ -195,6 +202,7 @@ fn announcement_lifecycle_crosses_two_modes_with_six_scoped_exits() {
         .candidates
     {
         let mode = candidate.representations[&RepresentationChoiceId {
+            side: None,
             operation: AnnounceMaturity,
             object: State,
         }];

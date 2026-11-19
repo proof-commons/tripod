@@ -22,6 +22,12 @@ pub enum CompilerRequirement {
         allowed: BTreeSet<ModeKey>,
         selected: ModeKey,
     },
+    SideRepresentation {
+        side: u16,
+        object: ObjectKey,
+        allowed: BTreeSet<ModeKey>,
+        selected: ModeKey,
+    },
     Constructibility(Constructibility),
     Lifecycle {
         object: ObjectKey,
@@ -31,6 +37,11 @@ pub enum CompilerRequirement {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum StructuralRequirement {
     Representation {
+        object: ObjectKey,
+        mode: ModeKey,
+    },
+    SideRepresentation {
+        side: u16,
         object: ObjectKey,
         mode: ModeKey,
     },

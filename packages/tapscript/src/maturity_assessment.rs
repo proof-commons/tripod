@@ -445,6 +445,7 @@ const fn layout_disposition(layout: &LayoutRequirement) -> AssessmentDisposition
         | LayoutRequirement::CompleteAndDisjointFamilies { .. }
         | LayoutRequirement::IsolateSponsorRegion { .. }
         | LayoutRequirement::EnforceRepresentation { .. }
+        | LayoutRequirement::EnforceSideRepresentation { .. }
         | LayoutRequirement::SecretFreeOperationPath { .. } => D::BackendPatternRequired,
     }
 }
@@ -575,7 +576,8 @@ pub(crate) const fn capability_components(capability: RequiredCapability) -> &'s
 pub(crate) const fn layout_components(layout: &LayoutRequirement) -> &'static [Component] {
     match layout {
         // Representation is authenticated on both constructor endpoints.
-        LayoutRequirement::EnforceRepresentation { .. } => AUTHENTICATION,
+        LayoutRequirement::EnforceRepresentation { .. }
+        | LayoutRequirement::EnforceSideRepresentation { .. } => AUTHENTICATION,
         // A coordinator remains a compiler/ABI obligation in the standing result.
         LayoutRequirement::CanonicalCoordinator { .. } => {
             &[Component::Structural(Structural::StateCoordinatorRoleV1)]

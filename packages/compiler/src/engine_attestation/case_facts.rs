@@ -78,6 +78,21 @@ pub fn compiler(value: &CompilerStaticRequirement) -> core::CompilerRequirement 
                 .collect(),
             selected: super::proof::mode_key(*selected),
         },
+        CompilerStaticRequirement::SideRepresentationSelection {
+            side,
+            object: family,
+            allowed,
+            selected,
+        } => core::CompilerRequirement::SideRepresentation {
+            side: crate::engine_identity::side_code(*side),
+            object: object(*family),
+            allowed: allowed
+                .iter()
+                .copied()
+                .map(super::proof::mode_key)
+                .collect(),
+            selected: super::proof::mode_key(*selected),
+        },
         CompilerStaticRequirement::ConstructibilityValidated { class } => {
             core::CompilerRequirement::Constructibility(constructibility(*class))
         }
@@ -107,6 +122,15 @@ pub const fn structural(value: &BackendStructuralRequirement) -> core::Structura
             object: family,
             representation,
         } => core::StructuralRequirement::Representation {
+            object: object(*family),
+            mode: super::proof::mode_key(*representation),
+        },
+        BackendStructuralRequirement::EncodeAndAuthenticateSideRepresentation {
+            side,
+            object: family,
+            representation,
+        } => core::StructuralRequirement::SideRepresentation {
+            side: crate::engine_identity::side_code(*side),
             object: object(*family),
             mode: super::proof::mode_key(*representation),
         },
@@ -151,6 +175,15 @@ const fn activation(value: ActivationCondition) -> Activation {
             object: family,
             mode,
         } => Activation::Representation {
+            object: object(family),
+            mode: super::proof::mode_key(mode),
+        },
+        ActivationCondition::WhenSideRepresentation {
+            side,
+            object: family,
+            mode,
+        } => Activation::SideRepresentation {
+            side: crate::engine_identity::side_code(side),
             object: object(family),
             mode: super::proof::mode_key(mode),
         },

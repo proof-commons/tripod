@@ -107,6 +107,7 @@ impl Prepared {
                 .map(|(object, _)| {
                     let object = objects[&object];
                     let mode = legacy.representations[&crate::lifecycle::RepresentationChoiceId {
+                        side: None,
                         operation: value.relation.operation(),
                         object,
                     }];
@@ -463,6 +464,7 @@ pub fn owned_representation(
     )?;
     let object = objects[&object];
     let mode = candidate.representations[&crate::lifecycle::RepresentationChoiceId {
+        side: None,
         operation: declaration.id.operation(),
         object,
     }];

@@ -1282,6 +1282,7 @@ fn sponsor_value_in_supplemental_sources_is_rejected() {
 fn private_factor_selection_is_rejected() {
     let mut analyzed = ANALYZED.clone();
     let selection = crate::lifecycle::RepresentationChoiceId {
+        side: None,
         operation: OPERATION,
         object: ObjectId::State,
     };

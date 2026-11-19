@@ -148,6 +148,11 @@ pub enum ActivationCondition {
         object: ObjectId,
         mode: RepresentationMode,
     },
+    WhenSideRepresentation {
+        side: TransactionSide,
+        object: ObjectId,
+        mode: RepresentationMode,
+    },
 }
 
 /// Whether one relation is active in one execution case.
@@ -185,6 +190,12 @@ pub enum CompilerStaticRequirement {
         allowed: BTreeSet<RepresentationMode>,
         selected: RepresentationMode,
     },
+    SideRepresentationSelection {
+        side: TransactionSide,
+        object: ObjectId,
+        allowed: BTreeSet<RepresentationMode>,
+        selected: RepresentationMode,
+    },
     /// The operation's constructibility class is validated in scope.
     ConstructibilityValidated { class: ConstructibilityClass },
     /// A required lifecycle exit is declared for the object.
@@ -197,6 +208,11 @@ pub enum CompilerStaticRequirement {
 pub enum BackendStructuralRequirement {
     /// The selected representation must be encoded and authenticated.
     EncodeAndAuthenticateRepresentation {
+        object: ObjectId,
+        representation: RepresentationMode,
+    },
+    EncodeAndAuthenticateSideRepresentation {
+        side: TransactionSide,
         object: ObjectId,
         representation: RepresentationMode,
     },
@@ -719,6 +735,9 @@ pub fn resolve_activity(
         // the plan selected that mode for the condition's own object.
         ActivationCondition::WhenRepresentation { object, mode } => {
             case.representations.get(&object) == Some(&mode)
+        }
+        ActivationCondition::WhenSideRepresentation { side, object, mode } => {
+            case.side_representations.get(&(side, object)) == Some(&mode)
         }
     };
 

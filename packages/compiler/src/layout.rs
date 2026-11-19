@@ -96,6 +96,12 @@ pub enum LayoutRequirement {
         object: ObjectId,
         representation: RepresentationMode,
     },
+    EnforceSideRepresentation {
+        relation: RelationId,
+        side: TransactionSide,
+        object: ObjectId,
+        representation: RepresentationMode,
+    },
 
     /// The operation path must contain no owner or operator secret
     /// gate.
@@ -119,6 +125,7 @@ impl LayoutRequirement {
             | Self::MakeSourceAvailable { relation, .. }
             | Self::IsolateSponsorRegion { relation, .. }
             | Self::EnforceRepresentation { relation, .. }
+            | Self::EnforceSideRepresentation { relation, .. }
             | Self::SecretFreeOperationPath { relation, .. } => Some(relation),
             Self::CanonicalCoordinator { .. } => None,
         }
@@ -264,6 +271,7 @@ pub const fn names_sponsor_amount(requirement: &LayoutRequirement) -> bool {
         | LayoutRequirement::CanonicalCoordinator { .. }
         | LayoutRequirement::IsolateSponsorRegion { .. }
         | LayoutRequirement::EnforceRepresentation { .. }
+        | LayoutRequirement::EnforceSideRepresentation { .. }
         | LayoutRequirement::SecretFreeOperationPath { .. } => false,
     }
 }
@@ -493,6 +501,18 @@ fn structural_requirements(
             } => {
                 requirements.insert(LayoutRequirement::EnforceRepresentation {
                     relation: plan.relation.clone(),
+                    object: *object,
+                    representation: *representation,
+                });
+            }
+            BackendStructuralRequirement::EncodeAndAuthenticateSideRepresentation {
+                side,
+                object,
+                representation,
+            } => {
+                requirements.insert(LayoutRequirement::EnforceSideRepresentation {
+                    relation: plan.relation.clone(),
+                    side: *side,
                     object: *object,
                     representation: *representation,
                 });

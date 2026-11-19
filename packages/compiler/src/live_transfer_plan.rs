@@ -1859,6 +1859,7 @@ fn selects(plan: &AnalyzedProofPlan, representation: LiveTransferRepresentationP
     plan.proof_plan
         .representations
         .get(&RepresentationChoiceId {
+            side: None,
             operation: PLANNED,
             object: RECEIPT_L,
         })

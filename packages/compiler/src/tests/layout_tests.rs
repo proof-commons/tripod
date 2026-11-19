@@ -513,7 +513,8 @@ fn operator_constructibility_introduces_no_layout_obligation() {
 fn announcement_layout_census_pins_categories_and_source_routes() {
     use LayoutRequirement::{
         AuthenticateFamilyCensus, CanonicalCoordinator, CompleteAndDisjointFamilies,
-        EnforceRepresentation, IsolateSponsorRegion, MakeSourceAvailable, SecretFreeOperationPath,
+        EnforceRepresentation, EnforceSideRepresentation, IsolateSponsorRegion,
+        MakeSourceAvailable, SecretFreeOperationPath,
     };
     use RelationKind::{
         AllowedObjectFamilies, CanonicalDeltaPolicy, Cardinality, OpenFlowPolicy, ProjectionPolicy,
@@ -530,7 +531,7 @@ fn announcement_layout_census_pins_categories_and_source_routes() {
         let plans = classify_relation_cases(&relations, &cases).unwrap();
         let carriers = relation_case_eligibility(&relations, &plans).unwrap();
         let rows = layout_requirements(&relations, &plans, &carriers).unwrap();
-        let mut census = [0; 7];
+        let mut census = [0; 8];
         for row in &rows {
             census[match row {
                 CanonicalCoordinator { .. } => 0,
@@ -538,12 +539,13 @@ fn announcement_layout_census_pins_categories_and_source_routes() {
                 CompleteAndDisjointFamilies { .. } => 2,
                 IsolateSponsorRegion { .. } => 3,
                 EnforceRepresentation { .. } => 4,
+                EnforceSideRepresentation { .. } => 7,
                 MakeSourceAvailable { .. } => 5,
                 SecretFreeOperationPath { .. } => 6,
             }] += 1;
         }
         assert_eq!(rows.len(), 59);
-        assert_eq!(census, [3, 8, 8, 4, 1, 35, 0]);
+        assert_eq!(census, [3, 8, 8, 4, 1, 35, 0, 0]);
         for node in relations.graph.node_weights() {
             let id = &node.source.id;
             let expected = match (id.kind(), id.subject()) {

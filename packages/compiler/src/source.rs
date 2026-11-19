@@ -176,6 +176,11 @@ pub enum RequirementActivation {
         object: architecture::ObjectId,
         mode: RepresentationMode,
     },
+    WhenSideRepresentation {
+        side: realization::TransactionSide,
+        object: architecture::ObjectId,
+        mode: RepresentationMode,
+    },
 }
 
 /// One canonical source-requirement row.

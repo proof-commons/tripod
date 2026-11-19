@@ -4,7 +4,7 @@ use crate::{
     bind_input,
     engine_lifecycle::{
         self, ChoiceRecord, LifecycleDependency, LifecycleNodeKey, LifecycleProjection,
-        LifecycleRecordError, ModeKey, ObjectKey,
+        LifecycleRecordError, LifecycleRecords, ModeKey, ObjectKey,
     },
     engine_records::{self, DependencyKind, LoweredRelations, OperationKey},
 };
@@ -91,7 +91,9 @@ fn keyed_lifecycle_record_mutations_cannot_pass_as_an_empty_result() {
     let control = engine_lifecycle::LifecycleRecords::empty(vec![operation]);
     assert!(engine_lifecycle::analyze_lifecycle(&control).is_ok());
     let mut missing_choice = control;
-    missing_choice.required_choices.push((operation, object));
+    missing_choice
+        .required_choices
+        .push((operation, object, None));
     assert_eq!(
         engine_lifecycle::analyze_lifecycle(&missing_choice).err(),
         Some(LifecycleRecordError::MissingRepresentationChoice { operation, object })
@@ -99,6 +101,7 @@ fn keyed_lifecycle_record_mutations_cannot_pass_as_an_empty_result() {
 
     let mut connected = missing_choice;
     connected.choices.push(ChoiceRecord {
+        side: None,
         operation,
         object,
         candidates: vec![mode],
@@ -148,8 +151,9 @@ fn burn_choice_cannot_be_supplied_by_transfer() {
         code: 0,
     };
     let mut records = engine_lifecycle::LifecycleRecords::empty(vec![transfer, burn]);
-    records.required_choices.push((burn, object));
+    records.required_choices.push((burn, object, None));
     records.choices.push(ChoiceRecord {
+        side: None,
         operation: transfer,
         object,
         candidates: vec![mode],
@@ -162,6 +166,7 @@ fn burn_choice_cannot_be_supplied_by_transfer() {
         })
     );
     records.choices.push(ChoiceRecord {
+        side: None,
         operation: burn,
         object,
         candidates: vec![mode],
@@ -191,11 +196,13 @@ fn exit_eligibility_is_representation_specific() {
     };
     let mut records = engine_lifecycle::LifecycleRecords::empty(vec![burn]);
     records.choices.push(ChoiceRecord {
+        side: None,
         operation: burn,
         object,
         candidates: vec![explicit, private],
     });
     records.input_admissions.push(ChoiceRecord {
+        side: None,
         operation: burn,
         object,
         candidates: vec![explicit],
@@ -310,10 +317,45 @@ fn assert_literal_input_admissions() {
                     namespace,
                     code: object.code(),
                 },
+                side: (operation == OperationId::Burn).then_some(
+                    crate::engine_identity::side_code(realization::TransactionSide::Input),
+                ),
                 candidates,
             })
             .collect::<Vec<_>>();
         expected.sort_by_key(|row| (row.operation, row.object));
         assert_eq!(actual, expected, "input admission for {operation:?}");
     }
+}
+
+#[test]
+fn input_choice_cannot_be_repaired_by_output_choice() {
+    let namespace = crate::engine_identity::ATTESTATION;
+    let operation = crate::engine_attestation::operation_key(OperationId::Burn);
+    let object = ObjectKey {
+        namespace,
+        code: architecture::ObjectId::ReceiptLive.code(),
+    };
+    let explicit = ModeKey { namespace, code: 0 };
+    let mut records = LifecycleRecords::empty(vec![operation]);
+    records.required_choices.push((operation, object, Some(0)));
+    records.choices = [Some(0), Some(1)]
+        .map(|side| ChoiceRecord {
+            operation,
+            object,
+            side,
+            candidates: vec![explicit],
+        })
+        .into();
+    assert!(engine_lifecycle::analyze_lifecycle(&records).is_ok());
+    records.choices.remove(0);
+    assert_eq!(
+        engine_lifecycle::analyze_lifecycle(&records).err(),
+        Some(
+            engine_lifecycle::LifecycleRecordError::MissingRepresentationChoice {
+                operation,
+                object
+            }
+        ),
+    );
 }
