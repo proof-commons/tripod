@@ -609,16 +609,17 @@ pub fn relation_mutations(
 /// "fewer than zero members" is not a world any evidence package can
 /// build. Every finite maximum has an above-maximum mutation, and an
 /// architecture-owned maximum is cited by its bound rather than copied.
+#[allow(clippy::unnecessary_wraps)] // Preserve the typed mutation-derivation interface.
 fn runtime_mutations(relation: &Relation) -> Result<Vec<RelationMutation>, CompileError> {
     use RelationMutation as Mutation;
 
     Ok(match relation {
-        Relation::ClearClamp
-        | Relation::ClearAssignment { .. }
-        | Relation::ClearFloor
-        | Relation::ClearFlow
-        | Relation::ClearBinding
-        | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
+        Relation::ClearFlow | Relation::ClearBinding => vec![
+            Mutation::BurnClearCoordinateChanged(
+                crate::source::BurnClearCoordinate::DestructionFlow,
+            ),
+            Mutation::AmountMismatch,
+        ],
         Relation::BurnBinding => vec![
             Mutation::BurnClearCoordinateChanged(
                 crate::source::BurnClearCoordinate::RecordFreshAsh,
@@ -651,7 +652,13 @@ fn runtime_mutations(relation: &Relation) -> Result<Vec<RelationMutation>, Compi
             Mutation::WrongRecognizedObject,
         ],
 
-        Relation::AmountConservation { .. } => vec![Mutation::AmountMismatch],
+        Relation::ClearClamp
+        | Relation::ClearAssignment {
+            expression: None, ..
+        }
+        | Relation::AmountConservation { .. } => {
+            vec![Mutation::AmountMismatch]
+        }
 
         Relation::OwnerAuthorization { .. } => vec![Mutation::MissingRequiredOwner],
 
@@ -672,7 +679,7 @@ fn runtime_mutations(relation: &Relation) -> Result<Vec<RelationMutation>, Compi
             Mutation::ForbiddenProjectionPresent,
         ],
 
-        Relation::CanonicalDeltaPolicy { .. } => vec![
+        Relation::ClearCanonicalDeltaPolicy | Relation::CanonicalDeltaPolicy { .. } => vec![
             Mutation::MissingCanonicalDeltaFamily,
             Mutation::UnexpectedCanonicalDeltaFamily,
             Mutation::DuplicateCanonicalSourceOrDestination,
@@ -680,9 +687,16 @@ fn runtime_mutations(relation: &Relation) -> Result<Vec<RelationMutation>, Compi
 
         Relation::OpenFlowPolicy { .. } => vec![Mutation::UndeclaredOpenFlow],
 
-        Relation::ExpressionPredicate { .. } => vec![Mutation::ExpressionPredicateFalse],
+        Relation::ClearAssignment {
+            expression: Some(_),
+            ..
+        }
+        | Relation::ExpressionPredicate { .. } => {
+            vec![Mutation::ExpressionPredicateFalse]
+        }
 
-        Relation::SideRepresentation { .. }
+        Relation::ClearFloor
+        | Relation::SideRepresentation { .. }
         | Relation::DataOutputs { .. }
         | Relation::PermissionlessAuthorization
         | Relation::Constructibility { .. }
@@ -694,7 +708,7 @@ fn runtime_mutations(relation: &Relation) -> Result<Vec<RelationMutation>, Compi
 }
 
 /// The negatives one relation requires away from the runtime boundary.
-#[allow(clippy::too_many_lines)] // Exhaustive static and report dispositions remain together.
+#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)] // Preserve the typed mutation-derivation interface.
 fn static_mutations(
     relation: &Relation,
     amounts: ConservedAmountVisibility,
@@ -725,12 +739,20 @@ fn static_mutations(
     }
 
     Ok(match relation {
-        Relation::ClearClamp
-        | Relation::ClearAssignment { .. }
-        | Relation::ClearFloor
-        | Relation::ClearFlow
-        | Relation::ClearBinding
-        | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
+        Relation::ClearBinding => [
+            crate::source::BurnClearCoordinate::ClearEventType,
+            crate::source::BurnClearCoordinate::ClearDestroyedAmountEvent,
+            crate::source::BurnClearCoordinate::ClearOmegaEvent,
+            crate::source::BurnClearCoordinate::ClearResidualEvent,
+        ]
+        .into_iter()
+        .map(|coordinate| {
+            (
+                Boundary::ReportObligation,
+                Mutation::BurnClearCoordinateChanged(coordinate),
+            )
+        })
+        .collect(),
         Relation::DataOutputs { expected } => expected
             .iter()
             .flat_map(|output| {
@@ -831,7 +853,12 @@ fn static_mutations(
             ),
         ],
 
-        Relation::Cardinality { .. }
+        Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearCanonicalDeltaPolicy
+        | Relation::Cardinality { .. }
         | Relation::AllowedObjectFamilies { .. }
         | Relation::Recognition { .. }
         | Relation::AmountConservation { .. }

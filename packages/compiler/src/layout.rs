@@ -393,6 +393,8 @@ fn scope_requirements(
 }
 
 /// What one transaction-global relation demands, by relation variant.
+#[allow(clippy::unnecessary_wraps)] // Preserve the typed layout-derivation interface.
+#[allow(clippy::too_many_lines)] // Exhaustive transaction-global layout dispositions remain together.
 fn global_relation_requirements(
     relations: &CompilerRelationAnalysis,
     analysis: &CarrierEligibility,
@@ -404,12 +406,29 @@ fn global_relation_requirements(
     };
 
     match declaration {
-        Relation::ClearClamp
-        | Relation::ClearAssignment { .. }
-        | Relation::ClearFloor
-        | Relation::ClearFlow
-        | Relation::ClearBinding
-        | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
+        Relation::ClearClamp | Relation::ClearFlow | Relation::ClearBinding => {
+            let mut families = vec![(TransactionSide::Input, architecture::ObjectId::Ash)];
+            if matches!(declaration, Relation::ClearClamp | Relation::ClearBinding) {
+                families.push((TransactionSide::Input, architecture::ObjectId::State));
+            }
+            if matches!(declaration, Relation::ClearFlow | Relation::ClearBinding) {
+                families.push((TransactionSide::Output, architecture::ObjectId::Ash));
+            }
+            if matches!(declaration, Relation::ClearBinding) {
+                families.push((TransactionSide::Output, architecture::ObjectId::State));
+            }
+            for (side, object) in families {
+                requirements.insert(LayoutRequirement::AuthenticateFamilyCensus {
+                    relation: relation.clone(),
+                    side,
+                    object,
+                });
+                requirements.insert(LayoutRequirement::CompleteAndDisjointFamilies {
+                    relation: relation.clone(),
+                    side,
+                });
+            }
+        }
         // Conservation is a claim about complete family totals on both
         // sides, so a per-member fact can never establish it.
         Relation::BurnBinding => {
@@ -475,7 +494,10 @@ fn global_relation_requirements(
             }
         }
 
-        Relation::SideRepresentation { .. }
+        Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearCanonicalDeltaPolicy
+        | Relation::SideRepresentation { .. }
         | Relation::DataOutputs { .. }
         | Relation::Cardinality { .. }
         | Relation::AllowedObjectFamilies { .. }

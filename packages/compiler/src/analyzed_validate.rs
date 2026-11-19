@@ -460,7 +460,7 @@ fn validate_source(
 
 /// Validate the foundation censuses against a fresh analysis and against
 /// the retained source's own scoped censuses.
-fn validate_foundation(
+pub fn validate_foundation(
     expected: &AnalyzedExpectations,
     program: &ScopedAnalyzedProgram,
 ) -> Result<(), CompileError> {

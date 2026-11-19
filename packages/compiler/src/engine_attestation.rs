@@ -35,6 +35,7 @@ pub const fn require_supported_plan(operation: OperationId) -> Result<(), Compil
 }
 
 /// Refuse law bodies whose relation interpreter is still pending.
+#[allow(clippy::unnecessary_wraps)] // Keep stage callers' typed support contract intact.
 pub const fn require_supported_relation(
     relation: &realization::Relation,
 ) -> Result<(), CompileError> {
@@ -45,8 +46,8 @@ pub const fn require_supported_relation(
         | Relation::ClearFloor
         | Relation::ClearFlow
         | Relation::ClearBinding
-        | Relation::ClearCanonicalDeltaPolicy => Err(CompileError::UnsupportedRelationPlan),
-        Relation::SideRepresentation { .. }
+        | Relation::ClearCanonicalDeltaPolicy
+        | Relation::SideRepresentation { .. }
         | Relation::DataOutputs { .. }
         | Relation::BurnBinding
         | Relation::Cardinality { .. }

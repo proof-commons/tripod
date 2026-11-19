@@ -328,12 +328,6 @@ pub fn classify_relation_case(
     let mut external_evidence = BTreeSet::new();
 
     match &declaration.relation {
-        Relation::ClearClamp
-        | Relation::ClearAssignment { .. }
-        | Relation::ClearFloor
-        | Relation::ClearFlow
-        | Relation::ClearBinding
-        | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
         Relation::SideRepresentation {
             side,
             object,
@@ -363,7 +357,7 @@ pub fn classify_relation_case(
             );
         }
         Relation::DataOutputs { expected } => {
-            if operation != OperationId::Burn {
+            if !matches!(operation, OperationId::Burn | OperationId::Clear) {
                 return Err(CompileError::UnsupportedRelationPlan);
             }
             structural_requirements.extend(expected.iter().map(|output| {
@@ -438,7 +432,13 @@ pub fn classify_relation_case(
             });
         }
 
-        Relation::BurnBinding
+        Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearBinding
+        | Relation::ClearCanonicalDeltaPolicy
+        | Relation::BurnBinding
         | Relation::Cardinality { .. }
         | Relation::AllowedObjectFamilies { .. }
         | Relation::Recognition { .. }
@@ -595,6 +595,7 @@ fn selected_representation(
 /// entirely; substrate conservation is external evidence and gets no
 /// runtime carrier at all.
 #[allow(clippy::too_many_lines)] // Exhaustive body dispositions remain together.
+#[allow(clippy::unnecessary_wraps)] // Preserve the existing typed discharge interface.
 fn classify_discharge(
     relation: &Relation,
     ordinary_lbtc: OrdinaryLbtcRole,
@@ -626,13 +627,7 @@ fn classify_discharge(
     }
 
     Ok(match relation {
-        Relation::ClearClamp
-        | Relation::ClearAssignment { .. }
-        | Relation::ClearFloor
-        | Relation::ClearFlow
-        | Relation::ClearBinding
-        | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
-        Relation::BurnBinding => RelationDischarge {
+        Relation::ClearBinding | Relation::BurnBinding => RelationDischarge {
             boundaries: BTreeSet::from([Boundary::RuntimeCarrier, Boundary::ReportObligation]),
             activation: ActivationCondition::Always,
             runtime: Some((SemanticScope::TransactionGlobal, Multiplicity::ExactlyOne)),
@@ -699,7 +694,12 @@ fn classify_discharge(
         // exists, and only its sponsor-local source rows are
         // conditional — that is the activation of the row, not of the
         // relation.
-        Relation::AmountConservation { .. }
+        Relation::ClearClamp
+        | Relation::ClearAssignment { .. }
+        | Relation::ClearFloor
+        | Relation::ClearFlow
+        | Relation::ClearCanonicalDeltaPolicy
+        | Relation::AmountConservation { .. }
         | Relation::SponsorIsolation
         | Relation::SponsorEnvelopeMultiplicity { .. }
         | Relation::OpenFlowPolicy { .. }

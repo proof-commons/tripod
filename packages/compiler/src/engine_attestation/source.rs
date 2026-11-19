@@ -23,16 +23,148 @@ pub fn relation_operands(
     let operand = |role: OperandRole| OperandId::new(id.clone(), role);
 
     let mut operands = match &declaration.relation {
-        Relation::ClearClamp
-        | Relation::ClearAssignment { .. }
-        | Relation::ClearFloor
-        | Relation::ClearFlow
-        | Relation::ClearBinding
-        | Relation::ClearCanonicalDeltaPolicy => return Err(CompileError::UnsupportedRelationPlan),
+        Relation::ClearClamp => vec![
+            operand(OperandRole::ObjectFamilyAmount {
+                side: realization::TransactionSide::Input,
+                object: architecture::ObjectId::Ash,
+            }),
+            state_field_operand(
+                id,
+                realization::TransactionSide::Input,
+                realization::StateField::YL,
+            ),
+            state_field_operand(
+                id,
+                realization::TransactionSide::Input,
+                realization::StateField::YT,
+            ),
+        ],
+        Relation::ClearAssignment { field, expression } => {
+            let mut values = vec![
+                state_field_operand(id, realization::TransactionSide::Input, *field),
+                state_field_operand(id, realization::TransactionSide::Output, *field),
+            ];
+            if let Some(expression) = expression {
+                values.push(operand(OperandRole::ExpressionResult {
+                    expression: expression.clone(),
+                }));
+            } else {
+                values.push(state_field_operand(
+                    id,
+                    realization::TransactionSide::Input,
+                    realization::StateField::YT,
+                ));
+                values.push(operand(OperandRole::ObjectFamilyAmount {
+                    side: realization::TransactionSide::Input,
+                    object: architecture::ObjectId::Ash,
+                }));
+                values.push(operand(OperandRole::BurnClear(
+                    crate::source::BurnClearCoordinate::DataOutputScalar(
+                        architecture::DataOutputKind::Destruction,
+                    ),
+                )));
+            }
+            values
+        }
+        Relation::ClearFloor => [
+            realization::TransactionSide::Input,
+            realization::TransactionSide::Output,
+        ]
+        .into_iter()
+        .flat_map(|side| {
+            [realization::StateField::YL, realization::StateField::YT]
+                .into_iter()
+                .map(move |field| state_field_operand(id, side, field))
+        })
+        .collect(),
+        Relation::ClearFlow => vec![
+            operand(OperandRole::CanonicalPartition),
+            operand(OperandRole::OpenFlowSet),
+            operand(OperandRole::BurnClear(
+                crate::source::BurnClearCoordinate::DestructionFlow,
+            )),
+            operand(OperandRole::BurnClear(
+                crate::source::BurnClearCoordinate::DataOutputScalar(
+                    architecture::DataOutputKind::Destruction,
+                ),
+            )),
+            operand(OperandRole::ObjectFamilyAmount {
+                side: realization::TransactionSide::Input,
+                object: architecture::ObjectId::Ash,
+            }),
+            operand(OperandRole::ObjectFamilyAmount {
+                side: realization::TransactionSide::Output,
+                object: architecture::ObjectId::Ash,
+            }),
+        ],
+        Relation::ClearBinding => {
+            use crate::source::BurnClearCoordinate as C;
+            let mut values = [
+                realization::TransactionSide::Input,
+                realization::TransactionSide::Output,
+            ]
+            .into_iter()
+            .flat_map(|side| {
+                realization::StateField::ALL
+                    .iter()
+                    .copied()
+                    .map(move |field| state_field_operand(id, side, field))
+            })
+            .collect::<Vec<_>>();
+            values.extend(
+                [
+                    OperandRole::ObjectFamilyMembers {
+                        side: realization::TransactionSide::Input,
+                        object: architecture::ObjectId::State,
+                    },
+                    OperandRole::ObjectFamilyMembers {
+                        side: realization::TransactionSide::Output,
+                        object: architecture::ObjectId::State,
+                    },
+                    OperandRole::ObjectFamilyMembers {
+                        side: realization::TransactionSide::Input,
+                        object: architecture::ObjectId::Ash,
+                    },
+                    OperandRole::ObjectFamilyAmount {
+                        side: realization::TransactionSide::Input,
+                        object: architecture::ObjectId::Ash,
+                    },
+                    OperandRole::ObjectFamilyAmount {
+                        side: realization::TransactionSide::Output,
+                        object: architecture::ObjectId::Ash,
+                    },
+                    OperandRole::CanonicalPartition,
+                    OperandRole::ProjectionSet,
+                    OperandRole::RootEffects,
+                    OperandRole::BurnClear(C::DestructionFlow),
+                    OperandRole::BurnClear(C::DataOutputScalar(
+                        architecture::DataOutputKind::Destruction,
+                    )),
+                    OperandRole::BurnClear(C::TransactionContext),
+                    OperandRole::BurnClear(C::CertificateContext),
+                    OperandRole::BurnClear(C::ClearEventType),
+                    OperandRole::BurnClear(C::ClearDestroyedAmountEvent),
+                    OperandRole::BurnClear(C::ClearOmegaEvent),
+                    OperandRole::BurnClear(C::ClearResidualEvent),
+                ]
+                .into_iter()
+                .map(operand),
+            );
+            values
+        }
+        Relation::ClearCanonicalDeltaPolicy => vec![
+            operand(OperandRole::CanonicalPartition),
+            operand(OperandRole::BurnClear(
+                crate::source::BurnClearCoordinate::DestructionFlow,
+            )),
+        ],
         Relation::DataOutputs { expected } => {
             use crate::source::BurnClearCoordinate as C;
 
-            if id.operation() != architecture::OperationId::Burn {
+            if !matches!(
+                id.operation(),
+                architecture::OperationId::Burn | architecture::OperationId::Clear
+            ) {
                 return Err(CompileError::UnsupportedRelationPlan);
             }
             let mut values = Vec::new();
@@ -53,17 +185,43 @@ pub fn relation_operands(
                     values.push(operand(OperandRole::RuntimeBound { bound }));
                 }
             }
-            values.extend(
-                [
-                    C::RecordOrdinal,
-                    C::RecordAddress,
-                    C::RecordFreshAsh,
-                    C::TransactionContext,
-                    C::CertificateContext,
-                ]
-                .into_iter()
-                .map(|coordinate| operand(OperandRole::BurnClear(coordinate))),
-            );
+            if id.operation() == architecture::OperationId::Burn {
+                values.extend(
+                    [
+                        C::RecordOrdinal,
+                        C::RecordAddress,
+                        C::RecordFreshAsh,
+                        C::TransactionContext,
+                        C::CertificateContext,
+                    ]
+                    .into_iter()
+                    .map(|coordinate| operand(OperandRole::BurnClear(coordinate))),
+                );
+            } else {
+                values.extend([
+                    operand(OperandRole::ObjectFamilyAmount {
+                        side: realization::TransactionSide::Input,
+                        object: architecture::ObjectId::Ash,
+                    }),
+                    operand(OperandRole::ObjectFamilyAmount {
+                        side: realization::TransactionSide::Output,
+                        object: architecture::ObjectId::Ash,
+                    }),
+                    state_field_operand(
+                        id,
+                        realization::TransactionSide::Input,
+                        realization::StateField::YL,
+                    ),
+                    state_field_operand(
+                        id,
+                        realization::TransactionSide::Input,
+                        realization::StateField::YT,
+                    ),
+                    operand(OperandRole::BurnClear(C::DestructionFlow)),
+                    operand(OperandRole::BurnClear(C::TransactionContext)),
+                    operand(OperandRole::BurnClear(C::CertificateContext)),
+                ]);
+            }
             values
         }
         Relation::BurnBinding => {
@@ -229,6 +387,23 @@ fn family_amount_operands(
         .collect()
 }
 
+fn state_field_operand(
+    relation: &realization::RelationId,
+    side: realization::TransactionSide,
+    field: realization::StateField,
+) -> OperandId {
+    OperandId::new(
+        relation.clone(),
+        OperandRole::ExpressionResult {
+            expression: realization::ExprId::fact(realization::FactId::StateField {
+                operation: architecture::OperationId::Clear,
+                side,
+                field,
+            }),
+        },
+    )
+}
+
 /// Abstract capabilities one (relation, proof) pairing requires.
 pub fn proof_capabilities(
     declaration: &RelationDeclaration,
@@ -256,10 +431,10 @@ pub fn proof_capabilities(
                 Relation::ProjectionPolicy { .. } => {
                     capabilities.insert(Cap::AuthenticatedProjectionSet);
                 }
-                Relation::CanonicalDeltaPolicy { .. } => {
+                Relation::CanonicalDeltaPolicy { .. } | Relation::ClearCanonicalDeltaPolicy => {
                     capabilities.insert(Cap::AuthenticatedCanonicalPartition);
                 }
-                Relation::BurnBinding => {
+                Relation::BurnBinding | Relation::ClearBinding => {
                     capabilities.insert(Cap::AuthenticatedCanonicalPartition);
                     capabilities.insert(Cap::AuthenticatedProjectionSet);
                     capabilities.insert(Cap::AuthenticatedRootEffects);
