@@ -4,6 +4,7 @@
 mod analyzed;
 mod analyzed_operation;
 mod analyzed_validate;
+pub mod burn_operation_plan;
 mod capability;
 mod carrier;
 mod case;

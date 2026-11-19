@@ -124,13 +124,6 @@ const SPONSOR_ASSET: AssetId = AssetId::Lbtc;
 /// The one semantic projection a live transfer must produce (§5.7).
 const REQUIRED_PROJECTION: ProjectionId = ProjectionId::TransitionCertificate;
 
-/// The lifecycle exit a live transfer itself implements (§8.2).
-const IMPLEMENTED_EXIT: OperationId = OperationId::TransferLive;
-
-/// The lifecycle exits a live-transfer candidate leaves outstanding
-/// (§1.12, §8.2).
-const OUTSTANDING_EXITS: [OperationId; 2] = [OperationId::Redeem, OperationId::Burn];
-
 census_enum! {
     /// One representation plan Phase 5 admits for a live transfer.
     ///
@@ -437,8 +430,9 @@ census_enum! {
         /// The approved representation set is exactly the admitted plans
         /// (§6.1).
         RepresentationApproval,
-        /// Transfer is implemented and burn and redeem stay outstanding
-        /// (§1.12, §8.2).
+        /// Exits match the scope's input admission per representation;
+        /// without Burn, transfer is implemented and burn and redeem stay
+        /// outstanding (§1.12, §8.2).
         LifecycleExits,
     }
 }
@@ -907,11 +901,10 @@ impl LiveTransferCertificateProjection {
 
 /// The lifecycle-exit closure of one transfer (§1.12, §8.2).
 ///
-/// The exits, not the per-representation rows. Each representation's
-/// own [`TargetLifecycleStatus`] carries the rows, which differ because
-/// a lifecycle requirement names the mode it belongs to; the exits
-/// themselves do not differ, and the validator proves that rather than
-/// publishing whichever representation it read first.
+/// The common exits, not the per-representation rows. Implemented exits
+/// are the intersection across modes and outstanding exits are their union.
+/// Each representation's own [`TargetLifecycleStatus`] retains the exact
+/// mode-bearing rows and can differ when another operation enters scope.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LiveTransferLifecycleClosure {
     implemented: BTreeSet<OperationId>,
@@ -1226,7 +1219,7 @@ pub(crate) fn derive_live_transfer_plan(
         sponsor: derive_sponsor(analyzed)?,
         roots: derive_roots(analyzed)?,
         certificate: derive_certificate(analyzed)?,
-        lifecycle: derive_lifecycle_closure(&representations)?,
+        lifecycle: derive_lifecycle_closure(analyzed, &representations)?,
         representations,
     })
 }
@@ -1791,36 +1784,94 @@ fn derive_representation_policy(
 ///
 /// # Errors
 ///
-/// [`CompileError::TargetPlanLifecycleMismatch`] when the
-/// representations disagree about the exits;
-/// [`CompileError::LiveTransferContractDefect`] when the exits are not
-/// the ones §8.2 fixes.
+/// [`CompileError::TargetPlanLifecycleMismatch`] when representations
+/// disagree outside Burn scope or no representation supplies a status;
+/// [`CompileError::LiveTransferContractDefect`] when the required exits
+/// disagree with the scope's input-admission table.
 fn derive_lifecycle_closure(
+    analyzed: &ScopedAnalyzedProgram,
     representations: &BTreeMap<
         LiveTransferRepresentationPlan,
         LiveTransferRepresentationProjection,
     >,
 ) -> Result<LiveTransferLifecycleClosure, CompileError> {
-    let mut closures = representations
-        .values()
-        .map(|projection| exit_closure(&projection.lifecycle));
+    if !analyzed
+        .source
+        .compilation_scope
+        .operations()
+        .contains(&OperationId::Burn)
+    {
+        let mut closures = representations
+            .values()
+            .map(|projection| exit_closure(&projection.lifecycle));
+        let Some(closure) = closures.next() else {
+            return Err(CompileError::TargetPlanLifecycleMismatch);
+        };
+        if closures.any(|other| other != closure) {
+            return Err(CompileError::TargetPlanLifecycleMismatch);
+        }
+        if closure.implemented != BTreeSet::from([OperationId::TransferLive])
+            || closure.outstanding != BTreeSet::from([OperationId::Burn, OperationId::Redeem])
+        {
+            return Err(defect(LiveTransferClause::LifecycleExits));
+        }
+        return Ok(closure);
+    }
 
-    let Some(closure) = closures.next() else {
+    // Read the same owner-lowered input-admission table that decides
+    // lifecycle availability. The offered per-mode status never supplies
+    // its own expected exits.
+    let source = &analyzed.source;
+    let lowered = crate::engine_attestation::lifecycle::lower(
+        source.compilation_scope.operations(),
+        source.realization.relations.nodes.iter(),
+        &source.realization.lifecycle,
+    );
+    let receipt = crate::engine_lifecycle::ObjectKey {
+        namespace: crate::engine_identity::ATTESTATION,
+        code: RECEIPT_L.code(),
+    };
+    let exits = [
+        OperationId::TransferLive,
+        OperationId::Burn,
+        OperationId::Redeem,
+    ];
+    let mut summaries = representations.iter().map(|(representation, projection)| {
+        let mode = crate::engine_attestation::proof::mode_key(representation.mode());
+        let (implemented, outstanding) = exits.into_iter().partition(|exit| {
+            source.compilation_scope.operations().contains(exit)
+                && lowered.records.input_admissions.iter().any(|admission| {
+                    admission.operation == crate::engine_attestation::operation_key(*exit)
+                        && admission.object == receipt
+                        && admission.candidates.contains(&mode)
+                })
+        });
+        (
+            exit_closure(&projection.lifecycle),
+            LiveTransferLifecycleClosure {
+                implemented,
+                outstanding,
+            },
+        )
+    });
+    let Some((actual, mut summary)) = summaries.next() else {
         return Err(CompileError::TargetPlanLifecycleMismatch);
     };
-
-    if closures.any(|other| other != closure) {
-        return Err(CompileError::TargetPlanLifecycleMismatch);
-    }
-
-    // §8.2: transfer implemented, burn and redeem outstanding.
-    if closure.implemented != BTreeSet::from([IMPLEMENTED_EXIT])
-        || closure.outstanding != OUTSTANDING_EXITS.into_iter().collect()
-    {
+    if actual != summary {
         return Err(defect(LiveTransferClause::LifecycleExits));
     }
-
-    Ok(closure)
+    for (actual, expected) in summaries {
+        if actual != expected {
+            return Err(defect(LiveTransferClause::LifecycleExits));
+        }
+        summary.implemented = summary
+            .implemented
+            .intersection(&expected.implemented)
+            .copied()
+            .collect();
+        summary.outstanding.extend(expected.outstanding);
+    }
+    Ok(summary)
 }
 
 /// The exits one representation's lifecycle rows name.
@@ -2081,8 +2132,19 @@ pub(crate) fn validate_live_transfer_plan(
         }
     }
 
-    if plan.lifecycle != derive_lifecycle_closure(&plan.representations)? {
-        return Err(CompileError::TargetPlanLifecycleMismatch);
+    if plan.lifecycle != derive_lifecycle_closure(analyzed, &plan.representations)? {
+        return Err(
+            if analyzed
+                .source
+                .compilation_scope
+                .operations()
+                .contains(&OperationId::Burn)
+            {
+                defect(LiveTransferClause::LifecycleExits)
+            } else {
+                CompileError::TargetPlanLifecycleMismatch
+            },
+        );
     }
 
     validate_representation_equivalence(plan)?;
@@ -2427,5 +2489,10 @@ impl LiveTransferCertificateProjection {
 impl LiveTransferLifecycleClosure {
     pub(crate) fn clear_outstanding(&mut self) {
         self.outstanding.clear();
+    }
+
+    pub(crate) fn move_exit_to_implemented(&mut self, exit: OperationId) {
+        assert!(self.outstanding.remove(&exit), "exit must be outstanding");
+        self.implemented.insert(exit);
     }
 }

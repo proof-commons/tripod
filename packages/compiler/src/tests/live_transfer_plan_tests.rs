@@ -686,6 +686,31 @@ fn an_altered_lifecycle_exit_is_rejected() {
 }
 
 #[test]
+fn burn_scope_lifecycle_closure_accepts_admission_and_refuses_one_moved_exit() {
+    let control = super::source_tests::burn_control();
+    let analyzed = analyze_scoped_program(&control.input, limits()).expect("Burn analysis");
+    let plan = crate::live_transfer_plan::derive_live_transfer_plan(&analyzed)
+        .expect("Burn scope live transfer plan");
+    assert_eq!(validate_live_transfer_plan(&analyzed, &plan), Ok(()));
+    assert!(
+        plan.lifecycle()
+            .outstanding()
+            .any(|exit| exit == OperationId::Burn)
+    );
+
+    let mut changed = plan;
+    changed
+        .lifecycle_mut()
+        .move_exit_to_implemented(OperationId::Burn);
+    assert_eq!(
+        validate_live_transfer_plan(&analyzed, &changed),
+        Err(CompileError::LiveTransferContractDefect {
+            clause: LiveTransferClause::LifecycleExits,
+        }),
+    );
+}
+
+#[test]
 fn an_altered_carrier_is_rejected() {
     let subject = corruption_subject();
     let mut damaged = subject.plan.clone();

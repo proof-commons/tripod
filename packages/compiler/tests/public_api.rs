@@ -241,6 +241,33 @@ fn declared_burn_reaches_unsupported_plan_at_input_binding() {
 }
 
 #[test]
+fn burn_plan_public_surface_stays_private_until_oracle_activation() {
+    let code = include_str!("../src/burn_operation_plan.rs");
+    assert!(code.contains("pub struct ValidatedBurnOperationPlan {"));
+    assert!(code.contains("pub(crate) fn derive_burn_plan("));
+    assert!(code.contains("pub(crate) fn validate_burn_plan("));
+    assert!(!code.contains("pub fn plan_burn_target_operation("));
+    let fields = code
+        .split("pub struct ValidatedBurnOperationPlan {")
+        .nth(1)
+        .expect("Burn plan declaration")
+        .split('\n')
+        .take_while(|line| !line.starts_with('}'))
+        .collect::<Vec<_>>();
+    assert!(
+        fields
+            .iter()
+            .all(|line| !line.trim_start().starts_with("pub "))
+    );
+    assert!(
+        fields
+            .iter()
+            .all(|line| !line.contains("Graph") && !line.contains("Index"))
+    );
+    assert!(fields.iter().all(|line| !line.contains("tapscript::")));
+}
+
+#[test]
 fn declared_clear_reaches_unsupported_plan_at_input_binding() {
     let realized = realization::derive(
         &architecture::ARCHITECTURE,

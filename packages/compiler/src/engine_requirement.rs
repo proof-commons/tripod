@@ -15,12 +15,21 @@ pub fn single_representation(
     crate::engine_lifecycle::ModeKey,
 )> {
     let mut selections = objects.iter().filter_map(|object| {
+        let output = crate::engine_proof::ChoiceKey {
+            side: Some(crate::engine_identity::side_code(
+                realization::TransactionSide::Output,
+            )),
+            operation,
+            object: *object,
+        };
+        let unqualified = crate::engine_proof::ChoiceKey {
+            side: None,
+            operation,
+            object: *object,
+        };
         selected
-            .get(&crate::engine_proof::ChoiceKey {
-                side: None,
-                operation,
-                object: *object,
-            })
+            .get(&output)
+            .or_else(|| selected.get(&unqualified))
             .map(|mode| (*object, *mode))
     });
     let selection = selections.next()?;

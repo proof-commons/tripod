@@ -102,11 +102,20 @@ impl Prepared {
                 )
                 .map(|(object, _)| {
                     let object = objects[&object];
-                    let mode = legacy.representations[&crate::lifecycle::RepresentationChoiceId {
-                        side: None,
+                    let output = crate::lifecycle::RepresentationChoiceId {
+                        side: Some(realization::TransactionSide::Output),
                         operation: value.relation.operation(),
                         object,
-                    }];
+                    };
+                    let unqualified = crate::lifecycle::RepresentationChoiceId {
+                        side: None,
+                        ..output
+                    };
+                    let mode = *legacy
+                        .representations
+                        .get(&output)
+                        .or_else(|| legacy.representations.get(&unqualified))
+                        .expect("owner choice restored from candidate");
                     crate::requirement::RepresentationSelection { object, mode }
                 });
                 value.lifecycle = core::owned_lifecycle(
@@ -468,11 +477,20 @@ pub fn owned_representation(
         &selected,
     )?;
     let object = objects[&object];
-    let mode = candidate.representations[&crate::lifecycle::RepresentationChoiceId {
-        side: None,
+    let output = crate::lifecycle::RepresentationChoiceId {
+        side: Some(realization::TransactionSide::Output),
         operation: declaration.id.operation(),
         object,
-    }];
+    };
+    let unqualified = crate::lifecycle::RepresentationChoiceId {
+        side: None,
+        ..output
+    };
+    let mode = *candidate
+        .representations
+        .get(&output)
+        .or_else(|| candidate.representations.get(&unqualified))
+        .expect("owner choice restored from candidate");
     Some(crate::requirement::RepresentationSelection { object, mode })
 }
 #[cfg(test)]

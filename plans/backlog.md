@@ -924,6 +924,8 @@ Packet 3.1a's operation-local choice and input-admission work is recorded at (`r
 
 Packet 3.4's compact revalidation is recorded at (`rec:w3:3-4`): unchanged compact, linker, vectors and keyed pins passed the node gate; its event-silence corruption is refused. The full import gate remains pending.
 
+Packet 3.3a's dormant explicit Burn facade, independent plan validator and selected corruptions are recorded at (`rec:w3:3-3a`). Public Burn binding remains refused; the unfiltered node code gate passed after one correction round. The final records-tree gate and full import gate remain pending. The mixed private-change alternative and public activation belong to later packets.
+
 ## 4. Compact historical record · `sec:backlog:history`
 
 ### 4.1 Completed phases · `tab:backlog:completed-phases`

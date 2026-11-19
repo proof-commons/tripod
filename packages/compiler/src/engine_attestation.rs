@@ -131,9 +131,6 @@ impl engine_records::RelationOwner for AttestationOwner {
         Ok(constructibility::lower(self)?.records)
     }
     fn lower_relations(&self) -> Result<Self::Lowered, CompileError> {
-        for operation in self.scope().operations() {
-            require_supported_plan(*operation)?;
-        }
         let source = self.source().project();
         Ok(lower_relations(
             self.scope().operations(),

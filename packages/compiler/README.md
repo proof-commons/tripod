@@ -144,10 +144,16 @@ assert!(matches!(
 
 ## Public-API tour
 
-The public modules are `error`, `input`, `live_transfer_plan`,
+The public modules are `burn_operation_plan`, `error`, `input`, `live_transfer_plan`,
 `maturity_announcement_plan`, `operation_plan`, `keyed_plan`, `keyed_fixed_plan`, and `target`; all are available in the default library.
 Symbolic announcement requirements are also re-exported at the crate root; the
 internal analysis containers remain crate-private.
+
+`burn_operation_plan` names the dormant validated Burn requirement type. Its
+constructor and validator are crate-private until the independent Burn oracle
+and public activation land. Public `bind_input` still refuses Burn at the
+binding seam. The type carries report obligations for Burn event anchors; it
+does not assert that a report was produced or authenticated.
 
 ### `keyed_plan` — stable owner-typed plans
 
