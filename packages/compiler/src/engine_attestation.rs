@@ -26,11 +26,10 @@ use crate::{
 use crate::engine_identity::{ATTESTATION, side_code};
 use crate::input::AttestationOwner;
 
-/// Refuse operations whose compiler plans have not been implemented.
-pub const fn require_supported_plan(operation: OperationId) -> Result<(), CompileError> {
-    if matches!(operation, OperationId::Clear) {
-        return Err(CompileError::UnsupportedOperationPlan { operation });
-    }
+/// Reserved operation-plan support boundary. All declared attestation plans
+/// currently have implementations; future unsupported operations may refuse here.
+#[allow(clippy::unnecessary_wraps)] // Keep binding's typed support boundary intact.
+pub const fn require_supported_plan(_operation: OperationId) -> Result<(), CompileError> {
     Ok(())
 }
 

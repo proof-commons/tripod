@@ -349,7 +349,7 @@ fn clear_plan_public_surface_keeps_private_fields_with_validated_constructor() {
 }
 
 #[test]
-fn declared_clear_reaches_unsupported_plan_at_input_binding() {
+fn declared_clear_binds_and_missing_realization_member_refuses() {
     let realized = realization::derive(
         &architecture::ARCHITECTURE,
         realization::RealizationScope::from_operations([
@@ -371,9 +371,34 @@ fn declared_clear_reaches_unsupported_plan_at_input_binding() {
     );
     let scope =
         CompilationScope::from_operations([OperationId::TransferLive, OperationId::Clear]).unwrap();
+    let bound = bind_input(
+        &architecture::ARCHITECTURE,
+        realized,
+        scope.clone(),
+        test_policy(),
+    )
+    .expect("declared Clear binds publicly");
+    let limits = compiler::operation_plan::PlacementSearchLimits::new(
+        std::num::NonZeroU64::new(10_000_000).expect("nonzero"),
+        std::num::NonZeroU64::new(1_000_000).expect("nonzero"),
+    );
+    let plan = compiler::clear_operation_plan::plan_clear_target_operation(&bound, limits)
+        .expect("validated public Clear plan");
+    assert_eq!(plan.operation(), OperationId::Clear);
+    let transfer_only = realization::derive(
+        &architecture::ARCHITECTURE,
+        realization::RealizationScope::from_operations([OperationId::TransferLive]).unwrap(),
+    )
+    .unwrap();
     assert_eq!(
-        bind_input(&architecture::ARCHITECTURE, realized, scope, test_policy()).unwrap_err(),
-        CompileError::UnsupportedOperationPlan {
+        bind_input(
+            &architecture::ARCHITECTURE,
+            transfer_only,
+            scope,
+            test_policy(),
+        )
+        .unwrap_err(),
+        CompileError::IncompleteRealizationScope {
             operation: OperationId::Clear,
         },
     );

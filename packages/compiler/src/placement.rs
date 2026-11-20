@@ -865,7 +865,10 @@ pub struct PlacementSearchLimits {
     /// The most search states one operation's placement search may
     /// visit before the analysis fails as too complex.
     pub maximum_states: NonZeroU64,
-    /// The most complete candidate assignments it may consider.
+    /// Maximum number of candidates an explicit search may materialize.
+    /// A checked placement product can represent more complete assignments
+    /// without materializing them; this bound is checked before expansion.
+    /// It does not bound the product's represented cardinality.
     pub maximum_candidates: NonZeroU64,
 }
 

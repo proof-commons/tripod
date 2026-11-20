@@ -155,10 +155,13 @@ derivation and validator remain crate-private. The type carries report
 obligations for Burn event anchors; it does not assert that a report was
 produced or authenticated. Private-change Burn remains a later alternative.
 
-`clear_operation_plan` defines a private-field Clear requirement facade and its
-internal validator. Its 44 relation requirements include all six stored STATE
-assignments. Public input binding still refuses Clear, so no public Clear plan
-can be constructed until the activation packet supplies its independent oracle.
+`clear_operation_plan::plan_clear_target_operation` publicly constructs a
+validated private-field Clear facade after complete product analysis and fresh
+validation. Its 44 relation requirements include all six stored STATE assignments.
+The independent oracle checks the analysis's local factors, carrier routing
+and per-option layout without materializing Clear's enormous placement set.
+It compares the facade's carrier alternatives with the explicit candidate's
+expected product.
 
 ### `keyed_plan` — stable owner-typed plans
 
@@ -241,7 +244,7 @@ single transaction-side encoding (input 0, output 1); both lowerers use it.
   realization relation, never weaken an unsupported relation, retain explicit
   external-evidence requirements, and fail rather than emit a partial plan.
   Public field `proof_search_limits`.
-- `bind_input(&architecture::Architecture, realization::ScopedRealizationSpec, CompilationScope, AnalysisPolicy) -> Result<BoundCompilerInput, CompileError>` — the only constructor of a bound input. It re-runs the realization owner's validation (`InvalidRealization`), requires the realization's architecture binding to equal the supplied architecture (`ArchitectureBindingMismatch`), requires every scope member to be declared by the realization (`IncompleteRealizationScope { operation }`), and refuses declared operations without a compiler plan (`UnsupportedOperationPlan { operation }`).
+- `bind_input(&architecture::Architecture, realization::ScopedRealizationSpec, CompilationScope, AnalysisPolicy) -> Result<BoundCompilerInput, CompileError>` — the only constructor of a bound input. It re-runs the realization owner's validation (`InvalidRealization`), requires the realization's architecture binding to equal the supplied architecture (`ArchitectureBindingMismatch`), and requires every scope member to be declared by the realization (`IncompleteRealizationScope { operation }`). `UnsupportedOperationPlan { operation }` is reserved for a future declared operation without a compiler plan.
 - `BoundCompilerInput` — immutable, private fields, no mutable accessor, no
   serializer, no digest. Readers: `realization() -> &ScopedRealizationSpec`,
   `scope() -> &CompilationScope`, `policy() -> AnalysisPolicy`,
@@ -297,11 +300,12 @@ target-specific type is not merely discouraged here — it is unnameable.
   returns no partial set on exhaustion. The existing enumerator still applies
   both limits to its bounded search as before. Internal Clear analysis selects
   the checked product through the shared assembly; active attestation and both
-  keyed owners retain enumerated members. Public Clear binding remains refused.
-  The Clear test's literal carrier table and test-side layout rule are independent
-  of product construction, but its source routings and family scope come from
-  `carrier::relation_case_eligibility`, which attestation lowering also calls.
-  The 3.5b oracle owns an independent expectation for Clear's carrier routing.
+  keyed owners retain enumerated members. Public Clear binding is supported.
+  The placement-storage test's literal carrier table and test-side layout rule
+  are independent of product construction, but its source routings and family
+  scope come from `carrier::relation_case_eligibility`, which attestation
+  lowering also calls. The Clear activation oracle derives expected routing
+  from typed source classes and literal carrier roles without that function.
 - `TargetRequirementSet` — read-only and opaque: private fields, no public
   constructor, no `Default`, no builder. `capabilities() -> impl Iterator<Item = RequiredCapability>`
   and `external_evidence() -> impl Iterator<Item = ExternalEvidenceRole>`, both
@@ -417,7 +421,7 @@ The input-boundary entry points report the following failures.
 
 ### From `bind_input`
 
-`InvalidRealization` (the realization failed its owner's re-run validation), `ArchitectureBindingMismatch` (the realization binds a different architecture identity than the one supplied), `IncompleteRealizationScope { operation }` (a scope member the realization does not declare), `UnsupportedOperationPlan { operation }` (a declared Clear requested in compiler scope has no compiler plan), and `UnsupportedRealizationSchema { schema }`. A Clear plus `TransferLive` realization reaches this refusal when Clear enters compiler scope; a `TransferLive`-only compiler scope remains accepted. Pilot-only realization still refuses an absent operation as `IncompleteRealizationScope` first.
+`InvalidRealization` (the realization failed its owner's re-run validation), `ArchitectureBindingMismatch` (the realization binds a different architecture identity than the one supplied), `IncompleteRealizationScope { operation }` (a scope member the realization does not declare), `UnsupportedOperationPlan { operation }` (reserved for a future declared operation without a compiler plan), and `UnsupportedRealizationSchema { schema }`. A Clear plus `TransferLive` realization binds with Clear in compiler scope. A realization lacking Clear still refuses that scope as `IncompleteRealizationScope`.
 
 ### From `analyze_target_requirements`
 
@@ -538,7 +542,7 @@ identities for future Burn/Clear source and coverage rows. The source key uses
 an appended operand role and a fact subject outside the existing fact domain;
 the mutation uses an appended purpose code. They carry no transaction position
 or observed value. Explicit Burn now binds publicly and returns requirements;
-Clear remains refused by the public input guard. Neither facade asserts a
+Clear is admitted by public input binding. Neither facade asserts a
 target observation or completed report evidence.
 
 Two notes for a consumer reading this as a manual rather than as prose:

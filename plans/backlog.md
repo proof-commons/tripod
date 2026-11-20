@@ -935,6 +935,10 @@ Packet 3.2e — CODE GATE AND JOINT REVIEW GREEN, IMPORT PENDING (`rec:w3:3-2e`)
 
 Packet 3.5a — CODE GATE GREEN, ACTIVATION REVIEW PENDING (`rec:w3:3-5a`). Ruling 245 places Clear's quantity classes in the closed realization laws. The selected compiler test joins retained declarations, sources and coverage and refuses missing delta and copied YL requirements; two read-only realization branch tests pass. Public Clear binding remains refused; activation review and full import gate remain pending.
 
+Packet 3.5b — CODE GATE AND ACTIVATION REVIEW CORRECTIONS GREEN, IMPORT PENDING (`rec:w3:3-5b`). The independent Clear local-factor/routing oracle and CompactAsh+Clear and AnnounceMaturity+Clear scope controls passed before public Clear admission. The review found the activation correct; its three corrections passed the node gate. The full import gate remains pending.
+
+Clear signer-insertion follow-up — OPEN (`rec:w3:3-5b`). In `packages/realization/src/tests/clear_tests.rs`, compare an accepted Clear observation with only a protocol signer inserted: Authorization must fail and dependent Constructibility must be blocked. No remaining Wave-3 packet lists this test owner; assign an owning packet before implementation.
+
 Packet 3.4's compact revalidation is recorded at (`rec:w3:3-4`): unchanged compact, linker, vectors and keyed pins passed the node gate; its event-silence corruption is refused. The full import gate remains pending.
 
 Packet 3.3a's dormant explicit Burn facade, independent plan validator and selected corruptions are recorded at (`rec:w3:3-3a`). Public Burn binding remains refused; the unfiltered node code gate passed after one correction round. The final records-tree gate and full import gate remain pending. The mixed private-change alternative and public activation belong to later packets.

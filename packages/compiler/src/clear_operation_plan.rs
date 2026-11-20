@@ -539,9 +539,9 @@ pub(crate) fn derive_clear_plan(
     Ok(plan)
 }
 
-/// Independently check every published Clear projection against every selected
-/// analyzed factor. The validator reads the analysis directly and does not
-/// invoke the facade constructor.
+/// Check every published Clear projection against a re-projection of every
+/// selected analyzed factor through the constructor's projection functions;
+/// the literal field table is its independent expectation.
 ///
 /// # Errors
 ///
