@@ -8,6 +8,7 @@ pub mod burn_operation_plan;
 mod capability;
 mod carrier;
 mod case;
+pub mod clear_operation_plan;
 mod constructibility;
 mod coverage;
 mod coverage_graph;

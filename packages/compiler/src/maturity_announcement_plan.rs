@@ -768,7 +768,7 @@ pub(crate) fn derive_plan(
         sponsor: derive_sponsor(analyzed)?,
         roots: derive_roots(analyzed)?,
         certificate: derive_certificate(analyzed)?,
-        lifecycle: derive_lifecycle_closure(&representations)?,
+        lifecycle: derive_lifecycle_closure(analyzed, &representations)?,
         representations,
         constructibility: ConstructorContinuityRequirement::REQUIRED,
         public_facts: AnnouncementMetadataRequirement::public_facts(),
@@ -1181,6 +1181,7 @@ fn derive_representation_policy(
 }
 
 fn derive_lifecycle_closure(
+    analyzed: &ScopedAnalyzedProgram,
     representations: &BTreeMap<
         MaturityAnnouncementRepresentationPlan,
         MaturityAnnouncementRepresentationProjection,
@@ -1198,9 +1199,37 @@ fn derive_lifecycle_closure(
         return Err(CompileError::TargetPlanLifecycleMismatch);
     }
 
-    if closure.implemented != BTreeSet::from([IMPLEMENTED_EXIT])
-        || closure.outstanding != OUTSTANDING_EXITS.into_iter().collect()
+    let mut implemented = BTreeSet::from([IMPLEMENTED_EXIT]);
+    let mut outstanding = OUTSTANDING_EXITS.into_iter().collect::<BTreeSet<_>>();
+    let clear_input_modes = analyzed
+        .source
+        .realization
+        .relations
+        .nodes
+        .iter()
+        .find_map(|row| match &row.relation {
+            Relation::Representation { object, allowed }
+                if row.id.operation() == OperationId::Clear && *object == STATE =>
+            {
+                Some(allowed)
+            }
+            _ => None,
+        });
+    if analyzed
+        .source
+        .compilation_scope
+        .operations()
+        .contains(&OperationId::Clear)
+        && clear_input_modes.is_some_and(|allowed| {
+            representations
+                .keys()
+                .all(|representation| allowed.contains(&representation.mode()))
+        })
     {
+        implemented.insert(OperationId::Clear);
+        outstanding.remove(&OperationId::Clear);
+    }
+    if closure.implemented != implemented || closure.outstanding != outstanding {
         return Err(defect(MaturityAnnouncementClause::LifecycleExits));
     }
 
@@ -1699,7 +1728,7 @@ pub(crate) fn validate_analyzed_maturity_announcement_plan(
             return Err(defect(MaturityAnnouncementClause::RepresentationApproval));
         }
     }
-    if plan.lifecycle != derive_lifecycle_closure(&plan.representations)? {
+    if plan.lifecycle != derive_lifecycle_closure(analyzed, &plan.representations)? {
         return Err(CompileError::TargetPlanLifecycleMismatch);
     }
     validate_evidence_closure(plan)?;

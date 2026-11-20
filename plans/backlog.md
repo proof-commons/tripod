@@ -928,7 +928,9 @@ Clear facade packet 3.5a stopped at the complete-placement candidate cap; its st
 
 Packet 3.2d — CODE GREEN, IMPORT PENDING (`rec:w3:3-2d`). The placement owner has a checked canonical factor product, single-member validation and explicitly bounded expansion, exercised by two literal controls. The old enumerator and every production route remain unchanged; Clear stays refused. Compiler gate and preservation details are in the receipt. The full import gate remains pending.
 
-Packet 3.2e — CODE GATE GREEN, JOINT REVIEW PENDING (`rec:w3:3-2e`). Ruling 244 restores ClearFloor's runtime AmountMismatch negative without changing the shared census. Clear's checked factors validate completely; active and keyed complete members and public facade figures are preserved. The granted exact-path amendment updates the tracing-kind census for the packet's one typed error. Joint independent review and full import gate remain pending; public Clear remains refused.
+Packet 3.2e — CODE GATE AND JOINT REVIEW GREEN, IMPORT PENDING (`rec:w3:3-2e`). Ruling 244 restores ClearFloor's runtime AmountMismatch negative without changing the shared census. Clear's checked factors validate completely; active and keyed complete members and public facade figures are preserved. The joint review found no product defect; its one receipt-credit finding was corrected before import. The full import gate remains pending; public Clear remains refused.
+
+Packet 3.5a — CODE GATE GREEN, ACTIVATION REVIEW PENDING (`rec:w3:3-5a`). Ruling 245 places Clear's quantity classes in the closed realization laws. The selected compiler test joins retained declarations, sources and coverage and refuses missing delta and copied YL requirements; two read-only realization branch tests pass. Public Clear binding remains refused; activation review and full import gate remain pending.
 
 Packet 3.4's compact revalidation is recorded at (`rec:w3:3-4`): unchanged compact, linker, vectors and keyed pins passed the node gate; its event-silence corruption is refused. The full import gate remains pending.
 

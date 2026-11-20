@@ -317,6 +317,38 @@ fn burn_plan_public_surface_keeps_private_fields_with_validated_constructor() {
 }
 
 #[test]
+fn clear_plan_public_surface_keeps_private_fields_with_validated_constructor() {
+    let code = include_str!("../src/clear_operation_plan.rs");
+    assert!(code.contains("pub struct ValidatedClearOperationPlan {"));
+    assert!(code.contains("pub(crate) fn derive_clear_plan("));
+    assert!(code.contains("pub(crate) fn validate_clear_plan("));
+    assert!(code.contains("pub fn plan_clear_target_operation("));
+    let private_shape = |text: &str| {
+        let fields = text
+            .split("pub struct ValidatedClearOperationPlan {")
+            .nth(1)
+            .expect("Clear plan declaration")
+            .split('\n')
+            .take_while(|line| !line.starts_with('}'))
+            .collect::<Vec<_>>();
+        fields.iter().all(|line| {
+            !line.trim_start().starts_with("pub ")
+                && !line.contains("Graph")
+                && !line.contains("Index")
+                && !line.contains("tapscript::")
+        })
+    };
+    assert!(private_shape(code));
+    let exposed = code.replacen(
+        "    operation: OperationId,",
+        "    pub operation: OperationId,",
+        1,
+    );
+    assert_ne!(exposed, code);
+    assert!(!private_shape(&exposed));
+}
+
+#[test]
 fn declared_clear_reaches_unsupported_plan_at_input_binding() {
     let realized = realization::derive(
         &architecture::ARCHITECTURE,

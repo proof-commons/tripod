@@ -12,6 +12,7 @@ mod burn_operation_plan_tests;
 mod burn_plan_oracle_tests;
 mod carrier_tests;
 mod case_tests;
+mod clear_operation_plan_tests;
 mod compact_validation_tests;
 mod constructibility_tests;
 mod coverage_graph_tests;
