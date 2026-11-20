@@ -1,4 +1,4 @@
-//! Six focused offline checks of the sealed fixed-form campaign projection and epochs.
+//! Seven focused offline checks of the sealed fixed-form campaign projection and epochs.
 
 #[path = "../src/keyed_fixed_corpus/fixture.rs"]
 mod keyed_fixed_corpus;
@@ -12,6 +12,7 @@ use compiler::{
     keyed_fixed_plan::{PlacementSearchLimits, plan},
 };
 use elements::hashes::sha256d;
+use elements::secp256k1_zkp::{Message, PublicKey, Secp256k1, ecdsa::Signature};
 use keyed_fixed_corpus::{CorpusRefusal, Packet};
 use linker::{
     keyed_fixed_bundle::link_keyed_fixed_bundle,
@@ -25,6 +26,7 @@ use tapscript::{
     keyed_fixed_bundle::{KeyedFixedBundleSelection, emit_keyed_fixed_bundle},
     keyed_fixed_constructor::KeyedFixedLeafRecipe,
 };
+use transaction::bytes::{SerializedFieldLocator, SerializedOutputField};
 use transaction::keyed_fixed_construct::{
     KeyedFixedConstructionError, KeyedFixedConstructionRequest, KeyedFixedOutputOffer,
     construct_keyed_fixed,
@@ -43,6 +45,7 @@ const POLICY_ASSET: [u8; 32] = [
     0x23, 0x0f, 0x4f, 0x5d, 0x4b, 0x7c, 0x6f, 0xa8, 0x45, 0x80, 0x6e, 0xe4, 0xf6, 0x77, 0x13, 0x45,
     0x9e, 0x1b, 0x69, 0xe8, 0xe6, 0x0f, 0xce, 0xe2, 0xe4, 0x94, 0x0c, 0x7a, 0x0d, 0x5d, 0xe1, 0xb2,
 ];
+const SPONSOR_CENSUS_PIN: &str = "612a31dcc4fa9ef98df22ce0da3103d9b25eb8c363de064de9d74a4e61804e5d";
 
 fn parameters(key: u8, value: u64) -> KeyedFixedParameters {
     KeyedFixedParameters {
@@ -273,6 +276,120 @@ fn mocked_s8c_packet() -> (Packet, Packet) {
     .unwrap();
     let pin = mock_digest(&index);
     Packet::load_s8c(&index, &pin, [&blobs[0], &blobs[1], &blobs[2]]).unwrap()
+}
+
+fn captured_sponsor_signature_boundary(packet: &Packet) {
+    let accepted: serde_json::Value =
+        serde_json::from_slice(packet.file("sponsor/subject-00006.json").unwrap()).unwrap();
+    let other: serde_json::Value =
+        serde_json::from_slice(packet.file("sponsor/subject-00003.json").unwrap()).unwrap();
+    let submitted: Vec<u8> = serde_json::from_value(accepted["submitted"].clone()).unwrap();
+    let other_submitted: Vec<u8> = serde_json::from_value(other["submitted"].clone()).unwrap();
+    let parents: Vec<Vec<u8>> = serde_json::from_value(accepted["parents"].clone()).unwrap();
+    let transaction = TargetTransaction::decode(&submitted).unwrap();
+    let other_transaction = TargetTransaction::decode(&other_submitted).unwrap();
+    let index = usize::try_from(accepted["sponsor_index"].as_u64().unwrap()).unwrap();
+    let other_index = usize::try_from(other["sponsor_index"].as_u64().unwrap()).unwrap();
+    let parent = TargetTransaction::decode(&parents[index]).unwrap();
+    let spent = &parent.outputs()[transaction.inputs()[index].outpoint().index() as usize];
+    let witness = transaction.witnesses()[index].stack();
+    let mut changed = witness.to_vec();
+    changed[0].clone_from(&other_transaction.witnesses()[other_index].stack()[0]);
+    assert_ne!(changed[0], witness[0]);
+    let signature = Signature::from_der(&changed[0][..changed[0].len() - 1]).unwrap();
+    let mut normalized = signature;
+    normalized.normalize_s();
+    assert_eq!(signature, normalized);
+    let frozen = transaction.encode_without_witness();
+    let digest =
+        transaction::keyed_fixed_sponsor::keyed_fixed_sponsor_digest(&frozen, index, spent)
+            .unwrap();
+    assert!(
+        Secp256k1::verification_only()
+            .verify_ecdsa(
+                &Message::from_digest(digest),
+                &signature,
+                &PublicKey::from_slice(&witness[1]).unwrap(),
+            )
+            .is_err()
+    );
+    assert_eq!(
+        transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+            &frozen, index, spent, witness,
+        ),
+        Ok(())
+    );
+    assert_eq!(
+        transaction::keyed_fixed_sponsor::verify_keyed_fixed_sponsor(
+            &frozen, index, spent, &changed,
+        ),
+        Err(transaction::keyed_fixed_sponsor::KeyedFixedSponsorRefusal::InvalidSignature)
+    );
+}
+
+fn captured_copy_proof_boundary(packet: &Packet) {
+    let copy = packet
+        .file("legacy-copy/legacy-public-copy.transaction")
+        .unwrap();
+    let transaction = TargetTransaction::decode(copy).unwrap();
+    let proof = transaction
+        .locate_serialized_field(SerializedFieldLocator::new(
+            0,
+            SerializedOutputField::RangeproofBytes,
+        ))
+        .unwrap();
+    let mut changed = copy.to_vec();
+    *changed.get_mut(proof.range().end - 1).unwrap() ^= 1;
+    let mut changed_packet = packet.clone();
+    changed_packet
+        .replace_after_acquisition("legacy-copy/legacy-public-copy.transaction", changed)
+        .unwrap();
+    assert_eq!(changed_packet.admit_s8c(), Err(CorpusRefusal::Record));
+}
+
+#[test]
+fn fixed_corpus_sponsor_admission() {
+    trace();
+    let started = Instant::now();
+    let (sponsor, legacy) = Packet::load_s8c(
+        include_bytes!("../fixtures/keyed-fixed-sponsor/CENSUS.json"),
+        SPONSOR_CENSUS_PIN,
+        [
+            include_bytes!("../fixtures/keyed-fixed-sponsor/preparation.json.lzma"),
+            include_bytes!("../fixtures/keyed-fixed-sponsor/sponsor.json.lzma"),
+            include_bytes!("../fixtures/keyed-fixed-sponsor/legacy-copy.json.lzma"),
+        ],
+    )
+    .unwrap();
+    assert_eq!(sponsor.admit_s8c(), Ok(6));
+    assert_eq!(legacy.admit_s8c(), Ok(3));
+    assert_eq!(sponsor.check_retained_measurements(), Ok(18));
+    assert_eq!(legacy.check_retained_measurements(), Ok(9));
+    for (packet, family, marker) in [
+        (
+            &sponsor,
+            "sponsor",
+            b"fixed-form native journal admitted\n".as_slice(),
+        ),
+        (
+            &legacy,
+            "legacy-copy",
+            b"old-leaf copy journal admitted separately\n".as_slice(),
+        ),
+    ] {
+        assert_eq!(
+            packet.file(&format!("{family}/selection.exit")),
+            Ok(b"0\n".as_slice())
+        );
+        assert_eq!(
+            packet.file(&format!("{family}/test.exit")),
+            Ok(b"0\n".as_slice())
+        );
+        assert_eq!(packet.file(&format!("{family}/admitted")), Ok(marker));
+    }
+    captured_sponsor_signature_boundary(&sponsor);
+    captured_copy_proof_boundary(&legacy);
+    report("fixed_corpus_sponsor_admission", started, 9);
 }
 
 struct ReplaySponsor {

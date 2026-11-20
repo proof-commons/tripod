@@ -529,6 +529,8 @@ The source diff adds no change to the first edition's frozen source, pin, script
 
 **S8c producer-census re-freeze** · `rec:identities:keyed-fixed-s8c-census-correction`. The one-row `POST_S8C_CENSUS` pair at (`rec:vectors:keyed-fixed-s8c-refreeze`) changes the corrected epoch's current record-triple identity to `b882bef6bc70ca3d881e1b028e5f4c954a19bcd80e8200862af447c1d182f894` and its selected K42/policy-asset value-60 anchor to `bdeb5788ff13893ddb100ec5c24a19e234adbb594678a43442ec5d349c563c85`. The prior corrected inventory remains reconstructible from the checked previous source bytes and is refused by current validation. The failed Sponsor epoch, campaign3's four anchors and the 220 retained rows remain unchanged. No successful S8c capture used the prior corrected anchor.
 
+**S8c admitted capture identity** · `rec:identities:keyed-fixed-s8c-admission`. The sealed second run at `0.7.218-dev` uses the unchanged corrected-epoch K42/policy-asset value-60 anchor `bdeb5788ff13893ddb100ec5c24a19e234adbb594678a43442ec5d349c563c85` for all six sponsor rows. Its three legacy-copy rows use the distinct first-edition identity `d4272bd5e0020bf1b7fdcc3caa15e08470e9ea036579b01c6f34a076994352ab`. The checked nine-record fixture projection is outside both freeze inventories at (`tab:s8c:paths`); this admission adds no source pin, epoch or identity. Exact byte and outcome credit is (`rec:phase7:fixed-form-s8c-admission`); the failed present-nonce run remains diagnostic only.
+
 ## 4. Inventory decisions · `rem:identities:decisions`
 
 - Active identities with real consumers are kept: the anchor-set hash, the

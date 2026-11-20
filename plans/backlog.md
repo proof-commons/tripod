@@ -2944,6 +2944,8 @@ The implementation review's five corrections are in the pre-capture tree: the pa
 
 The review's producer-census finding is corrected before recapture: the native writer derives all five counts from the six selected sponsor subjects, its checker compares all five, and the gated mocked packet uses that writer and checker before offline admission. One paired source re-pin and its identity movement are at (`rec:vectors:keyed-fixed-s8c-refreeze`); the receipt is (`rec:phase7:fixed-form-s8c-census-correction`). The two live README claims now say nine rows and keep the native present-nonce floor OPEN. A fresh full capture remains pending.
 
+**S8c capture admission status** · `rec:backlog:fixed-form-s8c-admission`. The reviewed second unit `20261120t0650z-sponsor-campaign2` sealed nine records/27 exchanges; the checked projection admits six sponsor and three legacy-copy rows. The exact archive addresses, per-row outcomes, fixture bytes, qualified claims and offline gate are at (`rec:phase7:fixed-form-s8c-admission`) and (`rec:history:fixed-form-s8c-admission`). The present-nonce adjacent floor stays OPEN; evidence review and import remain next.
+
 **Table (S8 questions settled by ruling 215)** · `tab:backlog:fixed-form-s8-questions`
 
 | Question answerable in one sentence | Recommendation and reason |

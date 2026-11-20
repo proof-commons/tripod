@@ -1238,7 +1238,9 @@ impl Packet {
             CaptureFamily::Policy => (9, 17),
             CaptureFamily::Scaling => (12052, 16262),
             CaptureFamily::Histories => (504, 690),
-            _ => return Err(CorpusRefusal::Measurement),
+            CaptureFamily::Sponsor => (18, 31),
+            CaptureFamily::LegacyCopy => (9, 14),
+            CaptureFamily::Pilot => return Err(CorpusRefusal::Measurement),
         };
         let text = std::str::from_utf8(timing).map_err(|_| CorpusRefusal::Measurement)?;
         let mut prefixes = BTreeSet::new();

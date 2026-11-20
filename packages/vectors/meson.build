@@ -179,6 +179,10 @@ vectors_doc_files = files('README.md', 'TRACING.md')
 # `include_bytes!`; timing sidecars and the predecessor setup transcript
 # remain audit-only bytes.
 vectors_fixture_files = files(
+  'fixtures/keyed-fixed-sponsor/CENSUS.json',
+  'fixtures/keyed-fixed-sponsor/sponsor.json.lzma',
+  'fixtures/keyed-fixed-sponsor/legacy-copy.json.lzma',
+  'fixtures/keyed-fixed-sponsor/preparation.json.lzma',
   'fixtures/keyed-fixed-native/CENSUS.json',
   'fixtures/keyed-fixed-native/clauses.json.lzma',
   'fixtures/keyed-fixed-native/policy.json.lzma',
