@@ -332,10 +332,30 @@ impl Lowered {
                         }
                         _ => false,
                     };
-                    (declaration.id.operation() == choice.id.operation
-                        && touches
-                        && !crate::lifecycle::proof_supports_representation(proof.proof(), *mode))
-                    .then_some((choice_key(&choice.id), mode_key(*mode)))
+                    let incompatible = if declaration.id.operation()
+                        == architecture::OperationId::Burn
+                        && matches!(declaration.relation, Relation::AmountConservation { .. })
+                        && proof.proof() == realization::ProofKind::ConfidentialConservation
+                    {
+                        // The explicit input and Ash are public operands of the
+                        // target equation. Only the output change is private.
+                        matches!(
+                            (choice.id.side, choice.id.object, *mode),
+                            (
+                                Some(realization::TransactionSide::Output),
+                                architecture::ObjectId::ReceiptLive,
+                                RepresentationMode::Explicit
+                            ) | (
+                                None,
+                                architecture::ObjectId::Ash,
+                                RepresentationMode::PublicCommitted
+                            )
+                        )
+                    } else {
+                        !crate::lifecycle::proof_supports_representation(proof.proof(), *mode)
+                    };
+                    (declaration.id.operation() == choice.id.operation && touches && incompatible)
+                        .then_some((choice_key(&choice.id), mode_key(*mode)))
                 })
             })
             .collect();

@@ -592,10 +592,17 @@ fn operand_source(
 
         // Sponsor amounts were rejected during operand derivation, so
         // every amount here is a protocol amount.
-        OperandRole::ObjectFamilyAmount { .. } => {
-            let kind = match proof {
-                ProofKind::ConfidentialConservation => Kind::AuthenticatedCommitmentRelation,
-                _ => Kind::AuthenticatedConsensusValue,
+        OperandRole::ObjectFamilyAmount { side, object } => {
+            let burn_conservation = declaration.id.operation() == architecture::OperationId::Burn
+                && matches!(declaration.relation, Relation::AmountConservation { .. });
+            let commitment = proof == ProofKind::ConfidentialConservation
+                && (!burn_conservation
+                    || (*side == realization::TransactionSide::Output
+                        && *object == architecture::ObjectId::ReceiptLive));
+            let kind = if commitment {
+                Kind::AuthenticatedCommitmentRelation
+            } else {
+                Kind::AuthenticatedConsensusValue
             };
 
             (

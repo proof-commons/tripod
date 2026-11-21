@@ -181,18 +181,29 @@ fn expected_policy_rows() -> Vec<RelationDeclaration> {
             },
             Some(SignerMembership),
         ),
-        expected_row(
-            rid(
+        RelationDeclaration {
+            id: rid(
                 K::Conservation,
                 RelationSubject::Asset { asset: AssetId::U },
             ),
-            Relation::AmountConservation {
+            relation: Relation::AmountConservation {
                 asset: AssetId::U,
                 input_objects: BTreeSet::from([ObjectId::ReceiptLive]),
                 output_objects: BTreeSet::from([ObjectId::ReceiptLive, ObjectId::Ash]),
             },
-            Some(PublicArithmetic),
-        ),
+            proof_alternatives: [PublicArithmetic, ProofKind::ConfidentialConservation]
+                .into_iter()
+                .map(|proof| {
+                    ProofAlternativeId::new(
+                        rid(
+                            K::Conservation,
+                            RelationSubject::Asset { asset: AssetId::U },
+                        ),
+                        proof,
+                    )
+                })
+                .collect(),
+        },
         expected_row(
             rid(K::SponsorIsolation, RelationSubject::Sponsor),
             Relation::SponsorIsolation,
@@ -366,6 +377,45 @@ fn relation_bodies_and_proofs_match_the_adopted_literal_rows() {
     let mut actual = realized().operations[&OperationId::Burn].relations.clone();
     actual.sort_by(|left, right| left.id.cmp(&right.id));
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn burn_proof_alternatives_match_the_reviewed_census() {
+    let control = crate::declarations::burn::derive(&ARCHITECTURE).expect("Burn declaration");
+    assert_eq!(crate::validate::validate_burn_declaration(&control), Ok(()));
+    let relation = rid(
+        RelationKind::Conservation,
+        RelationSubject::Asset { asset: AssetId::U },
+    );
+    let expected = [
+        ProofKind::PublicArithmetic,
+        ProofKind::ConfidentialConservation,
+    ]
+    .into_iter()
+    .map(|proof| ProofAlternativeId::new(relation.clone(), proof))
+    .collect::<BTreeSet<_>>();
+    let row = control
+        .relations
+        .iter()
+        .find(|row| row.id == relation)
+        .expect("Burn U conservation");
+    assert_eq!(row.proof_alternatives, expected);
+
+    let mut changed = control;
+    changed
+        .relations
+        .iter_mut()
+        .find(|row| row.id == relation)
+        .expect("Burn U conservation")
+        .proof_alternatives
+        .remove(&ProofAlternativeId::new(
+            relation.clone(),
+            ProofKind::ConfidentialConservation,
+        ));
+    assert_eq!(
+        crate::validate::validate_burn_declaration(&changed),
+        Err(RealizationError::ArchitectureRelationMismatch { relation }),
+    );
 }
 
 #[test]

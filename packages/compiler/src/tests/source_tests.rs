@@ -65,6 +65,199 @@ pub(super) fn burn_control() -> BurnControl {
 pub(super) fn burn_control_with_transfer(
     transfer_mode: realization::RepresentationMode,
 ) -> BurnControl {
+    burn_control_for_change(transfer_mode, realization::RepresentationMode::Explicit)
+}
+
+pub(super) fn burn_mixed_control() -> BurnControl {
+    burn_control_for_change(
+        realization::RepresentationMode::Explicit,
+        realization::RepresentationMode::PrivateCommitted,
+    )
+}
+
+#[test]
+#[allow(clippy::too_many_lines)] // Literal tuple, source table and closure subject form one contract.
+fn burn_mixed_tuple_selects_commitment_evidence() {
+    use realization::{ExternalEvidenceRequirement, RepresentationMode, TransactionSide};
+    use std::{collections::BTreeMap, num::NonZeroU64};
+
+    let control = burn_mixed_control();
+    let conservation = control
+        .relations
+        .graph
+        .node_weights()
+        .find(|node| {
+            node.source.id.operation() == OperationId::Burn
+                && node.source.id.kind() == RelationKind::Conservation
+        })
+        .expect("Burn conservation")
+        .source
+        .clone();
+    assert_eq!(
+        control.candidate.proofs[&conservation.id].proof(),
+        ProofKind::ConfidentialConservation,
+    );
+    for (side, object, mode) in [
+        (
+            TransactionSide::Input,
+            ObjectId::ReceiptLive,
+            RepresentationMode::Explicit,
+        ),
+        (
+            TransactionSide::Output,
+            ObjectId::ReceiptLive,
+            RepresentationMode::PrivateCommitted,
+        ),
+    ] {
+        assert_eq!(
+            control.candidate.representations[&crate::lifecycle::RepresentationChoiceId {
+                operation: OperationId::Burn,
+                side: Some(side),
+                object,
+            }],
+            mode,
+        );
+    }
+    assert_eq!(
+        control.candidate.representations[&crate::lifecycle::RepresentationChoiceId {
+            operation: OperationId::Burn,
+            side: None,
+            object: ObjectId::Ash,
+        }],
+        RepresentationMode::Explicit,
+    );
+    let expected = BTreeMap::from([
+        (
+            (TransactionSide::Input, ObjectId::ReceiptLive),
+            RequiredSourceKind::AuthenticatedConsensusValue,
+        ),
+        (
+            (TransactionSide::Output, ObjectId::Ash),
+            RequiredSourceKind::AuthenticatedConsensusValue,
+        ),
+        (
+            (TransactionSide::Output, ObjectId::ReceiptLive),
+            RequiredSourceKind::AuthenticatedCommitmentRelation,
+        ),
+    ]);
+    let rows = derive_source_requirements(&conservation, ProofKind::ConfidentialConservation)
+        .expect("mixed source table");
+    let actual = rows
+        .iter()
+        .filter_map(|row| match row.operand.role() {
+            OperandRole::ObjectFamilyAmount { side, object } => {
+                Some(((*side, *object), row.source))
+            }
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(actual, expected);
+    let change_amount = realization::FactId::FamilyAmount {
+        operation: OperationId::Burn,
+        side: TransactionSide::Output,
+        object: ObjectId::ReceiptLive,
+    };
+    assert!(
+        control
+            .candidate
+            .disclosure
+            .retained_private
+            .contains(&change_amount)
+    );
+    assert!(
+        !control
+            .candidate
+            .disclosure
+            .inherited_required_public
+            .contains_key(&change_amount)
+    );
+    assert!(
+        !control
+            .candidate
+            .disclosure
+            .added_required_public
+            .contains_key(&change_amount)
+    );
+    let obligation = ExternalEvidenceRequirement::ConfidentialValueConservation {
+        operation: OperationId::Burn,
+        asset: architecture::AssetId::U,
+    };
+    assert!(control.candidate.external_evidence.contains(&obligation));
+
+    let limits = crate::placement::PlacementSearchLimits::new(
+        NonZeroU64::new(10_000_000).expect("nonzero"),
+        NonZeroU64::new(1_000_000).expect("nonzero"),
+    );
+    let mut analyzed = crate::analyzed::analyze_scoped_program(&control.input, limits)
+        .expect("complete Burn analysis");
+    assert_eq!(
+        crate::analyzed_validate::validate_scoped_analyzed_program(
+            &control.input,
+            limits,
+            &analyzed,
+        ),
+        Ok(()),
+    );
+    let mut changed_evidence = analyzed.clone();
+    let bundle = analyzed
+        .proof_plans
+        .get_mut(&control.candidate)
+        .expect("mixed Burn plan")
+        .relation_requirements
+        .get_mut(&conservation.id)
+        .expect("conservation bundle");
+    let removed = bundle
+        .source_requirements
+        .iter()
+        .find(|row| {
+            matches!(
+                row.operand.role(),
+                OperandRole::ObjectFamilyAmount {
+                    side: TransactionSide::Output,
+                    object: ObjectId::ReceiptLive,
+                },
+            )
+        })
+        .expect("private change commitment row")
+        .clone();
+    bundle.source_requirements.remove(&removed);
+    assert_eq!(
+        crate::analyzed_validate::validate_scoped_analyzed_program(
+            &control.input,
+            limits,
+            &analyzed
+        ),
+        Err(CompileError::AnalyzedSourceClosureMismatch {
+            relation: None,
+            operand: removed.operand,
+        }),
+    );
+    changed_evidence
+        .proof_plans
+        .get_mut(&control.candidate)
+        .expect("mixed Burn plan")
+        .relation_requirements
+        .get_mut(&conservation.id)
+        .expect("conservation bundle")
+        .external_evidence
+        .remove(&obligation);
+    assert_eq!(
+        crate::analyzed_validate::validate_scoped_analyzed_program(
+            &control.input,
+            limits,
+            &changed_evidence,
+        ),
+        Err(CompileError::AnalyzedEvidenceClosureMismatch {
+            relation: None,
+            requirement: obligation,
+        }),
+    );
+}
+
+fn burn_control_for_change(
+    transfer_mode: realization::RepresentationMode,
+    change_mode: realization::RepresentationMode,
+) -> BurnControl {
     let operations = [OperationId::TransferLive, OperationId::Burn];
     let realization = realization::derive(
         &architecture::ARCHITECTURE,
@@ -115,7 +308,8 @@ pub(super) fn burn_control_with_transfer(
             candidate.representations.iter().any(|(choice, mode)| {
                 choice.operation == OperationId::Burn
                     && choice.side == Some(realization::TransactionSide::Output)
-                    && *mode == realization::RepresentationMode::Explicit
+                    && choice.object == ObjectId::ReceiptLive
+                    && *mode == change_mode
             }) && candidate.representations.iter().any(|(choice, mode)| {
                 choice.operation == OperationId::TransferLive
                     && choice.side.is_none()

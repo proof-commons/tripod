@@ -153,7 +153,11 @@ internal analysis containers remain crate-private.
 validated explicit Burn requirement type from a bound input. Its plan fields,
 derivation and validator remain crate-private. The type carries report
 obligations for Burn event anchors; it does not assert that a report was
-produced or authenticated. Private-change Burn remains a later alternative.
+produced or authenticated. Burn conservation now has an internally lowered
+confidential alternative for Explicit input, Explicit Ash and
+`PrivateCommitted` output change; the public facade still selects only
+explicit change. The mixed route requires target-owned commitment-conservation
+evidence, and its private change amount is never a public arithmetic operand.
 
 `clear_operation_plan::plan_clear_target_operation` publicly constructs a
 validated private-field Clear facade after complete product analysis and fresh

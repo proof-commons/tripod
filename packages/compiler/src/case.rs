@@ -149,6 +149,39 @@ pub fn conserved_amount_visibility(
         return Ok(ConservedAmountVisibility::Readable);
     };
 
+    if declaration.id.operation() == OperationId::Burn {
+        use realization::TransactionSide::{Input, Output};
+        let input = case
+            .side_representations
+            .get(&(Input, ObjectId::ReceiptLive));
+        let change = case
+            .side_representations
+            .get(&(Output, ObjectId::ReceiptLive));
+        let ash = case.representations.get(&ObjectId::Ash);
+        if input == Some(&RepresentationMode::Explicit)
+            && change == Some(&RepresentationMode::PrivateCommitted)
+            && ash == Some(&RepresentationMode::Explicit)
+        {
+            return Ok(ConservedAmountVisibility::Committed);
+        }
+        let has_private = input_objects
+            .iter()
+            .filter_map(|object| case.side_representations.get(&(Input, *object)))
+            .chain(output_objects.iter().filter_map(|object| {
+                case.side_representations
+                    .get(&(Output, *object))
+                    .or_else(|| case.representations.get(object))
+            }))
+            .any(|mode| *mode == RepresentationMode::PrivateCommitted);
+        return if has_private {
+            Err(CompileError::MixedRepresentationConservation {
+                relation: declaration.id.clone(),
+            })
+        } else {
+            Ok(ConservedAmountVisibility::Readable)
+        };
+    }
+
     let committed = input_objects
         .iter()
         .chain(output_objects)

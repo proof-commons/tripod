@@ -219,15 +219,21 @@ fn relations() -> Vec<RelationDeclaration> {
             },
             Some(ProofKind::SignerMembership),
         ),
-        row(
-            conservation(),
-            Relation::AmountConservation {
+        RelationDeclaration {
+            proof_alternatives: [
+                ProofKind::PublicArithmetic,
+                ProofKind::ConfidentialConservation,
+            ]
+            .into_iter()
+            .map(|proof| ProofAlternativeId::new(conservation(), proof))
+            .collect(),
+            id: conservation(),
+            relation: Relation::AmountConservation {
                 asset: AssetId::U,
                 input_objects: BTreeSet::from([ObjectId::ReceiptLive]),
                 output_objects: BTreeSet::from([ObjectId::ReceiptLive, ObjectId::Ash]),
             },
-            Some(ProofKind::PublicArithmetic),
-        ),
+        },
         row(
             sponsor(RelationKind::SponsorIsolation),
             Relation::SponsorIsolation,

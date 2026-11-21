@@ -676,6 +676,76 @@ fn a_relation_that_conserves_nothing_reads_no_representation() {
 }
 
 #[test]
+fn admitted_burn_tuple_has_committed_visibility() {
+    use crate::case::{ConservedAmountVisibility, conserved_amount_visibility};
+    use crate::placement::{DischargeBoundary, classify_relation_cases};
+
+    let control = super::source_tests::burn_mixed_control();
+    let relation = control
+        .relations
+        .graph
+        .node_weights()
+        .find(|node| {
+            node.source.id.operation() == OperationId::Burn
+                && node.source.id.kind() == realization::RelationKind::Conservation
+        })
+        .expect("Burn U conservation")
+        .source
+        .clone();
+    let cases = execution_cases(&control.relations, &control.candidate).expect("Burn cases");
+    let accepted = cases
+        .iter()
+        .find(|case| {
+            case.id.operation == OperationId::Burn && case.id.sponsor == SponsorCase::Absent
+        })
+        .expect("sponsorless Burn case");
+    assert_eq!(
+        conserved_amount_visibility(&relation, &accepted.id),
+        Ok(ConservedAmountVisibility::Committed),
+    );
+    let plans = classify_relation_cases(&control.relations, &cases).expect("Burn placements");
+    let placement = plans
+        .iter()
+        .find(|plan| plan.relation == relation.id && plan.case == accepted.id)
+        .expect("Burn conservation placement");
+    assert!(
+        placement
+            .boundaries
+            .contains(&DischargeBoundary::ExternalEvidence)
+    );
+    assert!(placement.external_evidence.contains(
+        &realization::ExternalEvidenceRequirement::ConfidentialValueConservation {
+            operation: OperationId::Burn,
+            asset: architecture::AssetId::U,
+        },
+    ));
+
+    let mut changed = accepted.id.clone();
+    changed
+        .representations
+        .insert(ObjectId::Ash, RepresentationMode::PublicCommitted);
+    assert_eq!(
+        conserved_amount_visibility(&relation, &changed),
+        Err(CompileError::MixedRepresentationConservation {
+            relation: relation.id.clone(),
+        }),
+    );
+
+    let explicit = super::source_tests::burn_control();
+    let explicit_case = execution_cases(&explicit.relations, &explicit.candidate)
+        .expect("explicit Burn cases")
+        .into_iter()
+        .find(|case| {
+            case.id.operation == OperationId::Burn && case.id.sponsor == SponsorCase::Absent
+        })
+        .expect("explicit Burn case");
+    assert_eq!(
+        conserved_amount_visibility(&relation, &explicit_case.id),
+        Ok(ConservedAmountVisibility::Readable),
+    );
+}
+
+#[test]
 fn announcement_case_census_pins_activity_and_external_boundaries() {
     use crate::placement::{RelationActivity, classify_relation_cases};
     use realization::{RelationKind, RelationSubject, TransactionSide};

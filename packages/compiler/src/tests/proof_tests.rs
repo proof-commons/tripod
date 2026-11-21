@@ -243,6 +243,132 @@ fn pilot_search_retains_both_live_transfer_strategies() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)] // One fixed control supplies both unary incompatibility subjects.
+fn private_change_never_becomes_public_arithmetic() {
+    use crate::{engine_attestation, engine_proof};
+    use realization::TransactionSide;
+
+    let control = super::source_tests::burn_mixed_control();
+    let lowered = engine_attestation::proof::lower(&control.input).expect("Burn proof table");
+    let mut fixed = lowered.records.clone();
+    for (choice, modes) in &mut fixed.choices {
+        let selected = control
+            .candidate
+            .representations
+            .iter()
+            .find(|(id, _)| engine_attestation::proof::choice_key(id) == *choice)
+            .map(|(_, mode)| *mode)
+            .expect("selected representation");
+        modes.retain(|mode| *mode == engine_attestation::proof::mode_key(selected));
+        assert_eq!(modes.len(), 1);
+    }
+    let conservation = control
+        .candidate
+        .proofs
+        .keys()
+        .find(|id| id.operation() == OperationId::Burn && id.kind() == RelationKind::Conservation)
+        .expect("Burn conservation")
+        .clone();
+    let conservation_key = engine_attestation::relation_key(&conservation);
+    let public = match &fixed.obligations[&conservation_key] {
+        engine_proof::Obligation::Required(alternatives) => alternatives
+            .iter()
+            .find(|alternative| alternative.id.kind == ProofKind::PublicArithmetic as u16)
+            .expect("public proof alternative")
+            .clone(),
+        _ => panic!("Burn conservation requires a proof"),
+    };
+    for (relation, obligation) in &mut fixed.obligations {
+        if let engine_proof::Obligation::Required(alternatives) = obligation {
+            let selected = control
+                .candidate
+                .proofs
+                .iter()
+                .find(|(id, _)| engine_attestation::relation_key(id) == *relation)
+                .map(|(_, proof)| proof.proof())
+                .expect("selected proof");
+            alternatives.retain(|alternative| alternative.id.kind == selected as u16);
+            assert_eq!(alternatives.len(), 1);
+        }
+    }
+    let search = |records: &engine_proof::Records| {
+        engine_proof::enumerate(
+            records,
+            &CapabilityView::Unconstrained,
+            control.input.policy().proof_search_limits,
+            &mut ProofSearchReport::default(),
+        )
+    };
+    assert_eq!(search(&fixed).expect("admitted tuple").len(), 1);
+
+    let mut changed_proof = fixed.clone();
+    changed_proof.obligations.insert(
+        conservation_key.clone(),
+        engine_proof::Obligation::Required(vec![public]),
+    );
+    assert!(matches!(
+        search(&changed_proof),
+        Err(engine_proof::Error::NoFeasiblePlan(blocked)) if blocked.contains(&conservation_key)
+    ));
+
+    let output_key = engine_attestation::proof::choice_key(&RepresentationChoiceId {
+        operation: OperationId::Burn,
+        object: ObjectId::ReceiptLive,
+        side: Some(TransactionSide::Output),
+    });
+    let mut changed_output = fixed.clone();
+    changed_output
+        .choices
+        .iter_mut()
+        .find(|(choice, _)| *choice == output_key)
+        .expect("Burn output choice")
+        .1 = vec![engine_attestation::proof::mode_key(
+        RepresentationMode::Explicit,
+    )];
+    assert!(matches!(
+        search(&changed_output),
+        Err(engine_proof::Error::NoFeasiblePlan(blocked)) if blocked.contains(&conservation_key)
+    ));
+
+    let mut changed_ash = fixed;
+    let ash_key = engine_attestation::proof::choice_key(&RepresentationChoiceId {
+        operation: OperationId::Burn,
+        object: ObjectId::Ash,
+        side: None,
+    });
+    let ash = changed_ash
+        .choices
+        .iter_mut()
+        .find(|(choice, _)| *choice == ash_key)
+        .expect("Burn Ash choice");
+    ash.1 = vec![engine_attestation::proof::mode_key(
+        RepresentationMode::PublicCommitted,
+    )];
+    assert!(matches!(
+        search(&changed_ash),
+        Err(engine_proof::Error::NoFeasiblePlan(blocked)) if blocked.contains(&conservation_key)
+    ));
+
+    let input_key = engine_attestation::proof::choice_key(&RepresentationChoiceId {
+        operation: OperationId::Burn,
+        object: ObjectId::ReceiptLive,
+        side: Some(TransactionSide::Input),
+    });
+    let input = lowered
+        .records
+        .choices
+        .iter()
+        .find(|(choice, _)| *choice == input_key)
+        .expect("Burn input choice");
+    assert_eq!(
+        input.1,
+        vec![engine_attestation::proof::mode_key(
+            RepresentationMode::Explicit
+        )]
+    );
+}
+
+#[test]
 fn compact_ash_plans_add_no_disclosure() {
     let input = bound_input(&[OperationId::CompactAsh]);
     let plans = enumerate_feasible_plans(&input, &CapabilityView::Unconstrained).expect("plans");
