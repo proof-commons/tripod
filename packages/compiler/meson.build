@@ -120,6 +120,7 @@ compiler_source_files = files(
   'src/tests/layout_tests.rs',
   'src/tests/lifecycle_tests.rs',
   'src/tests/live_transfer_plan_tests.rs',
+  'src/tests/burn_mixed_plan_tests.rs',
   'src/tests/burn_operation_plan_tests.rs',
   'src/tests/clear_operation_plan_tests.rs',
   'src/tests/clear_plan_oracle_tests.rs',

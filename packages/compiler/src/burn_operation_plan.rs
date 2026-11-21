@@ -1,4 +1,4 @@
-//! The validated public explicit Burn target-operation plan.
+//! The validated Burn target-operation plan.
 //!
 //! This facade reads the complete attestation analysis. Public planning runs
 //! its private assembly and validator. All published censuses are requirements,
@@ -36,7 +36,7 @@ use crate::{
 
 const PLANNED: OperationId = OperationId::Burn;
 
-/// The Burn selections used to project one explicit plan.
+/// The Burn selections used to project one plan.
 ///
 /// These are operation-owned choices. A `TransferLive` selection in the same
 /// scope cannot supply one that Burn omitted.
@@ -58,10 +58,11 @@ impl BurnRepresentationPolicy {
     }
 }
 
-/// Burn's complete explicit requirement projection.
+/// Burn's complete requirement projection.
 ///
 /// Fields are private. There is no public constructor or unchecked builder.
-/// The public constructor validates both the analysis and this facade.
+/// The public constructor validates both the analysis and the explicit facade.
+/// The mixed alternative has only a crate-private constructor until activation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatedBurnOperationPlan {
     operation: OperationId,
@@ -90,7 +91,7 @@ impl ValidatedBurnOperationPlan {
         &self.source
     }
 
-    /// Burn's explicit representation selections.
+    /// Burn's representation selections.
     #[must_use]
     pub const fn representation(&self) -> &BurnRepresentationPolicy {
         &self.representation
@@ -190,11 +191,50 @@ fn explicit(candidate: &AnalyzedProofPlan) -> bool {
         && modes.get(&choice(ObjectId::Ash, None)) == Some(&RepresentationMode::Explicit)
 }
 
+fn mixed(candidate: &AnalyzedProofPlan) -> bool {
+    use architecture::AssetId;
+    use realization::{ProofKind, RelationKind, RelationSubject};
+    let modes = &candidate.proof_plan.representations;
+    let conservation = RelationId::new(
+        PLANNED,
+        RelationKind::Conservation,
+        RelationSubject::Asset { asset: AssetId::U },
+    );
+    modes.get(&choice(ObjectId::ReceiptLive, Some(TransactionSide::Input)))
+        == Some(&RepresentationMode::Explicit)
+        && modes.get(&choice(
+            ObjectId::ReceiptLive,
+            Some(TransactionSide::Output),
+        )) == Some(&RepresentationMode::PrivateCommitted)
+        && modes.get(&choice(ObjectId::Ash, None)) == Some(&RepresentationMode::Explicit)
+        && candidate
+            .proof_plan
+            .proofs
+            .get(&conservation)
+            .is_some_and(|proof| proof.proof() == ProofKind::ConfidentialConservation)
+}
+
 fn factors(analyzed: &ScopedAnalyzedProgram) -> Vec<(&AnalyzedProofPlan, &AnalyzedOperation)> {
     analyzed
         .proof_plans
         .values()
         .filter(|candidate| explicit(candidate))
+        .filter_map(|candidate| {
+            candidate
+                .operations
+                .get(&PLANNED)
+                .map(|factor| (candidate, factor))
+        })
+        .collect()
+}
+
+fn mixed_factors(
+    analyzed: &ScopedAnalyzedProgram,
+) -> Vec<(&AnalyzedProofPlan, &AnalyzedOperation)> {
+    analyzed
+        .proof_plans
+        .values()
+        .filter(|candidate| mixed(candidate))
         .filter_map(|candidate| {
             candidate
                 .operations
@@ -326,6 +366,43 @@ pub(crate) fn derive_burn_plan(
     Ok(plan)
 }
 
+/// Assemble the dormant private-change Burn facade from complete analysis.
+///
+/// This entry remains crate-private. The public planner continues to select
+/// the explicit alternative until the mixed oracle and activation land.
+///
+/// # Errors
+///
+/// Returns a typed scope, selection, ambiguity or projection error.
+#[allow(dead_code)] // Packet 3.5f connects the reviewed mixed selection to the public planner.
+pub(crate) fn derive_mixed_burn_plan(
+    analyzed: &ScopedAnalyzedProgram,
+) -> Result<ValidatedBurnOperationPlan, CompileError> {
+    if !analyzed
+        .source
+        .compilation_scope
+        .operations()
+        .contains(&PLANNED)
+    {
+        return Err(CompileError::TargetOperationOutOfScope { operation: PLANNED });
+    }
+    let mut distinct = Vec::new();
+    for (candidate, factor) in mixed_factors(analyzed) {
+        let projected = project_factor(analyzed, candidate, factor)?;
+        if !distinct.contains(&projected) {
+            distinct.push(projected);
+        }
+    }
+    let mut distinct = distinct.into_iter();
+    let plan = distinct
+        .next()
+        .ok_or(CompileError::NoAdmissiblePhase4Plan { operation: PLANNED })?;
+    if distinct.next().is_some() {
+        return Err(CompileError::AmbiguousTargetOperationPlan { operation: PLANNED });
+    }
+    Ok(plan)
+}
+
 /// Independently check every published Burn projection against every selected
 /// analyzed factor. The validator reads the analysis directly and does not
 /// invoke the facade constructor.
@@ -358,6 +435,59 @@ pub(crate) fn validate_burn_plan(
     }
     validate_sponsor_erasure(plan)?;
     let factors = factors(analyzed);
+    if factors.is_empty() {
+        return Err(CompileError::NoAdmissiblePhase4Plan { operation: PLANNED });
+    }
+    for (candidate, factor) in factors {
+        if plan.representation != selected_choices(candidate) {
+            return Err(CompileError::TargetPlanRepresentationMismatch {
+                object: ObjectId::ReceiptLive,
+            });
+        }
+        validate_factor(plan, candidate, factor)?;
+    }
+    Ok(())
+}
+
+/// Re-project the dormant mixed facade through the same complete owners as
+/// the explicit constructor. It detects omitted or rewritten fields; it is
+/// not an independent oracle for those owners' routing rules.
+///
+/// # Errors
+///
+/// Returns the typed mismatch for the first changed census or selection.
+#[allow(dead_code)] // Packet 3.5f connects the reviewed mixed validator.
+pub(crate) fn validate_mixed_burn_plan(
+    analyzed: &ScopedAnalyzedProgram,
+    plan: &ValidatedBurnOperationPlan,
+) -> Result<(), CompileError> {
+    if plan.operation != PLANNED {
+        return Err(CompileError::TargetOperationOutOfScope {
+            operation: plan.operation,
+        });
+    }
+    if !plan.source.is_analyzed_source(analyzed) {
+        return Err(CompileError::TargetPlanSourceMismatch);
+    }
+    for (object, side, mode) in [
+        (
+            ObjectId::ReceiptLive,
+            Some(TransactionSide::Input),
+            RepresentationMode::Explicit,
+        ),
+        (
+            ObjectId::ReceiptLive,
+            Some(TransactionSide::Output),
+            RepresentationMode::PrivateCommitted,
+        ),
+        (ObjectId::Ash, None, RepresentationMode::Explicit),
+    ] {
+        if plan.representation.selection(&choice(object, side)) != Some(mode) {
+            return Err(CompileError::TargetPlanRepresentationMismatch { object });
+        }
+    }
+    validate_sponsor_erasure(plan)?;
+    let factors = mixed_factors(analyzed);
     if factors.is_empty() {
         return Err(CompileError::NoAdmissiblePhase4Plan { operation: PLANNED });
     }
@@ -433,6 +563,27 @@ fn validate_sponsor_erasure(plan: &ValidatedBurnOperationPlan) -> Result<(), Com
     Ok(())
 }
 
+/// Check an offered output-change mode against the dormant mixed plan.
+///
+/// # Errors
+///
+/// Returns a representation mismatch unless the complete mixed plan is
+/// valid and the offered change is privately committed.
+#[allow(dead_code)] // Packet 3.5f connects offered selection to public planning.
+pub(crate) fn validate_mixed_burn_output_selection(
+    analyzed: &ScopedAnalyzedProgram,
+    plan: &ValidatedBurnOperationPlan,
+    offered: RepresentationMode,
+) -> Result<(), CompileError> {
+    validate_mixed_burn_plan(analyzed, plan)?;
+    if offered != RepresentationMode::PrivateCommitted {
+        return Err(CompileError::TargetPlanRepresentationMismatch {
+            object: ObjectId::ReceiptLive,
+        });
+    }
+    Ok(())
+}
+
 /// Check one offered Burn output selection against an already validated plan.
 ///
 /// # Errors
@@ -456,6 +607,16 @@ pub(crate) fn validate_burn_output_selection(
 
 #[cfg(test)]
 impl ValidatedBurnOperationPlan {
+    pub(crate) fn selections_mut(
+        &mut self,
+    ) -> &mut BTreeMap<RepresentationChoiceId, RepresentationMode> {
+        &mut self.representation.selected
+    }
+
+    pub(crate) fn external_evidence_mut(&mut self) -> &mut BTreeSet<ExternalEvidenceRole> {
+        &mut self.external_evidence
+    }
+
     pub(crate) fn relations_mut(&mut self) -> &mut BTreeMap<RelationId, TargetRelationRequirement> {
         &mut self.relations
     }

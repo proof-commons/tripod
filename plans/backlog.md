@@ -945,7 +945,9 @@ Packet 3.3a's dormant explicit Burn facade, independent plan validator and selec
 
 Packet 3.3b — CODE GREEN, IMPORT PENDING (`rec:w3:3-3b`). A source-based finite Burn oracle preceded the public guard change. Explicit Burn now binds and plans publicly; Clear retains its input guard. The TransferLive+Burn control publishes Explicit Burn as implemented, PrivateCommitted Burn as unavailable, and Redeem as outstanding; a changed common closure is refused. The scope-derived live contract was already implemented by 3.3a's correction and needed no further production edit here. Compiler node code gate passed after one lint correction; its records-tree round and independent review/full import gate remain pending. The mixed Burn alternative stays with 3.5d–f.
 
-Packet 3.5d — CODE GATE GREEN, REVIEW PENDING (`rec:w3:3-5d`). Burn conservation now declares both readable and confidential alternatives; the confidential route is confined to Explicit input, Explicit Ash and PrivateCommitted change. Its source table keeps only the change as commitment evidence and leaves the public Burn facade on explicit selection. The four focused tests and node code gate passed; independent review and full import gate remain pending.
+Packet 3.5d — CODE GATE GREEN (`rec:w3:3-5d`). Burn conservation declares readable and confidential alternatives, the latter confined to Explicit input, Explicit Ash and PrivateCommitted change. Its source table keeps only the change as commitment evidence; the public facade still selects explicit change. The four focused tests and node code gate passed; joint review at 3.5f and the full import gate remain pending.
+
+Packet 3.5e — CODE GATE GREEN (`rec:w3:3-5e`). A crate-private mixed Burn facade projects and freshly validates the complete tuple and requirement joins; public planning still selects explicit Burn. Its three selected corruptions and node code gate passed. Joint review belongs to 3.5f activation; this packet's full import gate remains pending.
 
 ## 4. Compact historical record · `sec:backlog:history`
 

@@ -159,6 +159,16 @@ confidential alternative for Explicit input, Explicit Ash and
 explicit change. The mixed route requires target-owned commitment-conservation
 evidence, and its private change amount is never a public arithmetic operand.
 
+The dormant mixed Burn facade reuses the private-field validated type. Its
+constructor, fresh validator and offered-output check are crate-private; the
+public planner still calls only the explicit constructor and validator. The
+mixed projection retains distinct input/output choices, source rows, external
+evidence, carrier alternatives, layout, coverage and lifecycle obligations.
+The target-owned commitment-conservation requirement is an open obligation,
+not a completed target proof or emitted bytes. The focused corruption tests
+select layout and coverage rows from the produced plan as omission pins;
+they do not claim an independent layout or coverage oracle.
+
 `clear_operation_plan::plan_clear_target_operation` publicly constructs a
 validated private-field Clear facade after complete product analysis and fresh
 validation. Its 44 relation requirements include all six stored STATE assignments.
