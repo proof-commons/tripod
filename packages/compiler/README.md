@@ -149,25 +149,37 @@ The public modules are `burn_operation_plan`, `clear_operation_plan`, `error`, `
 Symbolic announcement requirements are also re-exported at the crate root; the
 internal analysis containers remain crate-private.
 
-`burn_operation_plan::plan_burn_target_operation` publicly constructs the
-validated explicit Burn requirement type from a bound input. Its plan fields,
-derivation and validator remain crate-private. The type carries report
+`burn_operation_plan::plan_burn_target_operation` retains the public explicit
+Burn route. `plan_burn_target_operation_with_output_selection` accepts an
+offered output-change mode: `Explicit` delegates to that route, while
+`PrivateCommitted` runs complete analysis, the mixed constructor and fresh
+validation. Other offered modes refuse. Both return the same private-field
+validated requirement type; derivation and validators remain crate-private.
+The type carries report
 obligations for Burn event anchors; it does not assert that a report was
 produced or authenticated. Burn conservation now has an internally lowered
 confidential alternative for Explicit input, Explicit Ash and
-`PrivateCommitted` output change; the public facade still selects only
-explicit change. The mixed route requires target-owned commitment-conservation
+`PrivateCommitted` output change. The mixed route requires target-owned commitment-conservation
 evidence, and its private change amount is never a public arithmetic operand.
+For this tuple the change total equals explicit input minus explicit Ash, so the
+total is public by arithmetic; the change output's own amount and split stay
+outside the public operands.
 
-The dormant mixed Burn facade reuses the private-field validated type. Its
-constructor, fresh validator and offered-output check are crate-private; the
-public planner still calls only the explicit constructor and validator. The
-mixed projection retains distinct input/output choices, source rows, external
-evidence, carrier alternatives, layout, coverage and lifecycle obligations.
+The mixed projection retains distinct input/output choices, source rows,
+external evidence, carrier alternatives, layout, coverage and lifecycle
+obligations. Burn's optional change family has zero minimum, so both alternatives
+admit a Burn without change; the mixed alternative then still requires its
+commitment-relation source and the open commitment-conservation obligation
+over an empty change family, without claiming that a target proof has run.
 The target-owned commitment-conservation requirement is an open obligation,
 not a completed target proof or emitted bytes. The focused corruption tests
 select layout and coverage rows from the produced plan as omission pins;
-they do not claim an independent layout or coverage oracle.
+they do not claim an independent layout or coverage oracle. The mixed oracle
+forms the side choices and conservation source/evidence table from literal
+declaration coordinates, and crosses four literal placement option sets; it
+does not derive the full layout or coverage censuses independently. Its removed
+carrier row is a publication pin. Four fresh-ASH relation bodies are compared
+with explicit Burn after translating only the output-mode case identity.
 
 `clear_operation_plan::plan_clear_target_operation` publicly constructs a
 validated private-field Clear facade after complete product analysis and fresh

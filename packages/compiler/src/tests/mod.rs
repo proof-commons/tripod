@@ -8,6 +8,7 @@ mod analyzed_corruption_tests;
 mod analyzed_operation_tests;
 mod analyzed_program_oracle_tests;
 mod analyzed_program_tests;
+mod burn_mixed_oracle_tests;
 mod burn_mixed_plan_tests;
 mod burn_operation_plan_tests;
 mod burn_plan_oracle_tests;

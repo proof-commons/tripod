@@ -1,7 +1,7 @@
 //! The validated Burn target-operation plan.
 //!
 //! This facade reads the complete attestation analysis. Public planning runs
-//! its private assembly and validator. All published censuses are requirements,
+//! its private assembly and validator for the offered alternative. All published censuses are requirements,
 //! not observations of an emitted transaction or an authenticated event report.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -61,8 +61,7 @@ impl BurnRepresentationPolicy {
 /// Burn's complete requirement projection.
 ///
 /// Fields are private. There is no public constructor or unchecked builder.
-/// The public constructor validates both the analysis and the explicit facade.
-/// The mixed alternative has only a crate-private constructor until activation.
+/// The public constructors validate the analysis and the selected facade.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValidatedBurnOperationPlan {
     operation: OperationId,
@@ -333,6 +332,51 @@ pub fn plan_burn_target_operation(
     result.map(|(plan, _)| plan)
 }
 
+/// Plan Burn with an offered output-change representation.
+///
+/// Explicit change takes the existing public route. Private change uses the
+/// normalized-input mixed alternative and its fresh validator; this publishes
+/// commitment-conservation requirements, not a completed target proof.
+///
+/// # Errors
+///
+/// Returns any analysis, scope, selection, ambiguity or plan-validation
+/// refusal raised by the complete compiler pipeline. Other offered modes
+/// receive [`CompileError::TargetPlanRepresentationMismatch`].
+pub fn plan_burn_target_operation_with_output_selection(
+    input: &crate::BoundCompilerInput,
+    placement_limits: PlacementSearchLimits,
+    offered: RepresentationMode,
+) -> Result<ValidatedBurnOperationPlan, CompileError> {
+    if offered == RepresentationMode::Explicit {
+        return plan_burn_target_operation(input, placement_limits);
+    }
+    let operation_code = PLANNED.code();
+    let scope_operation_count = crate::instrumentation::count(input.scope().operations().len());
+    let span = tracing::info_span!(
+        target: "compiler::plan",
+        "plan_target_operation",
+        operation_code,
+        family = "burn",
+        scope_operation_count
+    );
+    let _entered = span.enter();
+    let result = (|| {
+        let analyzed = analyze_scoped_program(input, placement_limits)?;
+        let proof_plan_count = if tracing::enabled!(target: "compiler::plan", tracing::Level::INFO)
+        {
+            crate::instrumentation::count(analyzed.proof_plans.len())
+        } else {
+            0
+        };
+        let plan = derive_mixed_burn_plan(&analyzed)?;
+        validate_mixed_burn_output_selection(&analyzed, &plan, offered)?;
+        Ok((plan, proof_plan_count))
+    })();
+    crate::instrumentation::plan_completion(&result, operation_code, "burn");
+    result.map(|(plan, _)| plan)
+}
+
 /// Assemble the Burn facade from a complete validated analysis.
 ///
 /// # Errors
@@ -366,15 +410,14 @@ pub(crate) fn derive_burn_plan(
     Ok(plan)
 }
 
-/// Assemble the dormant private-change Burn facade from complete analysis.
+/// Assemble the private-change Burn facade from complete analysis.
 ///
-/// This entry remains crate-private. The public planner continues to select
-/// the explicit alternative until the mixed oracle and activation land.
+/// This entry remains crate-private. Public offered selection invokes it only
+/// after complete analysis.
 ///
 /// # Errors
 ///
 /// Returns a typed scope, selection, ambiguity or projection error.
-#[allow(dead_code)] // Packet 3.5f connects the reviewed mixed selection to the public planner.
 pub(crate) fn derive_mixed_burn_plan(
     analyzed: &ScopedAnalyzedProgram,
 ) -> Result<ValidatedBurnOperationPlan, CompileError> {
@@ -403,9 +446,9 @@ pub(crate) fn derive_mixed_burn_plan(
     Ok(plan)
 }
 
-/// Independently check every published Burn projection against every selected
-/// analyzed factor. The validator reads the analysis directly and does not
-/// invoke the facade constructor.
+/// Check every published Burn projection against a re-projection of every
+/// selected analysed factor through the constructor's projection functions;
+/// the independent check is the explicit Burn oracle.
 ///
 /// # Errors
 ///
@@ -449,14 +492,13 @@ pub(crate) fn validate_burn_plan(
     Ok(())
 }
 
-/// Re-project the dormant mixed facade through the same complete owners as
+/// Re-project the mixed facade through the same complete owners as
 /// the explicit constructor. It detects omitted or rewritten fields; it is
 /// not an independent oracle for those owners' routing rules.
 ///
 /// # Errors
 ///
 /// Returns the typed mismatch for the first changed census or selection.
-#[allow(dead_code)] // Packet 3.5f connects the reviewed mixed validator.
 pub(crate) fn validate_mixed_burn_plan(
     analyzed: &ScopedAnalyzedProgram,
     plan: &ValidatedBurnOperationPlan,
@@ -563,13 +605,12 @@ fn validate_sponsor_erasure(plan: &ValidatedBurnOperationPlan) -> Result<(), Com
     Ok(())
 }
 
-/// Check an offered output-change mode against the dormant mixed plan.
+/// Check an offered output-change mode against the mixed plan.
 ///
 /// # Errors
 ///
 /// Returns a representation mismatch unless the complete mixed plan is
 /// valid and the offered change is privately committed.
-#[allow(dead_code)] // Packet 3.5f connects offered selection to public planning.
 pub(crate) fn validate_mixed_burn_output_selection(
     analyzed: &ScopedAnalyzedProgram,
     plan: &ValidatedBurnOperationPlan,

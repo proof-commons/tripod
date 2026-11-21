@@ -249,6 +249,23 @@ fn declared_burn_binds_with_distinct_live_exits_and_missing_member_refuses() {
     let plan = compiler::burn_operation_plan::plan_burn_target_operation(&bound, limits)
         .expect("validated public Burn plan");
     assert_eq!(plan.operation(), OperationId::Burn);
+    let mixed = compiler::burn_operation_plan::plan_burn_target_operation_with_output_selection(
+        &bound,
+        limits,
+        realization::RepresentationMode::PrivateCommitted,
+    )
+    .expect("validated public mixed Burn plan");
+    assert_eq!(mixed.operation(), OperationId::Burn);
+    assert_eq!(
+        mixed
+            .representation()
+            .selection(&compiler::burn_operation_plan::RepresentationChoiceId {
+                operation: OperationId::Burn,
+                object: architecture::ObjectId::ReceiptLive,
+                side: Some(realization::TransactionSide::Output),
+            }),
+        Some(realization::RepresentationMode::PrivateCommitted),
+    );
     let live = compiler::live_transfer_plan::plan_live_transfer_target_operation(&bound, limits)
         .expect("public mixed live plan");
     let explicit = live
@@ -296,6 +313,9 @@ fn burn_plan_public_surface_keeps_private_fields_with_validated_constructor() {
     assert!(code.contains("pub(crate) fn derive_burn_plan("));
     assert!(code.contains("pub(crate) fn validate_burn_plan("));
     assert!(code.contains("pub fn plan_burn_target_operation("));
+    assert!(code.contains("pub(crate) fn derive_mixed_burn_plan("));
+    assert!(code.contains("pub(crate) fn validate_mixed_burn_plan("));
+    assert!(code.contains("pub fn plan_burn_target_operation_with_output_selection("));
     let fields = code
         .split("pub struct ValidatedBurnOperationPlan {")
         .nth(1)
